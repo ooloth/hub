@@ -3,4 +3,7 @@ target/
 
 # Mine
 .env
+hub.toml
+clients/src/private
+workflows/src/private
 .trekker/
