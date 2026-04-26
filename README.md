@@ -6,11 +6,26 @@ Personal command center. Surfaces what needs attention today across software I'm
 - Context-aware — work laptop tracks work software; personal laptop tracks personal software
 - Rust — single binary, CLI today, TUI planned
 
-## Quickstart
+## Prerequisites
+
+- [Rust](https://rustup.rs)
+- [just](https://github.com/casey/just) — `brew install just`
+- [1Password CLI](https://developer.1password.com/docs/cli) — `brew install 1password-cli`
+
+## Setup
 
 ```bash
-cargo build
-cargo run -p hub-cli
+git clone <repo> && cd hub
+cp .env.example .env
+# edit .env — replace op:// references with your actual 1Password paths
+just check
+```
+
+## Running
+
+```bash
+just check              # verify workspace compiles
+op run --env-file=.env -- just status   # run with secrets injected
 ```
 
 ## Docs

@@ -1,6 +1,11 @@
 default:
     @just --list
 
+# run a recipe with secrets injected from .env via 1Password
+# usage: just op <recipe>
+op +ARGS:
+    op run --env-file=.env -- just {{ARGS}}
+
 check:
     cargo check
 

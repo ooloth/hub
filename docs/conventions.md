@@ -9,12 +9,12 @@ Use `anyhow` for all application code. One type, zero boilerplate.
 ```rust
 use anyhow::{Context, Result};
 
-fn read_config(path: &str) -> Result<String> {
-    std::fs::read_to_string(path).context("failed to read config")
+fn github_token() -> Result<String> {
+    std::env::var("GITHUB_TOKEN").context("GITHUB_TOKEN not set")
 }
 
 fn main() -> Result<()> {
-    let config = read_config("~/.hub/config.toml")?;
+    let token = github_token()?;
     Ok(())
 }
 ```
@@ -107,23 +107,37 @@ fn main() {
 
 Help text, `--version`, type coercion, and error messages are free.
 
-## Config (toml + serde)
+## Secrets
 
-Plain `toml::from_str` into a typed struct. No `figment`, no `config` crate.
+Secrets live in 1Password and are injected as env vars at runtime via `op run`. The Rust code only ever calls `std::env::var` — it never reads files or knows about 1Password.
 
-```rust
-#[derive(serde::Deserialize)]
-struct Config {
-    github_token: String,
-    context: String,  // "work" | "personal"
-}
+```bash
+# .env contains op:// references, safe to commit
+GITHUB_TOKEN=op://Personal/GitHub/token
 
-let raw = std::fs::read_to_string(config_path)?;
-let cfg: Config = toml::from_str(&raw)?;
-let token = std::env::var("GITHUB_TOKEN").unwrap_or(cfg.github_token);
+# inject at runtime
+op run --env-file=.env -- just status
 ```
 
-Config file lives at `~/.hub/config.toml`. Never checked into the repo.
+```rust
+// config/src/lib.rs — the only place env var names are written
+use anyhow::{Context, Result};
+
+pub struct Config {
+    pub github_token: String,
+}
+
+impl Config {
+    pub fn load() -> Result<Self> {
+        Ok(Self {
+            github_token: std::env::var("GITHUB_TOKEN")
+                .context("GITHUB_TOKEN not set")?,
+        })
+    }
+}
+```
+
+`config::Config::load()` is called once in `main()` and the struct is passed down as an argument. Nothing else calls `std::env::var`.
 
 ## HTTP (reqwest)
 

@@ -20,14 +20,14 @@ A personal command center: surfaces what needs attention today across software I
 | HTTP clients | reqwest |
 | SQLite | rusqlite (bundled) or sqlx |
 | Serialization | serde |
-| Config files | toml |
+| Secrets | 1Password CLI (`op run`) |
 | Error handling | anyhow |
 
 ## Project Structure
 
 ```
 clients/     # external API wrappers — one subdir per service
-config/      # parses ~/.hub/config.toml into domain types
+config/      # reads env vars into typed domain structs
 domain/      # types + pure logic; no I/O; no imports from other hub crates
 store/       # local SQLite reads/writes
 workflows/   # orchestrated operations; the "what hub does"
@@ -54,7 +54,7 @@ See `docs/conventions.md` for full rationale. Hard rules for agents:
 - **No lifetime annotations**: if you're writing `'a`, stop and restructure. Return owned types instead.
 - **Clone freely**: don't fight the borrow checker. Clone across `.await` points. Optimize only if profiling shows it matters.
 - **Async**: `#[tokio::main]`, `features = ["full"]`. Use `tokio::join!` for parallel work. Use `tokio::fs`/`tokio::time` not std equivalents inside async.
-- **Config**: plain `toml::from_str` into typed structs. `std::env::var` inline for overrides. No `figment` or `config` crate.
+- **Secrets**: read from env vars via `std::env::var`. Never read from files. Injected at runtime by `op run --env-file=.env`.
 - **CLI**: `clap` with derive macros. Annotate structs; don't use the builder API.
 
 ## Development
