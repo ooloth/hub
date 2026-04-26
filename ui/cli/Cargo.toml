@@ -3,6 +3,9 @@ name = "hub-cli"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+private = ["workflows/private"]
+
 [[bin]]
 name = "hub"
 path = "src/main.rs"

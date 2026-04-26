@@ -3,6 +3,9 @@ name = "workflows"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+private = ["clients/private"]
+
 [dependencies]
 anyhow = "1"
 clients = { path = "../clients" }
