@@ -1,0 +1,9 @@
+[package]
+name = "workflows"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clients = { path = "../clients" }
+domain = { path = "../domain" }
+store = { path = "../store" }

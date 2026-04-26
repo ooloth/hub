@@ -1,0 +1,12 @@
+[package]
+name = "hub-tui"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "hub-tui"
+path = "src/main.rs"
+
+[dependencies]
+config = { path = "../../config" }
+workflows = { path = "../../workflows" }
