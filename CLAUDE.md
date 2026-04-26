@@ -1,93 +1,67 @@
 # hub
 
-A personal work hub: overview dashboard, per-integration detail pages, CLI, and agent interface — all backed by a local SQLite database.
+A personal command center: surfaces what needs attention today across software I'm responsible for, helps prioritize what to act on.
 
 ## What This Is
 
-- **Web app** — overview page (cards with title + count per integration), detail pages per integration
-- **CLI** — `hub sync`, `hub status`, `hub <integration> list` etc.; also the interface for agents
-- **Local-only** — runs on localhost, each device has its own SQLite db with its own data
-- **Growable** — adding a new integration = adding a new directory; no registration step
+- **Local-only** — runs on each device; each has its own SQLite db
+- **Context-aware** — work laptop shows work software; personal laptop shows personal software
+- **Extensible** — adding a new integration = adding files to `clients/` and `workflows/`; no registration step
+- **Rust** — single binary, CLI entry point today, TUI entry point later
 
 ## Stack
 
-| Concern | Choice | Why |
-|---|---|---|
-| Runtime / package manager | Bun | Native TS execution, fast installs, built-in test runner |
-| Monorepo | Bun workspaces | Lightweight, no separate orchestration tool needed initially |
-| Web framework | Next.js (App Router) | File-based routing maps naturally to per-integration pages |
-| Database | SQLite via Drizzle ORM | Local-first, per-device, type-safe queries and migrations |
-| CLI framework | Citty | TypeScript-native, minimal API, clean subcommand support |
+| Concern | Choice |
+|---|---|
+| Language | Rust |
+| Async runtime | tokio |
+| CLI | clap (derive) |
+| TUI | ratatui (planned) |
+| HTTP clients | reqwest |
+| SQLite | rusqlite (bundled) or sqlx |
+| Serialization | serde |
+| Config files | toml |
+| Error handling | anyhow |
 
-## Monorepo Structure
+## Project Structure
 
 ```
-packages/
-  db/                  # @hub/db — schema, migrations, typed query helpers
-  integrations/        # @hub/integrations — shared integration types + auto-discovery
-
-apps/
-  web/                 # Next.js app (imports @hub/db directly)
-  cli/                 # Citty CLI (imports @hub/db directly)
+clients/     # external API wrappers — one subdir per service
+config/      # parses ~/.hub/config.toml into domain types
+domain/      # types + pure logic; no I/O; no imports from other hub crates
+store/       # local SQLite reads/writes
+workflows/   # orchestrated operations; the "what hub does"
+ui/
+  cli/       # hub binary — bootstraps config, wires deps, calls workflows
+  tui/       # hub-tui binary (planned)
+scripts/     # dev/ops scripts; not part of the binary
+docs/        # architecture, conventions, decisions
 ```
 
-Both `web` and `cli` are consumers of `@hub/db`. Neither calls the other. The db package is the canonical data layer.
-
-## Integration Contract
-
-Each integration lives at `packages/integrations/<name>/` and must export:
-
-```ts
-// config.ts
-export const config: IntegrationConfig = {
-  name: string        // display name
-  slug: string        // used in routing and CLI commands
-  icon: string        // lucide icon name or emoji
-  description: string
-}
-
-// schema.ts
-// Drizzle table definitions for this integration's data
-
-// fetch.ts
-export async function fetch(db: Database): Promise<void>
-// Pulls from the external source and upserts into SQLite
-
-// card.tsx
-export default function Card(): React.ReactNode
-// Overview card: shows title + count; used on the hub home page
-
-// page.tsx
-export default function Page(): React.ReactNode
-// Detail view: full list/breakdown for this integration
+Import direction (never import rightward's left neighbor):
+```
+ui/ → workflows/ → clients/ → domain/
+                 → store/   → domain/
+     config/               → domain/
 ```
 
-Auto-discovery scans `packages/integrations/*/config.ts` at build time — no manual registration.
+## Rust Conventions
 
-## Adding a New Integration
+See `docs/conventions.md` for full rationale. Hard rules for agents:
 
-1. Create `packages/integrations/<slug>/`
-2. Add `config.ts`, `schema.ts`, `fetch.ts`, `card.tsx`, `page.tsx` following the contract above
-3. Add the integration's Drizzle table to the db migration
-4. Run `hub sync <slug>` to populate data
-5. The card appears on the overview page and the detail page is routed automatically
+- **Error handling**: `anyhow` only. No `thiserror`. `?` everywhere. `.context("msg")` for human-readable chains.
+- **Owned types**: structs hold `String`/`Vec<T>`. Functions that only read take `&str`/`&[T]`. Return owned values, not references.
+- **No lifetime annotations**: if you're writing `'a`, stop and restructure. Return owned types instead.
+- **Clone freely**: don't fight the borrow checker. Clone across `.await` points. Optimize only if profiling shows it matters.
+- **Async**: `#[tokio::main]`, `features = ["full"]`. Use `tokio::join!` for parallel work. Use `tokio::fs`/`tokio::time` not std equivalents inside async.
+- **Config**: plain `toml::from_str` into typed structs. `std::env::var` inline for overrides. No `figment` or `config` crate.
+- **CLI**: `clap` with derive macros. Annotate structs; don't use the builder API.
 
 ## Development
 
 ```bash
-bun install          # install all workspace dependencies
-bun run dev          # start Next.js dev server
-bun run db:migrate   # run pending migrations
-hub sync             # sync all integrations
-hub sync <slug>      # sync one integration
-hub status           # print counts for all integrations
+cargo check          # verify workspace compiles
+cargo build          # build all crates
+cargo run -p hub-cli # run the CLI
+cargo test           # run all tests
 ```
-
-## Integrations
-
-| Slug | Source | What it tracks |
-|---|---|---|
-| `github-prs` | GitHub API | PRs waiting for my review |
-| `loki-errors` | Grafana Loki | Production errors/exceptions |
-
-Add rows here as new integrations land.
