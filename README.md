@@ -12,3 +12,4 @@ Personal command center. Surfaces what needs attention today across software I'm
 - [Decisions](docs/decisions/) — architectural decisions and their rationale
 - [Conventions](docs/conventions.md) — Rust patterns used throughout
 - [Contributing](CONTRIBUTING.md) — setup and development instructions
+- [Private Integrations](docs/private-integrations.md) — hub-private wiring, symlinks, and Cargo features

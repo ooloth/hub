@@ -22,6 +22,20 @@ just check              # verify workspace compiles
 just op status          # run with secrets injected
 ```
 
+## Private integrations (optional)
+
+Hub supports private integrations via a companion repo. If you have access to
+`hub-private`, wire it in:
+
+```bash
+git clone git@github.com:ooloth/hub-private.git ../hub-private
+just setup-private
+```
+
+The symlinks are detected automatically — `just check` will include private code
+once they exist. See [docs/private-integrations.md](docs/private-integrations.md)
+for the full setup walkthrough and how to add new private integrations.
+
 ## Common tasks
 
 ```bash
