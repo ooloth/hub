@@ -31,4 +31,5 @@ op run --env-file=.env -- just status   # run with secrets injected
 ## Docs
 
 - [Vision](docs/vision.md) — what this is, why, and where it's going
+- [Decisions](docs/decisions/) — architectural decisions and their rationale
 - [Conventions](docs/conventions.md) — Rust patterns used throughout

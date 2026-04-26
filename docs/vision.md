@@ -9,13 +9,22 @@ The question "what do I need to act on today?" has no single answer.
 
 ## What hub is
 
-A personal command center that aggregates across the tools I'm
-responsible for and surfaces what needs my attention — ranked by
-urgency, not by source.
+A personal command center to observe and act across any terrain I'm
+responsible for: software, infrastructure, home systems, whatever.
+
+The core loop: observe signals → understand what they mean → decide
+what to do → act (or delegate to an agent) → learn from outcomes.
+This loop applies to every domain. The integrations are just different
+sources feeding the same loop.
 
 The measure of success is not "shows all the things". It's "shows the
 right things, in the right order, so I can triage and act without
 hunting."
+
+Agents are a first-class tool. Where rules are sufficient, use rules.
+Where judgment or scale makes agents more appropriate, use agents. The
+output format (dashboard item, report, alert, GitHub issue, automated
+fix) is chosen to match the signal — not fixed to one mode.
 
 ## Context-awareness
 
@@ -64,7 +73,8 @@ Planned and current:
 | Production errors | Errors/exceptions from logs (Loki, Axiom) |
 
 Future candidates: Linear/Jira issues assigned to me, failing CI runs,
-dependency alerts, Notion tasks, calendar conflicts.
+dependency alerts, Notion tasks, calendar conflicts, home server health
+(via private integrations).
 
 ## UI evolution
 
