@@ -6,6 +6,9 @@ default:
 op +ARGS:
     op run --env-file=.env -- just {{ARGS}}
 
+status:
+    cargo run -p hub-cli -- status
+
 check:
     cargo check
 
