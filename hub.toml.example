@@ -1,19 +1,20 @@
-# hub.toml — per-device context configuration
+# hub.toml — per-device project and workflow configuration
 # Copy to hub.toml (gitignored) and edit for this machine.
+# Or use hub-private/devices/<device>.toml (symlinked here by just setup-private).
 #
-# hub.toml is optional. When absent, hub runs with public integrations only.
-# When present, it tells hub which integrations are relevant on this device.
+# List only the projects and workflows relevant to this device.
+# Work projects belong on the work laptop; personal projects on the personal laptop.
 
-[device]
-# A label for this device — used in logs and diagnostics.
-name = "work-laptop"   # or "home-laptop", "server", etc.
+[[project]]
+name = "hub"
+repo = "ooloth/hub"
+workflows = ["github-prs", "github-issues"]
 
-[integrations]
-# List the integration slugs active on this device.
-# Public integrations are always available; list them here if you want them enabled.
-# Private integrations (from hub-private) require the symlinks to be in place first.
-enabled = [
-    "github-prs",
-    # "loki-errors",    # example public integration
-    # "my-private-one", # example private integration
-]
+# [[project]]
+# name = "my-app"
+# repo = "org/my-app"
+# workflows = ["github-prs", "loki-errors"]
+
+[monitor]
+# Non-project workflows go here (home server health, calendar, etc.)
+# workflows = ["home-server-health"]

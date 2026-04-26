@@ -2,57 +2,63 @@
 
 ## Context
 
-Hub runs on multiple devices with different integrations (work laptop vs
-personal laptop). As integrations multiply, per-project configuration is
-needed: which repos to watch, which Loki service labels, which Linear
-projects. Environment variables handle credentials well but are a poor
-fit for structured lists of projects.
+Hub runs on multiple devices with different projects active on each (work
+laptop vs. personal laptop). As workflows multiply, per-project configuration
+is needed: which repo to watch, which issue tracker to query, which Loki
+labels to filter on. Environment variables handle credentials well but are a
+poor fit for structured lists of projects and their properties.
 
 ## Decision
 
 Two gitignored config files, each with a committed example:
 
-**`.env`** — credentials only. One token per service type, shared across
-all projects that use that service. Secrets are stored in 1Password and
-injected at runtime via `op run --env-file=.env`. Never contains
-project-specific structure.
+**`.env`** — credentials only. One token per service type, shared across all
+projects that use that service. Secrets are stored in 1Password and injected
+at runtime via `op run --env-file=.env`. Never contains project-specific
+structure.
 
-**`hub.toml`** — structure only. No secrets. Defines which projects exist
-on this device, which integrations each uses, and any integration-specific
-identifiers (service labels, repo slugs, etc.):
+**`hub.toml`** — structure only. No secrets. Lists projects and the workflows
+active for each, plus a `[monitor]` section for non-project observations:
 
 ```toml
-context = "personal"   # or "work"
-
-[[projects]]
+[[project]]
 name = "hub"
 repo = "ooloth/hub"
-integrations = ["github-prs", "loki-errors"]
-loki_service = "hub"
+workflows = ["github-prs", "github-issues"]
 
-[[projects]]
-name = "blog"
-repo = "ooloth/blog"
-integrations = ["github-prs"]
+[[project]]
+name = "work-api"
+repo = "company/work-api"
+workflows = ["github-prs", "jira-tickets", "gke-pod-health", "loki-errors"]
+
+[monitor]
+workflows = ["home-server-health"]
 ```
 
-Both files live at the hub repo root (gitignored). Work laptop has its own
-`hub.toml` listing work projects; personal laptop lists personal projects.
-The code is identical on both devices.
+Workflows are listed **explicitly** per project and in `[monitor]`. Hub runs
+exactly what is listed — no inference from project properties, no implicit
+defaults. Projects vary too widely (a static site vs. a GKE deployment) for
+a useful default set; opt-out lists for complex projects would be long and
+hard to mentally compute. Explicit opt-in keeps each project's config
+self-contained and immediately readable.
 
-Integrations are enabled by the presence of their required env vars. If
-a service URL or token isn't in `.env`, that integration silently skips.
-No explicit enable/disable list required.
+`[monitor]` uses the same `workflows` key as projects. Non-project
+observations (home server health, calendar, etc.) are just workflows without
+a codebase behind them — no reason to model them differently.
+
+Each device has its own `hub.toml` listing only the projects relevant to that
+machine. When hub-private is in use, per-device configs live in
+`hub-private/devices/<name>.toml` and are symlinked to the hub root.
 
 ## Consequences
 
-- The `config` crate reads both files: parses `hub.toml` for structure,
-  reads env vars for credentials. Everything downstream receives a single
-  typed `Config` struct.
+- The `config` crate will read both files: parse `hub.toml` for structure,
+  read env vars for credentials. Everything downstream receives a single typed
+  `Config` struct. Currently only env var loading is implemented; `hub.toml`
+  parsing is next.
 - `hub.toml.example` and `.env.example` are committed to the repo and kept
-  up to date as integrations are added.
-- `hub.toml` and `.env` can be stored in `hub-private` and symlinked to
-  the hub root, giving them backup and version control without exposing
-  them publicly.
-- A project entry with no active env vars for its integrations produces no
-  items — clean degradation when a service is unavailable or unconfigured.
+  up to date as workflows are added.
+- A project listed in `hub.toml` whose required env vars are absent produces
+  no items — clean degradation when a service is unconfigured.
+- Per-workflow config (e.g. polling cadence) is a future extension; the
+  `workflows` list will grow to support inline options when needed.

@@ -65,16 +65,22 @@ is responsible for filtering its own noise before emitting items.
 Each integration lives in `clients/<name>/` and `workflows/`. Adding
 one means adding files — no central registration.
 
-Planned and current:
+Current:
 
 | Integration | What it tracks |
 |---|---|
 | GitHub PRs | PRs awaiting my review |
-| Production errors | Errors/exceptions from logs (Loki, Axiom) |
 
-Future candidates: Linear/Jira issues assigned to me, failing CI runs,
-dependency alerts, Notion tasks, calendar conflicts, home server health
-(via private integrations).
+Planned:
+
+| Integration | What it tracks |
+|---|---|
+| Production errors | Errors/exceptions from logs (Loki, Axiom) |
+| Issues | Linear/Jira tickets assigned to me |
+| CI | Failing runs on watched repos |
+| Home server | Health and availability (private integration) |
+
+Future candidates: dependency alerts, Notion tasks, calendar conflicts.
 
 ## UI evolution
 
