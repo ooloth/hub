@@ -44,9 +44,8 @@ pub async fn prs_awaiting_review(token: &str) -> Result<Vec<PullRequest>> {
 }
 
 fn repo_name_from_url(url: &str) -> String {
-    url.rsplitn(3, '/').take(2).collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect::<Vec<_>>()
-        .join("/")
+    let mut parts = url.rsplit('/');
+    let repo = parts.next().unwrap_or("");
+    let owner = parts.next().unwrap_or("");
+    format!("{owner}/{repo}")
 }
