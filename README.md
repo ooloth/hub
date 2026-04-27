@@ -11,6 +11,6 @@ Personal command center. Surfaces what needs attention today across software I'm
 - [Vision](docs/vision.md) — what this is, why, and where it's going
 - [Decisions](docs/decisions/) — architectural decisions and their rationale
 - [Conventions](docs/conventions.md) — Rust patterns used throughout
+- [Playbooks](docs/playbooks/) — step-by-step guides for common tasks
 - [Contributing](CONTRIBUTING.md) — setup and development instructions
 - [Private Integrations](docs/private-integrations.md) — hub-private wiring, symlinks, and Cargo features
-- [Playbooks](docs/playbooks/) — step-by-step guides for common tasks
