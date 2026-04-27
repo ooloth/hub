@@ -93,3 +93,32 @@ Run occasionally (before merging a significant logic change, or when a module fe
 under-tested), not on every commit. It is intentionally slow.
 
 `cargo-mutants` is not wired into prek or CI because a full run can take minutes.
+
+## Keep I/O at the edges
+
+Workflows are intentionally thin: fetch data from clients, pass it to pure
+functions, return. Don't put logic in them — put it in `domain/`.
+
+This is the functional core / imperative shell pattern. The shell (clients,
+workflows) does I/O and is hard to test without real infrastructure. The core
+(domain) is pure logic with no I/O and is easy to test exhaustively.
+
+**Where to put tests, by layer:**
+
+- `clients/` — unit-test parsing and URL construction directly (e.g.
+  `repo_slug_from_url`). Don't test network calls.
+- `domain/` — unit-test all logic here. This is where correctness lives.
+  Parameterize, snapshot, and property-test freely.
+- `workflows/` — accept that these require a real API to run end-to-end.
+  Cover them with one-off smoke tests, not unit tests.
+
+When you feel the urge to mock a client to test a workflow, treat it as a signal:
+there is logic in the workflow that belongs in `domain/` instead. Move it there
+and test it directly.
+
+For the workflow layer, the practical substitute for unit tests is a scheduled
+smoke run — a cron job or CI schedule that runs `just op status` daily or weekly
+and alerts on failure. This catches API drift (renamed fields, auth changes,
+deprecated endpoints) before you discover it when you actually need hub to work.
+`main() -> Result<()>` already exits non-zero on any error, so the exit code is
+the signal.
