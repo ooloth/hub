@@ -84,6 +84,7 @@
       "description": "A workflow instance. Add a schema to config/schemas/workflows/ and reference it here when implementing a new workflow.",
       "oneOf": [
         { "$ref": "workflows/github-prs.schema.json" },
+        { "$ref": "workflows/github-issues.schema.json" },
         { "$ref": "workflows/user-activity-gcp.schema.json" }
       ]
     },

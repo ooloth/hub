@@ -36,9 +36,10 @@ so none of the symlinks are ever committed to the public repo.
 
 ### Per-Device Configuration
 
-Each device has its own file in `hub-private/devices/`. The `[integrations] enabled`
-list controls which integrations run on that device — work integrations won't activate
-on the home laptop if they're not listed in `home-laptop.toml`, and vice versa.
+Each device has its own file in `hub-private/devices/`. It lists the `[[project]]`
+entries and their `[[project.workflow]]` / `[[project.environment]]` blocks relevant
+to that machine — work projects won't activate on the home laptop if they're not
+listed in `home-laptop.toml`, and vice versa.
 
 ### Secrets
 
@@ -80,7 +81,7 @@ git clone git@github.com:ooloth/hub-private.git ../hub-private
 
 # 2. Add a device config to hub-private (if this device is new)
 cp hub-private/devices/home-laptop.toml hub-private/devices/<this-device>.toml
-# edit it — set device name and enabled integrations for this machine
+# edit it — add the projects and workflows relevant to this machine
 
 # 3. Wire the symlinks
 cd hub
@@ -97,7 +98,7 @@ just check
 3. Add `<name>.rs` to `hub-private/workflows/src/` for the workflow.
 4. Add `pub mod <name>;` to `hub-private/workflows/src/mod.rs`.
 5. Add the integration's secrets to `hub-private/.env` (with 1Password references).
-6. Add the integration's slug to the relevant `hub-private/devices/*.toml` files.
+6. Add a `[[project.workflow]]` or `[[project.environment.workflow]]` entry to the relevant `hub-private/devices/*.toml` files.
 7. Run `just check` to confirm compilation.
 
 ## Recovering on a New Machine
