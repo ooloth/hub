@@ -2,19 +2,55 @@
 # Copy to hub.toml (gitignored) and edit for this machine.
 # Or use hub-private/devices/<device>.toml (symlinked here by just setup-private).
 #
-# List only the projects and workflows relevant to this device.
-# Work projects belong on the work laptop; personal projects on the personal laptop.
+# Schema: config/schemas/hub.toml.schema.json
+# Taplo LSP will validate this file automatically if .taplo.toml is present.
+
+# ── Projects without deployments ──────────────────────────────────────────────
+# Use [[project.workflow]] for codebase-level observations (PRs, issues, CI).
 
 [[project]]
 name = "hub"
 repo = "ooloth/hub"
-workflows = ["github-prs", "github-issues"]
+
+[[project.workflow]]
+name = "github-prs"
+
+[[project.workflow]]
+name = "github-issues"
+
+# ── Projects with deployments ─────────────────────────────────────────────────
+# Use [[project.environment]] when the project runs somewhere.
+# Each environment carries the platform context its workflows need.
 
 # [[project]]
 # name = "my-app"
 # repo = "org/my-app"
-# workflows = ["github-prs", "loki-errors"]
+#
+# [[project.workflow]]
+# name = "github-prs"
+#
+# [[project.environment]]
+# env = "prod"
+# gcp_project = "my-org-prod"
+# service = "my-app"
+#
+# [[project.environment.workflow]]
+# name = "errors-gcp"
+#
+# [[project.environment.workflow]]
+# name = "user-activity-gcp"
+# exclude_users = ["bot@my-org.com"]
+#
+# [[project.environment]]
+# env = "dev"
+# gcp_project = "my-org-dev"
+# service = "my-app"
+#
+# [[project.environment.workflow]]
+# name = "errors-gcp"
 
-[monitor]
-# Non-project workflows go here (home server health, calendar, etc.)
-# workflows = ["home-server-health"]
+# ── Monitor ───────────────────────────────────────────────────────────────────
+# Non-project observations: home server health, calendar, etc.
+
+# [[monitor.workflow]]
+# name = "home-server-health"
