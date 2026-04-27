@@ -87,20 +87,6 @@
         { "$ref": "#/definitions/workflow_user_activity_gcp" }
       ]
     },
-    "workflow_github_prs": {
-      "type": "object",
-      "description": "Surfaces pull requests awaiting review. Reads repo from parent project. Credentials via GITHUB_TOKEN.",
-      "required": ["name"],
-      "additionalProperties": false,
-      "properties": {
-        "name": { "const": "github-prs" },
-        "exclude_authors": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "GitHub usernames to exclude — e.g. 'dependabot'."
-        }
-      }
-    },
     "workflow_github_issues": {
       "type": "object",
       "description": "Surfaces open issues assigned to the authenticated user. Reads repo from parent project. Credentials via GITHUB_TOKEN.",
@@ -112,6 +98,20 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Exclude issues carrying any of these labels — e.g. 'wontfix', 'duplicate'."
+        }
+      }
+    },
+    "workflow_github_prs": {
+      "type": "object",
+      "description": "Surfaces pull requests awaiting review. Reads repo from parent project. Credentials via GITHUB_TOKEN.",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "const": "github-prs" },
+        "exclude_authors": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "GitHub usernames to exclude — e.g. 'dependabot'."
         }
       }
     },
