@@ -15,6 +15,7 @@ status:
 check:
     cargo fmt
     taplo fmt
+    taplo check
     cargo clippy --fix --allow-dirty --allow-staged {{_features}}
 
 build:

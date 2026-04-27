@@ -18,5 +18,6 @@ repo = "local"
 hooks = [
   { id = "fmt", name = "cargo fmt", entry = "cargo fmt --check", language = "system", pass_filenames = false },
   { id = "taplo", name = "taplo fmt", entry = "taplo fmt --check", language = "system", pass_filenames = false },
+  { id = "taplo-check", name = "taplo check", entry = "taplo check", language = "system", pass_filenames = false },
   { id = "clippy", name = "cargo clippy", entry = "just lint", language = "system", pass_filenames = false },
 ]
