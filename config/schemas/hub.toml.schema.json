@@ -1,6 +1,5 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "hub.toml.schema.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "hub.toml",
   "description": "Per-device project and workflow configuration for hub.",
   "type": "object",
@@ -9,13 +8,13 @@
     "project": {
       "type": "array",
       "description": "Codebases to observe on this device.",
-      "items": { "$ref": "#/$defs/project" }
+      "items": { "$ref": "#/definitions/project" }
     },
     "monitor": {
-      "$ref": "#/$defs/monitor"
+      "$ref": "#/definitions/monitor"
     }
   },
-  "$defs": {
+  "definitions": {
     "project": {
       "type": "object",
       "description": "A codebase and its associated workflows and environments.",
@@ -33,19 +32,19 @@
         },
         "workflow": {
           "type": "array",
-          "description": "Codebase-level workflows (no deployment context). Use for PR review, issues, CI — things that belong to the repo rather than a running environment.",
-          "items": { "$ref": "#/$defs/workflow" }
+          "description": "Codebase-level workflows (no deployment context).",
+          "items": { "$ref": "#/definitions/workflow" }
         },
         "environment": {
           "type": "array",
-          "description": "Deployment environments for this project. Use when the codebase runs somewhere and you want to observe logs, errors, or runtime metrics per environment.",
-          "items": { "$ref": "#/$defs/environment" }
+          "description": "Deployment environments for this project.",
+          "items": { "$ref": "#/definitions/environment" }
         }
       }
     },
     "environment": {
       "type": "object",
-      "description": "A deployment environment. Carries the platform context (GCP project, service name, etc.) shared by all workflows in this environment.",
+      "description": "A deployment environment. Carries platform context shared by all its workflows.",
       "required": ["env"],
       "additionalProperties": false,
       "properties": {
@@ -55,11 +54,11 @@
         },
         "gcp_project": {
           "type": "string",
-          "description": "GCP project ID. Required by GCP-based workflows (errors-gcp, user-activity-gcp, etc.)."
+          "description": "GCP project ID. Required by GCP-based workflows."
         },
         "gcp_region": {
           "type": "string",
-          "description": "GCP region — e.g. us-central1. Required by some GCP workflows."
+          "description": "GCP region — e.g. us-central1."
         },
         "service": {
           "type": "string",
@@ -67,7 +66,7 @@
         },
         "cluster": {
           "type": "string",
-          "description": "GKE cluster name. Required by GKE-based workflows."
+          "description": "GKE cluster name."
         },
         "namespace": {
           "type": "string",
@@ -76,27 +75,74 @@
         "workflow": {
           "type": "array",
           "description": "Workflows scoped to this environment.",
-          "items": { "$ref": "#/$defs/workflow" }
+          "items": { "$ref": "#/definitions/workflow" }
         }
       }
     },
     "workflow": {
-      "description": "A workflow instance. Add a schema to config/schemas/workflows/ and reference it here when implementing a new workflow.",
+      "description": "A workflow instance. Add an entry here and a file in config/schemas/workflows/ when implementing a new workflow.",
       "oneOf": [
-        { "$ref": "workflows/github-prs.schema.json" },
-        { "$ref": "workflows/github-issues.schema.json" },
-        { "$ref": "workflows/user-activity-gcp.schema.json" }
+        { "$ref": "#/definitions/workflow_github_prs" },
+        { "$ref": "#/definitions/workflow_github_issues" },
+        { "$ref": "#/definitions/workflow_user_activity_gcp" }
       ]
+    },
+    "workflow_github_prs": {
+      "type": "object",
+      "description": "Surfaces pull requests awaiting review. Reads repo from parent project. Credentials via GITHUB_TOKEN.",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "const": "github-prs" },
+        "exclude_authors": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "GitHub usernames to exclude — e.g. 'dependabot'."
+        }
+      }
+    },
+    "workflow_github_issues": {
+      "type": "object",
+      "description": "Surfaces open issues assigned to the authenticated user. Reads repo from parent project. Credentials via GITHUB_TOKEN.",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "const": "github-issues" },
+        "exclude_labels": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Exclude issues carrying any of these labels — e.g. 'wontfix', 'duplicate'."
+        }
+      }
+    },
+    "workflow_user_activity_gcp": {
+      "type": "object",
+      "description": "Surfaces user activity from Google Cloud Logging. Reads gcp_project and service from parent environment. Credentials via GCP_TOKEN.",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "const": "user-activity-gcp" },
+        "include_users": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Only surface activity from these principals. When set, all others are ignored."
+        },
+        "exclude_users": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Exclude activity from these principals — e.g. bot service accounts."
+        }
+      }
     },
     "monitor": {
       "type": "object",
-      "description": "Non-project observations not tied to any codebase — home server health, calendar, etc.",
+      "description": "Non-project observations not tied to any codebase.",
       "additionalProperties": false,
       "properties": {
         "workflow": {
           "type": "array",
           "description": "Device-level workflows.",
-          "items": { "$ref": "#/$defs/workflow" }
+          "items": { "$ref": "#/definitions/workflow" }
         }
       }
     }
