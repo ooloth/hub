@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflows/github-prs.schema.json",
+  "title": "github-prs",
+  "description": "Surfaces pull requests awaiting review in a GitHub repository. Reads the repo from the parent project's 'repo' field. Credentials via GITHUB_TOKEN in .env.",
+  "type": "object",
+  "required": ["name"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "const": "github-prs"
+    },
+    "exclude_authors": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "GitHub usernames to exclude — e.g. bot accounts like 'dependabot'."
+    }
+  }
+}

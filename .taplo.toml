@@ -1,0 +1,3 @@
+[schema]
+path = "config/schemas/hub.toml.schema.json"
+include = ["hub.toml", "hub.toml.example"]

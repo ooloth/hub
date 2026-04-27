@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "hub.toml.schema.json",
+  "title": "hub.toml",
+  "description": "Per-device project and workflow configuration for hub.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "project": {
+      "type": "array",
+      "description": "Codebases to observe on this device.",
+      "items": { "$ref": "#/$defs/project" }
+    },
+    "monitor": {
+      "$ref": "#/$defs/monitor"
+    }
+  },
+  "$defs": {
+    "project": {
+      "type": "object",
+      "description": "A codebase and its associated workflows and environments.",
+      "required": ["name", "repo"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Human-readable label for this project."
+        },
+        "repo": {
+          "type": "string",
+          "description": "GitHub repository in owner/name format.",
+          "pattern": "^[^/]+/[^/]+$"
+        },
+        "workflow": {
+          "type": "array",
+          "description": "Codebase-level workflows (no deployment context). Use for PR review, issues, CI — things that belong to the repo rather than a running environment.",
+          "items": { "$ref": "#/$defs/workflow" }
+        },
+        "environment": {
+          "type": "array",
+          "description": "Deployment environments for this project. Use when the codebase runs somewhere and you want to observe logs, errors, or runtime metrics per environment.",
+          "items": { "$ref": "#/$defs/environment" }
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "description": "A deployment environment. Carries the platform context (GCP project, service name, etc.) shared by all workflows in this environment.",
+      "required": ["env"],
+      "additionalProperties": false,
+      "properties": {
+        "env": {
+          "type": "string",
+          "description": "Environment name — e.g. dev, uat, val, prod."
+        },
+        "gcp_project": {
+          "type": "string",
+          "description": "GCP project ID. Required by GCP-based workflows (errors-gcp, user-activity-gcp, etc.)."
+        },
+        "gcp_region": {
+          "type": "string",
+          "description": "GCP region — e.g. us-central1. Required by some GCP workflows."
+        },
+        "service": {
+          "type": "string",
+          "description": "Service or app name within the platform."
+        },
+        "cluster": {
+          "type": "string",
+          "description": "GKE cluster name. Required by GKE-based workflows."
+        },
+        "namespace": {
+          "type": "string",
+          "description": "Kubernetes namespace."
+        },
+        "workflow": {
+          "type": "array",
+          "description": "Workflows scoped to this environment.",
+          "items": { "$ref": "#/$defs/workflow" }
+        }
+      }
+    },
+    "workflow": {
+      "description": "A workflow instance. Add a schema to config/schemas/workflows/ and reference it here when implementing a new workflow.",
+      "oneOf": [
+        { "$ref": "workflows/github-prs.schema.json" },
+        { "$ref": "workflows/user-activity-gcp.schema.json" }
+      ]
+    },
+    "monitor": {
+      "type": "object",
+      "description": "Non-project observations not tied to any codebase — home server health, calendar, etc.",
+      "additionalProperties": false,
+      "properties": {
+        "workflow": {
+          "type": "array",
+          "description": "Device-level workflows.",
+          "items": { "$ref": "#/$defs/workflow" }
+        }
+      }
+    }
+  }
+}
