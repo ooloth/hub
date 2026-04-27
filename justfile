@@ -13,9 +13,9 @@ status:
     cargo run -p hub-cli {{_features}} -- status
 
 check:
-    cargo fmt
     taplo fmt
     taplo check
+    cargo fmt
     cargo clippy --fix --allow-dirty --allow-staged {{_features}}
 
 build:

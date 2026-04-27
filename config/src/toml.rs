@@ -50,6 +50,33 @@ pub enum WorkflowConfig {
         #[serde(default)]
         exclude_users: Vec<String>,
     },
+    #[serde(rename = "errors-gcp")]
+    ErrorsGcp {
+        #[serde(default)]
+        exclude_users: Vec<String>,
+    },
+    #[serde(rename = "warnings-gcp")]
+    WarningsGcp {
+        #[serde(default)]
+        exclude_users: Vec<String>,
+    },
+    #[serde(rename = "user-activity-loki")]
+    UserActivityLoki {
+        #[serde(default)]
+        include_users: Vec<String>,
+        #[serde(default)]
+        exclude_users: Vec<String>,
+    },
+    #[serde(rename = "errors-loki")]
+    ErrorsLoki {
+        #[serde(default)]
+        exclude_users: Vec<String>,
+    },
+    #[serde(rename = "warnings-loki")]
+    WarningsLoki {
+        #[serde(default)]
+        exclude_users: Vec<String>,
+    },
 }
 
 #[derive(Debug, Deserialize, PartialEq)]

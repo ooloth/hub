@@ -80,12 +80,45 @@
       }
     },
     "workflow": {
-      "description": "A workflow instance. Add an entry here and a file in config/schemas/workflows/ when implementing a new workflow.",
+      "description": "A workflow instance. Entries are sorted alphabetically by workflow name slug.",
       "oneOf": [
-        { "$ref": "#/definitions/workflow_github_prs" },
+        { "$ref": "#/definitions/workflow_errors_gcp" },
+        { "$ref": "#/definitions/workflow_errors_loki" },
         { "$ref": "#/definitions/workflow_github_issues" },
-        { "$ref": "#/definitions/workflow_user_activity_gcp" }
+        { "$ref": "#/definitions/workflow_github_prs" },
+        { "$ref": "#/definitions/workflow_user_activity_gcp" },
+        { "$ref": "#/definitions/workflow_user_activity_loki" },
+        { "$ref": "#/definitions/workflow_warnings_gcp" },
+        { "$ref": "#/definitions/workflow_warnings_loki" }
       ]
+    },
+    "workflow_errors_gcp": {
+      "type": "object",
+      "description": "Surfaces errors from Google Cloud Logging. Reads gcp_project and service from parent environment. Credentials via GCP_TOKEN.",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "const": "errors-gcp" },
+        "exclude_users": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Exclude errors from these principals — e.g. bot service accounts."
+        }
+      }
+    },
+    "workflow_errors_loki": {
+      "type": "object",
+      "description": "Surfaces errors from Loki logs. Reads cluster from parent environment. Credentials via LOKI_TOKEN.",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "const": "errors-loki" },
+        "exclude_users": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Exclude errors from these principals — e.g. bot service accounts."
+        }
+      }
     },
     "workflow_github_issues": {
       "type": "object",
@@ -131,6 +164,53 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Exclude activity from these principals — e.g. bot service accounts."
+        }
+      }
+    },
+    "workflow_user_activity_loki": {
+      "type": "object",
+      "description": "Surfaces user activity from Loki logs. Reads cluster from parent environment. Credentials via LOKI_TOKEN.",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "const": "user-activity-loki" },
+        "include_users": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Only surface activity from these principals. When set, all others are ignored."
+        },
+        "exclude_users": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Exclude activity from these principals — e.g. bot service accounts."
+        }
+      }
+    },
+    "workflow_warnings_gcp": {
+      "type": "object",
+      "description": "Surfaces warnings from Google Cloud Logging. Reads gcp_project and service from parent environment. Credentials via GCP_TOKEN.",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "const": "warnings-gcp" },
+        "exclude_users": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Exclude warnings from these principals — e.g. bot service accounts."
+        }
+      }
+    },
+    "workflow_warnings_loki": {
+      "type": "object",
+      "description": "Surfaces warnings from Loki logs. Reads cluster from parent environment. Credentials via LOKI_TOKEN.",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "const": "warnings-loki" },
+        "exclude_users": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Exclude warnings from these principals — e.g. bot service accounts."
         }
       }
     },

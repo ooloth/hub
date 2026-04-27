@@ -20,4 +20,13 @@ hooks = [
   { id = "taplo", name = "taplo fmt", entry = "taplo fmt --check", language = "system", pass_filenames = false },
   { id = "taplo-check", name = "taplo check", entry = "taplo check", language = "system", pass_filenames = false },
   { id = "clippy", name = "cargo clippy", entry = "just lint", language = "system", pass_filenames = false },
+  { id = "test", name = "cargo test", entry = "just test", language = "system", pass_filenames = false, stages = [
+    "pre-push",
+  ] },
+  { id = "audit", name = "cargo audit", entry = "cargo audit", language = "system", pass_filenames = false, stages = [
+    "pre-push",
+  ] },
+  { id = "deny", name = "cargo deny", entry = "cargo deny check bans advisories sources", language = "system", pass_filenames = false, stages = [
+    "pre-push",
+  ] },
 ]

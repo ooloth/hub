@@ -1,0 +1,11 @@
+[bans]
+# Warn on duplicate crate versions rather than hard-failing.
+# Tighten to "deny" once the dependency tree stabilises.
+multiple-versions = "warn"
+
+[advisories]
+version = 2
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
