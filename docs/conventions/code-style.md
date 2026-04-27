@@ -89,7 +89,10 @@ async fn main() -> anyhow::Result<()> {
 - Use `tokio::fs` and `tokio::time::sleep` inside async (not std equivalents)
 - Clone or take ownership before `.await` — don't hold references across await points
 
-Use sync when there's no concurrency benefit. Not everything needs to be async.
+Async is here for one reason: `tokio::join!` across independent workflows.
+Don't reach for `tokio::spawn`, channels, or `Arc<Mutex<T>>` just because the
+runtime is present — those are a complexity cliff. Use sync when there's no
+concurrency benefit.
 
 ### Immutability
 
