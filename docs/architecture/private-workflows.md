@@ -1,12 +1,10 @@
-# Private Integrations
+# Private Workflows
 
-Hub is a public repo. Some integrations connect to systems you'd rather not name
+Hub is a public repo. Some workflows connect to systems you'd rather not name
 publicly — they live in a separate private repo (`hub-private`) that gets wired into
 this workspace via symlinks and a Cargo feature flag.
 
-## How It Works
-
-### The Two Repos
+## The Two Repos
 
 ```
 ~/Repos/ooloth/
@@ -20,7 +18,7 @@ this workspace via symlinks and a Cargo feature flag.
     .env             ← 1Password secret references (shared across devices)
 ```
 
-### Symlinks
+## Symlinks
 
 `just setup-private <device>` creates four symlinks inside hub:
 
@@ -34,20 +32,20 @@ hub/hub.toml              →  hub-private/devices/<device>.toml
 The first two are gitignored in hub. `.env` and `hub.toml` are also gitignored,
 so none of the symlinks are ever committed to the public repo.
 
-### Per-Device Configuration
+## Per-Device Configuration
 
 Each device has its own file in `hub-private/devices/`. It lists the `[[project]]`
 entries and their `[[project.workflow]]` / `[[project.environment]]` blocks relevant
 to that machine — work projects won't activate on the home laptop if they're not
 listed in `home-laptop.toml`, and vice versa.
 
-### Secrets
+## Secrets
 
-`.env` is shared across all devices — it holds op:// references for every integration.
+`.env` is shared across all devices — it holds `op://` references for every workflow.
 Having unused references on a given device is harmless; `op run` only injects what's
 present, and hub only reads what it needs.
 
-### Cargo Feature Flag
+## Cargo Feature Flag
 
 The `private` feature is declared in `clients/Cargo.toml` and `workflows/Cargo.toml`.
 When the symlinks exist, the justfile detects them and passes `--features private`
@@ -72,45 +70,7 @@ pub mod private;
 `hub-private/clients/src/` is the `private` module for `clients`; it re-exports
 individual integration clients as sub-modules. Same pattern for `workflows`.
 
-## Initial Setup (per device)
+## Playbooks
 
-```bash
-# 1. Clone both repos (if not already done)
-git clone git@github.com:ooloth/hub.git
-git clone git@github.com:ooloth/hub-private.git ../hub-private
-
-# 2. Add a device config to hub-private (if this device is new)
-cp hub-private/devices/home-laptop.toml hub-private/devices/<this-device>.toml
-# edit it — add the projects and workflows relevant to this machine
-
-# 3. Wire the symlinks
-cd hub
-just setup-private <this-device>
-
-# 4. Verify everything compiles
-just check
-```
-
-## Adding a Private Integration
-
-1. Add `<name>.rs` to `hub-private/clients/src/` for the API client.
-2. Add `pub mod <name>;` to `hub-private/clients/src/mod.rs`.
-3. Add `<name>.rs` to `hub-private/workflows/src/` for the workflow.
-4. Add `pub mod <name>;` to `hub-private/workflows/src/mod.rs`.
-5. Add the integration's secrets to `hub-private/.env` (with 1Password references).
-6. Add a `[[project.workflow]]` or `[[project.environment.workflow]]` entry to the relevant `hub-private/devices/*.toml` files.
-7. Run `just check` to confirm compilation.
-
-## Recovering on a New Machine
-
-```bash
-git clone git@github.com:ooloth/hub.git
-git clone git@github.com:ooloth/hub-private.git
-cd hub
-just setup-private <device-name>   # device config and .env are pulled from hub-private
-just check
-```
-
-Private integrations, secrets references, and device configs are all preserved in
-`hub-private`'s git history. The symlinks are the only connection between the two
-repos at the filesystem level.
+- [Set up the private workflows repository](../playbooks/set-up-private-workflows-repository.md) — first-time setup or recovery on a new machine
+- [Add a private workflow](../playbooks/add-a-private-workflow.md) — wire in a new client and workflow

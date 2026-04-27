@@ -55,4 +55,4 @@ under `[[project.workflow]]`, `[[project.environment.workflow]]`, or
 If the workflow is private (not for the public repo), add it to `hub-private`
 instead: client in `hub-private/clients/src/`, workflow in
 `hub-private/workflows/src/`, and re-export it from the respective `mod.rs`.
-See `docs/private-integrations.md` for the full model.
+See [Add a Private Workflow](add-a-private-workflow.md) and [Private Workflows](../architecture/private-workflows.md) for the full model.
