@@ -88,6 +88,54 @@ async fn main() -> anyhow::Result<()> {
 
 Use sync when there's no concurrency benefit. Not everything needs to be async.
 
+### Immutability
+
+Default to `let`. Only reach for `let mut` when mutation is actually needed. Prefer
+returning new values over mutating in place — it keeps functions easier to test and
+reason about.
+
+## Type-first modeling
+
+Use types to make invalid states unrepresentable. When the compiler rejects the bug,
+you don't have to write a test for it.
+
+**Enums over booleans or stringly-typed states:**
+
+```rust
+// Two booleans can produce a combination you never intend
+is_open: bool, is_merged: bool   // (true, true)?
+
+// One enum can't
+enum PrState { Open, Merged, Closed }
+```
+
+**`Option<T>` over sentinel values:**
+
+```rust
+// Empty string is ambiguous: missing, or intentionally blank?
+description: String
+
+// Absence is explicit
+description: Option<String>
+```
+
+**Newtypes for identifiers with structural invariants:**
+
+```rust
+// Nothing prevents assigning a bare URL to this field
+repo: String   // must be "owner/repo" format — implicit, unenforced
+
+// Newtype enforces the invariant at construction
+struct RepoSlug(String);
+impl RepoSlug {
+    fn parse(url: &str) -> Result<Self> { ... }
+}
+```
+
+Reach for newtypes when a plain `String` is secretly a domain concept with a format
+or set of valid values — and when code in more than one place needs to produce or
+consume it.
+
 ## Tiger Style
 
 For the rest, see [Tiger Style](https://github.com/tigerbeetle/tigerbeetle/blob/main/docs/TIGER_STYLE.md).
