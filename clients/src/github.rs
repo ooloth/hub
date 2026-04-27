@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use domain::PullRequest;
+use domain::{PullRequest, RepoSlug};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -38,22 +38,48 @@ pub async fn prs_awaiting_review(token: &str) -> Result<Vec<PullRequest>> {
             Ok(PullRequest {
                 number: pr.number,
                 title: pr.title,
-                repo: repo_name_from_url(&pr.repository_url)?,
+                repo: repo_slug_from_url(&pr.repository_url)?,
                 url: pr.html_url,
             })
         })
         .collect()
 }
 
-fn repo_name_from_url(url: &str) -> Result<String> {
-    let mut parts = url.rsplit('/');
-    let repo = parts
-        .next()
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("missing repo segment in repository_url: {url}"))?;
-    let owner = parts
-        .next()
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("missing owner segment in repository_url: {url}"))?;
-    Ok(format!("{owner}/{repo}"))
+// GitHub repository_url: https://api.github.com/repos/{owner}/{repo}
+fn repo_slug_from_url(url: &str) -> Result<RepoSlug> {
+    let after = url
+        .split_once("/repos/")
+        .map(|(_, rest)| rest)
+        .ok_or_else(|| anyhow::anyhow!("expected '/repos/' in repository_url: {url}"))?;
+    let (owner, repo) = after
+        .split_once('/')
+        .ok_or_else(|| anyhow::anyhow!("expected 'owner/repo' after '/repos/' in: {url}"))?;
+    if owner.is_empty() {
+        anyhow::bail!("empty owner in repository_url: {url}");
+    }
+    if repo.is_empty() {
+        anyhow::bail!("empty repo in repository_url: {url}");
+    }
+    Ok(RepoSlug::new(owner, repo))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_github_api_repository_url() {
+        let slug = repo_slug_from_url("https://api.github.com/repos/ooloth/hub").unwrap();
+        assert_eq!(slug.to_string(), "ooloth/hub");
+    }
+
+    #[test]
+    fn rejects_url_without_repos_segment() {
+        assert!(repo_slug_from_url("https://api.github.com/ooloth/hub").is_err());
+    }
+
+    #[test]
+    fn rejects_url_missing_repo_after_owner() {
+        assert!(repo_slug_from_url("https://api.github.com/repos/ooloth").is_err());
+    }
 }
