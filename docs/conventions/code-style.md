@@ -67,8 +67,11 @@ do_async_thing().await;
 println!("{name}");
 ```
 
-Clone costs almost never show up in profiling for a tool like this. Optimize when
-measurements say to.
+Rust clones are deep — `vec.clone()` copies every element. This is rarely a
+problem for a tool like this, but worth knowing if you come from a language with
+reference semantics. When a clone is genuinely too expensive, wrap the value in
+`Arc<T>`: cloning an `Arc` is just an atomic refcount increment, not a copy of
+the data. Optimize when measurements say to.
 
 ### Async
 
