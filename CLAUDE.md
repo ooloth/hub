@@ -85,8 +85,9 @@ See `docs/conventions/code-style.md` for full rationale. Hard rules for agents:
 ## Development
 
 ```bash
-cargo check          # verify workspace compiles
-cargo build          # build all crates
-cargo run -p hub-cli # run the CLI
-cargo test           # run all tests
+just check   # fmt + lint (autofixes where possible)
+just test    # run all tests
+just build   # build all crates
+just cli     # run the CLI
+just tui     # run the TUI
 ```

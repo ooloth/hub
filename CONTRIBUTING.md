@@ -45,8 +45,8 @@ just check
 controls which integrations are active on this machine — work integrations won't
 activate on the home laptop if they're not listed there.
 
-See [docs/private-integrations.md](docs/private-integrations.md) for the full
-model, how to add new devices, and how to add new private integrations.
+See [docs/architecture/private-workflows.md](docs/architecture/private-workflows.md)
+for the full model, how to add new devices, and how to add new private workflows.
 
 ## Running
 
