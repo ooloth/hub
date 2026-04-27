@@ -1,0 +1,92 @@
+---
+source: config/src/toml.rs
+expression: result
+---
+HubToml {
+    project: [
+        Project {
+            name: "myapp",
+            repo: "org/myapp",
+            workflow: [
+                GithubPrs {
+                    exclude_authors: [
+                        "dependabot",
+                    ],
+                },
+                GithubIssues {
+                    exclude_labels: [],
+                },
+            ],
+            environment: [
+                Environment {
+                    env: "internal",
+                    gcp_project: None,
+                    gcp_region: None,
+                    service: None,
+                    cluster: Some(
+                        "internal-cluster",
+                    ),
+                    namespace: Some(
+                        "default",
+                    ),
+                    workflow: [
+                        UserActivityLoki {
+                            include_users: [],
+                            exclude_users: [
+                                "bot@example.com",
+                            ],
+                        },
+                        ErrorsLoki {
+                            exclude_users: [],
+                        },
+                        WarningsLoki {
+                            exclude_users: [],
+                        },
+                    ],
+                },
+                Environment {
+                    env: "prod",
+                    gcp_project: Some(
+                        "org-prod",
+                    ),
+                    gcp_region: Some(
+                        "us-central1",
+                    ),
+                    service: Some(
+                        "myapp",
+                    ),
+                    cluster: None,
+                    namespace: None,
+                    workflow: [
+                        UserActivityGcp {
+                            include_users: [
+                                "alice@example.com",
+                            ],
+                            exclude_users: [],
+                        },
+                        ErrorsGcp {
+                            exclude_users: [
+                                "bot@example.com",
+                            ],
+                        },
+                        WarningsGcp {
+                            exclude_users: [],
+                        },
+                    ],
+                },
+            ],
+        },
+    ],
+    monitor: Some(
+        Monitor {
+            workflow: [
+                GithubPrs {
+                    exclude_authors: [
+                        "dependabot",
+                        "renovate",
+                    ],
+                },
+            ],
+        },
+    ),
+}

@@ -28,7 +28,13 @@ tui:
     cargo run -p hub-tui {{_features}}
 
 test:
-    cargo test {{_features}}
+    cargo nextest run {{_features}}
+
+test-update:
+    INSTA_UPDATE=always cargo nextest run {{_features}}
+
+mutants:
+    cargo mutants {{_features}}
 
 lint:
     cargo clippy {{_features}}

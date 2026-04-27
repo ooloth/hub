@@ -103,6 +103,7 @@ pub(crate) fn parse_file(path: &str) -> Result<HubToml> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn empty_file() {
@@ -111,25 +112,31 @@ mod tests {
         assert!(result.monitor.is_none());
     }
 
-    #[test]
-    fn github_prs_no_options() {
-        let result = parse(
+    #[rstest]
+    #[case("errors-gcp", WorkflowConfig::ErrorsGcp { exclude_users: vec![] })]
+    #[case("errors-loki", WorkflowConfig::ErrorsLoki { exclude_users: vec![] })]
+    #[case("github-issues", WorkflowConfig::GithubIssues { exclude_labels: vec![] })]
+    #[case("github-prs", WorkflowConfig::GithubPrs { exclude_authors: vec![] })]
+    #[case("user-activity-gcp", WorkflowConfig::UserActivityGcp { include_users: vec![], exclude_users: vec![] })]
+    #[case("user-activity-loki", WorkflowConfig::UserActivityLoki { include_users: vec![], exclude_users: vec![] })]
+    #[case("warnings-gcp", WorkflowConfig::WarningsGcp { exclude_users: vec![] })]
+    #[case("warnings-loki", WorkflowConfig::WarningsLoki { exclude_users: vec![] })]
+    fn all_workflow_types_parse_with_name_only(
+        #[case] name: &str,
+        #[case] expected: WorkflowConfig,
+    ) {
+        let toml = format!(
             r#"
             [[project]]
             name = "hub"
             repo = "ooloth/hub"
 
             [[project.workflow]]
-            name = "github-prs"
-        "#,
-        )
-        .unwrap();
-        assert_eq!(
-            result.project[0].workflow,
-            vec![WorkflowConfig::GithubPrs {
-                exclude_authors: vec![]
-            }]
+            name = "{name}"
+        "#
         );
+        let result = parse(&toml).unwrap();
+        assert_eq!(result.project[0].workflow, vec![expected]);
     }
 
     #[test]
@@ -263,5 +270,61 @@ mod tests {
         assert_eq!(result.project[0].repo, "ooloth/hub");
         assert_eq!(result.project[0].workflow, vec![]);
         assert_eq!(result.project[0].environment, vec![]);
+    }
+
+    #[test]
+    fn snapshot_full_device_config() {
+        let result = parse(
+            r#"
+            [[project]]
+            name = "myapp"
+            repo = "org/myapp"
+
+            [[project.workflow]]
+            name = "github-prs"
+            exclude_authors = ["dependabot"]
+
+            [[project.workflow]]
+            name = "github-issues"
+
+            [[project.environment]]
+            env = "internal"
+            cluster = "internal-cluster"
+            namespace = "default"
+
+            [[project.environment.workflow]]
+            name = "user-activity-loki"
+            exclude_users = ["bot@example.com"]
+
+            [[project.environment.workflow]]
+            name = "errors-loki"
+
+            [[project.environment.workflow]]
+            name = "warnings-loki"
+
+            [[project.environment]]
+            env = "prod"
+            gcp_project = "org-prod"
+            gcp_region = "us-central1"
+            service = "myapp"
+
+            [[project.environment.workflow]]
+            name = "user-activity-gcp"
+            include_users = ["alice@example.com"]
+
+            [[project.environment.workflow]]
+            name = "errors-gcp"
+            exclude_users = ["bot@example.com"]
+
+            [[project.environment.workflow]]
+            name = "warnings-gcp"
+
+            [[monitor.workflow]]
+            name = "github-prs"
+            exclude_authors = ["dependabot", "renovate"]
+        "#,
+        )
+        .unwrap();
+        insta::assert_debug_snapshot!(result);
     }
 }

@@ -18,7 +18,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: install tools
-        run: cargo install cargo-audit cargo-deny --locked
+        run: cargo install cargo-audit cargo-deny cargo-nextest --locked
 
       - name: fmt
         run: cargo fmt --check
@@ -27,7 +27,7 @@ jobs:
         run: cargo clippy
 
       - name: test
-        run: cargo test
+        run: cargo nextest run
 
       - name: audit
         run: cargo audit
