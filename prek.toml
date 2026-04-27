@@ -1,0 +1,22 @@
+# See: https://prek.j178.dev/configuration/
+# Run `prek install` once after cloning to wire up the git hook.
+# Run `just check` to autofix whatever prek flags.
+
+[[repos]]
+repo = "builtin"
+hooks = [
+  { id = "detect-private-key" },
+  { id = "check-merge-conflict" },
+  { id = "check-case-conflict" },
+  { id = "check-json" },
+  { id = "trailing-whitespace", exclude = "\\.(rs|toml)$" },
+  { id = "end-of-file-fixer", exclude = "\\.(rs|toml)$" },
+]
+
+[[repos]]
+repo = "local"
+hooks = [
+  { id = "fmt", name = "cargo fmt", entry = "cargo fmt --check", language = "system", pass_filenames = false },
+  { id = "taplo", name = "taplo fmt", entry = "taplo fmt --check", language = "system", pass_filenames = false },
+  { id = "clippy", name = "cargo clippy", entry = "just lint", language = "system", pass_filenames = false },
+]

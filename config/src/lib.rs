@@ -12,8 +12,7 @@ impl Config {
     pub fn load() -> Result<Self> {
         let hub_toml = toml::parse_file("hub.toml")?;
         Ok(Self {
-            github_token: std::env::var("GITHUB_TOKEN")
-                .context("GITHUB_TOKEN not set")?,
+            github_token: std::env::var("GITHUB_TOKEN").context("GITHUB_TOKEN not set")?,
             projects: hub_toml.project,
             monitor: hub_toml.monitor,
         })

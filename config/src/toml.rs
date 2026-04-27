@@ -58,11 +58,11 @@ pub struct Monitor {
     pub workflow: Vec<WorkflowConfig>,
 }
 
-pub fn parse(content: &str) -> Result<HubToml> {
+pub(crate) fn parse(content: &str) -> Result<HubToml> {
     toml::from_str(content).context("failed to parse hub.toml")
 }
 
-pub fn parse_file(path: &str) -> Result<HubToml> {
+pub(crate) fn parse_file(path: &str) -> Result<HubToml> {
     match std::fs::read_to_string(path) {
         Ok(content) => parse(&content),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(HubToml {
@@ -86,23 +86,29 @@ mod tests {
 
     #[test]
     fn github_prs_no_options() {
-        let result = parse(r#"
+        let result = parse(
+            r#"
             [[project]]
             name = "hub"
             repo = "ooloth/hub"
 
             [[project.workflow]]
             name = "github-prs"
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
         assert_eq!(
             result.project[0].workflow,
-            vec![WorkflowConfig::GithubPrs { exclude_authors: vec![] }]
+            vec![WorkflowConfig::GithubPrs {
+                exclude_authors: vec![]
+            }]
         );
     }
 
     #[test]
     fn github_prs_with_exclude_authors() {
-        let result = parse(r#"
+        let result = parse(
+            r#"
             [[project]]
             name = "hub"
             repo = "ooloth/hub"
@@ -110,7 +116,9 @@ mod tests {
             [[project.workflow]]
             name = "github-prs"
             exclude_authors = ["dependabot", "renovate"]
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
         assert_eq!(
             result.project[0].workflow,
             vec![WorkflowConfig::GithubPrs {
@@ -121,7 +129,8 @@ mod tests {
 
     #[test]
     fn github_issues_with_exclude_labels() {
-        let result = parse(r#"
+        let result = parse(
+            r#"
             [[project]]
             name = "hub"
             repo = "ooloth/hub"
@@ -129,7 +138,9 @@ mod tests {
             [[project.workflow]]
             name = "github-issues"
             exclude_labels = ["wontfix", "duplicate"]
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
         assert_eq!(
             result.project[0].workflow,
             vec![WorkflowConfig::GithubIssues {
@@ -140,7 +151,8 @@ mod tests {
 
     #[test]
     fn environment_with_gcp_workflow() {
-        let result = parse(r#"
+        let result = parse(
+            r#"
             [[project]]
             name = "my-app"
             repo = "org/my-app"
@@ -153,7 +165,9 @@ mod tests {
             [[project.environment.workflow]]
             name = "user-activity-gcp"
             exclude_users = ["bot@example.com"]
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
         let env = &result.project[0].environment[0];
         assert_eq!(env.env, "prod");
         assert_eq!(env.gcp_project.as_deref(), Some("my-org-prod"));
@@ -168,27 +182,35 @@ mod tests {
 
     #[test]
     fn monitor_with_workflow() {
-        let result = parse(r#"
+        let result = parse(
+            r#"
             [[monitor.workflow]]
             name = "github-prs"
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
         let monitor = result.monitor.unwrap();
         assert_eq!(
             monitor.workflow,
-            vec![WorkflowConfig::GithubPrs { exclude_authors: vec![] }]
+            vec![WorkflowConfig::GithubPrs {
+                exclude_authors: vec![]
+            }]
         );
     }
 
     #[test]
     fn unknown_workflow_name_is_an_error() {
-        let err = parse(r#"
+        let err = parse(
+            r#"
             [[project]]
             name = "hub"
             repo = "ooloth/hub"
 
             [[project.workflow]]
             name = "nonexistent-workflow"
-        "#).unwrap_err();
+        "#,
+        )
+        .unwrap_err();
         assert!(err.to_string().contains("failed to parse hub.toml"));
     }
 
@@ -201,11 +223,14 @@ mod tests {
 
     #[test]
     fn project_no_workflows() {
-        let result = parse(r#"
+        let result = parse(
+            r#"
             [[project]]
             name = "hub"
             repo = "ooloth/hub"
-        "#).unwrap();
+        "#,
+        )
+        .unwrap();
         assert_eq!(result.project.len(), 1);
         assert_eq!(result.project[0].name, "hub");
         assert_eq!(result.project[0].repo, "ooloth/hub");

@@ -1,11 +1,11 @@
 [workspace]
 members = [
-    "domain",
-    "config",
-    "clients",
-    "store",
-    "workflows",
-    "ui/cli",
-    "ui/tui",
+  "domain",
+  "config",
+  "clients",
+  "store",
+  "workflows",
+  "ui/cli",
+  "ui/tui",
 ]
 resolver = "2"
