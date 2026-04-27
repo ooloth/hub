@@ -6,7 +6,7 @@ A personal command center: surfaces what needs attention today across software I
 
 - **Local-only** — runs on each device; each has its own SQLite db
 - **Context-aware** — work laptop shows work software; personal laptop shows personal software
-- **Extensible** — adding a new integration = adding files to `clients/` and `workflows/`; no registration step
+- **Extensible** — adding a new workflow = adding files to `clients/` and `workflows/`; no registration step
 - **Rust** — single binary, CLI entry point today, TUI entry point later
 
 ## Stack

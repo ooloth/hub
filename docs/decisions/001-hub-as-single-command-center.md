@@ -33,7 +33,7 @@ more appropriate, use them. The line moves as the system matures.
 
 ## Consequences
 
-- Home server integrations are a future addition to hub via
+- Home server workflows are a future addition to hub via
   hub-private — not a separate project to maintain.
 - Agency-style loops (scan → triage → fix → PR) are a future capability
   of hub — not a separate product. The current agency-1 repo is a

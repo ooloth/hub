@@ -14,7 +14,7 @@ responsible for: software, infrastructure, home systems, whatever.
 
 The core loop: observe signals → understand what they mean → decide
 what to do → act (or delegate to an agent) → learn from outcomes.
-This loop applies to every domain. The integrations are just different
+This loop applies to every domain. The workflows are just different
 sources feeding the same loop.
 
 The measure of success is not "shows all the things". It's "shows the
@@ -40,45 +40,45 @@ The hardest problem is signal vs noise. Raw counts ("5 PRs, 3 errors")
 are dashboards, not prioritization. Hub aims to answer: *why does this
 need my attention today?*
 
-The design principle: **integrations classify, hub aggregates.**
+The design principle: **workflows classify, hub aggregates.**
 
-Each integration emits items with an urgency tier it defines. A
+Each workflow emits items with an urgency tier it defines. A
 production error is always higher urgency than a PR waiting for review
-— that's domain knowledge the integration holds, not something a
+— that's domain knowledge the workflow holds, not something a
 central system can infer. Hub sorts by `(urgency, age)` and renders.
 
 Urgency tiers: `Critical → High → Medium → Low`
 
 The rule-based approach comes first. AI-assisted scoring is a natural
 later layer when rules feel limiting — but starting with rules forces
-clarity about what "urgent" actually means per integration.
+clarity about what "urgent" actually means per workflow.
 
 ## The "everything hub" failure mode
 
 Tools that show everything become graveyards. You stop checking them
 because they're always full. Hub avoids this by being opinionated:
-items that don't need action today shouldn't appear. Each integration
+items that don't need action today shouldn't appear. Each workflow
 is responsible for filtering its own noise before emitting items.
 
-## Integrations
+## Workflows
 
-Each integration lives in `clients/<name>/` and `workflows/`. Adding
+Each workflow lives in `clients/<name>/` and `workflows/`. Adding
 one means adding files — no central registration.
 
 Current:
 
-| Integration | What it tracks |
+| Workflow | What it tracks |
 |---|---|
 | GitHub PRs | PRs awaiting my review |
 
 Planned:
 
-| Integration | What it tracks |
+| Workflow | What it tracks |
 |---|---|
 | Production errors | Errors/exceptions from logs (Loki, Axiom) |
 | Issues | Linear/Jira tickets assigned to me |
 | CI | Failing runs on watched repos |
-| Home server | Health and availability (private integration) |
+| Home server | Health and availability (private workflow) |
 
 Future candidates: dependency alerts, Notion tasks, calendar conflicts.
 
@@ -86,7 +86,7 @@ Future candidates: dependency alerts, Notion tasks, calendar conflicts.
 
 1. **CLI** — `hub status` prints a ranked list to the terminal. Fast,
    scriptable, works from anywhere. Current state.
-2. **TUI** — a Ratatui terminal dashboard with panels per integration,
+2. **TUI** — a Ratatui terminal dashboard with panels per workflow,
    auto-refresh, and keyboard navigation. The "command center"
    aesthetic. Planned next.
 

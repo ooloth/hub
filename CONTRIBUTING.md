@@ -12,10 +12,10 @@
 
 Hub can run in two modes depending on whether you have access to `hub-private`.
 
-### Standalone (public integrations only)
+### Standalone (public workflows only)
 
 `hub-private` is not required. Without it, hub compiles and runs with public
-integrations only (e.g. GitHub PRs). The `private` feature is silently skipped.
+workflows only (e.g. GitHub PRs). The `private` feature is silently skipped.
 
 ```bash
 git clone <repo> && cd hub
@@ -27,10 +27,10 @@ just check
 
 `.env` and `hub.toml` live as plain local files in the repo root, gitignored.
 
-### With hub-private (adds private integrations)
+### With hub-private (adds private workflows)
 
 If you have access to `hub-private`, it replaces the plain `.env` and `hub.toml`
-files with symlinks into the private repo, and adds private integration code.
+files with symlinks into the private repo, and adds private workflow code.
 
 > If you already created local `.env` or `hub.toml` files above, remove them
 > before running this — `setup-private` will error rather than overwrite them.
@@ -42,7 +42,7 @@ just check
 ```
 
 `<device>` must match a file in `hub-private/devices/<device>.toml`. That file
-controls which integrations are active on this machine — work integrations won't
+controls which workflows are active on this machine — work workflows won't
 activate on the home laptop if they're not listed there.
 
 See [docs/architecture/private-workflows.md](docs/architecture/private-workflows.md)
@@ -67,4 +67,4 @@ just build              # build all crates
 ## Playbooks
 
 - [Add a project](docs/playbooks/add-a-project.md) — add a codebase to your device config
-- [Add a workflow](docs/playbooks/add-a-workflow.md) — implement a new integration end-to-end
+- [Add a workflow](docs/playbooks/add-a-workflow.md) — implement a new workflow end-to-end

@@ -68,7 +68,7 @@ pub mod private;
 ```
 
 `hub-private/clients/src/` is the `private` module for `clients`; it re-exports
-individual integration clients as sub-modules. Same pattern for `workflows`.
+individual clients as sub-modules. Same pattern for `workflows`.
 
 ## Playbooks
 

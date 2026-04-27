@@ -13,4 +13,4 @@ Personal command center. Surfaces what needs attention today across software I'm
 - [Conventions](docs/conventions.md) — Rust patterns used throughout
 - [Playbooks](docs/playbooks/) — step-by-step guides for common tasks
 - [Contributing](CONTRIBUTING.md) — setup and development instructions
-- [Private Integrations](docs/private-integrations.md) — hub-private wiring, symlinks, and Cargo features
+- [Private Workflows](docs/architecture/private-workflows.md) — hub-private wiring, symlinks, and Cargo features
