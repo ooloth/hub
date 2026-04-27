@@ -31,21 +31,29 @@ pub async fn prs_awaiting_review(token: &str) -> Result<Vec<PullRequest>> {
         .await
         .context("failed to parse GitHub response")?;
 
-    Ok(response
+    response
         .items
         .into_iter()
-        .map(|pr| PullRequest {
-            number: pr.number,
-            title: pr.title,
-            repo: repo_name_from_url(&pr.repository_url),
-            url: pr.html_url,
+        .map(|pr| {
+            Ok(PullRequest {
+                number: pr.number,
+                title: pr.title,
+                repo: repo_name_from_url(&pr.repository_url)?,
+                url: pr.html_url,
+            })
         })
-        .collect())
+        .collect()
 }
 
-fn repo_name_from_url(url: &str) -> String {
+fn repo_name_from_url(url: &str) -> Result<String> {
     let mut parts = url.rsplit('/');
-    let repo = parts.next().unwrap_or("");
-    let owner = parts.next().unwrap_or("");
-    format!("{owner}/{repo}")
+    let repo = parts
+        .next()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("missing repo segment in repository_url: {url}"))?;
+    let owner = parts
+        .next()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("missing owner segment in repository_url: {url}"))?;
+    Ok(format!("{owner}/{repo}"))
 }
