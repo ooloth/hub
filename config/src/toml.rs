@@ -103,6 +103,7 @@ pub(crate) fn parse_file(path: &str) -> Result<HubToml> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
     use rstest::rstest;
 
     #[test]
@@ -326,5 +327,39 @@ mod tests {
         )
         .unwrap();
         insta::assert_debug_snapshot!(result);
+    }
+
+    proptest! {
+        // Arbitrary project names and repo slugs survive a parse round-trip.
+        #[test]
+        fn project_fields_round_trip(
+            name in "[a-zA-Z][a-zA-Z0-9_. -]{0,30}",
+            owner in "[a-zA-Z][a-zA-Z0-9_-]{0,15}",
+            repo in "[a-zA-Z][a-zA-Z0-9_-]{0,15}",
+        ) {
+            let toml = format!(
+                "[[project]]\nname = \"{name}\"\nrepo = \"{owner}/{repo}\"\n"
+            );
+            let result = parse(&toml).unwrap();
+            prop_assert_eq!(&result.project[0].name, &name);
+            prop_assert_eq!(&result.project[0].repo, &format!("{owner}/{repo}"));
+        }
+
+        // Arbitrary exclude_users lists survive a parse round-trip.
+        #[test]
+        fn exclude_users_round_trip(
+            users in proptest::collection::vec("[a-zA-Z][a-zA-Z0-9@._-]{0,30}", 0..10),
+        ) {
+            let list = users.iter().map(|u| format!("\"{u}\"")).collect::<Vec<_>>().join(", ");
+            let toml = format!(
+                "[[project]]\nname = \"hub\"\nrepo = \"ooloth/hub\"\n\
+                 [[project.workflow]]\nname = \"errors-gcp\"\nexclude_users = [{list}]\n"
+            );
+            let result = parse(&toml).unwrap();
+            let WorkflowConfig::ErrorsGcp { exclude_users } = &result.project[0].workflow[0] else {
+                panic!("expected ErrorsGcp");
+            };
+            prop_assert_eq!(exclude_users, &users);
+        }
     }
 }

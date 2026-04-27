@@ -42,6 +42,43 @@ just test-update   # INSTA_UPDATE=always cargo nextest run
 Snapshot files live in `src/snapshots/` next to their test module. Commit them alongside
 the test.
 
+## Property-based tests (`proptest`)
+
+Reach for `proptest` when you can state an invariant that should hold for any valid input,
+not just the handful of examples you thought to write. Good targets: round-trip properties
+("any valid name survives parse → serialize → parse unchanged"), structural invariants
+("N projects in always gives N projects out"), and boundary conditions you would not
+enumerate by hand.
+
+Add `proptest` as a `[dev-dependency]` in the relevant crate's `Cargo.toml`.
+
+```rust
+use proptest::prelude::*;
+
+proptest! {
+    #[test]
+    fn project_fields_round_trip(
+        name in "[a-zA-Z][a-zA-Z0-9_. -]{0,30}",
+        owner in "[a-zA-Z][a-zA-Z0-9_-]{0,15}",
+        repo  in "[a-zA-Z][a-zA-Z0-9_-]{0,15}",
+    ) {
+        let toml = format!("[[project]]\nname = \"{name}\"\nrepo = \"{owner}/{repo}\"\n");
+        let result = parse(&toml).unwrap();
+        prop_assert_eq!(&result.project[0].name, &name);
+        prop_assert_eq!(&result.project[0].repo, &format!("{owner}/{repo}"));
+    }
+}
+```
+
+Use regex strategies (`"[a-z][a-z0-9-]{0,15}"`) to constrain generated strings to valid
+inputs when the function under test has preconditions (e.g. valid TOML, no embedded
+quotes). Use `proptest::collection::vec(strategy, range)` to generate variable-length
+lists.
+
+When proptest finds a failing case it writes a minimal reproduction to
+`proptest-regressions/` (gitignored). Re-running the test will replay the saved case
+before generating new ones.
+
 ## Mutation testing (`cargo-mutants`)
 
 Run `cargo-mutants` to verify that your test suite actually catches logic errors — it

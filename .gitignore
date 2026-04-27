@@ -1,5 +1,6 @@
 # Theirs
 target/
+proptest-regressions/
 
 # Mine
 .env
