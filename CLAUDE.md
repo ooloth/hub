@@ -11,17 +11,17 @@ A personal command center: surfaces what needs attention today across software I
 
 ## Stack
 
-| Concern | Choice |
-|---|---|
-| Language | Rust |
-| Async runtime | tokio |
-| CLI | clap (derive) |
-| TUI | ratatui (planned) |
-| HTTP clients | reqwest |
-| SQLite | rusqlite (bundled) or sqlx |
-| Serialization | serde |
-| Secrets | 1Password CLI (`op run`) |
-| Error handling | anyhow |
+| Concern        | Choice                     |
+| -------------- | -------------------------- |
+| Language       | Rust                       |
+| Async runtime  | tokio                      |
+| CLI            | clap (derive)              |
+| TUI            | ratatui (planned)          |
+| HTTP clients   | reqwest                    |
+| SQLite         | rusqlite (bundled) or sqlx |
+| Serialization  | serde                      |
+| Secrets        | 1Password CLI (`op run`)   |
+| Error handling | anyhow                     |
 
 ## Project Structure
 
@@ -39,15 +39,40 @@ docs/        # architecture, conventions, decisions
 ```
 
 Import direction (never import rightward's left neighbor):
+
 ```
 ui/ → workflows/ → clients/ → domain/
                  → store/   → domain/
      config/               → domain/
 ```
 
+## Docs by Area
+
+### Conventions and architecture
+
+| Doc                                      | Covers                                                       |
+| ---------------------------------------- | ------------------------------------------------------------ |
+| `docs/conventions/code-style.md`         | Easy Mode Rust — error handling, owned types, cloning, async |
+| `docs/conventions/assertions.md`         | When to use `assert!` vs `Result`                            |
+| `docs/conventions/testing.md`            | Unit tests, rstest, insta, proptest, cargo-mutants           |
+| `docs/architecture/secrets.md`           | 1Password → op run → env var model                           |
+| `docs/architecture/private-workflows.md` | Two-repo model for private workflows                         |
+| `clients/README.md`                      | reqwest pattern for HTTP clients                             |
+| `store/README.md`                        | rusqlite pattern for SQLite access                           |
+| `ui/cli/README.md`                       | clap derive API for CLI commands                             |
+
+### Playbooks
+
+| Doc                                                     | Covers                                      |
+| ------------------------------------------------------- | ------------------------------------------- |
+| `docs/playbooks/add-a-workflow.md`                      | Adding a new workflow end to end            |
+| `docs/playbooks/add-a-project.md`                       | Adding a project to a device config         |
+| `docs/playbooks/add-a-private-workflow.md`              | Adding a workflow to hub-private            |
+| `docs/playbooks/set-up-private-workflows-repository.md` | First-time or recovery setup of hub-private |
+
 ## Rust Conventions
 
-See `docs/conventions.md` for full rationale. Hard rules for agents:
+See `docs/conventions/code-style.md` for full rationale. Hard rules for agents:
 
 - **Error handling**: `anyhow` only. No `thiserror`. `?` everywhere. `.context("msg")` for human-readable chains.
 - **Owned types**: structs hold `String`/`Vec<T>`. Functions that only read take `&str`/`&[T]`. Return owned values, not references.
