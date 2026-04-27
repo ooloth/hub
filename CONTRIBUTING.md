@@ -60,3 +60,8 @@ just lint               # run clippy
 just test               # run all tests
 just build              # build all crates
 ```
+
+## Playbooks
+
+- [Add a project](docs/playbooks/add-a-project.md) — add a codebase to your device config
+- [Add a workflow](docs/playbooks/add-a-workflow.md) — implement a new integration end-to-end

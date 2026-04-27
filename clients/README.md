@@ -3,7 +3,7 @@
 External API wrappers. The only code that makes network calls.
 
 **Rules:**
-- One subdirectory per external service (github/, notion/, plex/, etc.)
+- One file or subdirectory per external service
 - Adapts external API responses into domain types
 - Never imports from store or workflows
 
