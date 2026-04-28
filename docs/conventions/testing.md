@@ -117,7 +117,7 @@ there is logic in the workflow that belongs in `domain/` instead. Move it there
 and test it directly.
 
 For the workflow layer, the practical substitute for unit tests is a scheduled
-smoke run — a cron job or CI schedule that runs `just op status` daily or weekly
+smoke run — a cron job or CI schedule that runs `just status` daily or weekly
 and alerts on failure. This catches API drift (renamed fields, auth changes,
 deprecated endpoints) before you discover it when you actually need hub to work.
 `main() -> Result<()>` already exits non-zero on any error, so the exit code is

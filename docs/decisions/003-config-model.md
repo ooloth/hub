@@ -115,9 +115,8 @@ machine. When hub-private is in use, per-device configs live in
 
 ## Consequences
 
-- The `config` crate will parse `hub.toml` and read env vars, delivering a
-  single typed `Config` struct downstream. Currently only env var loading is
-  implemented; `hub.toml` parsing is next.
+- The `config` crate parses `hub.toml` and reads env vars, delivering a
+  single typed `Config` struct downstream.
 - `hub.toml.example` and `.env.example` are committed to the repo and kept
   up to date as workflows are added.
 - A project whose required env vars are absent produces no items — clean
