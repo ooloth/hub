@@ -52,7 +52,7 @@ for the full model, how to add new devices, and how to add new private workflows
 
 ```bash
 just check              # verify workspace compiles
-just op status          # run with secrets injected
+just status             # run with secrets injected
 ```
 
 ## Common tasks
