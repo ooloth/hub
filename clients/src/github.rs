@@ -1,14 +1,14 @@
 use anyhow::{Context, Result};
-use domain::{PullRequest, RepoSlug};
+use domain::{Issue, PullRequest, RepoSlug};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
 struct SearchResponse {
-    items: Vec<GithubPr>,
+    items: Vec<SearchItem>,
 }
 
 #[derive(Deserialize)]
-struct GithubPr {
+struct SearchItem {
     number: u64,
     title: String,
     html_url: String,
@@ -16,9 +16,41 @@ struct GithubPr {
 }
 
 pub async fn prs_awaiting_review(token: &str) -> Result<Vec<PullRequest>> {
-    let response: SearchResponse = reqwest::Client::new()
+    let response: SearchResponse = search(token, "is:open is:pr review-requested:@me").await?;
+    response
+        .items
+        .into_iter()
+        .map(|item| {
+            Ok(PullRequest {
+                number: item.number,
+                title: item.title,
+                repo: repo_slug_from_url(&item.repository_url)?,
+                url: item.html_url,
+            })
+        })
+        .collect()
+}
+
+pub async fn issues_assigned_to_me(token: &str) -> Result<Vec<Issue>> {
+    let response: SearchResponse = search(token, "is:open is:issue assignee:@me").await?;
+    response
+        .items
+        .into_iter()
+        .map(|item| {
+            Ok(Issue {
+                number: item.number,
+                title: item.title,
+                repo: repo_slug_from_url(&item.repository_url)?,
+                url: item.html_url,
+            })
+        })
+        .collect()
+}
+
+async fn search(token: &str, query: &str) -> Result<SearchResponse> {
+    reqwest::Client::new()
         .get("https://api.github.com/search/issues")
-        .query(&[("q", "is:open is:pr review-requested:@me")])
+        .query(&[("q", query)])
         .bearer_auth(token)
         .header("User-Agent", "hub-cli")
         .header("Accept", "application/vnd.github.v3+json")
@@ -29,20 +61,7 @@ pub async fn prs_awaiting_review(token: &str) -> Result<Vec<PullRequest>> {
         .context("GitHub API returned an error")?
         .json()
         .await
-        .context("failed to parse GitHub response")?;
-
-    response
-        .items
-        .into_iter()
-        .map(|pr| {
-            Ok(PullRequest {
-                number: pr.number,
-                title: pr.title,
-                repo: repo_slug_from_url(&pr.repository_url)?,
-                url: pr.html_url,
-            })
-        })
-        .collect()
+        .context("failed to parse GitHub response")
 }
 
 // GitHub repository_url: https://api.github.com/repos/{owner}/{repo}

@@ -25,6 +25,14 @@ async fn main() -> Result<()> {
             for pr in prs {
                 println!("  {}  {} (#{})  {}", pr.repo, pr.title, pr.number, pr.url);
             }
+            let issues = &report.github_issues;
+            println!("github issues ({})", issues.len());
+            for issue in issues {
+                println!(
+                    "  {}  {} (#{})  {}",
+                    issue.repo, issue.title, issue.number, issue.url
+                );
+            }
         }
     }
     Ok(())

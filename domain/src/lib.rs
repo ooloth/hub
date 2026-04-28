@@ -18,3 +18,10 @@ pub struct PullRequest {
     pub repo: RepoSlug,
     pub url: String,
 }
+
+pub struct Issue {
+    pub number: u64,
+    pub title: String,
+    pub repo: RepoSlug,
+    pub url: String,
+}
