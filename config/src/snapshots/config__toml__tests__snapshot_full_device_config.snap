@@ -15,6 +15,7 @@ HubToml {
                 },
                 GithubIssues {
                     exclude_labels: [],
+                    assigned_only: false,
                 },
             ],
             environment: [

@@ -42,6 +42,8 @@ pub enum WorkflowConfig {
     GithubIssues {
         #[serde(default)]
         exclude_labels: Vec<String>,
+        #[serde(default)]
+        assigned_only: bool,
     },
     #[serde(rename = "user-activity-gcp")]
     UserActivityGcp {
@@ -116,7 +118,7 @@ mod tests {
     #[rstest]
     #[case("errors-gcp", WorkflowConfig::ErrorsGcp { exclude_users: vec![] })]
     #[case("errors-loki", WorkflowConfig::ErrorsLoki { exclude_users: vec![] })]
-    #[case("github-issues", WorkflowConfig::GithubIssues { exclude_labels: vec![] })]
+    #[case("github-issues", WorkflowConfig::GithubIssues { exclude_labels: vec![], assigned_only: false })]
     #[case("github-prs", WorkflowConfig::GithubPrs { exclude_authors: vec![] })]
     #[case("user-activity-gcp", WorkflowConfig::UserActivityGcp { include_users: vec![], exclude_users: vec![] })]
     #[case("user-activity-loki", WorkflowConfig::UserActivityLoki { include_users: vec![], exclude_users: vec![] })]
@@ -180,6 +182,7 @@ mod tests {
             result.project[0].workflow,
             vec![WorkflowConfig::GithubIssues {
                 exclude_labels: vec!["wontfix".into(), "duplicate".into()],
+                assigned_only: false,
             }]
         );
     }

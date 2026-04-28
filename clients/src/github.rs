@@ -15,8 +15,12 @@ struct SearchItem {
     repository_url: String,
 }
 
-pub async fn prs_awaiting_review(token: &str) -> Result<Vec<PullRequest>> {
-    let response: SearchResponse = search(token, "is:open is:pr review-requested:@me").await?;
+pub async fn prs_awaiting_review(token: &str, repos: &[String]) -> Result<Vec<PullRequest>> {
+    if repos.is_empty() {
+        return Ok(vec![]);
+    }
+    let query = scoped_query("is:open is:pr review-requested:@me", repos);
+    let response: SearchResponse = search(token, &query).await?;
     response
         .items
         .into_iter()
@@ -31,8 +35,17 @@ pub async fn prs_awaiting_review(token: &str) -> Result<Vec<PullRequest>> {
         .collect()
 }
 
-pub async fn issues_assigned_to_me(token: &str) -> Result<Vec<Issue>> {
-    let response: SearchResponse = search(token, "is:open is:issue assignee:@me").await?;
+pub async fn issues(token: &str, repos: &[String], assigned_only: bool) -> Result<Vec<Issue>> {
+    if repos.is_empty() {
+        return Ok(vec![]);
+    }
+    let base = if assigned_only {
+        "is:open is:issue assignee:@me"
+    } else {
+        "is:open is:issue"
+    };
+    let query = scoped_query(base, repos);
+    let response: SearchResponse = search(token, &query).await?;
     response
         .items
         .into_iter()
@@ -45,6 +58,15 @@ pub async fn issues_assigned_to_me(token: &str) -> Result<Vec<Issue>> {
             })
         })
         .collect()
+}
+
+fn scoped_query(base: &str, repos: &[String]) -> String {
+    let repo_filters = repos
+        .iter()
+        .map(|r| format!("repo:{r}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    format!("{base} {repo_filters}")
 }
 
 async fn search(token: &str, query: &str) -> Result<SearchResponse> {
