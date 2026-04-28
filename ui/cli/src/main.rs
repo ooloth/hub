@@ -20,7 +20,11 @@ async fn main() -> Result<()> {
         Commands::Status => {
             let config = config::Config::load()?;
             let report = workflows::status::run(&config.github_token).await?;
-            println!("github prs   {}", report.github_prs);
+            let prs = &report.github_prs;
+            println!("github prs ({})", prs.len());
+            for pr in prs {
+                println!("  {}  {} (#{})  {}", pr.repo, pr.title, pr.number, pr.url);
+            }
         }
     }
     Ok(())

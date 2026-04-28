@@ -520,6 +520,7 @@ dependencies = [
  "anyhow",
  "clap",
  "config",
+ "domain",
  "tokio",
  "workflows",
 ]

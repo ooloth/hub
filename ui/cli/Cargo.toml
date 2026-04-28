@@ -14,5 +14,6 @@ path = "src/main.rs"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 config = { path = "../../config" }
+domain = { path = "../../domain" }
 tokio = { version = "1", features = ["full"] }
 workflows = { path = "../../workflows" }
