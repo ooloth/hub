@@ -9,9 +9,22 @@ urgency, inferring what action is warranted). Rules handle the simple
 cases; agents handle the cases that require judgment, inference, or
 synthesis across multiple signals.
 
+There are two fundamentally different kinds of agent capability, and
+they must not be conflated:
+
+- **Background automation** — unattended, runs as part of a workflow,
+  single API call, structured output. Hub calls the LLM the same way
+  it calls any external API.
+- **Interactive investigation** — human in the loop, multi-turn,
+  iterative querying. Claude makes N queries, observes output, forms a
+  hypothesis, queries again. A single API call cannot replicate this;
+  it is a conversation, not a function.
+
 ## Decision
 
-Agent skills live in an `agents/` crate alongside `clients/`. The
+### Background automation → `agents/` crate
+
+Automation skills live in an `agents/` crate alongside `clients/`. The
 Anthropic API is treated as another external service — `agents/` is
 its adapter, the same way `clients/github/` adapts the GitHub API.
 
@@ -33,22 +46,40 @@ explicit: everything in `clients/` is deterministic and testable with
 fixed inputs; everything in `agents/` involves LLM judgment and
 requires different testing strategies (snapshot tests, evals).
 
+### Interactive investigation → Claude Code skills in hub's repo
+
+Investigation skills live in hub's `.claude/skills/` directory. These
+are Claude Code skills — multi-turn conversations where Claude uses CLI
+tools (`logcli`, `gh`, etc.) to query data iteratively, form
+hypotheses, and validate them. A Rust function calling the API once
+cannot replicate this loop.
+
+Hub's unique contribution to these skills is **context**. Hub knows
+(from `hub.toml`) which Loki endpoint serves a project's production
+logs, which LogQL query selects the right app, what the project is
+called. A skill that reads this context requires zero user setup to
+invoke correctly.
+
+```
+hub status                  # surfaces: "prod: 12 errors in last hour"
+claude /loki-investigate    # investigates: reads hub.toml for endpoint
+                            # + query, then iterates until diagnosed
+```
+
+See [Decision 006](006-hub-as-skill-library.md) for the full model.
+
 ## Consequences
 
-- Workflows decide when to use an agent vs. pure logic. The threshold:
-  use rules when the classification is clear and stable; use agents
-  when judgment, context, or synthesis across signals is needed.
+- Automation skills in `agents/` are called by workflows, run
+  unattended, and must handle degraded mode gracefully (fall back to
+  rule-based logic if the LLM call fails).
 - `agents/` imports `domain/` for input/output types, same as
   `clients/`. It does not import `clients/` or `store/`.
-- Agent calls are async, fallible, and slower than deterministic calls.
-  Workflows that use them should handle degraded-mode gracefully (fall
-  back to rule-based scoring if the LLM call fails).
-- Skills are versioned with the hub codebase. Prompt changes are
-  tracked in git alongside the code that calls them.
-- Not all skills belong in hub. The distinction: **automation skills**
-  (called programmatically by hub's workflows, hub-specific inputs and
-  outputs) live in `agents/`. **Craft skills** (drafting, reviewing,
-  analyzing — useful interactively across any project) live globally in
-  `~/.claude/skills/` and are honed there independently of hub. Hub
-  can invoke global skills too; the point is that general-purpose
-  skills shouldn't be locked inside hub's codebase.
+- Investigation skills in `.claude/skills/` are invoked by the user,
+  not by workflows. They are conversations, not function calls.
+- Craft skills (drafting, reviewing, analyzing — useful interactively
+  across any project) live globally in `~/.claude/skills/` and are
+  honed independently of hub. They are not hub-aware.
+- A skill that proves durable and valuable as an interactive
+  investigation is a candidate for later promotion to `agents/`
+  automation — but that promotion is a deliberate step, not assumed.

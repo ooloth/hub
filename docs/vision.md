@@ -82,13 +82,47 @@ Planned:
 
 Future candidates: dependency alerts, Notion tasks, calendar conflicts.
 
+## Investigation
+
+Surfacing a signal is not the same as understanding it. Hub goes one
+level deeper: when a signal warrants it, an investigation skill can
+diagnose what's happening.
+
+Investigation skills are Claude Code skills that live in hub's
+`.claude/skills/` directory. They are multi-turn conversations — Claude
+uses CLI tools (`logcli`, `gh`, etc.) to query data iteratively,
+forming hypotheses and validating them, until it can produce a
+diagnosis. This is distinct from the `agents/` crate, which handles
+single-call, unattended background automation.
+
+Hub's role in this layer is **context provider**. Hub knows (from
+`hub.toml`) the Loki endpoint for a project's production environment,
+the LogQL query that selects the right app, the project name. A skill
+that reads this context can be invoked with zero setup — no endpoint
+to look up, no query to compose from scratch. The investigation starts
+immediately.
+
+```
+hub status                # "prod: 12 errors in last hour (3× baseline)"
+claude /loki-investigate  # iterates until diagnosed; hub.toml provides context
+```
+
+Hub's repo is also the right home for these skills — not each project's
+repo. A skill added to hub is immediately available for every project
+configured in `hub.toml`, without copy-pasting it across repos.
+
+See [Decision 006](decisions/006-hub-as-skill-library.md) for the full model.
+
 ## UI evolution
 
 1. **CLI** — `hub status` prints a ranked list to the terminal. Fast,
    scriptable, works from anywhere. Current state.
 2. **TUI** — a Ratatui terminal dashboard with panels per workflow,
    auto-refresh, and keyboard navigation. The "command center"
-   aesthetic. Planned next.
+   aesthetic. Planned next. The TUI is not just a display: it is a
+   place to zoom in. You see everything you're responsible for at a
+   glance, then press a key on a signal to launch the investigation
+   skill for it — with context pre-loaded from hub's config.
 
 Both entry points share the same workflows and data layer. The UI is a
 render target, not where logic lives.
@@ -99,5 +133,5 @@ render target, not where logic lives.
 - A team tool (single-user, single-device, no sharing)
 - A notification system (pull, not push — you open hub when you want
   to triage, it doesn't interrupt you)
-- A replacement for the source tools (it surfaces items; you act on
-  them in GitHub, your log dashboard, etc.)
+- A passive display — hub is a place to act, not just observe; signals
+  link to the investigation and action tools that resolve them
