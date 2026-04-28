@@ -1,76 +1,47 @@
 use anyhow::Result;
-use config::{toml::WorkflowConfig, Config};
+use config::Config;
+use domain::{Issue, PullRequest};
 
 pub async fn run(config: &Config) -> Result<()> {
-    let pr_repos: Vec<String> = config
-        .projects
-        .iter()
-        .filter(|p| {
-            p.workflow
-                .iter()
-                .any(|w| matches!(w, WorkflowConfig::GithubPrs { .. }))
-        })
-        .map(|p| p.repo.clone())
-        .collect();
-
-    let issue_repos: Vec<String> = config
-        .projects
-        .iter()
-        .filter_map(|p| {
-            p.workflow.iter().find_map(|w| {
-                if let WorkflowConfig::GithubIssues {
-                    assigned_only: false,
-                    ..
-                } = w
-                {
-                    Some(p.repo.clone())
-                } else {
-                    None
-                }
-            })
-        })
-        .collect();
-
-    let assigned_issue_repos: Vec<String> = config
-        .projects
-        .iter()
-        .filter_map(|p| {
-            p.workflow.iter().find_map(|w| {
-                if let WorkflowConfig::GithubIssues {
-                    assigned_only: true,
-                    ..
-                } = w
-                {
-                    Some(p.repo.clone())
-                } else {
-                    None
-                }
-            })
-        })
-        .collect();
-
     let report = workflows::status::run(
         &config.github_token,
-        &pr_repos,
-        &issue_repos,
-        &assigned_issue_repos,
+        &config.github_pr_repos(),
+        &config.github_open_issue_repos(),
+        &config.github_assigned_issue_repos(),
     )
     .await?;
 
-    let prs = &report.github_prs;
-    println!("github prs ({})", prs.len());
-    for pr in prs {
-        println!("  {}  {} (#{})  {}", pr.repo, pr.title, pr.number, pr.url);
-    }
-
-    let issues = &report.github_issues;
-    println!("github issues ({})", issues.len());
-    for issue in issues {
-        println!(
-            "  {}  {} (#{})  {}",
-            issue.repo, issue.title, issue.number, issue.url
-        );
-    }
+    print_section("github prs", &report.github_prs);
+    print_section("github issues", &report.github_issues);
 
     Ok(())
+}
+
+trait PrintLine {
+    fn print_line(&self);
+}
+
+impl PrintLine for PullRequest {
+    fn print_line(&self) {
+        println!(
+            "  {}  {} (#{})  {}",
+            self.repo, self.title, self.number, self.url
+        );
+    }
+}
+
+impl PrintLine for Issue {
+    fn print_line(&self) {
+        println!(
+            "  {}  {} (#{})  {}",
+            self.repo, self.title, self.number, self.url
+        );
+    }
+}
+
+fn print_section<T: PrintLine>(label: &str, items: &[T]) {
+    println!("{label} ({})", items.len());
+    for item in items {
+        item.print_line();
+    }
 }

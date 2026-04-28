@@ -17,8 +17,10 @@ pub async fn run(
         clients::github::issues(github_token, issue_repos, false),
         clients::github::issues(github_token, assigned_issue_repos, true),
     );
+
     let mut github_issues = issues?;
     github_issues.extend(assigned_issues?);
+
     Ok(StatusReport {
         github_prs: prs?,
         github_issues,
