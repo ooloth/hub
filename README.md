@@ -6,6 +6,8 @@ Personal command center. Surfaces what needs attention today across software I'm
 - Context-aware — work laptop tracks work software; personal laptop tracks personal software
 - Rust — single binary, CLI today, TUI planned
 
+The goal: a single terminal window showing everything I'm responsible for across my software, ranked by what needs attention. When something warrants a closer look, I can launch an agent investigation from there — it queries the logs, reads the code, and tells me what's happening. I act on it and move on.
+
 ## Docs
 
 - [Vision](docs/vision.md) — what this is, why, and where it's going
