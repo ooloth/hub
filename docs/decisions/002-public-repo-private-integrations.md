@@ -15,22 +15,24 @@ on employer policies.
 
 ## Decision
 
-Hub is a public repo. Sensitive workflows live in a private companion
-repo (`hub-private`) and are symlinked into gitignored directories in hub:
+Hub is a public repo. Sensitive workflows and investigation skills live in a
+private companion repo (`hub-private`) and are symlinked into gitignored
+directories in hub:
 
 ```
 hub/clients/src/private/   →  symlink  →  hub-private/clients/src/
 hub/workflows/src/private/  →  symlink  →  hub-private/workflows/src/
+hub/.claude/skills/<name>.md  →  symlink  →  hub-private/.claude/skills/<name>.md
 ```
 
 `hub-private` is a private GitHub repo with the same owner. It is cloned
 alongside hub on each device and linked via a setup script. This keeps
-sensitive workflows version-controlled and recoverable without ever
+sensitive workflows and skills version-controlled and recoverable without ever
 appearing in hub's public history.
 
-The public repo shows only workflows appropriate to share: GitHub,
+The public repo shows only workflows and skills appropriate to share: GitHub,
 Linear, Loki, Datadog, and similar professional tooling. The private
-workflows are invisible to the public codebase but fully functional
+equivalents are invisible to the public codebase but fully functional
 locally.
 
 ## Consequences

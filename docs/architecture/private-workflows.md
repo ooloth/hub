@@ -1,8 +1,8 @@
-# Private Workflows
+# Private Workflows and Skills
 
-Hub is a public repo. Some workflows connect to systems you'd rather not name
-publicly — they live in a separate private repo (`hub-private`) that gets wired into
-this workspace via symlinks and a Cargo feature flag.
+Hub is a public repo. Some workflows and investigation skills connect to systems
+you'd rather not name publicly — they live in a separate private repo (`hub-private`)
+that gets wired into this workspace via symlinks and a Cargo feature flag.
 
 ## The Two Repos
 
@@ -12,6 +12,7 @@ this workspace via symlinks and a Cargo feature flag.
   hub-private/       ← private companion repo
     clients/src/     ← private API clients
     workflows/src/   ← private workflows
+    .claude/skills/  ← private investigation skills
     devices/         ← per-device configuration
       home-laptop.toml
       work-laptop.toml
@@ -28,6 +29,11 @@ hub/workflows/src/private →  hub-private/workflows/src/
 hub/.env                  →  hub-private/.env
 hub/hub.toml              →  hub-private/devices/<device>.toml
 ```
+
+Private skills follow the same principle: skill files that reference internal
+endpoints or queries live in `hub-private/.claude/skills/` and are symlinked
+individually into `hub/.claude/skills/`. See the
+[add-a-skill playbook](../playbooks/add-a-skill.md) for the full steps.
 
 The first two are gitignored in hub. `.env` and `hub.toml` are also gitignored,
 so none of the symlinks are ever committed to the public repo.
