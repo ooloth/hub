@@ -10,7 +10,7 @@ op +ARGS:
     op run --env-file=.env -- just {{ARGS}}
 
 status:
-    cargo run -p hub-cli {{_features}} -- status
+    op run --env-file=.env -- cargo run -p hub-cli {{_features}} -- status
 
 check:
     taplo fmt
