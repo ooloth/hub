@@ -17,6 +17,7 @@ pub struct PullRequest {
     pub title: String,
     pub repo: RepoSlug,
     pub url: String,
+    pub age_days: u64,
 }
 
 pub struct Issue {
@@ -24,4 +25,6 @@ pub struct Issue {
     pub title: String,
     pub repo: RepoSlug,
     pub url: String,
+    pub age_days: u64,
+    pub labels: Vec<String>,
 }

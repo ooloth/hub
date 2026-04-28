@@ -8,6 +8,7 @@ private = []
 
 [dependencies]
 anyhow = "1"
+chrono = "0.4"
 domain = { path = "../domain" }
 reqwest = { version = "0.12", features = ["json"] }
 serde = { version = "1", features = ["derive"] }

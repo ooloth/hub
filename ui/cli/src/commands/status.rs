@@ -24,18 +24,30 @@ trait PrintLine {
 impl PrintLine for PullRequest {
     fn print_line(&self) {
         println!(
-            "  {}  {} (#{})  {}",
-            self.repo, self.title, self.number, self.url
+            "  {}  {} (#{})  {}d  {}",
+            self.repo, self.title, self.number, self.age_days, self.url
         );
     }
 }
 
 impl PrintLine for Issue {
     fn print_line(&self) {
-        println!(
-            "  {}  {} (#{})  {}",
-            self.repo, self.title, self.number, self.url
-        );
+        if self.labels.is_empty() {
+            println!(
+                "  {}  {} (#{})  {}d  {}",
+                self.repo, self.title, self.number, self.age_days, self.url
+            );
+        } else {
+            println!(
+                "  {}  {} (#{})  {}d  [{}]  {}",
+                self.repo,
+                self.title,
+                self.number,
+                self.age_days,
+                self.labels.join(", "),
+                self.url
+            );
+        }
     }
 }
 

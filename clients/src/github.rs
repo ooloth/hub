@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use chrono::Utc;
 use domain::{Issue, PullRequest, RepoSlug};
 use serde::Deserialize;
 
@@ -13,6 +14,21 @@ struct SearchItem {
     title: String,
     html_url: String,
     repository_url: String,
+    created_at: String,
+    labels: Vec<Label>,
+}
+
+#[derive(Deserialize)]
+struct Label {
+    name: String,
+}
+
+fn age_days(created_at: &str) -> u64 {
+    let Ok(created) = chrono::DateTime::parse_from_rfc3339(created_at) else {
+        return 0;
+    };
+    let days = (Utc::now() - created.to_utc()).num_days();
+    days.max(0) as u64
 }
 
 pub async fn prs_awaiting_review(token: &str, repos: &[String]) -> Result<Vec<PullRequest>> {
@@ -30,6 +46,7 @@ pub async fn prs_awaiting_review(token: &str, repos: &[String]) -> Result<Vec<Pu
                 title: item.title,
                 repo: repo_slug_from_url(&item.repository_url)?,
                 url: item.html_url,
+                age_days: age_days(&item.created_at),
             })
         })
         .collect()
@@ -55,6 +72,8 @@ pub async fn issues(token: &str, repos: &[String], assigned_only: bool) -> Resul
                 title: item.title,
                 repo: repo_slug_from_url(&item.repository_url)?,
                 url: item.html_url,
+                age_days: age_days(&item.created_at),
+                labels: item.labels.into_iter().map(|l| l.name).collect(),
             })
         })
         .collect()
