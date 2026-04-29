@@ -20,6 +20,14 @@ jobs:
       - name: install tools
         run: cargo install cargo-audit cargo-deny cargo-nextest --locked
 
+      # rustfmt resolves mod declarations even behind #[cfg(feature = "private")],
+      # so it fails if the private symlinks (from hub-private) aren't present.
+      # Empty stubs satisfy the resolver; the feature gate keeps them out of compilation.
+      - name: create private module stubs
+        run: |
+          mkdir -p clients/src/private workflows/src/private
+          touch clients/src/private/mod.rs workflows/src/private/mod.rs
+
       - name: fmt
         run: cargo fmt --check
 
