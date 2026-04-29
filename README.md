@@ -1,7 +1,7 @@
 # Hub
 
 My personal command center. A CLI for triggering queries and agent investigations across projects.
-Agent investigations output well-formed issues for other agents to act on. Building towards a TUI
+Agent investigations result in well-formed issues other agents can act on. Building towards a TUI
 gathering everything I'm responsible for across all my software into one terminal window, ranked
 by what needs attention.
 
