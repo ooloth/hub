@@ -2,7 +2,7 @@ use anyhow::Result;
 use config::Config;
 use domain::{Issue, PullRequest};
 
-pub async fn run(config: &Config) -> Result<()> {
+pub(crate) async fn run(config: &Config) -> Result<()> {
     let report = workflows::status::run(
         &config.github_token,
         &config.github_pr_repos(),
