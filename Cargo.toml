@@ -10,13 +10,18 @@ members = [
 ]
 resolver = "2"
 
-[workspace.lints.rust]
-unsafe_code = "forbid"
-unreachable_pub = "warn"
-
 [workspace.lints.clippy]
-unwrap_used = "warn"
-panic = "warn"
 cast_sign_loss = "warn"
 missing_errors_doc = "warn"
 missing_panics_doc = "warn"
+panic = "warn"
+unwrap_used = "warn"
+
+[workspace.lints.rust]
+missing_debug_implementations = "deny"
+unreachable_pub = "warn"
+unsafe_code = "forbid"
+unused_results = "deny"
+
+[workspace.lints.rustdoc]
+broken_intra_doc_links = "deny"
