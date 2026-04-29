@@ -1,7 +1,7 @@
 [bans]
-# Warn on duplicate crate versions rather than hard-failing.
-# Tighten to "deny" once the dependency tree stabilises.
-multiple-versions = "warn"
+multiple-versions = "deny"
+# Transitive conflicts from reqwest's TLS and getrandom's WASM targets — not controllable without upstream changes.
+skip = [{ name = "core-foundation" }, { name = "wit-bindgen" }]
 
 [advisories]
 version = 2

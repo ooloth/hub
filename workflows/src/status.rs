@@ -6,6 +6,10 @@ pub struct StatusReport {
     pub github_issues: Vec<Issue>,
 }
 
+/// Fetches all status data concurrently and returns a combined report.
+///
+/// # Errors
+/// Returns an error if any GitHub API call fails.
 pub async fn run(
     github_token: &str,
     pr_repos: &[String],

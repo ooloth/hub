@@ -9,3 +9,10 @@ members = [
   "ui/tui",
 ]
 resolver = "2"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+panic = "warn"
+cast_sign_loss = "warn"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"

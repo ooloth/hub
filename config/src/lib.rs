@@ -9,6 +9,10 @@ pub struct Config {
 }
 
 impl Config {
+    /// Loads config from `hub.toml` and environment variables.
+    ///
+    /// # Errors
+    /// Returns an error if `hub.toml` is missing or malformed, or if `GITHUB_TOKEN` is not set.
     pub fn load() -> Result<Self> {
         let hub_toml = toml::parse_file("hub.toml")?;
         Ok(Self {

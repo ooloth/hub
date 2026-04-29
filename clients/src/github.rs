@@ -28,9 +28,13 @@ fn age_days(created_at: &str) -> u64 {
         return 0;
     };
     let days = (Utc::now() - created.to_utc()).num_days();
-    days.max(0) as u64
+    days.max(0).cast_unsigned()
 }
 
+/// Returns PRs across the given repos where review has been requested from the authenticated user.
+///
+/// # Errors
+/// Returns an error if the GitHub API is unreachable or returns a non-2xx response.
 pub async fn prs_awaiting_review(token: &str, repos: &[String]) -> Result<Vec<PullRequest>> {
     if repos.is_empty() {
         return Ok(vec![]);
@@ -52,6 +56,10 @@ pub async fn prs_awaiting_review(token: &str, repos: &[String]) -> Result<Vec<Pu
         .collect()
 }
 
+/// Returns open issues across the given repos, optionally filtered to only assigned issues.
+///
+/// # Errors
+/// Returns an error if the GitHub API is unreachable or returns a non-2xx response.
 pub async fn issues(token: &str, repos: &[String], assigned_only: bool) -> Result<Vec<Issue>> {
     if repos.is_empty() {
         return Ok(vec![]);
@@ -129,7 +137,8 @@ mod tests {
 
     #[test]
     fn parses_github_api_repository_url() {
-        let slug = repo_slug_from_url("https://api.github.com/repos/ooloth/hub").unwrap();
+        let slug = repo_slug_from_url("https://api.github.com/repos/ooloth/hub")
+            .expect("valid GitHub API URL");
         assert_eq!(slug.to_string(), "ooloth/hub");
     }
 
