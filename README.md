@@ -1,8 +1,9 @@
 # Hub
 
-My personal command center. Starting with a CLI, deterministic queries, and agent investigations
-that output issues for other agents to act on. Building towards a TUI showing everything I'm
-responsible for across my software, ranked by what needs attention.
+My personal command center. A CLI for triggering queries and agent investigations across projects.
+Agent investigations output well-formed issues for other agents to act on. Building towards a TUI
+gathering everything I'm responsible for across all my software into one terminal window, ranked
+by what needs attention.
 
 - Local-only — each device has its own SQLite database
 - Context-aware — work laptop tracks work software; personal laptop tracks personal software
