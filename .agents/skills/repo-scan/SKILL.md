@@ -54,7 +54,7 @@ When running in automated mode, filter to projects where any `[[project.workflow
 List all file paths in a repo:
 
 ```bash
-gh api repos/{owner}/{repo}/git/trees/HEAD?recursive=1 \
+gh api 'repos/{owner}/{repo}/git/trees/HEAD?recursive=1' \
   --jq '[.tree[] | select(.type == "blob") | .path]'
 ```
 
@@ -128,7 +128,7 @@ After scanning all repos, output findings grouped by repo, ordered within each g
 [gap]           No README found
 ```
 
-In an interactive session, pause here and ask the user which findings to file. In an automated run, proceed to file all tier-1 and tier-2 findings; surface tier-4 gaps in the report only (do not file them).
+Always proceed immediately after presenting findings — never pause to ask which to file. File all tier-1 and tier-2 findings automatically; surface tier-3 and tier-4 findings in the report only.
 
 ### 4. Dedup
 
@@ -141,6 +141,8 @@ gh issue list --repo {owner}/{repo} --state open --limit 100 \
 ```
 
 Compare semantically — same problem, different title still counts as a duplicate. If a duplicate exists, note its number and skip filing.
+
+If an open issue exists for the same file but covers a different finding, add a comment to that issue with the new finding rather than filing a separate issue.
 
 ### 5. Ensure labels exist
 
@@ -181,9 +183,12 @@ Filed:
   #42  ooloth/hub         — broken ref in docs/playbooks/add-a-workflow.md
   #17  ooloth/dotfiles    — no README
 
+Commented on existing issue:
+  #38  ooloth/hub         — additional drift finding in README.md
+
 Skipped (duplicate):
   ooloth/hub  — drift in README.md  →  already tracked in #38
 
-Skipped (user):
+Surfaced only (tier-3/4 — not auto-filed):
   ooloth/hub  — gap: no ADR for config model
 ```
