@@ -53,7 +53,25 @@ workflow definitions.
 
 ## 4. Write the skill file
 
-Create `.claude/skills/<name>.md`. A skill file contains:
+Create `.claude/skills/<name>/SKILL.md` (a subdirectory containing
+`SKILL.md` — flat `.md` files are not discovered by Claude Code).
+
+The file must begin with YAML frontmatter followed by the skill body:
+
+```markdown
+---
+name: <name>
+description: <one sentence — shown in /skill-name autocomplete>
+allowed-tools: [Bash]
+effort: high
+model: opus
+---
+
+## Purpose
+...
+```
+
+The body contains:
 
 1. **Purpose** — one sentence on what question this skill answers
 2. **Prerequisites** — CLI tools needed (`logcli`, `gh`, etc.) and how
