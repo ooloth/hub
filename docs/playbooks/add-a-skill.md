@@ -113,7 +113,24 @@ the skill reads, under the appropriate section
 (`[[project.workflow]]`, `[[project.environment.workflow]]`, or
 `[[monitor.workflow]]`).
 
-## 6. Note in vision.md (for new skill categories)
+## 6. Test the skill
+
+Run the skill non-interactively from hub's repo directory:
+
+```bash
+claude -p --dangerously-skip-permissions /repo-scan docs hub
+```
+
+This is the same invocation path used by automated runs — no interactive
+session, output to stdout, no prompts. If it works here, it will work
+unattended. Pass a project name to override hub.toml scope filtering
+so you can test without opting the project in first.
+
+The `--dangerously-skip-permissions` flag is required if your personal
+settings enable plan mode — without it the skill will pause waiting for
+approval and hang an automated run.
+
+## 7. Note in vision.md (for new skill categories)
 
 If the skill opens a new category of investigation (e.g. the first log
 investigation skill, the first infrastructure skill), add a sentence to
