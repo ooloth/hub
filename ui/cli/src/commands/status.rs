@@ -12,6 +12,7 @@ pub(crate) async fn run(config: &Config) -> Result<()> {
         &config.github_pr_repos(),
         &config.github_open_issue_repos(),
         &config.github_assigned_issue_repos(),
+        &config.github_ci_repos(),
         config.linear_token.as_deref(),
     )
     .await?;

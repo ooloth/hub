@@ -1,9 +1,10 @@
 use anyhow::Result;
-use domain::{Issue, LinearIssue, PullRequest};
+use domain::{CiFailure, Issue, LinearIssue, PullRequest};
 
 pub struct StatusReport {
     pub github_prs: Vec<PullRequest>,
     pub github_issues: Vec<Issue>,
+    pub github_ci_failures: Vec<CiFailure>,
     pub linear_issues: Vec<LinearIssue>,
 }
 
@@ -16,12 +17,14 @@ pub async fn run(
     pr_repos: &[String],
     issue_repos: &[String],
     assigned_issue_repos: &[String],
+    ci_repos: &[(String, String)],
     linear_token: Option<&str>,
 ) -> Result<StatusReport> {
-    let (prs, issues, assigned_issues, linear_issues) = tokio::join!(
+    let (prs, issues, assigned_issues, ci_failures, linear_issues) = tokio::join!(
         clients::github::prs_awaiting_review(github_token, pr_repos),
         clients::github::issues(github_token, issue_repos, false),
         clients::github::issues(github_token, assigned_issue_repos, true),
+        clients::github::ci_failures(github_token, ci_repos),
         async {
             match linear_token {
                 Some(token) => clients::linear::issues(token).await,
@@ -36,6 +39,7 @@ pub async fn run(
     Ok(StatusReport {
         github_prs: prs?,
         github_issues,
+        github_ci_failures: ci_failures?,
         linear_issues: linear_issues?,
     })
 }
