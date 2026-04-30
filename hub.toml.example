@@ -18,6 +18,10 @@ name = "github-prs"
 [[project.workflow]]
 name = "github-issues"
 
+[[project.workflow]]
+name = "github-ci"
+# lookback = "48h"  # default: 24h
+
 # ── Projects with deployments ─────────────────────────────────────────────────
 # Use [[project.environment]] when the project runs somewhere.
 # Each environment carries the platform context its workflows need.
@@ -34,6 +38,10 @@ name = "github-issues"
 # name = "github-issues"
 # assigned_only = true
 # exclude_labels = ["wontfix", "duplicate"]
+#
+# [[project.workflow]]
+# name = "github-ci"
+# lookback = "48h"
 #
 # [[project.environment]]
 # env = "prod"

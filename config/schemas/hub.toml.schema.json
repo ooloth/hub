@@ -84,6 +84,7 @@
       "oneOf": [
         { "$ref": "#/definitions/workflow_errors_gcp" },
         { "$ref": "#/definitions/workflow_errors_loki" },
+        { "$ref": "#/definitions/workflow_github_ci" },
         { "$ref": "#/definitions/workflow_github_issues" },
         { "$ref": "#/definitions/workflow_github_prs" },
         { "$ref": "#/definitions/workflow_user_activity_gcp" },
@@ -117,6 +118,19 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Exclude errors from these principals — e.g. bot service accounts."
+        }
+      }
+    },
+    "workflow_github_ci": {
+      "type": "object",
+      "description": "Surfaces failed CI runs on the default branch. Reads repo from parent project. Credentials via GITHUB_TOKEN.",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "const": "github-ci" },
+        "lookback": {
+          "type": "string",
+          "description": "How far back to search for failures — e.g. '24h', '48h', '7d'. Default: '24h'."
         }
       }
     },
