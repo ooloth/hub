@@ -103,8 +103,11 @@ to look up, no query to compose from scratch. The investigation starts
 immediately.
 
 ```
-hub status                # "prod: 12 errors in last hour (3× baseline)"
-claude /loki-investigate  # iterates until diagnosed; hub.toml provides context
+hub status                      # "prod: 12 errors in last hour (3× baseline)"
+claude /loki-investigate        # iterates until diagnosed; hub.toml provides context
+
+hub status                      # "github ci (1)  ooloth/hub  CI  failure  0h"
+claude /github-ci-investigate   # fetches failed step logs and surfaces root cause
 ```
 
 Hub's repo is also the right home for these skills — not each project's
