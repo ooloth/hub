@@ -1,6 +1,6 @@
 use anyhow::Result;
 use config::Config;
-use domain::{Issue, LinearIssue, PullRequest};
+use domain::{CiFailure, Issue, LinearIssue, PullRequest};
 
 pub(crate) async fn run(config: &Config) -> Result<()> {
     if config.linear_token.is_none() {
@@ -19,6 +19,10 @@ pub(crate) async fn run(config: &Config) -> Result<()> {
 
     print_section("github prs", &report.github_prs);
     print_section("github issues", &report.github_issues);
+
+    if !report.github_ci_failures.is_empty() {
+        print_section("github ci", &report.github_ci_failures);
+    }
 
     if config.linear_token.is_some() {
         print_section("linear issues", &report.linear_issues);
@@ -58,6 +62,20 @@ impl PrintLine for Issue {
                 self.url
             );
         }
+    }
+}
+
+impl PrintLine for CiFailure {
+    fn print_line(&self) {
+        let age = if self.age_hours < 24 {
+            format!("{}h", self.age_hours)
+        } else {
+            format!("{}d", self.age_hours / 24)
+        };
+        println!(
+            "  {}  {}  {}  {}  {}",
+            self.repo, self.workflow_name, self.conclusion, age, self.url
+        );
     }
 }
 
