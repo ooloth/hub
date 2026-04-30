@@ -33,6 +33,8 @@ pub struct Environment {
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(tag = "name")]
 pub enum WorkflowConfig {
+    #[serde(rename = "github-ci")]
+    GithubCi { lookback: Option<String> },
     #[serde(rename = "github-prs")]
     GithubPrs {
         #[serde(default)]
@@ -118,6 +120,7 @@ mod tests {
     #[rstest]
     #[case("errors-gcp", WorkflowConfig::ErrorsGcp { exclude_users: vec![] })]
     #[case("errors-loki", WorkflowConfig::ErrorsLoki { exclude_users: vec![] })]
+    #[case("github-ci", WorkflowConfig::GithubCi { lookback: None })]
     #[case("github-issues", WorkflowConfig::GithubIssues { exclude_labels: vec![], assigned_only: false })]
     #[case("github-prs", WorkflowConfig::GithubPrs { exclude_authors: vec![] })]
     #[case("user-activity-gcp", WorkflowConfig::UserActivityGcp { include_users: vec![], exclude_users: vec![] })]
@@ -140,6 +143,28 @@ mod tests {
         );
         let result = parse(&toml).unwrap();
         assert_eq!(result.project[0].workflow, vec![expected]);
+    }
+
+    #[test]
+    fn github_ci_with_lookback() {
+        let result = parse(
+            r#"
+            [[project]]
+            name = "hub"
+            repo = "ooloth/hub"
+
+            [[project.workflow]]
+            name = "github-ci"
+            lookback = "48h"
+        "#,
+        )
+        .unwrap();
+        assert_eq!(
+            result.project[0].workflow,
+            vec![WorkflowConfig::GithubCi {
+                lookback: Some("48h".into()),
+            }]
+        );
     }
 
     #[test]

@@ -55,6 +55,24 @@ impl Config {
             .collect()
     }
 
+    /// Returns (repo, lookback) pairs for all projects with a `github-ci` workflow.
+    /// Lookback defaults to `"24h"` when not specified.
+    pub fn github_ci_repos(&self) -> Vec<(String, String)> {
+        self.projects
+            .iter()
+            .filter_map(|p| {
+                p.workflow.iter().find_map(|w| {
+                    if let toml::WorkflowConfig::GithubCi { lookback } = w {
+                        let lb = lookback.clone().unwrap_or_else(|| "24h".into());
+                        Some((p.repo.clone(), lb))
+                    } else {
+                        None
+                    }
+                })
+            })
+            .collect()
+    }
+
     pub fn github_assigned_issue_repos(&self) -> Vec<String> {
         self.projects
             .iter()
