@@ -22,6 +22,9 @@ name = "github-issues"
 name = "github-ci"
 # lookback = "48h"  # default: 24h
 
+[[project.workflow]]
+name = "repo-scan-docs"
+
 # ── Projects with deployments ─────────────────────────────────────────────────
 # Use [[project.environment]] when the project runs somewhere.
 # Each environment carries the platform context its workflows need.

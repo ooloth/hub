@@ -81,6 +81,8 @@ pub enum WorkflowConfig {
         #[serde(default)]
         exclude_users: Vec<String>,
     },
+    #[serde(rename = "repo-scan-docs")]
+    RepoScanDocs,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -127,6 +129,7 @@ mod tests {
     #[case("user-activity-loki", WorkflowConfig::UserActivityLoki { include_users: vec![], exclude_users: vec![] })]
     #[case("warnings-gcp", WorkflowConfig::WarningsGcp { exclude_users: vec![] })]
     #[case("warnings-loki", WorkflowConfig::WarningsLoki { exclude_users: vec![] })]
+    #[case("repo-scan-docs", WorkflowConfig::RepoScanDocs)]
     fn all_workflow_types_parse_with_name_only(
         #[case] name: &str,
         #[case] expected: WorkflowConfig,
