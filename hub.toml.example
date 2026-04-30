@@ -28,6 +28,12 @@ name = "github-issues"
 #
 # [[project.workflow]]
 # name = "github-prs"
+# exclude_authors = ["dependabot", "renovate"]
+#
+# [[project.workflow]]
+# name = "github-issues"
+# assigned_only = true
+# exclude_labels = ["wontfix", "duplicate"]
 #
 # [[project.environment]]
 # env = "prod"
@@ -36,18 +42,34 @@ name = "github-issues"
 #
 # [[project.environment.workflow]]
 # name = "errors-gcp"
+# exclude_users = ["bot@my-org.com"]
+#
+# [[project.environment.workflow]]
+# name = "warnings-gcp"
+# exclude_users = ["bot@my-org.com"]
 #
 # [[project.environment.workflow]]
 # name = "user-activity-gcp"
+# include_users = ["alice@my-org.com"]
 # exclude_users = ["bot@my-org.com"]
 #
 # [[project.environment]]
 # env = "dev"
-# gcp_project = "my-org-dev"
-# service = "my-app"
+# cluster = "my-cluster"
+# namespace = "my-app"
 #
 # [[project.environment.workflow]]
-# name = "errors-gcp"
+# name = "errors-loki"
+# exclude_users = ["bot@my-org.com"]
+#
+# [[project.environment.workflow]]
+# name = "warnings-loki"
+# exclude_users = ["bot@my-org.com"]
+#
+# [[project.environment.workflow]]
+# name = "user-activity-loki"
+# include_users = ["alice@my-org.com"]
+# exclude_users = ["bot@my-org.com"]
 
 # ── Monitor ───────────────────────────────────────────────────────────────────
 # Non-project observations: home server health, calendar, etc.

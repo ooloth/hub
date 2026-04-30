@@ -127,6 +127,10 @@
       "additionalProperties": false,
       "properties": {
         "name": { "const": "github-issues" },
+        "assigned_only": {
+          "type": "boolean",
+          "description": "When true, only surfaces issues assigned to the authenticated user. Default: false."
+        },
         "exclude_labels": {
           "type": "array",
           "items": { "type": "string" },
