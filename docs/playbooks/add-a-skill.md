@@ -130,6 +130,16 @@ The `--dangerously-skip-permissions` flag is required if your personal
 settings enable plan mode — without it the skill will pause waiting for
 approval and hang an automated run.
 
+To watch the agent think in real time, add `--output-format stream-json
+--include-partial-messages` and pipe through `jq`:
+
+```bash
+claude -p --dangerously-skip-permissions /repo-scan docs hub \
+  --output-format stream-json \
+  --include-partial-messages | \
+  jq -rj 'select(.type == "stream_event" and .event.delta.type? == "text_delta") | .event.delta.text'
+```
+
 ## 7. Note in vision.md (for new skill categories)
 
 If the skill opens a new category of investigation (e.g. the first log
