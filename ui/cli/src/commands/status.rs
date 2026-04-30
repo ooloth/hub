@@ -1,18 +1,27 @@
 use anyhow::Result;
 use config::Config;
-use domain::{Issue, PullRequest};
+use domain::{Issue, LinearIssue, PullRequest};
 
 pub(crate) async fn run(config: &Config) -> Result<()> {
+    if config.linear_token.is_none() {
+        println!("skipping: linear (LINEAR_TOKEN not set)");
+    }
+
     let report = workflows::status::run(
         &config.github_token,
         &config.github_pr_repos(),
         &config.github_open_issue_repos(),
         &config.github_assigned_issue_repos(),
+        config.linear_token.as_deref(),
     )
     .await?;
 
     print_section("github prs", &report.github_prs);
     print_section("github issues", &report.github_issues);
+
+    if config.linear_token.is_some() {
+        print_section("linear issues", &report.linear_issues);
+    }
 
     Ok(())
 }
@@ -48,6 +57,15 @@ impl PrintLine for Issue {
                 self.url
             );
         }
+    }
+}
+
+impl PrintLine for LinearIssue {
+    fn print_line(&self) {
+        println!(
+            "  {}  {}  [{}]  {}",
+            self.identifier, self.title, self.state, self.url
+        );
     }
 }
 

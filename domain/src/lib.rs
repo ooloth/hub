@@ -28,3 +28,10 @@ pub struct Issue {
     pub age_days: u64,
     pub labels: Vec<String>,
 }
+
+pub struct LinearIssue {
+    pub identifier: String,
+    pub title: String,
+    pub url: String,
+    pub state: String,
+}

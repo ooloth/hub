@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 
 pub struct Config {
     pub github_token: String,
+    pub linear_token: Option<String>,
     pub projects: Vec<toml::Project>,
     pub monitor: Option<toml::Monitor>,
 }
@@ -17,6 +18,7 @@ impl Config {
         let hub_toml = toml::parse_file("hub.toml")?;
         Ok(Self {
             github_token: std::env::var("GITHUB_TOKEN").context("GITHUB_TOKEN not set")?,
+            linear_token: std::env::var("LINEAR_TOKEN").ok(),
             projects: hub_toml.project,
             monitor: hub_toml.monitor,
         })
