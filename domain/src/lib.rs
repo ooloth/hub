@@ -35,3 +35,11 @@ pub struct LinearIssue {
     pub url: String,
     pub state: String,
 }
+
+pub struct CiFailure {
+    pub repo: RepoSlug,
+    pub workflow_name: String,
+    pub conclusion: String,
+    pub age_hours: u64,
+    pub url: String,
+}
