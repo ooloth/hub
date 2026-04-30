@@ -108,6 +108,9 @@ claude /loki-investigate        # iterates until diagnosed; hub.toml provides co
 
 hub status                      # "github ci (1)  ooloth/hub  CI  failure  0h"
 claude /github-ci-investigate   # fetches failed step logs and surfaces root cause
+
+claude /repo-scan docs          # scans all hub.toml repos for doc quality issues;
+                                # surfaces findings and files GitHub issues for confirmed ones
 ```
 
 Hub's repo is also the right home for these skills — not each project's
