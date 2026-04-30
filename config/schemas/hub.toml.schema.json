@@ -87,6 +87,7 @@
         { "$ref": "#/definitions/workflow_github_ci" },
         { "$ref": "#/definitions/workflow_github_issues" },
         { "$ref": "#/definitions/workflow_github_prs" },
+        { "$ref": "#/definitions/workflow_repo_scan_docs" },
         { "$ref": "#/definitions/workflow_user_activity_gcp" },
         { "$ref": "#/definitions/workflow_user_activity_loki" },
         { "$ref": "#/definitions/workflow_warnings_gcp" },
@@ -164,6 +165,15 @@
           "items": { "type": "string" },
           "description": "GitHub usernames to exclude — e.g. 'dependabot'."
         }
+      }
+    },
+    "workflow_repo_scan_docs": {
+      "type": "object",
+      "description": "Scans the repo for documentation quality issues (stale, drifted, inconsistent, or missing docs). Reads repo from parent project. Invoked via /repo-scan docs.",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "const": "repo-scan-docs" }
       }
     },
     "workflow_user_activity_gcp": {

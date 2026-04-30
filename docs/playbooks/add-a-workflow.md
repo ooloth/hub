@@ -35,7 +35,22 @@ In `ui/cli/src/main.rs`:
 2. Add a match arm that loads config, calls `workflows::<name>::run(...)`, and
    prints the result
 
-## 5. Register in the config schema
+## 5. Register in the Rust config
+
+In `config/src/toml.rs`, add a variant to the `WorkflowConfig` enum:
+
+```rust
+#[serde(rename = "my-workflow")]
+MyWorkflow {
+    // any optional fields with #[serde(default)]
+},
+```
+
+Add a corresponding case to the `all_workflow_types_parse_with_name_only`
+rstest. Unknown workflow names are a hard parse error — this step is
+required before any hub command will accept the new name in hub.toml.
+
+## 6. Register in the config schema
 
 In `config/schemas/hub.toml.schema.json`:
 
@@ -43,8 +58,9 @@ In `config/schemas/hub.toml.schema.json`:
    same shape as the existing entries (`type`, `description`, `required`,
    `additionalProperties`, `properties` with a `name` const)
 2. Add `{ "$ref": "#/definitions/workflow_<name>" }` to the `"workflow"` oneOf
+   (keep both lists alphabetical)
 
-## 6. Add to the example config
+## 7. Add to the example config
 
 Add an example entry to `hub.toml.example` showing how to enable the workflow
 under `[[project.workflow]]`, `[[project.environment.workflow]]`, or

@@ -65,12 +65,12 @@ query = '{app="my-app", env="prod"}'
 
 The skill references these as named values in its prompt context.
 
-## 3. Register new config fields in the schema (if needed)
+## 3. Register new config fields (if needed)
 
-If the skill reads hub.toml fields that don't already exist in the
-schema, add them to `config/schemas/hub.toml.schema.json` so editors
-can validate and autocomplete them. Follow the pattern of existing
-workflow definitions.
+If the skill introduces a new `[[project.workflow]]` name (e.g.
+`repo-scan-docs`), follow steps 5–7 of
+[Add a Workflow](add-a-workflow.md): Rust enum variant, JSON schema
+definition, and hub.toml.example entry. All three are required.
 
 ## 4. Write the skill file
 
