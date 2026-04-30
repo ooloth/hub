@@ -1,6 +1,7 @@
 ---
 name: repo-scan
 description: Scan repos listed in hub.toml for a given issue category and file well-defined GitHub issues for findings.
+argument-hint: '[theme] [project(s)] [focus]'
 allowed-tools: [Bash]
 effort: high
 model: opus
@@ -25,17 +26,30 @@ Load the reference file for the requested theme before scanning. It defines what
 
 ## Config
 
-Reads `name` and `repo` from each `[[project]]` in hub.toml. No additional fields required.
+Each scan theme is opted in per project with its own workflow entry. The workflow name is `repo-scan-<theme>`:
 
 ```toml
 [[project]]
 name = "hub"
 repo = "ooloth/hub"
+
+[[project.workflow]]
+name = "repo-scan-docs"
 ```
+
+Projects without the relevant `repo-scan-<theme>` entry are skipped in automated runs. Interactive runs may override scope (see Workflow step 0).
 
 `name` is used as the human label in output and as the local clone path (future). `repo` is the GitHub slug used for all `gh api` calls.
 
 ## Starting queries
+
+Read the project list:
+
+```bash
+cat hub.toml
+```
+
+When running in automated mode, filter to projects where any `[[project.workflow]]` entry matches `name = "repo-scan-<theme>"`. In interactive mode, scope is determined first (step 0).
 
 List all file paths in a repo:
 
@@ -60,7 +74,29 @@ gh issue list --repo {owner}/{repo} --state open --limit 100 \
 
 ## Workflow
 
-Work through every repo in hub.toml in sequence.
+### 0. Determine scope
+
+Parse what the user wrote when invoking the skill. Interpret it in this order:
+
+**Theme** — the first token after `/repo-scan`. Must match a row in the theme lookup table.
+- If present and valid: use it
+- If missing or unrecognised: default to all themes that have opted-in repos in hub.toml; log the choice
+
+**Projects** — any remaining tokens that match a `name` in hub.toml, or phrases like "all repos", "every project", "just hub", etc.
+- If one or more project names are given: scan only those, regardless of their hub.toml workflow config
+- If none given: read `hub.toml` and filter to projects with `name = "repo-scan-<theme>"` in their workflow list
+- If no projects match: log a warning and exit cleanly; do not prompt
+
+**Focus** — any remaining context: a file path, directory, section name, or concept (e.g. "just the playbooks", "the README", "anything about workflows")
+- If given: narrow the doc surfaces to those matching the focus; skip everything else
+- If not given: apply the full heuristics from the reference file
+
+Echo the resolved scope in one line, then proceed immediately — do not wait for confirmation:
+
+```
+Scanning: docs / hub, dotfiles / focus: playbooks
+Scanning: docs / all opted-in repos / no focus
+```
 
 ### 1. Enumerate doc surfaces
 
@@ -92,7 +128,7 @@ After scanning all repos, output findings grouped by repo, ordered within each g
 [gap]           No README found
 ```
 
-Pause here. Ask the user which findings to file as issues. The user may confirm all, select individual findings, or skip a finding with a reason.
+In an interactive session, pause here and ask the user which findings to file. In an automated run, proceed to file all tier-1 and tier-2 findings; surface tier-4 gaps in the report only (do not file them).
 
 ### 4. Dedup
 

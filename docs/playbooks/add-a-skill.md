@@ -9,6 +9,27 @@ interactively and produce diagnoses.
 See [Decision 006](../decisions/006-hub-as-skill-library.md) for the
 full model and rationale.
 
+## Automation compatibility
+
+All skills in this project must work without user input. A skill may
+be invoked interactively by a human, or autonomously by a scheduled
+run — it cannot know which at runtime, and blocking on a prompt will
+hang an automated run indefinitely.
+
+**Rules:**
+
+- Never ask the user a question or wait for a response
+- If the invocation is ambiguous, make a best-effort interpretation
+  and log what was chosen; do not stop to confirm
+- If required information is missing (e.g. no theme given), apply a
+  sensible default (e.g. all opted-in themes) and log it
+- If something is unrecognised, skip it with a logged warning and
+  continue; do not abort the run
+
+The scope echo pattern — printing a one-line summary of the
+interpreted scope before doing any work — is encouraged as a
+transparency mechanism, but it must not block: print it and proceed.
+
 ## 1. Understand what kind of skill this is
 
 Skills in hub's `.claude/skills/` directory are **hub investigation
