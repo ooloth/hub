@@ -130,13 +130,15 @@ The `--dangerously-skip-permissions` flag is required if your personal
 settings enable plan mode — without it the skill will pause waiting for
 approval and hang an automated run.
 
-To watch the agent think in real time, add `--output-format stream-json
---include-partial-messages` and pipe through `jq`:
+To watch the agent think in real time, run this directly in your terminal
+(not via another agent — subprocess output is buffered and only appears
+on completion):
 
 ```bash
 claude -p --dangerously-skip-permissions /repo-scan docs hub \
   --output-format stream-json \
-  --include-partial-messages | \
+  --include-partial-messages \
+  --verbose | \
   jq -rj 'select(.type == "stream_event" and .event.delta.type? == "text_delta") | .event.delta.text'
 ```
 
