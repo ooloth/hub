@@ -26,7 +26,8 @@ jobs:
       - name: create private module stubs
         run: |
           mkdir -p clients/src/private workflows/src/private
-          touch clients/src/private/mod.rs workflows/src/private/mod.rs
+          printf '\n' > clients/src/private/mod.rs
+          printf '\n' > workflows/src/private/mod.rs
 
       - name: fmt
         run: cargo fmt --check
