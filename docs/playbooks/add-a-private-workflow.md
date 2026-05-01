@@ -29,12 +29,12 @@ Create `hub-private/workflows/src/<workflow-name>.rs` and add
 
 Add the required `op://` secret references to `hub-private/.env`.
 
-## 4. Register in the config schema
+## 4. No schema change needed
 
-Private workflows are still validated by the public schema. Add a
-`"workflow_<name>"` definition to `config/schemas/hub.toml.schema.json` and
-reference it in the `"workflow"` oneOf. See [Add a Workflow](add-a-workflow.md)
-step 5 for the exact shape.
+The public schema (`config/schemas/hub.toml.schema.json`) contains a
+`workflow_private` catch-all that accepts any workflow name not in the known
+public list. Private workflow entries pass taplo validation automatically —
+do not add private workflow definitions to the public schema.
 
 ## 5. Enable on your device
 

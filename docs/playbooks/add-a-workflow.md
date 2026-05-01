@@ -70,7 +70,10 @@ In `config/schemas/hub.toml.schema.json`:
    same shape as the existing entries (`type`, `description`, `required`,
    `additionalProperties`, `properties` with a `name` const)
 2. Add `{ "$ref": "#/definitions/workflow_<name>" }` to the `"workflow"` oneOf
-   (keep both lists alphabetical)
+   (keep both lists alphabetical; `workflow_private` stays last)
+3. Add the new name to the `not.enum` list inside `workflow_private` — this
+   prevents the catch-all from matching the new public workflow name, ensuring
+   its specific field constraints apply instead
 
 ## 7. Add to the example config
 

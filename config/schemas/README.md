@@ -8,5 +8,6 @@ Validates `hub.toml` device configuration files. Wired to `taplo check` via `.ta
 
 ### Conventions
 
-- Workflow definitions in `definitions` are sorted alphabetically by workflow name slug (e.g. `errors-gcp` before `github-prs`).
-- The `oneOf` array in `definitions.workflow` must stay in the same alphabetical order.
+- Public workflow definitions in `definitions` are sorted alphabetically by workflow name slug (e.g. `errors-gcp` before `github-prs`).
+- The `oneOf` array in `definitions.workflow` must stay in the same alphabetical order, with `workflow_private` last — it is a catch-all and must not appear before any specific variant.
+- `workflow_private` contains a `not.enum` list of every known public workflow name. **When adding a new public workflow, add its name to that list** so it cannot accidentally match the catch-all.

@@ -91,7 +91,8 @@
         { "$ref": "#/definitions/workflow_user_activity_gcp" },
         { "$ref": "#/definitions/workflow_user_activity_loki" },
         { "$ref": "#/definitions/workflow_warnings_gcp" },
-        { "$ref": "#/definitions/workflow_warnings_loki" }
+        { "$ref": "#/definitions/workflow_warnings_loki" },
+        { "$ref": "#/definitions/workflow_private" }
       ]
     },
     "workflow_errors_gcp": {
@@ -239,6 +240,30 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Exclude warnings from these principals — e.g. bot service accounts."
+        }
+      }
+    },
+    "workflow_private": {
+      "type": "object",
+      "description": "Private workflow extension. Any name not in the public known-names list is reserved for hub-private workflows. Field shape is validated by hub-private, not this schema. When adding a new public workflow, add its name to the not.enum list here so it can no longer match this catch-all.",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "not": {
+            "enum": [
+              "errors-gcp",
+              "errors-loki",
+              "github-ci",
+              "github-issues",
+              "github-prs",
+              "repo-scan-docs",
+              "user-activity-gcp",
+              "user-activity-loki",
+              "warnings-gcp",
+              "warnings-loki"
+            ]
+          }
         }
       }
     },
