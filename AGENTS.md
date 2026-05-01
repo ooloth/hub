@@ -1,15 +1,36 @@
 # hub
 
-A personal command center. Starting with a CLI, deterministic queries, and agent investigations
-that output issues for other agents to act on. Building towards a TUI showing everything I'm
-responsible for across my software, ranked by what needs attention.
+A personal command center that surfaces what needs attention — including things you didn't know
+were broken. Items are ranked by urgency so the most important signal is always at the top.
 
 ## What This Is
 
+- **Urgency-ranked** — items sorted by `(urgency, age)`; the top item is always the most pressing
+- **Cross-domain triage** — signals from GitHub, Linear, Loki, home servers, and any other
+  source appear in one ranked list; hub is the only place their urgency is compared
+- **Pre-loaded investigation** — a keypress on any signal opens the right Claude Code skill
+  with hub.toml context already loaded; investigation starts immediately, not after setup
+- **Automated proposals** — for well-understood problem categories, hub drafts the work (a
+  GitHub issue, a draft PR) for human review; the goal is waking up to proposed solutions, not
+  just alerts; see "The three tiers" in `docs/vision.md`
+- **Launch pad, not chat** — hub surfaces signals and launches either interactive Claude Code sessions
+  or autonomous agents preloaded with the right context; it does not aim to reinvent Claude Code's
+  chat interface or replicate its capabilities; it aims to leverage them; see [Decision 007](docs/decisions/007-tui-over-web-app.md)
 - **Local-only** — runs on each device; each has its own SQLite db
 - **Context-aware** — work laptop shows work software; personal laptop shows personal software
-- **Extensible** — adding a new workflow = adding files to `clients/` and `workflows/`; no registration step
-- **Rust** — single binary, CLI entry point today, TUI entry point later
+- **Extensible** — adding a new workflow = adding files to `clients/` and `workflows/`; no
+  registration step
+- **Rust** — single binary, CLI entry point today, TUI (Ratatui) entry point later; not a web app
+
+## When to Add a Workflow
+
+A workflow earns its place if it contributes to at least one of hub's three value layers:
+cross-domain urgency ranking, pre-loaded investigation context, or automated proposals. The
+test: does this workflow make hub a better starting point than going directly to the source
+tool?
+
+A workflow that only mirrors data already visible in GitHub or Linear without adding triage
+or proposal value doesn't pull its weight. Aggregation alone is not sufficient.
 
 ## Stack
 

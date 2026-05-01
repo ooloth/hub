@@ -1,13 +1,27 @@
 # Hub
 
-My personal command center. A CLI for triggering queries and agent investigations across projects.
-Agent investigations result in well-formed issues other agents can act on. Building towards a TUI
-gathering everything I'm responsible for across all my software into one terminal window, ranked
-by what needs attention.
+My personal command center: a single terminal window where I see everything I'm responsible
+for, ranked by what needs attention most.
 
-- Local-only — each device has its own SQLite database
-- Context-aware — work laptop tracks work software; personal laptop tracks personal software
-- Rust — single binary, CLI today, TUI planned
+Other tools already surface individual signals — Grafana monitors production errors, GitHub
+shows PRs, Loki aggregates logs. Hub's value is the triage and agency layer on top of all
+of them:
+
+- **Cross-domain triage** — a Loki production error, a failing CI run, and a home server
+  import failure appear in the same urgency-ranked list; no other tool compares their urgency
+- **Pre-loaded investigation** — a keypress on any signal opens the right Claude Code skill
+  with `hub.toml` context already loaded (endpoint, query, project name); investigation
+  starts immediately, not after five minutes of setup
+- **Automated proposals** — for well-understood problem categories, hub drafts the work (a
+  structured GitHub issue, and where the solution is clear, a draft PR) for my review; the
+  goal is waking up to proposed solutions, not just notifications
+- **Single config source of truth** — `hub.toml` defines what matters on each device; one
+  file instead of Grafana dashboards, PagerDuty rules, GitHub notification settings, and
+  browser bookmarks maintained separately
+
+This is a personal tool. It runs locally on each of my devices, has no server, and I'm not
+offering support for other installations. I'm sharing it as a reference for how I think
+about personal tooling and agentic workflows.
 
 ## Docs
 
