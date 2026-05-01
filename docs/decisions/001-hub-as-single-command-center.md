@@ -44,3 +44,14 @@ more appropriate, use them. The line moves as the system matures.
 - The "everything hub" failure mode (shows everything, becomes noise,
   stops getting checked) is the thing to design against. Ruthless
   prioritization is a first-class concern from the start.
+- ooloth/media-tools and ooloth/agency were early sketches, not failed experiments.
+  ooloth/media-tools sent a daily email digest of home server health; its ideas become
+  hub's private home-server workflows via hub-private. ooloth/agency demonstrated the
+  scan → issue → draft PR model — waking up to a proposed solution, not just an alert.
+  That model is hub's Tier 3 proposal layer: the goal is not just surfacing signals
+  but automating the response to well-understood ones.
+- Hub is the consolidation of all three. The failure mode to design against is
+  becoming a passive display that mirrors what source tools already show, without
+  adding cross-domain triage, pre-loaded investigation context, or automated
+  proposals. A tool that only shows what Grafana and GitHub already show is
+  slower than just checking Grafana and GitHub.

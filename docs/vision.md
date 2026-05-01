@@ -17,9 +17,23 @@ what to do → act (or delegate to an agent) → learn from outcomes.
 This loop applies to every domain. The workflows are just different
 sources feeding the same loop.
 
+Other tools already surface individual signals. Hub adds three things
+they don't:
+
+1. **Cross-domain urgency ranking** — a Loki error, a failing CI run,
+   and a blocked home server download appear in one ranked list; their
+   urgency is compared for the first time, across domain boundaries
+2. **Pre-loaded investigation context** — hub.toml holds the Loki
+   endpoint, the LogQL query, the project name; a keypress launches the
+   right Claude Code skill with zero setup; the investigation starts
+   immediately
+3. **Automated proposals** — for well-understood problem categories,
+   hub drafts the work (a GitHub issue, a draft PR) for review; the
+   goal is waking up to proposed solutions, not just alerts
+
 The measure of success is not "shows all the things". It's "shows the
 right things, in the right order, so I can triage and act without
-hunting."
+hunting — and for the routine stuff, wake up to a proposed fix."
 
 Agents are a first-class tool. Where rules are sufficient, use rules.
 Where judgment or scale makes agents more appropriate, use agents. The
@@ -53,12 +67,30 @@ The rule-based approach comes first. AI-assisted scoring is a natural
 later layer when rules feel limiting — but starting with rules forces
 clarity about what "urgent" actually means per workflow.
 
-## The "everything hub" failure mode
+## The two failure modes
 
-Tools that show everything become graveyards. You stop checking them
-because they're always full. Hub avoids this by being opinionated:
-items that don't need action today shouldn't appear. Each workflow
-is responsible for filtering its own noise before emitting items.
+**Failure mode 1: shows everything.** Tools that show everything become
+graveyards. You stop checking because they're always full. Hub avoids
+this by being opinionated: items that don't need action today shouldn't
+appear. Each workflow is responsible for filtering its own noise before
+emitting items.
+
+**Failure mode 2: only mirrors what you'd see elsewhere.** A tool that
+wraps GitHub, Linear, and Grafana without adding a triage or agency
+layer is just slower than each individual source. Grafana can monitor
+production errors. Scripts can check disk usage. Browser tabs can
+aggregate dashboards. The monitoring itself is not the invention.
+
+Hub avoids this by adding the three things source tools don't: cross-
+domain urgency ranking (a Loki error and a blocked download compared in
+one list), pre-loaded investigation context (one keypress to diagnose,
+not five minutes of setup), and automated proposals (wake up to a draft
+PR, not just a notification).
+
+The bar for a new workflow: does it contribute to cross-domain triage,
+speed up investigation, or enable automated proposals? A workflow that
+only mirrors one source without adding any of these layers doesn't pull
+its weight.
 
 ## Workflows
 
@@ -70,17 +102,29 @@ Current:
 | Workflow | What it tracks |
 |---|---|
 | GitHub PRs | PRs awaiting my review |
+| GitHub issues | Open issues assigned to me or open in watched repos |
+| GitHub CI | Failing workflow runs on watched repos |
+| Linear | Incomplete issues assigned to me |
 
-Planned:
+Planned (public):
 
 | Workflow | What it tracks |
 |---|---|
-| Production errors | Errors/exceptions from logs (Loki, Axiom) |
-| Issues | Linear/Jira tickets assigned to me |
-| CI | Failing runs on watched repos |
-| Home server | Health and availability (private workflow) |
+| Production errors | Error-level log entries (Loki) — first novel signal |
+| Dependabot | Security alerts on watched repos |
 
-Future candidates: dependency alerts, Notion tasks, calendar conflicts.
+Planned (private, via hub-private):
+
+| Workflow | What it tracks |
+|---|---|
+| Home server: Sonarr | Import failures, recently aired missing episodes |
+| Home server: Radarr | Import failures, recently released missing movies |
+| Home server: Prowlarr | Indexer health |
+| Home server: Plex | On-deck context for urgency promotion in Sonarr/Radarr |
+| Home server: disk | Drive usage on media drives |
+| Home server: Bazarr | Missing subtitles |
+
+Future candidates: Notion tasks, calendar conflicts.
 
 ## Investigation
 
@@ -118,6 +162,33 @@ repo. A skill added to hub is immediately available for every project
 configured in `hub.toml`, without copy-pasting it across repos.
 
 See [Decision 006](decisions/006-hub-as-skill-library.md) for the full model.
+
+## The three tiers
+
+Hub responds to signals at three levels of automation. Each workflow starts at Tier 1 and
+graduates to higher tiers as the signal patterns become well understood.
+
+**Tier 1 — Surface.** `hub status` emits a ranked list. You see the signal; you decide
+whether to act. This is always the starting point for a new workflow.
+
+**Tier 2 — Investigate.** A keypress on a ranked item launches the right Claude Code skill
+with `hub.toml` context pre-loaded. Claude iterates — querying logs, fetching CI output,
+checking API state — until it produces a diagnosis. You're in the loop; Claude is the
+analyst. The investigation is multi-turn and human-supervised.
+
+**Tier 3 — Propose.** For well-understood problem categories, hub runs unattended and drafts
+the work: a GitHub issue with structured context, and where the fix is clear, a draft PR.
+You wake up to a proposed solution, not just a notification. Approval is always required
+before anything merges — hub proposes, you decide.
+
+The graduation path: a new workflow surfaces signals (Tier 1) first. Once the signal pattern
+is stable and the investigation logic is understood, it can be scripted into a proposal (Tier 3).
+Not every workflow needs to reach Tier 3 — some signals genuinely require human judgment
+every time.
+
+Trust in proposal quality is earned incrementally. An automated PR that's wrong wastes more
+time than no automation at all. Tier 3 is reserved for categories where the pattern is reliable
+enough to stake the cost of a bad proposal on.
 
 ## UI evolution
 
