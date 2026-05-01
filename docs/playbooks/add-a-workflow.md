@@ -1,7 +1,19 @@
 # Add a Workflow
 
-Steps to add a new workflow to hub. A workflow fetches data from one or more
-clients and returns a list of items for the UI to display.
+## Should you add this?
+
+A workflow earns its place if it contributes to at least one of hub's three value layers:
+cross-domain urgency ranking, pre-loaded investigation context, or automated proposals.
+The test: does this workflow make hub a better starting point than going directly to the
+source tool?
+
+A workflow that only mirrors data already visible in GitHub, Grafana, etc. without adding
+triage or proposal value doesn't pull its weight. Aggregation alone is not sufficient.
+
+## How to add it
+
+A workflow fetches data from one or more clients and returns a list of items for the UI
+to display.
 
 ## 1. Add the client (if needed)
 
