@@ -1,27 +1,35 @@
 # Hub
 
-My personal command center: a single terminal window where I see everything I'm responsible
-for, ranked by what needs attention most.
+A personal command center that surfaces what needs my attention today — including (especially!)
+the things I didn't know were broken. Everything I'm responsible for appears in a single terminal
+window, ranked by urgency so the most important signal is always at the top.
 
-Other tools already surface individual signals — Grafana monitors production errors, GitHub
-shows PRs, Loki aggregates logs. Hub's value is the triage and agency layer on top of all
-of them:
+## What This Is
 
-- **Cross-domain triage** — a Loki production error, a failing CI run, and a home server
-  import failure appear in the same urgency-ranked list; no other tool compares their urgency
+Other tools already surface individual signals — Sentry monitors production errors, GitHub
+shows PRs, Loki aggregates logs. Hub's value is in how it combines those insights in one
+prioritized view with agentic capabilities built in:
+
+- **Urgency-ranked** — items sorted by `(urgency, age)`; the top item is always the most pressing
+- **Cross-domain triage** — signals from GitHub, Linear, Loki, home servers, and any other
+  source appear in one ranked list; hub is the only place their urgency is compared
 - **Pre-loaded investigation** — a keypress on any signal opens the right Claude Code skill
   with `hub.toml` context already loaded (endpoint, query, project name); investigation
-  starts immediately, not after five minutes of setup
+  starts immediately, not after setup
 - **Automated proposals** — for well-understood problem categories, hub drafts the work (a
-  structured GitHub issue, and where the solution is clear, a draft PR) for my review; the
-  goal is waking up to proposed solutions, not just notifications
-- **Single config source of truth** — `hub.toml` defines what matters on each device; one
-  file instead of Grafana dashboards, PagerDuty rules, GitHub notification settings, and
-  browser bookmarks maintained separately
-
-This is a personal tool. It runs locally on each of my devices, has no server, and I'm not
-offering support for other installations. I'm sharing it as a reference for how I think
-about personal tooling and agentic workflows.
+  GitHub issue, and where the solution is clear, a draft PR) for my review; the goal is
+  waking up to proposed solutions, not just notifications
+- **Single config source of truth** — `hub.toml` is git-ignored and per-device; onboarding
+  a new project to existing workflows is one file edit, no code changes; work and personal
+  contexts stay naturally separate
+- **Launch pad, not chat** — hub surfaces signals and launches Claude Code skills or
+  autonomous agents preloaded with the right context; it leverages Claude Code rather than
+  reinventing its interface; see [Decision 007](docs/decisions/007-tui-over-web-app.md)
+- **Extensible** — adding a new workflow = adding files to `clients/` and `workflows/`; no
+  registration step
+- **Local-only** — no server, no cloud sync; each device has its own SQLite database and
+  runs independently
+- **Rust** — single binary; CLI entry point today, TUI (Ratatui) planned; not a web app
 
 ## Docs
 
