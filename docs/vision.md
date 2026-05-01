@@ -133,9 +133,23 @@ See [Decision 006](decisions/006-hub-as-skill-library.md) for the full model.
 Both entry points share the same workflows and data layer. The UI is a
 render target, not where logic lives.
 
+The TUI is not a chat interface — Claude Code is. Hub's job is to surface
+signals and hand off to the right investigation skill with context
+pre-loaded. A keybinding that opens `claude /loki-investigate` in a new
+tmux pane, with hub.toml already providing the endpoint, query, and project
+name, is the complete agent integration story. Hub is the launcher; Claude
+Code is the investigator.
+
+See [Decision 007](decisions/007-tui-over-web-app.md) for why TUI was
+chosen over a web app and what would legitimately change that decision.
+
 ## What this is not
 
-- A web app (no server, no browser, no HTML)
+- A web app — no server, no browser, no HTML. The terminal is the right
+  home: hub lives where the developer already works, requires no build step
+  or deployment, and stays local-only. When a feature seems to call for
+  browser UI, that's usually a sign the feature isn't core. The constraints
+  are a feature, not a limitation. See [Decision 007](decisions/007-tui-over-web-app.md).
 - A team tool (single-user, single-device, no sharing)
 - A notification system (pull, not push — you open hub when you want
   to triage, it doesn't interrupt you)
