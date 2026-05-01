@@ -1,10 +1,28 @@
 # Add a Skill
 
-Steps to add a Claude Code investigation skill to hub. Skills are
-multi-turn conversations where Claude uses CLI tools to query data
-iteratively, guided by a human question. They differ from workflows:
-workflows run deterministically and emit ranked items; skills run
-interactively and produce diagnoses.
+## Should you add this?
+
+Hub skills are Claude Code investigation skills — multi-turn conversations
+where Claude uses CLI tools to query data iteratively and produces a
+diagnosis. They differ from workflows: workflows run deterministically and
+emit ranked items; skills run interactively and produce diagnoses.
+
+Skills in hub's `.claude/skills/` directory are **hub investigation
+skills** — they:
+
+- Read configuration from hub.toml context (endpoint, query, project,
+  environment) that the user loaded before invoking the skill
+- Use external CLI tools (`logcli`, `gh`, `curl`, etc.) to query data
+- Iterate — form a hypothesis, query to validate, refine, query again
+- Produce a human-readable output (table, summary, diagnosis,
+  recommendation)
+
+They are **not**:
+
+- `agents/` crate functions (those are single-call background
+  automation, unattended)
+- Global craft skills (those live in `~/.claude/skills/`, are
+  general-purpose, and are not hub-aware)
 
 See [Decision 006](../decisions/006-hub-as-skill-library.md) for the
 full model and rationale.
@@ -30,26 +48,7 @@ The scope echo pattern — printing a one-line summary of the
 interpreted scope before doing any work — is encouraged as a
 transparency mechanism, but it must not block: print it and proceed.
 
-## 1. Understand what kind of skill this is
-
-Skills in hub's `.claude/skills/` directory are **hub investigation
-skills** — they:
-
-- Read configuration from hub.toml context (endpoint, query, project,
-  environment) that the user loaded before invoking the skill
-- Use external CLI tools (`logcli`, `gh`, `curl`, etc.) to query data
-- Iterate — form a hypothesis, query to validate, refine, query again
-- Produce a human-readable output (table, summary, diagnosis,
-  recommendation)
-
-They are **not**:
-
-- `agents/` crate functions (those are single-call background
-  automation, unattended)
-- Global craft skills (those live in `~/.claude/skills/`, are
-  general-purpose, and are not hub-aware)
-
-## 2. Identify what config the skill needs
+## 1. Identify what config the skill needs
 
 List the hub.toml fields the skill will read. Keep this minimal —
 only what the skill genuinely needs to avoid asking the user.
@@ -65,14 +64,14 @@ query = '{app="my-app", env="prod"}'
 
 The skill references these as named values in its prompt context.
 
-## 3. Register new config fields (if needed)
+## 2. Register new config fields (if needed)
 
 If the skill introduces a new `[[project.workflow]]` name (e.g.
 `repo-scan-docs`), follow steps 5–7 of
 [Add a Workflow](add-a-workflow.md): Rust enum variant, JSON schema
 definition, and hub.toml.example entry. All three are required.
 
-## 4. Write the skill file
+## 3. Write the skill file
 
 Create `.claude/skills/<name>/SKILL.md` (a subdirectory containing
 `SKILL.md` — flat `.md` files are not discovered by Claude Code).
@@ -106,14 +105,14 @@ The body contains:
 6. **Output format** — what the final answer should look like (table,
    paragraph summary, ranked list, etc.)
 
-## 5. Update the hub.toml example
+## 4. Update the hub.toml example
 
 Add an example entry to `hub.toml.example` showing the config fields
 the skill reads, under the appropriate section
 (`[[project.workflow]]`, `[[project.environment.workflow]]`, or
 `[[monitor.workflow]]`).
 
-## 6. Test the skill
+## 5. Test the skill
 
 Run the skill non-interactively from hub's repo directory:
 
@@ -142,7 +141,7 @@ claude -p --dangerously-skip-permissions /repo-scan docs hub \
   jq -rj 'select(.type == "stream_event" and .event.delta.type? == "text_delta") | .event.delta.text'
 ```
 
-## 7. Note in vision.md (for new skill categories)
+## 6. Note in vision.md (for new skill categories)
 
 If the skill opens a new category of investigation (e.g. the first log
 investigation skill, the first infrastructure skill), add a sentence to

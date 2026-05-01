@@ -1,8 +1,19 @@
 # Add a Private Workflow
 
-Steps to add a workflow that lives in `hub-private` rather than the public repo.
-The structure mirrors the public workflow pattern — the only difference is where
-the files live.
+## Should you add this?
+
+Use hub-private when the workflow involves infrastructure, credentials, or integrations
+that shouldn't be in the public repo — for example, home server media integrations
+(Sonarr, Radarr, Prowlarr) where the existence of the service implies something you'd
+rather not publish.
+
+If the workflow has no sensitive implications, add it to the public repo using
+[Add a Workflow](add-a-workflow.md) instead.
+
+## How to add it
+
+The structure mirrors the public workflow pattern — the only difference is where the
+files live.
 
 ## 1. Add the client
 
