@@ -25,9 +25,11 @@ jobs:
       # Empty stubs satisfy the resolver; the feature gate keeps them out of compilation.
       - name: create private module stubs
         run: |
-          mkdir -p clients/src/private workflows/src/private
+          mkdir -p clients/src/private workflows/src/private ui/cli/src/private ui/tui/src/private
           printf '\n' > clients/src/private/mod.rs
           printf '\n' > workflows/src/private/mod.rs
+          printf '\n' > ui/cli/src/private/mod.rs
+          printf '\n' > ui/tui/src/private/mod.rs
 
       - name: fmt
         run: cargo fmt --check
