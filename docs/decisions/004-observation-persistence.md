@@ -33,6 +33,25 @@ search (`is:open is:issue assignee:@me` across all repos). The issue
 tracker is the source of truth; SQLite is a read cache of search
 results; hub is the triage layer on top.
 
+## Status cache schema
+
+The SQLite status cache (`store/`) uses a single-row table with four
+columns: `id`, `schema_version`, `refreshed_at`, and `payload` (a JSON
+blob of the full `StatusReport`). One row is upserted on each refresh;
+there is no history.
+
+`schema_version` is an integer constant in the codebase, bumped whenever
+`StatusReport`'s shape changes in a backward-incompatible way. Readers
+check this column before deserializing and discard the row if the version
+doesn't match, triggering a live fetch.
+
+Stale threshold is 30 minutes. The CLI prints `last updated Xm ago` when
+reading from cache; if the cache is older than 30 minutes or absent, it
+prints a notice, fetches live, and upserts the result. The TUI starts
+from whatever is cached (instant render), then refreshes in the
+background if the cache is older than 30 minutes. See
+[008](008-tui-owns-refresh-loop.md) for why the TUI owns this loop.
+
 ## Consequences
 
 - Hub never needs to know it filed a specific issue — it just searches
