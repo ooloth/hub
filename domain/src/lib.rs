@@ -1,3 +1,9 @@
+pub enum Urgency {
+    High,
+    Medium,
+    Low,
+}
+
 pub struct RepoSlug(String);
 
 impl RepoSlug {

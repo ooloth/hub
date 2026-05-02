@@ -81,11 +81,8 @@ HubToml {
     monitor: Some(
         Monitor {
             workflow: [
-                GithubPrs {
-                    exclude_authors: [
-                        "dependabot",
-                        "renovate",
-                    ],
+                MonitorWorkflowConfig {
+                    name: "github-prs",
                 },
             ],
         },

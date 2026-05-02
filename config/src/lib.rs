@@ -73,6 +73,13 @@ impl Config {
             .collect()
     }
 
+    pub fn private_monitor_workflow_names(&self) -> Vec<String> {
+        self.monitor
+            .as_ref()
+            .map(|m| m.workflow.iter().map(|w| w.name.clone()).collect())
+            .unwrap_or_default()
+    }
+
     pub fn github_assigned_issue_repos(&self) -> Vec<String> {
         self.projects
             .iter()

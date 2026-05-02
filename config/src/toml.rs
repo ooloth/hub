@@ -88,7 +88,12 @@ pub enum WorkflowConfig {
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct Monitor {
     #[serde(default)]
-    pub workflow: Vec<WorkflowConfig>,
+    pub workflow: Vec<MonitorWorkflowConfig>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct MonitorWorkflowConfig {
+    pub name: String,
 }
 
 pub(crate) fn parse(content: &str) -> Result<HubToml> {
@@ -247,7 +252,7 @@ mod tests {
     }
 
     #[test]
-    fn monitor_with_workflow() {
+    fn monitor_with_known_workflow_name() {
         let result = parse(
             r#"
             [[monitor.workflow]]
@@ -258,8 +263,26 @@ mod tests {
         let monitor = result.monitor.unwrap();
         assert_eq!(
             monitor.workflow,
-            vec![WorkflowConfig::GithubPrs {
-                exclude_authors: vec![]
+            vec![MonitorWorkflowConfig {
+                name: "github-prs".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn monitor_with_unknown_workflow_name_does_not_error() {
+        let result = parse(
+            r#"
+            [[monitor.workflow]]
+            name = "private-integration"
+        "#,
+        )
+        .unwrap();
+        let monitor = result.monitor.unwrap();
+        assert_eq!(
+            monitor.workflow,
+            vec![MonitorWorkflowConfig {
+                name: "private-integration".into()
             }]
         );
     }
