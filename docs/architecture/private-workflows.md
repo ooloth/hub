@@ -11,7 +11,9 @@ that gets wired into this workspace via symlinks and a Cargo feature flag.
   hub/               ← public repo (this one)
   hub-private/       ← private companion repo
     clients/src/     ← private API clients
-    workflows/src/   ← private workflows
+    workflows/src/   ← private workflows + PrivateStatusData types
+    ui/cli/src/      ← private CLI rendering logic
+    ui/tui/src/      ← private TUI rendering logic (stub until TUI lands)
     .claude/skills/  ← private investigation skills
     devices/         ← per-device configuration
       home-laptop.toml
@@ -21,13 +23,15 @@ that gets wired into this workspace via symlinks and a Cargo feature flag.
 
 ## Symlinks
 
-`just setup-private <device>` creates four symlinks inside hub:
+`just setup-private <device>` creates six symlinks inside hub:
 
 ```
-hub/clients/src/private   →  hub-private/clients/src/
-hub/workflows/src/private →  hub-private/workflows/src/
-hub/.env                  →  hub-private/.env
-hub/hub.toml              →  hub-private/devices/<device>.toml
+hub/clients/src/private      →  hub-private/clients/src/
+hub/workflows/src/private    →  hub-private/workflows/src/
+hub/ui/cli/src/private       →  hub-private/ui/cli/src/
+hub/ui/tui/src/private       →  hub-private/ui/tui/src/
+hub/.env                     →  hub-private/.env
+hub/hub.toml                 →  hub-private/devices/<device>.toml
 ```
 
 Private skills follow the same principle: skill files that reference internal
@@ -61,20 +65,28 @@ automatically to every `cargo` invocation. You never need to remember to pass it
 _features := if path_exists("clients/src/private") == "true" { "--features private" } else { "" }
 ```
 
-Both crates gate their `private` module behind the feature:
+All four crates gate their `private` module behind the feature:
 
 ```rust
-// clients/src/lib.rs
+// clients/src/lib.rs and workflows/src/lib.rs
 #[cfg(feature = "private")]
 pub mod private;
 
-// workflows/src/lib.rs
+// ui/cli/src/main.rs and ui/tui/src/main.rs
 #[cfg(feature = "private")]
-pub mod private;
+mod private;
 ```
 
 `hub-private/clients/src/` is the `private` module for `clients`; it re-exports
-individual clients as sub-modules. Same pattern for `workflows`.
+individual clients as sub-modules. Same pattern for `workflows`, `ui/cli`, and
+`ui/tui`.
+
+The rich domain types for private integrations (e.g. `PrivateStatusData`,
+`MediaStatus`) live in `hub-private/workflows/src/status.rs`. Hub's public crate
+only sees `PrivateStatusData` as an opaque struct — it never imports
+integration-specific names. The CLI and TUI rendering logic that knows the
+concrete fields lives in `hub-private/ui/cli/src/` and `hub-private/ui/tui/src/`
+respectively.
 
 ## Playbooks
 

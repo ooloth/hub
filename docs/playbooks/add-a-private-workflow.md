@@ -4,8 +4,7 @@
 
 Use hub-private when the workflow involves infrastructure, credentials, or integrations
 that shouldn't be in the public repo — for example, home server media integrations
-(Sonarr, Radarr, Prowlarr) where the existence of the service implies something you'd
-rather not publish.
+where the existence of the service implies something you'd rather not publish.
 
 If the workflow has no sensitive implications, add it to the public repo using
 [Add a Workflow](add-a-workflow.md) instead.
@@ -25,24 +24,43 @@ clients) and add `pub mod <service>;` to `hub-private/clients/src/mod.rs`.
 Create `hub-private/workflows/src/<workflow-name>.rs` and add
 `pub mod <workflow-name>;` to `hub-private/workflows/src/mod.rs`.
 
-## 3. Add credentials to .env
+## 3. Wire into the status orchestrator
+
+`hub-private/workflows/src/status.rs` is the entry point that hub calls. Add a
+branch to `run()` that checks for your workflow name in `workflow_names` and calls
+your workflow, populating the relevant field on `PrivateStatusData` (add the field
+if it doesn't exist yet).
+
+## 4. Add CLI rendering
+
+Add (or extend) `hub-private/ui/cli/src/status.rs` to render the new field. The
+public hub binary calls `crate::private::status::render(&report.private)` — your
+renderer reads from `PrivateStatusData` and prints lines to stdout.
+
+When the TUI lands, add a corresponding renderer in `hub-private/ui/tui/src/`.
+
+## 5. Add credentials to .env
 
 Add the required `op://` secret references to `hub-private/.env`.
 
-## 4. No schema change needed
+## 6. Enable on your device
 
-The public schema (`config/schemas/hub.toml.schema.json`) contains a
-`workflow_private` catch-all that accepts any workflow name not in the known
-public list. Private workflow entries pass taplo validation automatically —
-do not add private workflow definitions to the public schema.
+Add a `[[monitor.workflow]]` entry to the relevant `hub-private/devices/<device>.toml`
+files, using the workflow name your `status.rs` checks for:
 
-## 5. Enable on your device
+```toml
+[[monitor.workflow]]
+name = "your-workflow-name"
+```
 
-Add a `[[project.workflow]]` or `[[project.environment.workflow]]` entry to the
-relevant `hub-private/devices/<device>.toml` files.
+`[[monitor.workflow]]` is for integrations (like media servers) that aren't tied to
+a specific code project. Use `[[project.workflow]]` inside a `[[project]]` block for
+integrations that are scoped to a repo.
 
-## 6. Verify
+## 7. Verify
 
 ```bash
 just check
+just test
+just op status   # end-to-end with secrets injected
 ```
