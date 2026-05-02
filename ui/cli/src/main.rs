@@ -3,6 +3,9 @@ use clap::{Parser, Subcommand};
 
 mod commands;
 
+#[cfg(feature = "private")]
+mod private;
+
 #[derive(Parser)]
 #[command(version, about = "Personal command center")]
 struct Cli {

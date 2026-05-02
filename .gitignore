@@ -7,4 +7,6 @@ proptest-regressions/
 hub.toml
 clients/src/private
 workflows/src/private
+ui/cli/src/private
+ui/tui/src/private
 .trekker/

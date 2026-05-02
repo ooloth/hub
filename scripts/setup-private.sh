@@ -56,6 +56,8 @@ link() {
 
 link "$HUB_PRIVATE/clients/src"      "$HUB_ROOT/clients/src/private"
 link "$HUB_PRIVATE/workflows/src"    "$HUB_ROOT/workflows/src/private"
+link "$HUB_PRIVATE/ui/cli/src"       "$HUB_ROOT/ui/cli/src/private"
+link "$HUB_PRIVATE/ui/tui/src"       "$HUB_ROOT/ui/tui/src/private"
 link "$HUB_PRIVATE/.env"             "$HUB_ROOT/.env"
 link "$DEVICE_CONFIG"                "$HUB_ROOT/hub.toml"
 

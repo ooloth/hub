@@ -7,6 +7,9 @@ edition = "2021"
 name = "hub-tui"
 path = "src/main.rs"
 
+[features]
+private = ["workflows/private"]
+
 [dependencies]
 config = { path = "../../config" }
 workflows = { path = "../../workflows" }
