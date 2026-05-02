@@ -6,6 +6,8 @@ pub struct StatusReport {
     pub github_issues: Vec<Issue>,
     pub github_ci_failures: Vec<CiFailure>,
     pub linear_issues: Vec<LinearIssue>,
+    #[cfg(feature = "private")]
+    pub private: crate::private::PrivateStatusData,
 }
 
 /// Fetches all status data concurrently and returns a combined report.
@@ -19,6 +21,7 @@ pub async fn run(
     assigned_issue_repos: &[String],
     ci_repos: &[(String, String)],
     linear_token: Option<&str>,
+    private_workflow_names: Vec<String>,
 ) -> Result<StatusReport> {
     let (prs, issues, assigned_issues, ci_failures, linear_issues) = tokio::join!(
         clients::github::prs_awaiting_review(github_token, pr_repos),
@@ -36,10 +39,15 @@ pub async fn run(
     let mut github_issues = issues?;
     github_issues.extend(assigned_issues?);
 
+    #[cfg(feature = "private")]
+    let private = crate::private::status::run(private_workflow_names).await?;
+
     Ok(StatusReport {
         github_prs: prs?,
         github_issues,
         github_ci_failures: ci_failures?,
         linear_issues: linear_issues?,
+        #[cfg(feature = "private")]
+        private,
     })
 }
