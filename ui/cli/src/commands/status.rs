@@ -29,6 +29,9 @@ pub(crate) async fn run(config: &Config) -> Result<()> {
         print_section("linear issues", &report.linear_issues);
     }
 
+    #[cfg(feature = "private")]
+    crate::private::status::render(&report.private);
+
     Ok(())
 }
 
