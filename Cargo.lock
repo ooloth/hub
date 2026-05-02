@@ -281,6 +281,9 @@ dependencies = [
 [[package]]
 name = "domain"
 version = "0.1.0"
+dependencies = [
+ "chrono",
+]
 
 [[package]]
 name = "encode_unicode"
@@ -581,6 +584,7 @@ name = "hub-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "config",
  "domain",
@@ -2316,6 +2320,7 @@ name = "workflows"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "clients",
  "domain",
  "store",

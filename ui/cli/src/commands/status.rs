@@ -1,6 +1,7 @@
 use anyhow::Result;
 use config::Config;
-use domain::{CiFailure, Issue, LinearIssue, PullRequest};
+use domain::Urgency;
+use workflows::status::StatusItem;
 
 pub(crate) async fn run(config: &Config) -> Result<()> {
     if config.linear_token.is_none() {
@@ -18,83 +19,101 @@ pub(crate) async fn run(config: &Config) -> Result<()> {
     )
     .await?;
 
-    print_section("github prs", &report.github_prs);
-    print_section("github issues", &report.github_issues);
-
-    if !report.github_ci_failures.is_empty() {
-        print_section("github ci", &report.github_ci_failures);
+    println!("status ({})", report.items.len());
+    for item in &report.items {
+        render_line(item);
     }
-
-    if config.linear_token.is_some() {
-        print_section("linear issues", &report.linear_issues);
-    }
-
-    #[cfg(feature = "private")]
-    crate::private::status::render(&report.private);
 
     Ok(())
 }
 
-trait PrintLine {
-    fn print_line(&self);
-}
-
-impl PrintLine for PullRequest {
-    fn print_line(&self) {
-        println!(
-            "  {}  {} (#{})  {}d  {}",
-            self.repo, self.title, self.number, self.age_days, self.url
-        );
+fn tier_label(urgency: Urgency) -> &'static str {
+    match urgency {
+        Urgency::Critical => "[crit]",
+        Urgency::High => "[high]",
+        Urgency::Medium => "[med] ",
+        Urgency::Low => "[low] ",
     }
 }
 
-impl PrintLine for Issue {
-    fn print_line(&self) {
-        if self.labels.is_empty() {
-            println!(
-                "  {}  {} (#{})  {}d  {}",
-                self.repo, self.title, self.number, self.age_days, self.url
-            );
-        } else {
-            println!(
-                "  {}  {} (#{})  {}d  [{}]  {}",
-                self.repo,
-                self.title,
-                self.number,
-                self.age_days,
-                self.labels.join(", "),
-                self.url
-            );
+fn fmt_age(age: chrono::Duration) -> String {
+    let hours = age.num_hours();
+    if hours < 24 {
+        format!("{hours}h")
+    } else {
+        format!("{}d", age.num_days())
+    }
+}
+
+fn render_line(item: &StatusItem) {
+    match item {
+        StatusItem::Pr(pr) => println!(
+            "  {}  {}  {} (#{})  {}  {}",
+            tier_label(pr.urgency),
+            pr.repo,
+            pr.title,
+            pr.number,
+            fmt_age(pr.age),
+            pr.url,
+        ),
+        StatusItem::Issue(i) => {
+            if i.labels.is_empty() {
+                println!(
+                    "  {}  {}  {} (#{})  {}  {}",
+                    tier_label(i.urgency),
+                    i.repo,
+                    i.title,
+                    i.number,
+                    fmt_age(i.age),
+                    i.url,
+                );
+            } else {
+                println!(
+                    "  {}  {}  {} (#{})  {}  [{}]  {}",
+                    tier_label(i.urgency),
+                    i.repo,
+                    i.title,
+                    i.number,
+                    fmt_age(i.age),
+                    i.labels.join(", "),
+                    i.url,
+                );
+            }
         }
-    }
-}
-
-impl PrintLine for CiFailure {
-    fn print_line(&self) {
-        let age = if self.age_hours < 24 {
-            format!("{}h", self.age_hours)
-        } else {
-            format!("{}d", self.age_hours / 24)
-        };
-        println!(
-            "  {}  {}  {}  {}  {}",
-            self.repo, self.workflow_name, self.conclusion, age, self.url
-        );
-    }
-}
-
-impl PrintLine for LinearIssue {
-    fn print_line(&self) {
-        println!(
-            "  {}  {}  [{}]  {}",
-            self.identifier, self.title, self.state, self.url
-        );
-    }
-}
-
-fn print_section<T: PrintLine>(label: &str, items: &[T]) {
-    println!("{label} ({})", items.len());
-    for item in items {
-        item.print_line();
+        StatusItem::Ci(c) => println!(
+            "  {}  {}  {}  {}  {}  {}",
+            tier_label(c.urgency),
+            c.repo,
+            c.workflow_name,
+            c.conclusion,
+            fmt_age(c.age),
+            c.url,
+        ),
+        StatusItem::Linear(l) => println!(
+            "  {}  {}  {}  [{}]  {}",
+            tier_label(l.urgency),
+            l.identifier,
+            l.title,
+            l.state,
+            l.url,
+        ),
+        #[cfg(feature = "private")]
+        StatusItem::MediaBlocked(b) => {
+            println!("  {}  {}  {}", tier_label(b.urgency), b.title, b.error,)
+        }
+        #[cfg(feature = "private")]
+        StatusItem::MediaMissing(m) => println!(
+            "  {}  {}  aired {}",
+            tier_label(m.urgency),
+            m.title,
+            m.air_date,
+        ),
+        #[cfg(feature = "private")]
+        StatusItem::MediaHealth(h) => println!("  {}  {}", tier_label(h.urgency), h.message,),
+        #[cfg(feature = "private")]
+        StatusItem::MediaBacklog(n) => println!(
+            "  {}  {n} episodes in backlog",
+            tier_label(domain::Urgency::Low),
+        ),
     }
 }

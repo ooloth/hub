@@ -1,16 +1,64 @@
 use anyhow::Result;
-use domain::{CiFailure, Issue, LinearIssue, PullRequest};
+use domain::{CiFailure, Issue, LinearIssue, PullRequest, Urgency};
+use std::cmp::Reverse;
 
-pub struct StatusReport {
-    pub github_prs: Vec<PullRequest>,
-    pub github_issues: Vec<Issue>,
-    pub github_ci_failures: Vec<CiFailure>,
-    pub linear_issues: Vec<LinearIssue>,
+pub enum StatusItem {
+    Pr(PullRequest),
+    Issue(Issue),
+    Ci(CiFailure),
+    Linear(LinearIssue),
     #[cfg(feature = "private")]
-    pub private: crate::private::PrivateStatusData,
+    MediaBlocked(crate::private::status::BlockedItem),
+    #[cfg(feature = "private")]
+    MediaMissing(crate::private::status::MissingItem),
+    #[cfg(feature = "private")]
+    MediaHealth(crate::private::status::HealthItem),
+    #[cfg(feature = "private")]
+    MediaBacklog(u32),
 }
 
-/// Fetches all status data concurrently and returns a combined report.
+impl StatusItem {
+    fn urgency(&self) -> Urgency {
+        match self {
+            Self::Pr(pr) => pr.urgency,
+            Self::Issue(i) => i.urgency,
+            Self::Ci(c) => c.urgency,
+            Self::Linear(l) => l.urgency,
+            #[cfg(feature = "private")]
+            Self::MediaBlocked(b) => b.urgency,
+            #[cfg(feature = "private")]
+            Self::MediaMissing(m) => m.urgency,
+            #[cfg(feature = "private")]
+            Self::MediaHealth(h) => h.urgency,
+            #[cfg(feature = "private")]
+            Self::MediaBacklog(_) => Urgency::Low,
+        }
+    }
+
+    fn age(&self) -> chrono::Duration {
+        match self {
+            Self::Pr(pr) => pr.age,
+            Self::Issue(i) => i.age,
+            Self::Ci(c) => c.age,
+            Self::Linear(l) => l.age,
+            #[cfg(feature = "private")]
+            Self::MediaBlocked(b) => b.age,
+            #[cfg(feature = "private")]
+            Self::MediaMissing(m) => m.age,
+            #[cfg(feature = "private")]
+            Self::MediaHealth(h) => h.age,
+            #[cfg(feature = "private")]
+            Self::MediaBacklog(_) => chrono::Duration::zero(),
+        }
+    }
+}
+
+pub struct StatusReport {
+    pub items: Vec<StatusItem>,
+}
+
+/// Fetches all status data concurrently, merges into a unified list, and sorts
+/// by (urgency ascending, age descending) so the most pressing item is first.
 ///
 /// # Errors
 /// Returns an error if any API call fails.
@@ -39,15 +87,35 @@ pub async fn run(
     let mut github_issues = issues?;
     github_issues.extend(assigned_issues?);
 
-    #[cfg(feature = "private")]
-    let private = crate::private::status::run(private_workflow_names).await?;
+    let mut items: Vec<StatusItem> = Vec::new();
 
-    Ok(StatusReport {
-        github_prs: prs?,
-        github_issues,
-        github_ci_failures: ci_failures?,
-        linear_issues: linear_issues?,
-        #[cfg(feature = "private")]
-        private,
-    })
+    items.extend(prs?.into_iter().map(StatusItem::Pr));
+    items.extend(github_issues.into_iter().map(StatusItem::Issue));
+    items.extend(ci_failures?.into_iter().map(StatusItem::Ci));
+    items.extend(linear_issues?.into_iter().map(StatusItem::Linear));
+
+    #[cfg(feature = "private")]
+    {
+        let private = crate::private::status::run(private_workflow_names).await?;
+        if let Some(media) = private.media {
+            items.extend(media.blocked.into_iter().map(StatusItem::MediaBlocked));
+            items.extend(
+                media
+                    .recent_missing
+                    .into_iter()
+                    .map(StatusItem::MediaMissing),
+            );
+            items.extend(media.health_items.into_iter().map(StatusItem::MediaHealth));
+            if media.backlog_count > 0 {
+                items.push(StatusItem::MediaBacklog(media.backlog_count));
+            }
+        }
+    }
+
+    #[cfg(not(feature = "private"))]
+    let _ = private_workflow_names;
+
+    items.sort_by_key(|i| (i.urgency(), Reverse(i.age())));
+
+    Ok(StatusReport { items })
 }

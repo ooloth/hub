@@ -1,4 +1,6 @@
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Urgency {
+    Critical,
     High,
     Medium,
     Low,
@@ -23,7 +25,8 @@ pub struct PullRequest {
     pub title: String,
     pub repo: RepoSlug,
     pub url: String,
-    pub age_days: u64,
+    pub age: chrono::Duration,
+    pub urgency: Urgency,
 }
 
 pub struct Issue {
@@ -31,7 +34,8 @@ pub struct Issue {
     pub title: String,
     pub repo: RepoSlug,
     pub url: String,
-    pub age_days: u64,
+    pub age: chrono::Duration,
+    pub urgency: Urgency,
     pub labels: Vec<String>,
 }
 
@@ -40,12 +44,15 @@ pub struct LinearIssue {
     pub title: String,
     pub url: String,
     pub state: String,
+    pub age: chrono::Duration,
+    pub urgency: Urgency,
 }
 
 pub struct CiFailure {
     pub repo: RepoSlug,
     pub workflow_name: String,
     pub conclusion: String,
-    pub age_hours: u64,
+    pub age: chrono::Duration,
+    pub urgency: Urgency,
     pub url: String,
 }

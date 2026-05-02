@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
-use domain::LinearIssue;
+use chrono::Utc;
+use domain::{LinearIssue, Urgency};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
@@ -23,11 +24,13 @@ struct IssueConnection {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct IssueNode {
     identifier: String,
     title: String,
     url: String,
     state: State,
+    created_at: String,
 }
 
 #[derive(Deserialize)]
@@ -45,7 +48,7 @@ pub async fn issues(token: &str) -> Result<Vec<LinearIssue>> {
         issues(filter: {
             state: { type: { nin: ["completed", "cancelled"] } }
         }) {
-            nodes { identifier title url state { name } }
+            nodes { identifier title url createdAt state { name } }
         }
     }"#;
 
@@ -80,6 +83,20 @@ pub async fn issues(token: &str) -> Result<Vec<LinearIssue>> {
             title: n.title,
             url: n.url,
             state: n.state.name,
+            age: age(&n.created_at),
+            urgency: Urgency::Medium,
         })
         .collect())
+}
+
+fn age(created_at: &str) -> chrono::Duration {
+    let Ok(created) = chrono::DateTime::parse_from_rfc3339(created_at) else {
+        return chrono::Duration::zero();
+    };
+    let d = Utc::now() - created.to_utc();
+    if d < chrono::Duration::zero() {
+        chrono::Duration::zero()
+    } else {
+        d
+    }
 }

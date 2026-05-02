@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
-use domain::{CiFailure, Issue, PullRequest, RepoSlug};
+use domain::{CiFailure, Issue, PullRequest, RepoSlug, Urgency};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -23,12 +23,16 @@ struct Label {
     name: String,
 }
 
-fn age_days(created_at: &str) -> u64 {
+fn age(created_at: &str) -> chrono::Duration {
     let Ok(created) = chrono::DateTime::parse_from_rfc3339(created_at) else {
-        return 0;
+        return chrono::Duration::zero();
     };
-    let days = (Utc::now() - created.to_utc()).num_days();
-    days.max(0).cast_unsigned()
+    let d = Utc::now() - created.to_utc();
+    if d < chrono::Duration::zero() {
+        chrono::Duration::zero()
+    } else {
+        d
+    }
 }
 
 /// Returns PRs across the given repos where review has been requested from the authenticated user.
@@ -45,12 +49,19 @@ pub async fn prs_awaiting_review(token: &str, repos: &[String]) -> Result<Vec<Pu
         .items
         .into_iter()
         .map(|item| {
+            let age = age(&item.created_at);
+            let urgency = if age >= chrono::Duration::days(3) {
+                Urgency::High
+            } else {
+                Urgency::Medium
+            };
             Ok(PullRequest {
                 number: item.number,
                 title: item.title,
                 repo: repo_slug_from_url(&item.repository_url)?,
                 url: item.html_url,
-                age_days: age_days(&item.created_at),
+                age,
+                urgency,
             })
         })
         .collect()
@@ -69,6 +80,11 @@ pub async fn issues(token: &str, repos: &[String], assigned_only: bool) -> Resul
     } else {
         "is:open is:issue"
     };
+    let urgency = if assigned_only {
+        Urgency::Medium
+    } else {
+        Urgency::Low
+    };
     let query = scoped_query(base, repos);
     let response: SearchResponse = search(token, &query).await?;
     response
@@ -80,7 +96,8 @@ pub async fn issues(token: &str, repos: &[String], assigned_only: bool) -> Resul
                 title: item.title,
                 repo: repo_slug_from_url(&item.repository_url)?,
                 url: item.html_url,
-                age_days: age_days(&item.created_at),
+                age: age(&item.created_at),
+                urgency,
                 labels: item.labels.into_iter().map(|l| l.name).collect(),
             })
         })
@@ -162,7 +179,8 @@ async fn fetch_repo_ci_failures(token: &str, repo: &str, lookback: &str) -> Resu
                 repo: RepoSlug::new(owner, name),
                 workflow_name: run.name,
                 conclusion: run.conclusion.unwrap_or_default(),
-                age_hours: age_hours(&run.created_at),
+                age: age(&run.created_at),
+                urgency: Urgency::High,
                 url: run.html_url,
             })
         })
@@ -175,14 +193,6 @@ fn parse_cutoff(lookback: &str) -> Result<chrono::DateTime<Utc>> {
     let secs = duration.as_secs();
     let delta = chrono::Duration::seconds(secs.try_into().unwrap_or(i64::MAX));
     Ok(Utc::now() - delta)
-}
-
-fn age_hours(created_at: &str) -> u64 {
-    let Ok(created) = chrono::DateTime::parse_from_rfc3339(created_at) else {
-        return 0;
-    };
-    let hours = (Utc::now() - created.to_utc()).num_hours();
-    hours.max(0).cast_unsigned()
 }
 
 /// Keeps only the latest run per workflow file path that failed on the default branch

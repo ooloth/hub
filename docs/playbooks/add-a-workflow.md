@@ -30,6 +30,10 @@ and return `anyhow::Result<Vec<YourDomainType>>`.
 Add any new structs the workflow operates on to `domain/src/lib.rs`. Keep
 them pure — no I/O, no imports from other hub crates.
 
+Each domain type that surfaces items in `hub status` needs two standard fields:
+`urgency: domain::Urgency` and `age: chrono::Duration`. These drive the
+unified sort order (`urgency` ascending, then `age` descending within a tier).
+
 ## 3. Implement the workflow
 
 1. Create `workflows/src/<workflow-name>.rs`
@@ -39,13 +43,22 @@ Expose a `pub async fn run(...)` that calls client functions and returns a
 typed result. Credentials and config are passed as parameters; the caller
 (CLI / TUI) is responsible for loading them.
 
-## 4. Wire into the CLI
+Assign `urgency` on each item using rules the workflow owns — the workflow is
+the right place to encode domain knowledge like "a CI failure is always High"
+or "an issue assigned to me is Medium". Use `domain::Urgency::{Critical, High,
+Medium, Low}`.
 
-In `ui/cli/src/main.rs`:
+## 4. Wire into hub status
 
-1. Add a variant to the `Commands` enum
-2. Add a match arm that loads config, calls `workflows::<name>::run(...)`, and
-   prints the result
+Workflows that surface items in `hub status` plug into the unified pipeline —
+they don't get their own CLI command.
+
+1. Add one or more variants for your item type(s) to the `StatusItem` enum in
+   `workflows/src/status.rs`
+2. In `workflows::status::run`, call your new workflow and push its items into
+   the shared `Vec<StatusItem>` using those variants
+3. Add a match arm for each new variant in `render_line` in
+   `ui/cli/src/commands/status.rs` that prints `[tier]  <formatted fields>`
 
 ## 5. Register in the Rust config
 
