@@ -66,14 +66,14 @@ gh run view <run-id> --repo <repo> --log-failed
 
 ## Output format
 
-```
-Repo:     org/my-app
-Workflow: ci.yml
-Run:      #12345 — https://github.com/org/my-app/actions/runs/12345
-Failed:   "Run tests" step
-Error:    <paste the key error line>
-Cause:    <one sentence — e.g. "dependency version mismatch introduced in commit abc1234">
-Next:     <one action — e.g. "pin dep to 1.2.3 or update test fixture">
-```
+Use headers and bullets, not a code block:
 
-Keep the diagnosis to the seven fields above. If the cause is genuinely ambiguous, say so explicitly rather than guessing.
+**Failed:** `<step name>` — `<job name>` job, `<step name>` step, commit `<sha>` ("<commit title>")
+
+**Cause:** One or two sentences explaining why it failed.
+
+**Options:**
+1. First fix option — when to use it
+2. Second fix option — when to use it (if applicable)
+
+If the cause is genuinely ambiguous, say so explicitly rather than guessing. Omit **Options** and replace with **Next:** if there is only one clear fix.
