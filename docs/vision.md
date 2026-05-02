@@ -51,8 +51,8 @@ thresholds, and different audiences.
 ## Prioritization
 
 The hardest problem is signal vs noise. Raw counts ("5 PRs, 3 errors")
-are dashboards, not prioritization. Hub aims to answer: *why does this
-need my attention today?*
+are dashboards, not prioritization. Hub aims to answer: _why does this
+need my attention today?_
 
 The design principle: **workflows classify, hub aggregates.**
 
@@ -99,30 +99,20 @@ one means adding files — no central registration.
 
 Current:
 
-| Workflow | What it tracks |
-|---|---|
-| GitHub PRs | PRs awaiting my review |
+| Workflow      | What it tracks                                      |
+| ------------- | --------------------------------------------------- |
+| GitHub PRs    | PRs awaiting my review                              |
 | GitHub issues | Open issues assigned to me or open in watched repos |
-| GitHub CI | Failing workflow runs on watched repos |
-| Linear | Incomplete issues assigned to me |
+| GitHub CI     | Failing workflow runs on watched repos              |
+| Linear        | Incomplete issues assigned to me                    |
 
-Planned (public):
+Planned:
 
-| Workflow | What it tracks |
-|---|---|
+| Workflow          | What it tracks                                      |
+| ----------------- | --------------------------------------------------- |
 | Production errors | Error-level log entries (Loki) — first novel signal |
-| Dependabot | Security alerts on watched repos |
-
-Planned (private, via hub-private):
-
-| Workflow | What it tracks |
-|---|---|
-| Home server: Sonarr | Import failures, recently aired missing episodes |
-| Home server: Radarr | Import failures, recently released missing movies |
-| Home server: Prowlarr | Indexer health |
-| Home server: Plex | On-deck context for urgency promotion in Sonarr/Radarr |
-| Home server: disk | Drive usage on media drives |
-| Home server: Bazarr | Missing subtitles |
+| Dependabot        | Security alerts on watched repos                    |
+| Home server: disk | Drive usage on media drives                         |
 
 Future candidates: Notion tasks, calendar conflicts.
 

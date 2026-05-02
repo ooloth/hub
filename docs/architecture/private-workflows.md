@@ -77,16 +77,14 @@ pub mod private;
 mod private;
 ```
 
-`hub-private/clients/src/` is the `private` module for `clients`; it re-exports
-individual clients as sub-modules. Same pattern for `workflows`, `ui/cli`, and
-`ui/tui`.
+`hub-private/clients/src/` is the `private` module for `clients`; it re-exports individual
+clients as sub-modules. Same pattern for `workflows`, `ui/cli`, and `ui/tui`.
 
-The rich domain types for private integrations (e.g. `PrivateStatusData`,
-`MediaStatus`) live in `hub-private/workflows/src/status.rs`. Hub's public crate
-only sees `PrivateStatusData` as an opaque struct — it never imports
-integration-specific names. The CLI and TUI rendering logic that knows the
-concrete fields lives in `hub-private/ui/cli/src/` and `hub-private/ui/tui/src/`
-respectively.
+The rich domain types for private integrations (e.g. `PrivateStatusData`) live in
+`hub-private/workflows/src/status.rs`. Hub's public crate only sees `PrivateStatusData`
+as an opaque struct — it never imports integration-specific names. The CLI and TUI
+rendering logic that knows the concrete fields lives in `hub-private/ui/cli/src/`
+and `hub-private/ui/tui/src/` respectively.
 
 ## Playbooks
 

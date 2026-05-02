@@ -2,9 +2,8 @@
 
 ## Should you add this?
 
-Use hub-private when the workflow involves infrastructure, credentials, or integrations
-that shouldn't be in the public repo — for example, home server media integrations
-where the existence of the service implies something you'd rather not publish.
+Use hub-private when the workflow involves infrastructure, credentials, or integrations that
+shouldn't be in the public repo — for example, references to private work integrations.
 
 If the workflow has no sensitive implications, add it to the public repo using
 [Add a Workflow](add-a-workflow.md) instead.
