@@ -22,9 +22,29 @@ use workflows::status::{StatusItem, StatusReport, SCHEMA_VERSION};
 mod private;
 
 #[derive(Debug)]
+enum DisplayItem {
+    Single(StatusItem),
+    Group {
+        label: String,
+        items: Vec<StatusItem>,
+    },
+}
+
+// Stores an index into App::display_items rather than cloning items.
+#[derive(Debug)]
+enum View {
+    Main,
+    Detail {
+        group_index: usize,
+        list_state: ListState,
+    },
+}
+
+#[derive(Debug)]
 struct App {
-    items: Vec<StatusItem>,
+    display_items: Vec<DisplayItem>,
     list_state: ListState,
+    view: View,
     is_refreshing: bool,
     last_updated: Option<DateTime<Utc>>,
     error: Option<String>,
@@ -32,23 +52,71 @@ struct App {
 }
 
 impl App {
+    fn active_list_len(&self) -> usize {
+        match &self.view {
+            View::Main => self.display_items.len(),
+            View::Detail { group_index, .. } => match self.display_items.get(*group_index) {
+                Some(DisplayItem::Group { items, .. }) => items.len(),
+                _ => 0,
+            },
+        }
+    }
+
     fn move_up(&mut self) {
-        let sel = self.list_state.selected().unwrap_or(0);
-        if sel > 0 {
-            self.list_state.select(Some(sel - 1));
+        if matches!(self.view, View::Main) {
+            let sel = self.list_state.selected().unwrap_or(0);
+            if sel > 0 {
+                self.list_state.select(Some(sel - 1));
+            }
+        } else if let View::Detail {
+            ref mut list_state, ..
+        } = self.view
+        {
+            let sel = list_state.selected().unwrap_or(0);
+            if sel > 0 {
+                list_state.select(Some(sel - 1));
+            }
         }
     }
 
     fn move_down(&mut self) {
-        let sel = self.list_state.selected().unwrap_or(0);
-        if !self.items.is_empty() && sel < self.items.len() - 1 {
-            self.list_state.select(Some(sel + 1));
+        let len = self.active_list_len();
+        if matches!(self.view, View::Main) {
+            let sel = self.list_state.selected().unwrap_or(0);
+            if len > 0 && sel < len - 1 {
+                self.list_state.select(Some(sel + 1));
+            }
+        } else if let View::Detail {
+            ref mut list_state, ..
+        } = self.view
+        {
+            let sel = list_state.selected().unwrap_or(0);
+            if len > 0 && sel < len - 1 {
+                list_state.select(Some(sel + 1));
+            }
         }
     }
 
     fn selected_url(&self) -> Option<&str> {
-        let sel = self.list_state.selected().unwrap_or(0);
-        self.items.get(sel).and_then(item_url)
+        if matches!(self.view, View::Main) {
+            let sel = self.list_state.selected().unwrap_or(0);
+            match self.display_items.get(sel)? {
+                DisplayItem::Single(item) => item_url(item),
+                DisplayItem::Group { .. } => None,
+            }
+        } else if let View::Detail {
+            group_index,
+            ref list_state,
+        } = self.view
+        {
+            let sel = list_state.selected().unwrap_or(0);
+            match self.display_items.get(group_index)? {
+                DisplayItem::Group { items, .. } => items.get(sel).and_then(item_url),
+                DisplayItem::Single(_) => None,
+            }
+        } else {
+            None
+        }
     }
 }
 
@@ -100,6 +168,63 @@ fn item_urgency(item: &StatusItem) -> domain::Urgency {
     }
 }
 
+fn display_item_line(item: &DisplayItem) -> String {
+    match item {
+        DisplayItem::Single(s) => item_line(s),
+        DisplayItem::Group { label, items } => format!("{}  ({})", label, items.len()),
+    }
+}
+
+fn display_item_urgency(item: &DisplayItem) -> domain::Urgency {
+    match item {
+        DisplayItem::Single(s) => item_urgency(s),
+        DisplayItem::Group { items, .. } => items
+            .first()
+            .map(item_urgency)
+            .unwrap_or(domain::Urgency::Low),
+    }
+}
+
+fn group_key(_item: &StatusItem) -> Option<String> {
+    #[cfg(feature = "private")]
+    if let StatusItem::MediaBlocked(b) = _item {
+        return Some(b.error.clone());
+    }
+    None
+}
+
+fn aggregate(items: Vec<StatusItem>) -> Vec<DisplayItem> {
+    let mut result: Vec<DisplayItem> = vec![];
+    for item in items {
+        if let Some(key) = group_key(&item) {
+            if let Some(DisplayItem::Group {
+                items: group_items, ..
+            }) = result
+                .iter_mut()
+                .find(|d| matches!(d, DisplayItem::Group { label, .. } if *label == key))
+            {
+                group_items.push(item);
+                continue;
+            }
+            result.push(DisplayItem::Group {
+                label: key,
+                items: vec![item],
+            });
+        } else {
+            result.push(DisplayItem::Single(item));
+        }
+    }
+    result
+        .into_iter()
+        .map(|d| match d {
+            DisplayItem::Group { items, .. } if items.len() == 1 => {
+                DisplayItem::Single(items.into_iter().next().unwrap())
+            }
+            other => other,
+        })
+        .collect()
+}
+
 fn urgency_style(u: domain::Urgency) -> Style {
     match u {
         domain::Urgency::Critical => Style::default().fg(Color::Red),
@@ -111,10 +236,10 @@ fn urgency_style(u: domain::Urgency) -> Style {
 
 const KEYBINDS: &[(&str, &str)] = &[
     ("?", "open help"),
-    ("Esc", "close help"),
+    ("Esc", "close help / detail"),
     ("↑ / k", "up"),
     ("↓ / j", "down"),
-    ("Enter", "open URL"),
+    ("Enter", "open URL / expand group"),
     ("q  / Ctrl-C", "quit"),
 ];
 
@@ -140,6 +265,24 @@ fn popup_area(area: Rect, content_lines: u16, content_width: u16) -> Rect {
         width,
         height,
     )
+}
+
+fn build_list_item(dot: Span<'static>, wrapped: Vec<String>) -> ListItem<'static> {
+    let mut lines: Vec<Line> = wrapped
+        .into_iter()
+        .enumerate()
+        .map(|(j, chunk)| {
+            if j == 0 {
+                Line::from(vec![dot.clone(), Span::raw(chunk)])
+            } else {
+                Line::from(Span::raw(format!("  {chunk}")))
+            }
+        })
+        .collect();
+    if lines.is_empty() {
+        lines.push(Line::from(vec![dot, Span::raw("")]));
+    }
+    ListItem::new(Text::from(lines))
 }
 
 fn wrap_text(text: &str, width: usize) -> Vec<String> {
@@ -172,61 +315,98 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
 
     let text_width = list_area.width.saturating_sub(2) as usize; // 2 for "● "
-    let selected = app.list_state.selected();
-    let items: Vec<ListItem> = app
-        .items
-        .iter()
-        .enumerate()
-        .map(|(i, item)| {
-            let dot_style = if selected == Some(i) {
-                Style::default()
-            } else {
-                urgency_style(item_urgency(item))
-            };
-            let dot = Span::styled("● ", dot_style);
-            let wrapped = wrap_text(&item_line(item), text_width);
-            let mut lines: Vec<Line> = wrapped
-                .into_iter()
+
+    if matches!(app.view, View::Main) {
+        let selected = app.list_state.selected();
+        let items: Vec<ListItem> = app
+            .display_items
+            .iter()
+            .enumerate()
+            .map(|(i, item)| {
+                let dot_style = if selected == Some(i) {
+                    Style::default()
+                } else {
+                    urgency_style(display_item_urgency(item))
+                };
+                let dot = Span::styled("● ", dot_style);
+                build_list_item(dot, wrap_text(&display_item_line(item), text_width))
+            })
+            .collect();
+        let list =
+            List::new(items).highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+        frame.render_stateful_widget(list, list_area, &mut app.list_state);
+    } else if let View::Detail {
+        group_index,
+        ref mut list_state,
+    } = app.view
+    {
+        let gi = group_index;
+        if let Some(DisplayItem::Group { items, .. }) = app.display_items.get(gi) {
+            let selected = list_state.selected();
+            let list_items: Vec<ListItem> = items
+                .iter()
                 .enumerate()
-                .map(|(j, chunk)| {
-                    if j == 0 {
-                        Line::from(vec![dot.clone(), Span::raw(chunk)])
+                .map(|(i, item)| {
+                    let dot_style = if selected == Some(i) {
+                        Style::default()
                     } else {
-                        Line::from(Span::raw(format!("  {chunk}")))
-                    }
+                        urgency_style(item_urgency(item))
+                    };
+                    let dot = Span::styled("● ", dot_style);
+                    build_list_item(dot, wrap_text(&item_line(item), text_width))
                 })
                 .collect();
-            if lines.is_empty() {
-                lines.push(Line::from(vec![dot, Span::raw("")]));
+            let list = List::new(list_items)
+                .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+            frame.render_stateful_widget(list, list_area, list_state);
+        }
+    }
+
+    let (position, right_status) = if matches!(app.view, View::Main) {
+        let pos = app
+            .list_state
+            .selected()
+            .map(|i| format!("{}/{}", i + 1, app.display_items.len()))
+            .unwrap_or_default();
+        let status = if app.is_refreshing {
+            if let Some(err) = &app.error {
+                format!("refresh failed: {err}")
+            } else {
+                "refreshing…".to_string()
             }
-            ListItem::new(Text::from(lines))
-        })
-        .collect();
-
-    let list = List::new(items).highlight_style(Style::default().add_modifier(Modifier::REVERSED));
-    frame.render_stateful_widget(list, list_area, &mut app.list_state);
-
-    let position = app
-        .list_state
-        .selected()
-        .map(|i| format!("{}/{}", i + 1, app.items.len()))
-        .unwrap_or_default();
-
-    let right_status = if app.is_refreshing {
-        if let Some(err) = &app.error {
-            format!("refresh failed: {err}")
+        } else if let Some(t) = app.last_updated {
+            let mins = (Utc::now() - t).num_minutes();
+            if mins == 0 {
+                "updated just now".to_string()
+            } else {
+                format!("updated {mins}m ago")
+            }
         } else {
-            "refreshing…".to_string()
-        }
-    } else if let Some(t) = app.last_updated {
-        let mins = (Utc::now() - t).num_minutes();
-        if mins == 0 {
-            "updated just now".to_string()
-        } else {
-            format!("updated {mins}m ago")
-        }
+            String::new()
+        };
+        (pos, status)
+    } else if let View::Detail {
+        group_index,
+        ref list_state,
+    } = app.view
+    {
+        let pos = list_state
+            .selected()
+            .map(|i| format!("{}/{}", i + 1, app.active_list_len()))
+            .unwrap_or_default();
+        let label = match app.display_items.get(group_index) {
+            Some(DisplayItem::Group { label, .. }) => {
+                if label.chars().count() > 40 {
+                    format!("{}…", label.chars().take(39).collect::<String>())
+                } else {
+                    label.clone()
+                }
+            }
+            _ => String::new(),
+        };
+        (pos, label)
     } else {
-        String::new()
+        (String::new(), String::new())
     };
 
     let right_width = right_status.chars().count() as u16;
@@ -269,13 +449,15 @@ async fn main() -> Result<()> {
             _ => (vec![], None, true),
         };
 
+    let display_items = aggregate(initial_items);
     let mut list_state = ListState::default();
-    if !initial_items.is_empty() {
+    if !display_items.is_empty() {
         list_state.select(Some(0));
     }
     let mut app = App {
-        items: initial_items,
+        display_items,
         list_state,
+        view: View::Main,
         is_refreshing: start_refresh,
         last_updated: initial_updated,
         error: None,
@@ -355,11 +537,34 @@ async fn run_loop(
                         | (KeyCode::Char('c'), KeyModifiers::CONTROL) => break,
                         (KeyCode::Char('?'), _) => app.show_help = !app.show_help,
                         (KeyCode::Esc, _) if app.show_help => app.show_help = false,
+                        (KeyCode::Esc, _) if matches!(app.view, View::Detail { .. }) => {
+                            app.view = View::Main;
+                        }
                         _ if app.show_help => {}
                         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => app.move_up(),
                         (KeyCode::Down, _) | (KeyCode::Char('j'), _) => app.move_down(),
                         (KeyCode::Enter, _) => {
-                            if let Some(url) = app.selected_url() {
+                            if matches!(app.view, View::Main) {
+                                let sel = app.list_state.selected().unwrap_or(0);
+                                match app.display_items.get(sel) {
+                                    Some(DisplayItem::Group { items, .. }) => {
+                                        let mut detail_state = ListState::default();
+                                        if !items.is_empty() {
+                                            detail_state.select(Some(0));
+                                        }
+                                        app.view = View::Detail {
+                                            group_index: sel,
+                                            list_state: detail_state,
+                                        };
+                                    }
+                                    Some(DisplayItem::Single(_)) => {
+                                        if let Some(url) = app.selected_url() {
+                                            let _ = open::that_detached(url);
+                                        }
+                                    }
+                                    None => {}
+                                }
+                            } else if let Some(url) = app.selected_url() {
                                 let _ = open::that_detached(url);
                             }
                         }
@@ -381,10 +586,15 @@ async fn run_loop(
                             .context("failed to serialize status report")?;
                         store::status::upsert(conn, &json, SCHEMA_VERSION)
                             .context("failed to upsert status cache")?;
+                        let display_items = aggregate(report.items);
                         let current = app.list_state.selected().unwrap_or(0);
-                        let clamped = current.min(report.items.len().saturating_sub(1));
-                        app.list_state.select(if report.items.is_empty() { None } else { Some(clamped) });
-                        app.items = report.items;
+                        let clamped = current.min(display_items.len().saturating_sub(1));
+                        app.list_state
+                            .select(if display_items.is_empty() { None } else { Some(clamped) });
+                        app.display_items = display_items;
+                        if matches!(app.view, View::Detail { .. }) {
+                            app.view = View::Main;
+                        }
                         app.last_updated = Some(Utc::now());
                         app.is_refreshing = false;
                         app.error = None;
