@@ -75,8 +75,9 @@ just tui     # run the TUI
 | `docs/architecture/secrets.md`           | 1Password → op run → env var model                           |
 | `docs/architecture/private-workflows.md` | Two-repo model for private workflows                         |
 | `clients/README.md`                      | reqwest pattern for HTTP clients                             |
-| `store/README.md`                        | rusqlite pattern for SQLite access                           |
+| `store/README.md`                        | rusqlite pattern, db path, Connection threading notes        |
 | `ui/cli/README.md`                       | clap derive API for CLI commands                             |
+| `ui/tui/README.md`                       | TUI architecture, cache/schema version, keybindings          |
 
 ### Playbooks
 
