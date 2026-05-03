@@ -39,12 +39,11 @@ daemon is the right answer at that point.
 
 - The TUI is self-contained: launch it, it shows cached data immediately,
   refreshes on its own schedule, no external process required.
-- `hub status` (CLI) reads from SQLite if the cache is fresh (≤ 30 min),
-  falls back to a live fetch with a notice if stale or absent. This means
-  CLI reads benefit from a recently running TUI at no extra cost.
-- There is no background refresh when the TUI is not open. If the TUI
-  hasn't been running, the CLI live-fetches on the first invocation and
-  the result warms the cache for subsequent calls in that session.
+- `hub status` (CLI) always does a live fetch and exits. The cache is a
+  TUI-only concern. CLI is a one-shot command run infrequently; a 2-3
+  second live fetch is acceptable and avoids any cache-staleness
+  complexity in the CLI path.
+- There is no background refresh when the TUI is not open.
 - If a future use case requires refresh without an open TUI (scheduled
   alerts, headless server operation), revisit this decision and introduce
   a daemon then. The SQLite schema is already the right shape for it.

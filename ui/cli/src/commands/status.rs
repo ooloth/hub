@@ -111,8 +111,8 @@ fn render_line(item: &StatusItem) {
         #[cfg(feature = "private")]
         StatusItem::MediaHealth(h) => println!("  {}  {}", tier_label(h.urgency), h.message,),
         #[cfg(feature = "private")]
-        StatusItem::MediaBacklog(n) => println!(
-            "  {}  {n} episodes in backlog",
+        StatusItem::MediaBacklog { count } => println!(
+            "  {}  {count} episodes in backlog",
             tier_label(domain::Urgency::Low),
         ),
     }

@@ -1,7 +1,11 @@
 use anyhow::Result;
 use domain::{CiFailure, Issue, LinearIssue, PullRequest, Urgency};
+use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 
+pub const SCHEMA_VERSION: i32 = 1;
+
+#[derive(Debug, Serialize, Deserialize)]
 pub enum StatusItem {
     Pr(PullRequest),
     Issue(Issue),
@@ -14,7 +18,9 @@ pub enum StatusItem {
     #[cfg(feature = "private")]
     MediaHealth(crate::private::status::HealthItem),
     #[cfg(feature = "private")]
-    MediaBacklog(u32),
+    MediaBacklog {
+        count: u32,
+    },
 }
 
 impl StatusItem {
@@ -31,7 +37,7 @@ impl StatusItem {
             #[cfg(feature = "private")]
             Self::MediaHealth(h) => h.urgency,
             #[cfg(feature = "private")]
-            Self::MediaBacklog(_) => Urgency::Low,
+            Self::MediaBacklog { .. } => Urgency::Low,
         }
     }
 
@@ -48,11 +54,12 @@ impl StatusItem {
             #[cfg(feature = "private")]
             Self::MediaHealth(h) => h.age,
             #[cfg(feature = "private")]
-            Self::MediaBacklog(_) => chrono::Duration::zero(),
+            Self::MediaBacklog { .. } => chrono::Duration::zero(),
         }
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
 pub struct StatusReport {
     pub items: Vec<StatusItem>,
 }
@@ -107,7 +114,9 @@ pub async fn run(
             );
             items.extend(media.health_items.into_iter().map(StatusItem::MediaHealth));
             if media.backlog_count > 0 {
-                items.push(StatusItem::MediaBacklog(media.backlog_count));
+                items.push(StatusItem::MediaBacklog {
+                    count: media.backlog_count,
+                });
             }
         }
     }
