@@ -126,7 +126,7 @@ fn urgency_label(u: domain::Urgency) -> &'static str {
 
 const KEYBINDS: &[(&str, &str)] = &[
     ("?  / Esc", "close"),
-    ("↑  / ↓", "navigate"),
+    ("↑/k / ↓/j", "navigate"),
     ("Enter", "open URL"),
     ("q  / Ctrl-C", "quit"),
 ];
@@ -316,8 +316,8 @@ async fn run_loop(
                         (KeyCode::Char('?'), _) => app.show_help = !app.show_help,
                         (KeyCode::Esc, _) if app.show_help => app.show_help = false,
                         _ if app.show_help => {}
-                        (KeyCode::Up, _) => app.move_up(),
-                        (KeyCode::Down, _) => app.move_down(),
+                        (KeyCode::Up, _) | (KeyCode::Char('k'), _) => app.move_up(),
+                        (KeyCode::Down, _) | (KeyCode::Char('j'), _) => app.move_down(),
                         (KeyCode::Enter, _) => {
                             if let Some(url) = app.selected_url() {
                                 let _ = open::that_detached(url);
