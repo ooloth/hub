@@ -10,7 +10,7 @@ use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
-    text::{Line, Span},
+    text::{Line, Span, Text},
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
     Terminal,
 };
@@ -142,10 +142,36 @@ fn popup_area(area: Rect, content_lines: u16, content_width: u16) -> Rect {
     )
 }
 
+fn wrap_text(text: &str, width: usize) -> Vec<String> {
+    let chars: Vec<char> = text.chars().collect();
+    let total = chars.len();
+    if total <= width {
+        return vec![text.to_string()];
+    }
+    let mut lines = vec![];
+    let mut start = 0;
+    while start < total {
+        let end = (start + width).min(total);
+        if end == total {
+            lines.push(chars[start..].iter().collect());
+            break;
+        }
+        let split = chars[start..end]
+            .iter()
+            .rposition(|&c| c == ' ')
+            .map(|p| start + p)
+            .unwrap_or(end);
+        lines.push(chars[start..split].iter().collect());
+        start = split + 1;
+    }
+    lines
+}
+
 fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let [list_area, bar_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
 
+    let text_width = list_area.width.saturating_sub(2) as usize; // 2 for "● "
     let selected = app.list_state.selected();
     let items: Vec<ListItem> = app
         .items
@@ -158,8 +184,22 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
                 urgency_style(item_urgency(item))
             };
             let dot = Span::styled("● ", dot_style);
-            let text = Span::raw(item_line(item));
-            ListItem::new(Line::from(vec![dot, text]))
+            let wrapped = wrap_text(&item_line(item), text_width);
+            let mut lines: Vec<Line> = wrapped
+                .into_iter()
+                .enumerate()
+                .map(|(j, chunk)| {
+                    if j == 0 {
+                        Line::from(vec![dot.clone(), Span::raw(chunk)])
+                    } else {
+                        Line::from(Span::raw(format!("  {chunk}")))
+                    }
+                })
+                .collect();
+            if lines.is_empty() {
+                lines.push(Line::from(vec![dot, Span::raw("")]));
+            }
+            ListItem::new(Text::from(lines))
         })
         .collect();
 
