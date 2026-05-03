@@ -206,7 +206,13 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let list = List::new(items).highlight_style(Style::default().add_modifier(Modifier::REVERSED));
     frame.render_stateful_widget(list, list_area, &mut app.list_state);
 
-    let status = if app.is_refreshing {
+    let position = app
+        .list_state
+        .selected()
+        .map(|i| format!("{}/{}", i + 1, app.items.len()))
+        .unwrap_or_default();
+
+    let right_status = if app.is_refreshing {
         if let Some(err) = &app.error {
             format!("refresh failed: {err}")
         } else {
@@ -215,21 +221,20 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
     } else if let Some(t) = app.last_updated {
         let mins = (Utc::now() - t).num_minutes();
         if mins == 0 {
-            "last updated just now".to_string()
+            "updated just now".to_string()
         } else {
-            format!(
-                "last updated {mins}m ago  ·  {n} items",
-                n = app.items.len()
-            )
+            format!("updated {mins}m ago")
         }
     } else {
         String::new()
     };
 
-    frame.render_widget(
-        Paragraph::new(status).style(Style::default().add_modifier(Modifier::DIM)),
-        bar_area,
-    );
+    let right_width = right_status.chars().count() as u16;
+    let [bar_left, bar_right] =
+        Layout::horizontal([Constraint::Min(0), Constraint::Length(right_width)]).areas(bar_area);
+    let dim = Style::default().add_modifier(Modifier::DIM);
+    frame.render_widget(Paragraph::new(position).style(dim), bar_left);
+    frame.render_widget(Paragraph::new(right_status).style(dim), bar_right);
 
     if app.show_help {
         let text = format_keybinds(KEYBINDS);
