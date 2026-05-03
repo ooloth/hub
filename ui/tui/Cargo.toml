@@ -18,7 +18,7 @@ crossterm = { version = "0.28", features = ["event-stream"] }
 domain = { path = "../../domain" }
 futures = "0.3"
 open = "5"
-ratatui = "0.29"
+ratatui = "0.30"
 rusqlite = { version = "0.31", features = ["bundled"] }
 serde_json = "1"
 store = { path = "../../store" }
