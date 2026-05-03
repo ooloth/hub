@@ -9,7 +9,8 @@ use futures::StreamExt;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Layout, Rect},
-    style::{Modifier, Style},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
     Terminal,
 };
@@ -67,63 +68,44 @@ fn item_url(item: &StatusItem) -> Option<&str> {
 
 fn item_line(item: &StatusItem) -> String {
     match item {
-        StatusItem::Pr(pr) => format!(
-            "[{}]  {}  {} (#{})",
-            urgency_label(pr.urgency),
-            pr.repo,
-            pr.title,
-            pr.number
-        ),
-        StatusItem::Issue(i) => format!(
-            "[{}]  {}  {} (#{})",
-            urgency_label(i.urgency),
-            i.repo,
-            i.title,
-            i.number
-        ),
-        StatusItem::Ci(c) => format!(
-            "[{}]  {}  {}  {}",
-            urgency_label(c.urgency),
-            c.repo,
-            c.workflow_name,
-            c.conclusion
-        ),
-        StatusItem::Linear(l) => format!(
-            "[{}]  {}  {}  [{}]",
-            urgency_label(l.urgency),
-            l.identifier,
-            l.title,
-            l.state
-        ),
+        StatusItem::Pr(pr) => format!("{}  {} (#{})", pr.repo, pr.title, pr.number),
+        StatusItem::Issue(i) => format!("{}  {} (#{})", i.repo, i.title, i.number),
+        StatusItem::Ci(c) => format!("{}  {}  {}", c.repo, c.workflow_name, c.conclusion),
+        StatusItem::Linear(l) => format!("{}  {}  [{}]", l.identifier, l.title, l.state),
         #[cfg(feature = "private")]
-        StatusItem::MediaBlocked(b) => {
-            format!("[{}]  {}  {}", urgency_label(b.urgency), b.title, b.error)
-        }
+        StatusItem::MediaBlocked(b) => format!("{}  {}", b.title, b.error),
         #[cfg(feature = "private")]
-        StatusItem::MediaMissing(m) => format!(
-            "[{}]  {}  aired {}",
-            urgency_label(m.urgency),
-            m.title,
-            m.air_date
-        ),
+        StatusItem::MediaMissing(m) => format!("{}  aired {}", m.title, m.air_date),
         #[cfg(feature = "private")]
-        StatusItem::MediaHealth(h) => {
-            format!("[{}]  {}", urgency_label(h.urgency), h.message)
-        }
+        StatusItem::MediaHealth(h) => h.message.clone(),
         #[cfg(feature = "private")]
-        StatusItem::MediaBacklog { count } => format!(
-            "[{}]  {count} episodes in backlog",
-            urgency_label(domain::Urgency::Low)
-        ),
+        StatusItem::MediaBacklog { count } => format!("{count} episodes in backlog"),
     }
 }
 
-fn urgency_label(u: domain::Urgency) -> &'static str {
+fn item_urgency(item: &StatusItem) -> domain::Urgency {
+    match item {
+        StatusItem::Pr(pr) => pr.urgency,
+        StatusItem::Issue(i) => i.urgency,
+        StatusItem::Ci(c) => c.urgency,
+        StatusItem::Linear(l) => l.urgency,
+        #[cfg(feature = "private")]
+        StatusItem::MediaBlocked(b) => b.urgency,
+        #[cfg(feature = "private")]
+        StatusItem::MediaMissing(m) => m.urgency,
+        #[cfg(feature = "private")]
+        StatusItem::MediaHealth(h) => h.urgency,
+        #[cfg(feature = "private")]
+        StatusItem::MediaBacklog { .. } => domain::Urgency::Low,
+    }
+}
+
+fn urgency_style(u: domain::Urgency) -> Style {
     match u {
-        domain::Urgency::Critical => "crit",
-        domain::Urgency::High => "high",
-        domain::Urgency::Medium => "med ",
-        domain::Urgency::Low => "low ",
+        domain::Urgency::Critical => Style::default().fg(Color::Red),
+        domain::Urgency::High => Style::default().fg(Color::Yellow),
+        domain::Urgency::Medium => Style::default(),
+        domain::Urgency::Low => Style::default().add_modifier(Modifier::DIM),
     }
 }
 
@@ -164,10 +146,21 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let [list_area, bar_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
 
+    let selected = app.list_state.selected();
     let items: Vec<ListItem> = app
         .items
         .iter()
-        .map(|item| ListItem::new(item_line(item)))
+        .enumerate()
+        .map(|(i, item)| {
+            let dot_style = if selected == Some(i) {
+                Style::default()
+            } else {
+                urgency_style(item_urgency(item))
+            };
+            let dot = Span::styled("● ", dot_style);
+            let text = Span::raw(item_line(item));
+            ListItem::new(Line::from(vec![dot, text]))
+        })
         .collect();
 
     let list = List::new(items).highlight_style(Style::default().add_modifier(Modifier::REVERSED));
