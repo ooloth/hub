@@ -124,8 +124,25 @@ fn urgency_label(u: domain::Urgency) -> &'static str {
     }
 }
 
-const HELP_TEXT: &str =
-    "  ?  / Esc     close\n  ↑  / ↓       navigate\n  Enter        open URL\n  q  / Ctrl-C  quit";
+const KEYBINDS: &[(&str, &str)] = &[
+    ("?  / Esc", "close"),
+    ("↑  / ↓", "navigate"),
+    ("Enter", "open URL"),
+    ("q  / Ctrl-C", "quit"),
+];
+
+fn format_keybinds(keybinds: &[(&str, &str)]) -> String {
+    let key_w = keybinds
+        .iter()
+        .map(|(k, _)| k.chars().count())
+        .max()
+        .unwrap_or(0);
+    keybinds
+        .iter()
+        .map(|(k, d)| format!("  {k:<key_w$}   {d}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
 fn popup_area(area: Rect, content_lines: u16, content_width: u16) -> Rect {
     let width = (content_width + 4).min(area.width); // +2 borders +2 right padding
@@ -184,16 +201,13 @@ fn render(frame: &mut ratatui::Frame, app: &App) {
     );
 
     if app.show_help {
-        let lines = HELP_TEXT.lines().count() as u16;
-        let width = HELP_TEXT
-            .lines()
-            .map(|l| l.chars().count())
-            .max()
-            .unwrap_or(0) as u16;
+        let text = format_keybinds(KEYBINDS);
+        let lines = KEYBINDS.len() as u16;
+        let width = text.lines().map(|l| l.chars().count()).max().unwrap_or(0) as u16;
         let popup = popup_area(frame.area(), lines, width);
         frame.render_widget(Clear, popup);
         frame.render_widget(
-            Paragraph::new(HELP_TEXT).block(Block::new().title(" Keybinds ").borders(Borders::ALL)),
+            Paragraph::new(text).block(Block::new().title(" Keybinds ").borders(Borders::ALL)),
             popup,
         );
     }
