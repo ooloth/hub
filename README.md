@@ -29,7 +29,7 @@ prioritized view with agentic capabilities built in:
   registration step
 - **Local-only** — no server, no cloud sync; each device has its own SQLite database and
   runs independently
-- **Rust** — single binary; CLI entry point today, TUI (Ratatui) planned; not a web app
+- **Rust** — two binaries: `hub` (CLI) and `hub-tui` (Ratatui dashboard); not a web app
 
 ## Docs
 

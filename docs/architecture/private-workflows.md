@@ -13,7 +13,7 @@ that gets wired into this workspace via symlinks and a Cargo feature flag.
     clients/src/     ← private API clients
     workflows/src/   ← private workflows + PrivateStatusData types
     ui/cli/src/      ← private CLI rendering logic
-    ui/tui/src/      ← private TUI rendering logic (stub until TUI lands)
+    ui/tui/src/      ← private TUI rendering logic
     .claude/skills/  ← private investigation skills
     devices/         ← per-device configuration
       home-laptop.toml

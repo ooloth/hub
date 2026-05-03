@@ -36,7 +36,7 @@ Add (or extend) `hub-private/ui/cli/src/status.rs` to render the new field. The
 public hub binary calls `crate::private::status::render(&report.private)` — your
 renderer reads from `PrivateStatusData` and prints lines to stdout.
 
-When the TUI lands, add a corresponding renderer in `hub-private/ui/tui/src/`.
+Add a corresponding renderer in `hub-private/ui/tui/src/` for any TUI-specific display logic.
 
 ## 5. Add credentials to .env
 
