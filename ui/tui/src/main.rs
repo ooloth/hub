@@ -8,9 +8,9 @@ use crossterm::{
 use futures::StreamExt;
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Layout},
+    layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
-    widgets::{List, ListItem, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
     Terminal,
 };
 use std::io;
@@ -27,6 +27,7 @@ struct App {
     is_refreshing: bool,
     last_updated: Option<DateTime<Utc>>,
     error: Option<String>,
+    show_help: bool,
 }
 
 impl App {
@@ -123,6 +124,17 @@ fn urgency_label(u: domain::Urgency) -> &'static str {
     }
 }
 
+fn popup_area(area: Rect) -> Rect {
+    let width = 30u16.min(area.width);
+    let height = 6u16.min(area.height);
+    Rect::new(
+        area.x + (area.width.saturating_sub(width)) / 2,
+        area.y + (area.height.saturating_sub(height)) / 2,
+        width,
+        height,
+    )
+}
+
 fn render(frame: &mut ratatui::Frame, app: &App) {
     let [list_area, bar_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
@@ -167,6 +179,18 @@ fn render(frame: &mut ratatui::Frame, app: &App) {
         Paragraph::new(status).style(Style::default().add_modifier(Modifier::DIM)),
         bar_area,
     );
+
+    if app.show_help {
+        let popup = popup_area(frame.area());
+        frame.render_widget(Clear, popup);
+        frame.render_widget(
+            Paragraph::new(
+                "  ?  / Esc    close\n  ↑  / ↓      navigate\n  Enter        open URL\n  q  / Ctrl-C  quit",
+            )
+            .block(Block::new().title(" Keybinds ").borders(Borders::ALL)),
+            popup,
+        );
+    }
 }
 
 #[tokio::main]
@@ -195,6 +219,7 @@ async fn main() -> Result<()> {
         is_refreshing: start_refresh,
         last_updated: initial_updated,
         error: None,
+        show_help: false,
     };
 
     // Channel for background fetch results.
@@ -264,18 +289,23 @@ async fn run_loop(
 
         tokio::select! {
             Some(event) = events.next() => {
-                if let Event::Key(key) = event.context("terminal event error")? { match (key.code, key.modifiers) {
-                    (KeyCode::Char('q'), _)
-                    | (KeyCode::Char('c'), KeyModifiers::CONTROL) => break,
-                    (KeyCode::Up, _) => app.move_up(),
-                    (KeyCode::Down, _) => app.move_down(),
-                    (KeyCode::Enter, _) => {
-                        if let Some(url) = app.selected_url() {
-                            let _ = open::that_detached(url);
+                if let Event::Key(key) = event.context("terminal event error")? {
+                    match (key.code, key.modifiers) {
+                        (KeyCode::Char('q'), _)
+                        | (KeyCode::Char('c'), KeyModifiers::CONTROL) => break,
+                        (KeyCode::Char('?'), _) => app.show_help = !app.show_help,
+                        (KeyCode::Esc, _) if app.show_help => app.show_help = false,
+                        _ if app.show_help => {}
+                        (KeyCode::Up, _) => app.move_up(),
+                        (KeyCode::Down, _) => app.move_down(),
+                        (KeyCode::Enter, _) => {
+                            if let Some(url) = app.selected_url() {
+                                let _ = open::that_detached(url);
+                            }
                         }
+                        _ => {}
                     }
-                    _ => {}
-                } }
+                }
             }
             _ = refresh_interval.tick() => {
                 if !app.is_refreshing {
