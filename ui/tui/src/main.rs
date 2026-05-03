@@ -362,58 +362,55 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
         }
     }
 
-    let (position, right_status) = if matches!(app.view, View::Main) {
+    let right_status = if app.is_refreshing {
+        if let Some(err) = &app.error {
+            format!("refresh failed: {err}")
+        } else {
+            "refreshing…".to_string()
+        }
+    } else if let Some(t) = app.last_updated {
+        let mins = (Utc::now() - t).num_minutes();
+        if mins == 0 {
+            "updated just now".to_string()
+        } else {
+            format!("updated {mins}m ago")
+        }
+    } else {
+        String::new()
+    };
+
+    let left = if matches!(app.view, View::Main) {
+        let n = app.display_items.len();
         let pos = app
             .list_state
             .selected()
-            .map(|i| format!("{}/{}", i + 1, app.display_items.len()))
+            .map(|i| format!("{}/{}", i + 1, n))
             .unwrap_or_default();
-        let status = if app.is_refreshing {
-            if let Some(err) = &app.error {
-                format!("refresh failed: {err}")
-            } else {
-                "refreshing…".to_string()
-            }
-        } else if let Some(t) = app.last_updated {
-            let mins = (Utc::now() - t).num_minutes();
-            if mins == 0 {
-                "updated just now".to_string()
-            } else {
-                format!("updated {mins}m ago")
-            }
-        } else {
-            String::new()
-        };
-        (pos, status)
+        format!("{} · status", pos)
     } else if let View::Detail {
         group_index,
         ref list_state,
     } = app.view
     {
+        let count = app.active_list_len();
         let pos = list_state
             .selected()
-            .map(|i| format!("{}/{}", i + 1, app.active_list_len()))
+            .map(|i| format!("{}/{}", i + 1, count))
             .unwrap_or_default();
         let label = match app.display_items.get(group_index) {
-            Some(DisplayItem::Group { label, .. }) => {
-                if label.chars().count() > 40 {
-                    format!("{}…", label.chars().take(39).collect::<String>())
-                } else {
-                    label.clone()
-                }
-            }
-            _ => String::new(),
+            Some(DisplayItem::Group { label, .. }) => label.as_str(),
+            _ => "",
         };
-        (pos, label)
+        format!("{} · {}", pos, label)
     } else {
-        (String::new(), String::new())
+        String::new()
     };
 
     let right_width = right_status.chars().count() as u16;
     let [bar_left, bar_right] =
         Layout::horizontal([Constraint::Min(0), Constraint::Length(right_width)]).areas(bar_area);
     let dim = Style::default().add_modifier(Modifier::DIM);
-    frame.render_widget(Paragraph::new(position).style(dim), bar_left);
+    frame.render_widget(Paragraph::new(left).style(dim), bar_left);
     frame.render_widget(Paragraph::new(right_status).style(dim), bar_right);
 
     if app.show_help {
