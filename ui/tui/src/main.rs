@@ -10,7 +10,7 @@ use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
     Terminal,
 };
 use std::io;
@@ -23,7 +23,7 @@ mod private;
 #[derive(Debug)]
 struct App {
     items: Vec<StatusItem>,
-    selected: usize,
+    list_state: ListState,
     is_refreshing: bool,
     last_updated: Option<DateTime<Utc>>,
     error: Option<String>,
@@ -32,19 +32,22 @@ struct App {
 
 impl App {
     fn move_up(&mut self) {
-        if self.selected > 0 {
-            self.selected -= 1;
+        let sel = self.list_state.selected().unwrap_or(0);
+        if sel > 0 {
+            self.list_state.select(Some(sel - 1));
         }
     }
 
     fn move_down(&mut self) {
-        if !self.items.is_empty() && self.selected < self.items.len() - 1 {
-            self.selected += 1;
+        let sel = self.list_state.selected().unwrap_or(0);
+        if !self.items.is_empty() && sel < self.items.len() - 1 {
+            self.list_state.select(Some(sel + 1));
         }
     }
 
     fn selected_url(&self) -> Option<&str> {
-        self.items.get(self.selected).and_then(item_url)
+        let sel = self.list_state.selected().unwrap_or(0);
+        self.items.get(sel).and_then(item_url)
     }
 }
 
@@ -157,25 +160,18 @@ fn popup_area(area: Rect, content_lines: u16, content_width: u16) -> Rect {
     )
 }
 
-fn render(frame: &mut ratatui::Frame, app: &App) {
+fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let [list_area, bar_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
 
     let items: Vec<ListItem> = app
         .items
         .iter()
-        .enumerate()
-        .map(|(i, item)| {
-            let line = item_line(item);
-            if i == app.selected {
-                ListItem::new(line).style(Style::default().add_modifier(Modifier::REVERSED))
-            } else {
-                ListItem::new(line)
-            }
-        })
+        .map(|item| ListItem::new(item_line(item)))
         .collect();
 
-    frame.render_widget(List::new(items), list_area);
+    let list = List::new(items).highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+    frame.render_stateful_widget(list, list_area, &mut app.list_state);
 
     let status = if app.is_refreshing {
         if let Some(err) = &app.error {
@@ -235,9 +231,13 @@ async fn main() -> Result<()> {
             _ => (vec![], None, true),
         };
 
+    let mut list_state = ListState::default();
+    if !initial_items.is_empty() {
+        list_state.select(Some(0));
+    }
     let mut app = App {
         items: initial_items,
-        selected: 0,
+        list_state,
         is_refreshing: start_refresh,
         last_updated: initial_updated,
         error: None,
@@ -343,7 +343,9 @@ async fn run_loop(
                             .context("failed to serialize status report")?;
                         store::status::upsert(conn, &json, SCHEMA_VERSION)
                             .context("failed to upsert status cache")?;
-                        app.selected = app.selected.min(report.items.len().saturating_sub(1));
+                        let current = app.list_state.selected().unwrap_or(0);
+                        let clamped = current.min(report.items.len().saturating_sub(1));
+                        app.list_state.select(if report.items.is_empty() { None } else { Some(clamped) });
                         app.items = report.items;
                         app.last_updated = Some(Utc::now());
                         app.is_refreshing = false;
