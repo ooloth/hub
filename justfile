@@ -22,10 +22,10 @@ build:
     cargo build {{_features}}
 
 cli:
-    cargo run -p hub-cli {{_features}}
+    op run --env-file=.env -- cargo run -p hub-cli {{_features}}
 
 tui:
-    cargo run -p hub-tui {{_features}}
+    op run --env-file=.env -- cargo run -p hub-tui {{_features}}
 
 test:
     cargo nextest run {{_features}}

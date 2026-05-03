@@ -61,5 +61,5 @@ integrations that are scoped to a repo.
 ```bash
 just check
 just test
-just op status   # end-to-end with secrets injected
+just status
 ```
