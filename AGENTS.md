@@ -63,6 +63,19 @@ just cli     # run the CLI
 just tui     # run the TUI
 ```
 
+### Verifying TUI changes visually
+
+The TUI is interactive, so use tmux to drive it and read the screen:
+
+```bash
+tmux new-window -n "tui-test" "j tui; read"
+sleep 3                                          # wait for data to load
+tmux send-keys -t "tui-test" "?" ""             # send a keystroke
+sleep 0.5
+tmux capture-pane -t "tui-test" -p              # read the screen
+tmux kill-window -t "tui-test"                  # clean up
+```
+
 ## Docs by Area
 
 ### Conventions and architecture
