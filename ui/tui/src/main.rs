@@ -188,7 +188,7 @@ fn display_item_urgency(item: &DisplayItem) -> domain::Urgency {
 fn group_key(_item: &StatusItem) -> Option<String> {
     #[cfg(feature = "private")]
     if let StatusItem::MediaBlocked(b) = _item {
-        return Some(b.error.clone());
+        return Some(format!("Sonarr: {}", b.error));
     }
     None
 }
