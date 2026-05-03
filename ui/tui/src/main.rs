@@ -124,9 +124,12 @@ fn urgency_label(u: domain::Urgency) -> &'static str {
     }
 }
 
-fn popup_area(area: Rect) -> Rect {
-    let width = 30u16.min(area.width);
-    let height = 6u16.min(area.height);
+const HELP_TEXT: &str =
+    "  ?  / Esc     close\n  ↑  / ↓       navigate\n  Enter        open URL\n  q  / Ctrl-C  quit";
+
+fn popup_area(area: Rect, content_lines: u16, content_width: u16) -> Rect {
+    let width = (content_width + 4).min(area.width); // +2 borders +2 right padding
+    let height = (content_lines + 2).min(area.height);
     Rect::new(
         area.x + (area.width.saturating_sub(width)) / 2,
         area.y + (area.height.saturating_sub(height)) / 2,
@@ -181,13 +184,16 @@ fn render(frame: &mut ratatui::Frame, app: &App) {
     );
 
     if app.show_help {
-        let popup = popup_area(frame.area());
+        let lines = HELP_TEXT.lines().count() as u16;
+        let width = HELP_TEXT
+            .lines()
+            .map(|l| l.chars().count())
+            .max()
+            .unwrap_or(0) as u16;
+        let popup = popup_area(frame.area(), lines, width);
         frame.render_widget(Clear, popup);
         frame.render_widget(
-            Paragraph::new(
-                "  ?  / Esc    close\n  ↑  / ↓      navigate\n  Enter        open URL\n  q  / Ctrl-C  quit",
-            )
-            .block(Block::new().title(" Keybinds ").borders(Borders::ALL)),
+            Paragraph::new(HELP_TEXT).block(Block::new().title(" Keybinds ").borders(Borders::ALL)),
             popup,
         );
     }
