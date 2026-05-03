@@ -14,12 +14,38 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
     Terminal,
 };
-use std::io;
+use std::{collections::HashMap, io};
 use tokio::sync::mpsc;
 use workflows::status::{StatusItem, StatusReport, SCHEMA_VERSION};
 
 #[cfg(feature = "private")]
 mod private;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+enum Category {
+    Ci,
+    Prs,
+    Issues,
+    Errors,
+}
+
+impl Category {
+    const ALL: [Category; 4] = [
+        Category::Ci,
+        Category::Prs,
+        Category::Issues,
+        Category::Errors,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Category::Ci => "CI",
+            Category::Prs => "PRs",
+            Category::Issues => "Issues",
+            Category::Errors => "Errors",
+        }
+    }
+}
 
 #[derive(Debug)]
 enum DisplayItem {
@@ -30,20 +56,40 @@ enum DisplayItem {
     },
 }
 
-// Stores an index into App::display_items rather than cloning items.
 #[derive(Debug)]
 enum View {
-    Main,
+    Home,
+    Category {
+        cat: Category,
+        list_state: ListState,
+    },
     Detail {
+        cat: Category,
         group_index: usize,
         list_state: ListState,
     },
 }
 
 #[derive(Debug)]
+struct CatData {
+    cat: Category,
+    items: Vec<DisplayItem>,
+}
+
+impl CatData {
+    fn max_urgency(&self) -> domain::Urgency {
+        self.items
+            .iter()
+            .map(display_item_urgency)
+            .max()
+            .unwrap_or(domain::Urgency::Low)
+    }
+}
+
+#[derive(Debug)]
 struct App {
-    display_items: Vec<DisplayItem>,
-    list_state: ListState,
+    cats: Vec<CatData>,
+    focused_tile: usize,
     view: View,
     is_refreshing: bool,
     last_updated: Option<DateTime<Utc>>,
@@ -54,68 +100,90 @@ struct App {
 impl App {
     fn active_list_len(&self) -> usize {
         match &self.view {
-            View::Main => self.display_items.len(),
-            View::Detail { group_index, .. } => match self.display_items.get(*group_index) {
-                Some(DisplayItem::Group { items, .. }) => items.len(),
-                _ => 0,
-            },
+            View::Home => self.cats.len(),
+            View::Category { cat, .. } => self
+                .cats
+                .iter()
+                .find(|c| c.cat == *cat)
+                .map(|c| c.items.len())
+                .unwrap_or(0),
+            View::Detail {
+                cat, group_index, ..
+            } => self
+                .cats
+                .iter()
+                .find(|c| c.cat == *cat)
+                .and_then(|c| c.items.get(*group_index))
+                .map(|d| match d {
+                    DisplayItem::Group { items, .. } => items.len(),
+                    _ => 0,
+                })
+                .unwrap_or(0),
+        }
+    }
+
+    fn move_tile_forward(&mut self) {
+        let len = self.cats.len();
+        if len > 0 {
+            self.focused_tile = (self.focused_tile + 1) % len;
+        }
+    }
+
+    fn move_tile_back(&mut self) {
+        let len = self.cats.len();
+        if len > 0 {
+            self.focused_tile = (self.focused_tile + len - 1) % len;
         }
     }
 
     fn move_up(&mut self) {
-        if matches!(self.view, View::Main) {
-            let sel = self.list_state.selected().unwrap_or(0);
-            if sel > 0 {
-                self.list_state.select(Some(sel - 1));
-            }
-        } else if let View::Detail {
-            ref mut list_state, ..
-        } = self.view
-        {
-            let sel = list_state.selected().unwrap_or(0);
-            if sel > 0 {
-                list_state.select(Some(sel - 1));
+        match &mut self.view {
+            View::Home => {}
+            View::Category { list_state, .. } | View::Detail { list_state, .. } => {
+                let sel = list_state.selected().unwrap_or(0);
+                if sel > 0 {
+                    list_state.select(Some(sel - 1));
+                }
             }
         }
     }
 
     fn move_down(&mut self) {
         let len = self.active_list_len();
-        if matches!(self.view, View::Main) {
-            let sel = self.list_state.selected().unwrap_or(0);
-            if len > 0 && sel < len - 1 {
-                self.list_state.select(Some(sel + 1));
-            }
-        } else if let View::Detail {
-            ref mut list_state, ..
-        } = self.view
-        {
-            let sel = list_state.selected().unwrap_or(0);
-            if len > 0 && sel < len - 1 {
-                list_state.select(Some(sel + 1));
+        match &mut self.view {
+            View::Home => {}
+            View::Category { list_state, .. } | View::Detail { list_state, .. } => {
+                let sel = list_state.selected().unwrap_or(0);
+                if len > 0 && sel < len - 1 {
+                    list_state.select(Some(sel + 1));
+                }
             }
         }
     }
 
     fn selected_url(&self) -> Option<&str> {
-        if matches!(self.view, View::Main) {
-            let sel = self.list_state.selected().unwrap_or(0);
-            match self.display_items.get(sel)? {
-                DisplayItem::Single(item) => item_url(item),
-                DisplayItem::Group { .. } => None,
+        match &self.view {
+            View::Home => None,
+            View::Category { cat, list_state } => {
+                let sel = list_state.selected().unwrap_or(0);
+                let cd = self.cats.iter().find(|c| c.cat == *cat)?;
+                match cd.items.get(sel)? {
+                    DisplayItem::Single(item) => item_url(item),
+                    DisplayItem::Group { .. } => None,
+                }
             }
-        } else if let View::Detail {
-            group_index,
-            ref list_state,
-        } = self.view
-        {
-            let sel = list_state.selected().unwrap_or(0);
-            match self.display_items.get(group_index)? {
-                DisplayItem::Group { items, .. } => items.get(sel).and_then(item_url),
-                DisplayItem::Single(_) => None,
+            View::Detail {
+                cat,
+                group_index,
+                list_state,
+            } => {
+                let sel = list_state.selected().unwrap_or(0);
+                let cd = self.cats.iter().find(|c| c.cat == *cat)?;
+                match cd.items.get(*group_index)? {
+                    DisplayItem::Group { items, .. } => items.get(sel).and_then(item_url),
+                    _ => None,
+                }
             }
-        } else {
-            None
         }
     }
 }
@@ -185,6 +253,19 @@ fn display_item_urgency(item: &DisplayItem) -> domain::Urgency {
     }
 }
 
+fn item_category(item: &StatusItem) -> Category {
+    match item {
+        StatusItem::Ci(_) => Category::Ci,
+        StatusItem::Pr(_) => Category::Prs,
+        StatusItem::Issue(_) | StatusItem::Linear(_) => Category::Issues,
+        #[cfg(feature = "private")]
+        StatusItem::MediaBlocked(_)
+        | StatusItem::MediaMissing(_)
+        | StatusItem::MediaHealth(_)
+        | StatusItem::MediaBacklog { .. } => Category::Errors,
+    }
+}
+
 fn group_key(_item: &StatusItem) -> Option<String> {
     #[cfg(feature = "private")]
     if let StatusItem::MediaBlocked(b) = _item {
@@ -225,6 +306,20 @@ fn aggregate(items: Vec<StatusItem>) -> Vec<DisplayItem> {
         .collect()
 }
 
+fn build_cats(items: Vec<StatusItem>) -> Vec<CatData> {
+    let mut by_cat: HashMap<Category, Vec<StatusItem>> = HashMap::new();
+    for item in items {
+        by_cat.entry(item_category(&item)).or_default().push(item);
+    }
+    Category::ALL
+        .iter()
+        .map(|&cat| CatData {
+            cat,
+            items: aggregate(by_cat.remove(&cat).unwrap_or_default()),
+        })
+        .collect()
+}
+
 fn urgency_style(u: domain::Urgency) -> Style {
     match u {
         domain::Urgency::Critical => Style::default().fg(Color::Red),
@@ -234,12 +329,62 @@ fn urgency_style(u: domain::Urgency) -> Style {
     }
 }
 
+// Computed before mutating app.view, to avoid borrow conflicts.
+enum EnterAction {
+    None,
+    OpenUrl(String),
+    OpenCategory {
+        cat: Category,
+    },
+    OpenDetail {
+        cat: Category,
+        group_index: usize,
+        item_count: usize,
+    },
+}
+
+fn compute_enter_action(app: &App) -> EnterAction {
+    match &app.view {
+        View::Home => {
+            if app.cats.is_empty() {
+                return EnterAction::None;
+            }
+            EnterAction::OpenCategory {
+                cat: app.cats[app.focused_tile].cat,
+            }
+        }
+        View::Category { cat, list_state } => {
+            let sel = list_state.selected().unwrap_or(0);
+            let Some(cd) = app.cats.iter().find(|c| c.cat == *cat) else {
+                return EnterAction::None;
+            };
+            match cd.items.get(sel) {
+                Some(DisplayItem::Group { items, .. }) => EnterAction::OpenDetail {
+                    cat: *cat,
+                    group_index: sel,
+                    item_count: items.len(),
+                },
+                Some(DisplayItem::Single(_)) => app
+                    .selected_url()
+                    .map(|u| EnterAction::OpenUrl(u.to_string()))
+                    .unwrap_or(EnterAction::None),
+                None => EnterAction::None,
+            }
+        }
+        View::Detail { .. } => app
+            .selected_url()
+            .map(|u| EnterAction::OpenUrl(u.to_string()))
+            .unwrap_or(EnterAction::None),
+    }
+}
+
 const KEYBINDS: &[(&str, &str)] = &[
     ("?", "open help"),
-    ("Esc", "close help / detail"),
+    ("Esc", "back / close help"),
+    ("Tab / Shift-Tab", "next / prev tile"),
     ("↑ / k", "up"),
     ("↓ / j", "down"),
-    ("Enter", "open URL / expand group"),
+    ("Enter", "open / drill in"),
     ("q  / Ctrl-C", "quit"),
 ];
 
@@ -257,7 +402,7 @@ fn format_keybinds(keybinds: &[(&str, &str)]) -> String {
 }
 
 fn popup_area(area: Rect, content_lines: u16, content_width: u16) -> Rect {
-    let width = (content_width + 4).min(area.width); // +2 borders +2 right padding
+    let width = (content_width + 4).min(area.width);
     let height = (content_lines + 2).min(area.height);
     Rect::new(
         area.x + (area.width.saturating_sub(width)) / 2,
@@ -310,16 +455,135 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
+fn truncate(text: &str, max_width: usize) -> String {
+    if text.chars().count() <= max_width {
+        text.to_string()
+    } else {
+        format!(
+            "{}…",
+            text.chars()
+                .take(max_width.saturating_sub(1))
+                .collect::<String>()
+        )
+    }
+}
+
+fn render_tile(frame: &mut ratatui::Frame, cat_data: &CatData, focused: bool, area: Rect) {
+    let urgency = cat_data.max_urgency();
+    let border_style = if focused {
+        urgency_style(urgency)
+    } else {
+        urgency_style(urgency).add_modifier(Modifier::DIM)
+    };
+
+    let count = cat_data.items.len();
+    let title = format!(" {} ({count}) ", cat_data.cat.label());
+    let block = Block::new()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(border_style);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    if count == 0 {
+        frame.render_widget(
+            Paragraph::new("(none)").style(Style::default().add_modifier(Modifier::DIM)),
+            inner,
+        );
+        return;
+    }
+
+    let available = inner.height as usize;
+    let has_more = count > available;
+    let preview_count = if has_more {
+        available.saturating_sub(1)
+    } else {
+        count.min(available)
+    };
+    let text_width = (inner.width as usize).saturating_sub(2); // "● "
+
+    let mut lines: Vec<Line> = cat_data
+        .items
+        .iter()
+        .take(preview_count)
+        .map(|item| {
+            let dot_style = urgency_style(display_item_urgency(item));
+            Line::from(vec![
+                Span::styled("● ", dot_style),
+                Span::raw(truncate(&display_item_line(item), text_width)),
+            ])
+        })
+        .collect();
+
+    if has_more {
+        let more = count - preview_count;
+        lines.push(Line::from(Span::styled(
+            format!("  ↓ {more} more"),
+            Style::default().add_modifier(Modifier::DIM),
+        )));
+    }
+
+    frame.render_widget(Paragraph::new(Text::from(lines)), inner);
+}
+
+fn render_home(frame: &mut ratatui::Frame, app: &App, area: Rect) {
+    let n = app.cats.len();
+    if n == 0 {
+        return;
+    }
+    let cols = 2_usize;
+    let rows = n.div_ceil(cols);
+
+    let row_areas = Layout::vertical(
+        (0..rows)
+            .map(|_| Constraint::Ratio(1, rows as u32))
+            .collect::<Vec<_>>(),
+    )
+    .split(area);
+
+    for (row_idx, &row_area) in row_areas.iter().enumerate() {
+        let start = row_idx * cols;
+        let end = (start + cols).min(n);
+        let count = end - start;
+        let col_areas = Layout::horizontal(
+            (0..count)
+                .map(|_| Constraint::Ratio(1, count as u32))
+                .collect::<Vec<_>>(),
+        )
+        .split(row_area);
+        for (col_idx, &col_area) in col_areas.iter().enumerate() {
+            let tile_idx = start + col_idx;
+            render_tile(
+                frame,
+                &app.cats[tile_idx],
+                tile_idx == app.focused_tile,
+                col_area,
+            );
+        }
+    }
+}
+
 fn render(frame: &mut ratatui::Frame, app: &mut App) {
-    let [list_area, bar_area] =
+    let [content_area, bar_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
 
-    let text_width = list_area.width.saturating_sub(2) as usize; // 2 for "● "
+    let text_width = content_area.width.saturating_sub(2) as usize;
 
-    if matches!(app.view, View::Main) {
-        let selected = app.list_state.selected();
-        let items: Vec<ListItem> = app
-            .display_items
+    if matches!(app.view, View::Home) {
+        render_home(frame, app, content_area);
+    } else if let View::Category {
+        cat,
+        ref mut list_state,
+    } = app.view
+    {
+        let cat_items = app
+            .cats
+            .iter()
+            .find(|c| c.cat == cat)
+            .map(|c| c.items.as_slice())
+            .unwrap_or(&[]);
+        let selected = list_state.selected();
+        let list_items: Vec<ListItem> = cat_items
             .iter()
             .enumerate()
             .map(|(i, item)| {
@@ -328,20 +592,34 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
                 } else {
                     urgency_style(display_item_urgency(item))
                 };
-                let dot = Span::styled("● ", dot_style);
-                build_list_item(dot, wrap_text(&display_item_line(item), text_width))
+                build_list_item(
+                    Span::styled("● ", dot_style),
+                    wrap_text(&display_item_line(item), text_width),
+                )
             })
             .collect();
-        let list =
-            List::new(items).highlight_style(Style::default().add_modifier(Modifier::REVERSED));
-        frame.render_stateful_widget(list, list_area, &mut app.list_state);
+        let list = List::new(list_items)
+            .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+        frame.render_stateful_widget(list, content_area, list_state);
     } else if let View::Detail {
+        cat,
         group_index,
         ref mut list_state,
     } = app.view
     {
-        let gi = group_index;
-        if let Some(DisplayItem::Group { items, .. }) = app.display_items.get(gi) {
+        let group_items = app
+            .cats
+            .iter()
+            .find(|c| c.cat == cat)
+            .and_then(|c| c.items.get(group_index))
+            .and_then(|d| {
+                if let DisplayItem::Group { items, .. } = d {
+                    Some(items.as_slice())
+                } else {
+                    None
+                }
+            });
+        if let Some(items) = group_items {
             let selected = list_state.selected();
             let list_items: Vec<ListItem> = items
                 .iter()
@@ -352,16 +630,19 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
                     } else {
                         urgency_style(item_urgency(item))
                     };
-                    let dot = Span::styled("● ", dot_style);
-                    build_list_item(dot, wrap_text(&item_line(item), text_width))
+                    build_list_item(
+                        Span::styled("● ", dot_style),
+                        wrap_text(&item_line(item), text_width),
+                    )
                 })
                 .collect();
             let list = List::new(list_items)
                 .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
-            frame.render_stateful_widget(list, list_area, list_state);
+            frame.render_stateful_widget(list, content_area, list_state);
         }
     }
 
+    // Status bar
     let right_status = if app.is_refreshing {
         if let Some(err) = &app.error {
             format!("refresh failed: {err}")
@@ -379,31 +660,40 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
         String::new()
     };
 
-    let left = if matches!(app.view, View::Main) {
-        let n = app.display_items.len();
-        let pos = app
-            .list_state
-            .selected()
-            .map(|i| format!("{}/{}", i + 1, n))
-            .unwrap_or_default();
-        format!("{} · status", pos)
-    } else if let View::Detail {
-        group_index,
-        ref list_state,
-    } = app.view
-    {
-        let count = app.active_list_len();
-        let pos = list_state
-            .selected()
-            .map(|i| format!("{}/{}", i + 1, count))
-            .unwrap_or_default();
-        let label = match app.display_items.get(group_index) {
-            Some(DisplayItem::Group { label, .. }) => label.as_str(),
-            _ => "",
-        };
-        format!("{} · {}", pos, label)
-    } else {
-        String::new()
+    let left = match &app.view {
+        View::Home => {
+            let total: usize = app.cats.iter().map(|c| c.items.len()).sum();
+            format!("{total} items · home")
+        }
+        View::Category { cat, list_state } => {
+            let n = app
+                .cats
+                .iter()
+                .find(|c| c.cat == *cat)
+                .map(|c| c.items.len())
+                .unwrap_or(0);
+            let pos = list_state
+                .selected()
+                .map(|i| format!("{}/{n}", i + 1))
+                .unwrap_or_default();
+            format!("{pos} · {}", cat.label())
+        }
+        View::Detail {
+            cat,
+            group_index,
+            list_state,
+        } => {
+            let cd = app.cats.iter().find(|c| c.cat == *cat);
+            let (count, label) = match cd.and_then(|c| c.items.get(*group_index)) {
+                Some(DisplayItem::Group { items, label }) => (items.len(), label.as_str()),
+                _ => (0, ""),
+            };
+            let pos = list_state
+                .selected()
+                .map(|i| format!("{}/{count}", i + 1))
+                .unwrap_or_default();
+            format!("{pos} · {label}")
+        }
     };
 
     let right_width = right_status.chars().count() as u16;
@@ -432,7 +722,6 @@ async fn main() -> Result<()> {
     let conn = store::status::connect()?;
     store::status::ensure_table(&conn)?;
 
-    // Try to seed from cache on launch.
     let (initial_items, initial_updated, start_refresh) =
         match store::status::read(&conn).context("failed to read status cache")? {
             Some(cached)
@@ -446,30 +735,21 @@ async fn main() -> Result<()> {
             _ => (vec![], None, true),
         };
 
-    let display_items = aggregate(initial_items);
-    let mut list_state = ListState::default();
-    if !display_items.is_empty() {
-        list_state.select(Some(0));
-    }
     let mut app = App {
-        display_items,
-        list_state,
-        view: View::Main,
+        cats: build_cats(initial_items),
+        focused_tile: 0,
+        view: View::Home,
         is_refreshing: start_refresh,
         last_updated: initial_updated,
         error: None,
         show_help: false,
     };
 
-    // Channel for background fetch results.
     let (tx, mut rx) = mpsc::channel::<Result<StatusReport>>(1);
-
-    // Spawn an immediate fetch if cache was absent or stale.
     if start_refresh {
         spawn_fetch(&config, tx.clone());
     }
 
-    // Terminal setup.
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen)?;
@@ -478,7 +758,6 @@ async fn main() -> Result<()> {
 
     let result = run_loop(&mut terminal, &mut app, &conn, &config, &tx, &mut rx).await;
 
-    // Always restore terminal, even on error.
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
     terminal.show_cursor()?;
@@ -520,7 +799,6 @@ async fn run_loop(
 ) -> Result<()> {
     let mut events = EventStream::new();
     let mut refresh_interval = tokio::time::interval(tokio::time::Duration::from_secs(30 * 60));
-    // Consume the first tick so it doesn't fire immediately on launch.
     refresh_interval.tick().await;
 
     loop {
@@ -532,39 +810,66 @@ async fn run_loop(
                     match (key.code, key.modifiers) {
                         (KeyCode::Char('q'), _)
                         | (KeyCode::Char('c'), KeyModifiers::CONTROL) => break,
+
                         (KeyCode::Char('?'), _) => app.show_help = !app.show_help,
                         (KeyCode::Esc, _) if app.show_help => app.show_help = false,
+
                         (KeyCode::Esc, _) if matches!(app.view, View::Detail { .. }) => {
-                            app.view = View::Main;
+                            let cat = if let View::Detail { cat, .. } = app.view { cat } else { unreachable!() };
+                            let len = app.cats.iter().find(|c| c.cat == cat).map(|c| c.items.len()).unwrap_or(0);
+                            let mut ls = ListState::default();
+                            if len > 0 { ls.select(Some(0)); }
+                            app.view = View::Category { cat, list_state: ls };
                         }
+                        (KeyCode::Esc, _) if matches!(app.view, View::Category { .. }) => {
+                            app.view = View::Home;
+                        }
+
                         _ if app.show_help => {}
+
+                        // Home tile navigation
+                        (KeyCode::Tab, _)
+                        | (KeyCode::Right, _)
+                        | (KeyCode::Down, _)
+                        | (KeyCode::Char('j'), _)
+                            if matches!(app.view, View::Home) =>
+                        {
+                            app.move_tile_forward()
+                        }
+                        (KeyCode::BackTab, _)
+                        | (KeyCode::Left, _)
+                        | (KeyCode::Up, _)
+                        | (KeyCode::Char('k'), _)
+                            if matches!(app.view, View::Home) =>
+                        {
+                            app.move_tile_back()
+                        }
+
+                        // List navigation
                         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => app.move_up(),
                         (KeyCode::Down, _) | (KeyCode::Char('j'), _) => app.move_down(),
+
                         (KeyCode::Enter, _) => {
-                            if matches!(app.view, View::Main) {
-                                let sel = app.list_state.selected().unwrap_or(0);
-                                match app.display_items.get(sel) {
-                                    Some(DisplayItem::Group { items, .. }) => {
-                                        let mut detail_state = ListState::default();
-                                        if !items.is_empty() {
-                                            detail_state.select(Some(0));
-                                        }
-                                        app.view = View::Detail {
-                                            group_index: sel,
-                                            list_state: detail_state,
-                                        };
-                                    }
-                                    Some(DisplayItem::Single(_)) => {
-                                        if let Some(url) = app.selected_url() {
-                                            let _ = open::that_detached(url);
-                                        }
-                                    }
-                                    None => {}
+                            let action = compute_enter_action(app);
+                            match action {
+                                EnterAction::None => {}
+                                EnterAction::OpenUrl(url) => {
+                                    let _ = open::that_detached(url);
                                 }
-                            } else if let Some(url) = app.selected_url() {
-                                let _ = open::that_detached(url);
+                                EnterAction::OpenCategory { cat } => {
+                                    let len = app.cats.iter().find(|c| c.cat == cat).map(|c| c.items.len()).unwrap_or(0);
+                                    let mut ls = ListState::default();
+                                    if len > 0 { ls.select(Some(0)); }
+                                    app.view = View::Category { cat, list_state: ls };
+                                }
+                                EnterAction::OpenDetail { cat, group_index, item_count } => {
+                                    let mut ds = ListState::default();
+                                    if item_count > 0 { ds.select(Some(0)); }
+                                    app.view = View::Detail { cat, group_index, list_state: ds };
+                                }
                             }
                         }
+
                         _ => {}
                     }
                 }
@@ -583,15 +888,10 @@ async fn run_loop(
                             .context("failed to serialize status report")?;
                         store::status::upsert(conn, &json, SCHEMA_VERSION)
                             .context("failed to upsert status cache")?;
-                        let display_items = aggregate(report.items);
-                        let current = app.list_state.selected().unwrap_or(0);
-                        let clamped = current.min(display_items.len().saturating_sub(1));
-                        app.list_state
-                            .select(if display_items.is_empty() { None } else { Some(clamped) });
-                        app.display_items = display_items;
-                        if matches!(app.view, View::Detail { .. }) {
-                            app.view = View::Main;
-                        }
+                        let cats = build_cats(report.items);
+                        app.focused_tile = app.focused_tile.min(cats.len().saturating_sub(1));
+                        app.cats = cats;
+                        app.view = View::Home;
                         app.last_updated = Some(Utc::now());
                         app.is_refreshing = false;
                         app.error = None;
