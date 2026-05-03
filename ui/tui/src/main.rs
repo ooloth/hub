@@ -125,8 +125,10 @@ fn urgency_label(u: domain::Urgency) -> &'static str {
 }
 
 const KEYBINDS: &[(&str, &str)] = &[
-    ("?  / Esc", "close"),
-    ("↑/k / ↓/j", "navigate"),
+    ("?", "open help"),
+    ("Esc", "close help"),
+    ("↑ / k", "up"),
+    ("↓ / j", "down"),
     ("Enter", "open URL"),
     ("q  / Ctrl-C", "quit"),
 ];
