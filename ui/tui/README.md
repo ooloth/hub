@@ -52,29 +52,31 @@ Three levels. `Enter` drills in; `Esc` backs out one level.
 
 **Category** — full-screen item list
 
-| Key        | Action                  |
-| ---------- | ----------------------- |
-| h          | up                      |
-| j          | down                    |
-| k          | up                      |
-| l          | down                    |
-| Enter      | open / drill into group |
-| Esc        | back to home            |
-| ?          | toggle help             |
-| q / Ctrl-C | quit                    |
+| Key        | Action                          |
+| ---------- | ------------------------------- |
+| h          | up                              |
+| j          | down                            |
+| k          | up                              |
+| l          | down                            |
+| Enter      | open / drill into group         |
+| i          | investigate CI failure (CI only) |
+| Esc        | back to home                    |
+| ?          | toggle help                     |
+| q / Ctrl-C | quit                            |
 
 **Detail** — items within a group
 
-| Key        | Action           |
-| ---------- | ---------------- |
-| h          | up               |
-| j          | down             |
-| k          | up               |
-| l          | down             |
-| Enter      | open URL         |
-| Esc        | back to category |
-| ?          | toggle help      |
-| q / Ctrl-C | quit             |
+| Key        | Action                          |
+| ---------- | ------------------------------- |
+| h          | up                              |
+| j          | down                            |
+| k          | up                              |
+| l          | down                            |
+| Enter      | open URL                        |
+| i          | investigate CI failure (CI only) |
+| Esc        | back to category                |
+| ?          | toggle help                     |
+| q / Ctrl-C | quit                            |
 
 ## Terminal cleanup
 

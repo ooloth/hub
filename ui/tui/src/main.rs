@@ -80,6 +80,7 @@ struct App {
     last_updated: Option<DateTime<Utc>>,
     error: Option<String>,
     show_help: bool,
+    flash: Option<String>,
 }
 
 impl App {
@@ -428,6 +429,36 @@ fn compute_enter_action(app: &App) -> EnterAction {
     }
 }
 
+fn compute_investigate_action(app: &App) -> Option<(String, String)> {
+    let item = match &app.view {
+        View::Home => return None,
+        View::Category { cat, list_state } => {
+            let sel = list_state.selected().unwrap_or(0);
+            let cd = app.cats.iter().find(|c| c.cat == *cat)?;
+            match cd.items.get(sel)? {
+                DisplayItem::Single(item) => item,
+                DisplayItem::Group { .. } => return None,
+            }
+        }
+        View::Detail {
+            cat,
+            group_index,
+            list_state,
+        } => {
+            let sel = list_state.selected().unwrap_or(0);
+            let cd = app.cats.iter().find(|c| c.cat == *cat)?;
+            match cd.items.get(*group_index)? {
+                DisplayItem::Group { items, .. } => items.get(sel)?,
+                _ => return None,
+            }
+        }
+    };
+    match item {
+        StatusItem::Ci(c) => Some((c.repo.to_string(), c.url.clone())),
+        _ => None,
+    }
+}
+
 const KEYBINDS_HOME: &[(&str, &str)] = &[
     ("?", "toggle help"),
     ("h", "left (or prev tile)"),
@@ -447,6 +478,7 @@ const KEYBINDS_CATEGORY: &[(&str, &str)] = &[
     ("k", "up"),
     ("l", "next"),
     ("Enter", "open / drill into group"),
+    ("i", "investigate CI failure"),
     ("Esc", "back to home"),
     ("q / Ctrl-C", "quit"),
 ];
@@ -458,6 +490,7 @@ const KEYBINDS_DETAIL: &[(&str, &str)] = &[
     ("k", "up"),
     ("l", "next"),
     ("Enter", "open URL"),
+    ("i", "investigate CI failure"),
     ("Esc", "back to category"),
     ("q / Ctrl-C", "quit"),
 ];
@@ -490,7 +523,7 @@ fn build_list_item(
     dot: Span<'static>,
     wrapped: Vec<String>,
     dim_suffix: Option<String>,
-    hint: Option<&'static str>,
+    hint: Option<String>,
 ) -> ListItem<'static> {
     let dim = Style::default().add_modifier(Modifier::DIM);
     let suffix_span = dim_suffix.map(|s| Span::styled(s, dim));
@@ -745,12 +778,15 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
         frame.render_widget(block, content_area);
         let text_width = inner.width.saturating_sub(2) as usize;
         let selected = list_state.selected();
-        let selected_hint: Option<&'static str> =
+        let selected_hint: Option<String> =
             selected
                 .and_then(|i| cat_items.get(i))
                 .and_then(|item| match item {
-                    DisplayItem::Group { .. } => Some("↩ to expand"),
-                    DisplayItem::Single(s) => item_url(s).map(|_| "↩ to open"),
+                    DisplayItem::Group { .. } => Some("↩ to expand".to_string()),
+                    DisplayItem::Single(StatusItem::Ci(_)) => {
+                        Some("↩ to open · i to investigate".to_string())
+                    }
+                    DisplayItem::Single(s) => item_url(s).map(|_| "↩ to open".to_string()),
                 });
         let list_items: Vec<ListItem> = cat_items
             .iter()
@@ -762,7 +798,11 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
                 } else {
                     urgency_style(display_item_urgency(item))
                 };
-                let hint = if is_selected { selected_hint } else { None };
+                let hint = if is_selected {
+                    selected_hint.clone()
+                } else {
+                    None
+                };
                 let (line_text, dim_suffix) = match item {
                     DisplayItem::Group { label, items } => (
                         label.as_str().to_string(),
@@ -772,7 +812,7 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
                 };
                 let item_width = text_width
                     .saturating_sub(dim_suffix.as_ref().map_or(0, |s| s.chars().count()))
-                    .saturating_sub(hint.map_or(0, |h| h.chars().count() + 2));
+                    .saturating_sub(hint.as_ref().map_or(0, |h| h.chars().count() + 2));
                 build_list_item(
                     Span::styled("● ", dot_style),
                     wrap_text(&line_text, item_width),
@@ -821,9 +861,13 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
             frame.render_widget(block, content_area);
             let text_width = inner.width.saturating_sub(2) as usize;
             let selected = list_state.selected();
-            let selected_hint: Option<&'static str> = selected
-                .and_then(|i| items.get(i))
-                .and_then(|item| item_url(item).map(|_| "↩ to open"));
+            let selected_hint: Option<String> =
+                selected
+                    .and_then(|i| items.get(i))
+                    .and_then(|item| match item {
+                        StatusItem::Ci(_) => Some("↩ to open · i to investigate".to_string()),
+                        item => item_url(item).map(|_| "↩ to open".to_string()),
+                    });
             let list_items: Vec<ListItem> = items
                 .iter()
                 .enumerate()
@@ -834,9 +878,13 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
                     } else {
                         urgency_style(item_urgency(item))
                     };
-                    let hint = if is_selected { selected_hint } else { None };
-                    let item_width =
-                        text_width.saturating_sub(hint.map_or(0, |h| h.chars().count() + 2));
+                    let hint = if is_selected {
+                        selected_hint.clone()
+                    } else {
+                        None
+                    };
+                    let item_width = text_width
+                        .saturating_sub(hint.as_ref().map_or(0, |h| h.chars().count() + 2));
                     build_list_item(
                         Span::styled("● ", dot_style),
                         wrap_text(&item_line(item), item_width),
@@ -873,51 +921,66 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
     };
 
     let enter_action = compute_enter_action(app);
+    let investigate_action = compute_investigate_action(app);
 
-    let left = match &app.view {
-        View::Home => {
-            let total: usize = app.cats.iter().map(|c| c.items.len()).sum();
-            format!("{total} items")
-        }
-        View::Category { cat, list_state } => {
-            let n = app
-                .cats
-                .iter()
-                .find(|c| c.cat == *cat)
-                .map(|c| c.items.len())
-                .unwrap_or(0);
-            let pos = list_state
-                .selected()
-                .map(|i| format!("{}/{n}", i + 1))
-                .unwrap_or_default();
-            let hint = match &enter_action {
-                EnterAction::OpenUrl(url) => format!(" · Press ↩ to open {url}"),
-                EnterAction::OpenDetail { item_count, .. } => {
-                    format!(" · Press ↩ to expand ({item_count} items)")
-                }
-                _ => String::new(),
-            };
-            format!("{pos}{hint}")
-        }
-        View::Detail {
-            cat,
-            group_index,
-            list_state,
-        } => {
-            let cd = app.cats.iter().find(|c| c.cat == *cat);
-            let count = match cd.and_then(|c| c.items.get(*group_index)) {
-                Some(DisplayItem::Group { items, .. }) => items.len(),
-                _ => 0,
-            };
-            let pos = list_state
-                .selected()
-                .map(|i| format!("{}/{count}", i + 1))
-                .unwrap_or_default();
-            let hint = match &enter_action {
-                EnterAction::OpenUrl(url) => format!(" · Press ↩ to open {url}"),
-                _ => String::new(),
-            };
-            format!("{pos}{hint}")
+    let left = if let Some(flash) = &app.flash {
+        flash.clone()
+    } else {
+        match &app.view {
+            View::Home => {
+                let total: usize = app.cats.iter().map(|c| c.items.len()).sum();
+                format!("{total} items")
+            }
+            View::Category { cat, list_state } => {
+                let n = app
+                    .cats
+                    .iter()
+                    .find(|c| c.cat == *cat)
+                    .map(|c| c.items.len())
+                    .unwrap_or(0);
+                let pos = list_state
+                    .selected()
+                    .map(|i| format!("{}/{n}", i + 1))
+                    .unwrap_or_default();
+                let enter_hint = match &enter_action {
+                    EnterAction::OpenUrl(url) => format!(" · Press ↩ to open {url}"),
+                    EnterAction::OpenDetail { item_count, .. } => {
+                        format!(" · Press ↩ to expand ({item_count} items)")
+                    }
+                    _ => String::new(),
+                };
+                let inv_hint = if investigate_action.is_some() {
+                    " · Press i to investigate"
+                } else {
+                    ""
+                };
+                format!("{pos}{enter_hint}{inv_hint}")
+            }
+            View::Detail {
+                cat,
+                group_index,
+                list_state,
+            } => {
+                let cd = app.cats.iter().find(|c| c.cat == *cat);
+                let count = match cd.and_then(|c| c.items.get(*group_index)) {
+                    Some(DisplayItem::Group { items, .. }) => items.len(),
+                    _ => 0,
+                };
+                let pos = list_state
+                    .selected()
+                    .map(|i| format!("{}/{count}", i + 1))
+                    .unwrap_or_default();
+                let enter_hint = match &enter_action {
+                    EnterAction::OpenUrl(url) => format!(" · Press ↩ to open {url}"),
+                    _ => String::new(),
+                };
+                let inv_hint = if investigate_action.is_some() {
+                    " · Press i to investigate"
+                } else {
+                    ""
+                };
+                format!("{pos}{enter_hint}{inv_hint}")
+            }
         }
     };
 
@@ -1014,6 +1077,7 @@ async fn main() -> Result<()> {
         last_updated: initial_updated,
         error: None,
         show_help: false,
+        flash: None,
     };
 
     let (tx, mut rx) = mpsc::channel::<Result<StatusReport>>(1);
@@ -1076,6 +1140,7 @@ async fn run_loop(
         tokio::select! {
             Some(event) = events.next() => {
                 if let Event::Key(key) = event.context("terminal event error")? {
+                    app.flash = None;
                     match (key.code, key.modifiers) {
                         (KeyCode::Char('q'), _)
                         | (KeyCode::Char('c'), KeyModifiers::CONTROL) => break,
@@ -1127,6 +1192,30 @@ async fn run_loop(
                                     let mut ds = ListState::default();
                                     if item_count > 0 { ds.select(Some(0)); }
                                     app.view = View::Detail { cat, group_index, list_state: ds };
+                                }
+                            }
+                        }
+
+                        // i = launch investigation skill for selected item
+                        (KeyCode::Char('i'), _) => {
+                            match compute_investigate_action(app) {
+                                Some((repo, url)) => {
+                                    if std::env::var("TMUX").is_ok() {
+                                        let cmd = format!(
+                                            "claude '/github-ci-investigate {repo} {url}'"
+                                        );
+                                        let _ = std::process::Command::new("tmux")
+                                            .args(["split-window", "-h", &cmd])
+                                            .spawn();
+                                    } else {
+                                        app.flash = Some(
+                                            "Not in tmux — investigation requires a tmux session"
+                                                .to_string(),
+                                        );
+                                    }
+                                }
+                                None => {
+                                    app.flash = Some("No investigation mapped".to_string());
                                 }
                             }
                         }
