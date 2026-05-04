@@ -15,7 +15,22 @@ Diagnoses why a GitHub Actions workflow run failed and surfaces a root cause wit
 - `gh` CLI authenticated (`gh auth status`)
 - Install: `brew install gh`
 
-## Config
+## Invocation
+
+Two modes depending on whether arguments are provided:
+
+**With arguments** (launched from the TUI via `i`):
+```
+/github-ci-investigate <repo> <run-url>
+```
+- `<repo>` — `org/repo` slug
+- `<run-url>` — full GitHub Actions run URL (e.g. `https://github.com/org/repo/actions/runs/12345678`)
+
+Extract the run ID from the URL (`runs/<id>`), then skip straight to Step 2 of the investigation pattern below.
+
+**Without arguments** (manual invocation): fall through to Step 1 below.
+
+## Config (manual mode only)
 
 Reads `repo` from the active hub.toml project:
 
@@ -28,7 +43,7 @@ repo = "org/my-app"      # used as the --repo argument to gh
 name = "github-ci"
 ```
 
-## Starting queries
+## Starting queries (manual mode only)
 
 Resolve the default branch (could be `main`, `master`, `trunk`, etc.):
 
@@ -51,18 +66,42 @@ gh run view <run-id> --repo <repo> --log-failed
 
 ## Investigation pattern
 
-1. **Orient** — resolve the default branch, then list the last 10 failed runs on it; pick the most recent one. Note the workflow name and `databaseId`.
+1. **Orient** *(manual mode only)* — resolve the default branch, then list the last 10 failed runs on it; pick the most recent one. Note the workflow name and `databaseId`.
 
-2. **Read the failure** — `gh run view <id> --log-failed` streams only the failed step output. Scan for the first error line or exception.
+2. **Identify the failed step** — get structured failure info first (which step failed), then grep for the error:
 
-3. **Form a hypothesis** — based on the error, decide what to look at next: a specific step's full log, a prior run to check for regression, a recent commit that changed a related file.
+   ```bash
+   # Which step failed?
+   gh run view <id> --repo <repo> --json name,conclusion,headBranch,headSha,createdAt,jobs \
+     --jq '{name,conclusion,headBranch,headSha: .headSha[0:8],createdAt,jobs: [.jobs[] | select(.conclusion == "failure") | {name,conclusion,steps: [.steps[] | select(.conclusion == "failure") | {name,conclusion}]}]}'
 
-4. **Validate** — run a targeted follow-up query. Examples:
+   # Extract the error lines (skip hundreds of lines of runner boilerplate)
+   gh run view <id> --repo <repo> --log-failed 2>&1 | grep -E 'error\[|^Error|error:' | head -20
+   ```
+
+   Only fall back to the full `--log-failed` output if the grep returns nothing useful.
+
+3. **Find the regression boundary** — if the failure looks like a config/dependency issue rather than a code bug, immediately find where it started:
+
+   ```bash
+   # Find last success and first failure
+   gh run list --repo <repo> --branch <branch> --limit 30 \
+     --json databaseId,conclusion,createdAt,headSha \
+     --jq '.[] | "\(.databaseId) \(.conclusion) \(.createdAt) \(.headSha[0:8])"'
+
+   # Diff the commits between last success and first failure
+   gh api "repos/<repo>/compare/<last-success-sha>...<first-failure-sha>" \
+     --jq '[.files[] | .filename] | join("\n")'
+   ```
+
+4. **Form a hypothesis** — based on the error and the regression boundary, decide what to look at next: a specific step's full log, the diff that introduced the failure, or a recent commit that changed a related file.
+
+5. **Validate** — run a targeted follow-up query. Examples:
    - `gh run view <id> --log` for the full log if `--log-failed` is truncated
-   - `gh run list --repo <repo> --workflow <filename> --limit 20 --json conclusion,createdAt` to see when runs started failing
+   - `gh run view <id> --repo <repo> --log 2>&1 | grep -A 200 "<step command>"` to get a specific step's output
    - `gh api repos/<repo>/commits?sha=<default-branch>&per_page=5` to inspect recent commits around the failure time
 
-5. **Stop when** you can name the failing step, the error message, and a likely cause. Three iterations is usually enough; if not, surface what you know and flag what needs a human look.
+6. **Stop when** you can name the failing step, the error message, and a likely cause. Three iterations is usually enough; if not, surface what you know and flag what needs a human look.
 
 ## Output format
 
