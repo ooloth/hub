@@ -19,6 +19,7 @@ pub enum StatusItem {
     MediaHealth(crate::private::status::HealthItem),
     #[cfg(feature = "private")]
     MediaBacklog {
+        source: String,
         count: u32,
     },
 }
@@ -115,6 +116,7 @@ pub async fn run(
             items.extend(media.health_items.into_iter().map(StatusItem::MediaHealth));
             if media.backlog_count > 0 {
                 items.push(StatusItem::MediaBacklog {
+                    source: media.source.clone(),
                     count: media.backlog_count,
                 });
             }

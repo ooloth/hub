@@ -98,21 +98,27 @@ fn render_line(item: &StatusItem) {
             l.url,
         ),
         #[cfg(feature = "private")]
-        StatusItem::MediaBlocked(b) => {
-            println!("  {}  {}  {}", tier_label(b.urgency), b.title, b.error,)
-        }
+        StatusItem::MediaBlocked(b) => println!(
+            "  {}  {} · Import blocked · {}",
+            tier_label(b.urgency),
+            b.source,
+            b.title,
+        ),
         #[cfg(feature = "private")]
         StatusItem::MediaMissing(m) => println!(
-            "  {}  {}  aired {}",
+            "  {}  {} · Not found · {} · aired {}",
             tier_label(m.urgency),
+            m.source,
             m.title,
             m.air_date,
         ),
         #[cfg(feature = "private")]
-        StatusItem::MediaHealth(h) => println!("  {}  {}", tier_label(h.urgency), h.message,),
+        StatusItem::MediaHealth(h) => {
+            println!("  {}  {} · {}", tier_label(h.urgency), h.source, h.message,)
+        }
         #[cfg(feature = "private")]
-        StatusItem::MediaBacklog { count } => println!(
-            "  {}  {count} episodes in backlog",
+        StatusItem::MediaBacklog { source, count } => println!(
+            "  {}  {source} · {count} episodes in backlog",
             tier_label(domain::Urgency::Low),
         ),
     }

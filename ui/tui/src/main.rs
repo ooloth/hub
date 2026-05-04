@@ -247,18 +247,25 @@ fn item_url(item: &StatusItem) -> Option<&str> {
 
 fn item_line(item: &StatusItem) -> String {
     match item {
-        StatusItem::Pr(pr) => format!("{}  {} (#{})", pr.repo, pr.title, pr.number),
-        StatusItem::Issue(i) => format!("{}  {} (#{})", i.repo, i.title, i.number),
-        StatusItem::Ci(c) => format!("{}  {}  {}", c.repo, c.workflow_name, c.conclusion),
-        StatusItem::Linear(l) => format!("{}  {}  [{}]", l.identifier, l.title, l.state),
+        StatusItem::Pr(pr) => format!("{} · {} (#{})", pr.repo, pr.title, pr.number),
+        StatusItem::Issue(i) => format!("{} · {} (#{})", i.repo, i.title, i.number),
+        StatusItem::Ci(c) => format!("{} · {} · {}", c.repo, c.workflow_name, c.conclusion),
+        StatusItem::Linear(l) => format!("Linear · {} ({})", l.title, l.identifier),
         #[cfg(feature = "private")]
-        StatusItem::MediaBlocked(b) => format!("{}  {}", b.title, b.error),
+        StatusItem::MediaBlocked(b) => format!("{} · Import blocked · {}", b.source, b.title),
         #[cfg(feature = "private")]
-        StatusItem::MediaMissing(m) => format!("{}  aired {}", m.title, m.air_date),
+        StatusItem::MediaMissing(m) => {
+            format!(
+                "{} · Not found · {} · aired {}",
+                m.source, m.title, m.air_date
+            )
+        }
         #[cfg(feature = "private")]
-        StatusItem::MediaHealth(h) => h.message.clone(),
+        StatusItem::MediaHealth(h) => format!("{} · {}", h.source, h.message),
         #[cfg(feature = "private")]
-        StatusItem::MediaBacklog { count } => format!("{count} episodes in backlog"),
+        StatusItem::MediaBacklog { source, count } => {
+            format!("{source} · {count} episodes in backlog")
+        }
     }
 }
 
@@ -312,7 +319,7 @@ fn item_category(item: &StatusItem) -> Category {
 fn group_key(_item: &StatusItem) -> Option<String> {
     #[cfg(feature = "private")]
     if let StatusItem::MediaBlocked(b) = _item {
-        return Some(format!("Sonarr: {}", b.error));
+        return Some(format!("{} · Import blocked · {}", b.source, b.error));
     }
     None
 }
