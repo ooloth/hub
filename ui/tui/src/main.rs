@@ -551,6 +551,7 @@ fn render_tile(frame: &mut ratatui::Frame, cat_data: &CatData, focused: bool, ar
         Style::default()
             .fg(Color::Reset)
             .remove_modifier(Modifier::DIM)
+            .add_modifier(Modifier::BOLD)
     };
     let title = Span::styled(format!(" {} ", cat_data.cat.label()), title_style);
     let block = Block::new()
