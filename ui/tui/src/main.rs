@@ -521,6 +521,7 @@ fn build_list_item(
 }
 
 fn wrap_text(text: &str, width: usize) -> Vec<String> {
+    let width = width.max(1);
     let chars: Vec<char> = text.chars().collect();
     let total = chars.len();
     if total <= width {
@@ -534,13 +535,29 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
             lines.push(chars[start..].iter().collect());
             break;
         }
+        if chars[end] == ' ' {
+            lines.push(chars[start..end].iter().collect());
+            start = end + 1;
+            while start < total && chars[start] == ' ' {
+                start += 1;
+            }
+            continue;
+        }
         let split = chars[start..end]
             .iter()
             .rposition(|&c| c == ' ')
-            .map(|p| start + p)
-            .unwrap_or(end);
-        lines.push(chars[start..split].iter().collect());
-        start = split + 1;
+            .filter(|&p| p > 0)
+            .map(|p| start + p);
+        if let Some(split) = split {
+            lines.push(chars[start..split].iter().collect());
+            start = split + 1;
+            while start < total && chars[start] == ' ' {
+                start += 1;
+            }
+        } else {
+            lines.push(chars[start..end].iter().collect());
+            start = end;
+        }
     }
     lines
 }
@@ -555,6 +572,29 @@ fn truncate(text: &str, max_width: usize) -> String {
                 .take(max_width.saturating_sub(1))
                 .collect::<String>()
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wrap_text;
+
+    #[test]
+    fn wrap_text_treats_zero_width_as_one_column() {
+        assert_eq!(wrap_text("abc", 0), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn wrap_text_hard_wraps_without_dropping_characters() {
+        assert_eq!(wrap_text("abcdef", 3), vec!["abc", "def"]);
+    }
+
+    #[test]
+    fn wrap_text_prefers_word_boundaries() {
+        assert_eq!(
+            wrap_text("alpha beta gamma", 10),
+            vec!["alpha beta", "gamma"]
+        );
     }
 }
 
