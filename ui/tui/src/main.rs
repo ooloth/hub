@@ -803,10 +803,12 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
         String::new()
     };
 
+    let enter_action = compute_enter_action(app);
+
     let left = match &app.view {
         View::Home => {
             let total: usize = app.cats.iter().map(|c| c.items.len()).sum();
-            format!("{total} items · home")
+            format!("{total} items")
         }
         View::Category { cat, list_state } => {
             let n = app
@@ -819,7 +821,14 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
                 .selected()
                 .map(|i| format!("{}/{n}", i + 1))
                 .unwrap_or_default();
-            format!("{pos} · {}", cat.label())
+            let hint = match &enter_action {
+                EnterAction::OpenUrl(url) => format!(" · Press ↩ to open {url}"),
+                EnterAction::OpenDetail { item_count, .. } => {
+                    format!(" · Press ↩ to expand ({item_count} items)")
+                }
+                _ => String::new(),
+            };
+            format!("{pos}{hint}")
         }
         View::Detail {
             cat,
@@ -827,15 +836,19 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
             list_state,
         } => {
             let cd = app.cats.iter().find(|c| c.cat == *cat);
-            let (count, label) = match cd.and_then(|c| c.items.get(*group_index)) {
-                Some(DisplayItem::Group { items, label }) => (items.len(), label.as_str()),
-                _ => (0, ""),
+            let count = match cd.and_then(|c| c.items.get(*group_index)) {
+                Some(DisplayItem::Group { items, .. }) => items.len(),
+                _ => 0,
             };
             let pos = list_state
                 .selected()
                 .map(|i| format!("{}/{count}", i + 1))
                 .unwrap_or_default();
-            format!("{pos} · {label}")
+            let hint = match &enter_action {
+                EnterAction::OpenUrl(url) => format!(" · Press ↩ to open {url}"),
+                _ => String::new(),
+            };
+            format!("{pos}{hint}")
         }
     };
 
