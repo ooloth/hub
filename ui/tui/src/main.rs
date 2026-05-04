@@ -21,25 +21,20 @@ use workflows::status::{StatusItem, StatusReport, SCHEMA_VERSION};
 #[cfg(feature = "private")]
 mod private;
 
+const TILE_COLS: usize = 2;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 enum Category {
-    Ci,
     Prs,
     Issues,
     Errors,
 }
 
 impl Category {
-    const ALL: [Category; 4] = [
-        Category::Ci,
-        Category::Prs,
-        Category::Issues,
-        Category::Errors,
-    ];
+    const ALL: [Category; 3] = [Category::Errors, Category::Prs, Category::Issues];
 
     fn label(self) -> &'static str {
         match self {
-            Category::Ci => "CI",
             Category::Prs => "PRs",
             Category::Issues => "Issues",
             Category::Errors => "Errors",
@@ -74,16 +69,6 @@ enum View {
 struct CatData {
     cat: Category,
     items: Vec<DisplayItem>,
-}
-
-impl CatData {
-    fn max_urgency(&self) -> domain::Urgency {
-        self.items
-            .iter()
-            .map(display_item_urgency)
-            .max()
-            .unwrap_or(domain::Urgency::Low)
-    }
 }
 
 #[derive(Debug)]
@@ -133,6 +118,64 @@ impl App {
         let len = self.cats.len();
         if len > 0 {
             self.focused_tile = (self.focused_tile + len - 1) % len;
+        }
+    }
+
+    fn move_tile_up(&mut self) {
+        let len = self.cats.len();
+        if len == 0 {
+            return;
+        }
+        let row = self.focused_tile / TILE_COLS;
+        let col = self.focused_tile % TILE_COLS;
+        if row > 0 {
+            let target = (row - 1) * TILE_COLS + col;
+            if target < len {
+                self.focused_tile = target;
+                return;
+            }
+        }
+        self.focused_tile = (self.focused_tile + len - 1) % len;
+    }
+
+    fn move_tile_down(&mut self) {
+        let len = self.cats.len();
+        if len == 0 {
+            return;
+        }
+        let row = self.focused_tile / TILE_COLS;
+        let col = self.focused_tile % TILE_COLS;
+        let target = (row + 1) * TILE_COLS + col;
+        if target < len {
+            self.focused_tile = target;
+        } else {
+            self.focused_tile = (self.focused_tile + 1) % len;
+        }
+    }
+
+    fn move_tile_left(&mut self) {
+        let len = self.cats.len();
+        if len == 0 {
+            return;
+        }
+        let col = self.focused_tile % TILE_COLS;
+        if col > 0 {
+            self.focused_tile -= 1;
+        } else {
+            self.focused_tile = (self.focused_tile + len - 1) % len;
+        }
+    }
+
+    fn move_tile_right(&mut self) {
+        let len = self.cats.len();
+        if len == 0 {
+            return;
+        }
+        let col = self.focused_tile % TILE_COLS;
+        if col + 1 < TILE_COLS && self.focused_tile + 1 < len {
+            self.focused_tile += 1;
+        } else {
+            self.focused_tile = (self.focused_tile + 1) % len;
         }
     }
 
@@ -255,7 +298,7 @@ fn display_item_urgency(item: &DisplayItem) -> domain::Urgency {
 
 fn item_category(item: &StatusItem) -> Category {
     match item {
-        StatusItem::Ci(_) => Category::Ci,
+        StatusItem::Ci(_) => Category::Errors,
         StatusItem::Pr(_) => Category::Prs,
         StatusItem::Issue(_) | StatusItem::Linear(_) => Category::Issues,
         #[cfg(feature = "private")]
@@ -378,14 +421,38 @@ fn compute_enter_action(app: &App) -> EnterAction {
     }
 }
 
-const KEYBINDS: &[(&str, &str)] = &[
-    ("?", "open help"),
-    ("Esc", "back / close help"),
-    ("Tab / Shift-Tab", "next / prev tile"),
-    ("↑ / k", "up"),
-    ("↓ / j", "down"),
-    ("Enter", "open / drill in"),
-    ("q  / Ctrl-C", "quit"),
+const KEYBINDS_HOME: &[(&str, &str)] = &[
+    ("?", "toggle help"),
+    ("h", "left (or prev tile)"),
+    ("j", "down (or next tile)"),
+    ("k", "up (or prev tile)"),
+    ("l", "right (or next tile)"),
+    ("Tab", "next tile"),
+    ("Shift-Tab", "prev tile"),
+    ("Enter", "drill into category"),
+    ("q / Ctrl-C", "quit"),
+];
+
+const KEYBINDS_CATEGORY: &[(&str, &str)] = &[
+    ("?", "toggle help"),
+    ("h", "previous"),
+    ("j", "down"),
+    ("k", "up"),
+    ("l", "next"),
+    ("Enter", "open / drill into group"),
+    ("Esc", "back to home"),
+    ("q / Ctrl-C", "quit"),
+];
+
+const KEYBINDS_DETAIL: &[(&str, &str)] = &[
+    ("?", "toggle help"),
+    ("h", "previous"),
+    ("j", "down"),
+    ("k", "up"),
+    ("l", "next"),
+    ("Enter", "open URL"),
+    ("Esc", "back to category"),
+    ("q / Ctrl-C", "quit"),
 ];
 
 fn format_keybinds(keybinds: &[(&str, &str)]) -> String {
@@ -469,11 +536,10 @@ fn truncate(text: &str, max_width: usize) -> String {
 }
 
 fn render_tile(frame: &mut ratatui::Frame, cat_data: &CatData, focused: bool, area: Rect) {
-    let urgency = cat_data.max_urgency();
     let border_style = if focused {
-        urgency_style(urgency)
+        Style::default().fg(Color::Green)
     } else {
-        urgency_style(urgency).add_modifier(Modifier::DIM)
+        Style::default()
     };
 
     let count = cat_data.items.len();
@@ -531,7 +597,7 @@ fn render_home(frame: &mut ratatui::Frame, app: &App, area: Rect) {
     if n == 0 {
         return;
     }
-    let cols = 2_usize;
+    let cols = TILE_COLS;
     let rows = n.div_ceil(cols);
 
     let row_areas = Layout::vertical(
@@ -704,8 +770,13 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
     frame.render_widget(Paragraph::new(right_status).style(dim), bar_right);
 
     if app.show_help {
-        let text = format_keybinds(KEYBINDS);
-        let lines = KEYBINDS.len() as u16;
+        let keybinds = match &app.view {
+            View::Home => KEYBINDS_HOME,
+            View::Category { .. } => KEYBINDS_CATEGORY,
+            View::Detail { .. } => KEYBINDS_DETAIL,
+        };
+        let text = format_keybinds(keybinds);
+        let lines = keybinds.len() as u16;
         let width = text.lines().map(|l| l.chars().count()).max().unwrap_or(0) as u16;
         let popup = popup_area(frame.area(), lines, width);
         frame.render_widget(Clear, popup);
@@ -814,6 +885,7 @@ async fn run_loop(
                         (KeyCode::Char('?'), _) => app.show_help = !app.show_help,
                         (KeyCode::Esc, _) if app.show_help => app.show_help = false,
 
+                        // Esc = back one level
                         (KeyCode::Esc, _) if matches!(app.view, View::Detail { .. }) => {
                             let cat = if let View::Detail { cat, .. } = app.view { cat } else { unreachable!() };
                             let len = app.cats.iter().find(|c| c.cat == cat).map(|c| c.items.len()).unwrap_or(0);
@@ -828,27 +900,18 @@ async fn run_loop(
                         _ if app.show_help => {}
 
                         // Home tile navigation
-                        (KeyCode::Tab, _)
-                        | (KeyCode::Right, _)
-                        | (KeyCode::Down, _)
-                        | (KeyCode::Char('j'), _)
-                            if matches!(app.view, View::Home) =>
-                        {
-                            app.move_tile_forward()
-                        }
-                        (KeyCode::BackTab, _)
-                        | (KeyCode::Left, _)
-                        | (KeyCode::Up, _)
-                        | (KeyCode::Char('k'), _)
-                            if matches!(app.view, View::Home) =>
-                        {
-                            app.move_tile_back()
-                        }
+                        (KeyCode::Tab, _) if matches!(app.view, View::Home) => app.move_tile_forward(),
+                        (KeyCode::BackTab, _) if matches!(app.view, View::Home) => app.move_tile_back(),
+                        (KeyCode::Right, _) | (KeyCode::Char('l'), _) if matches!(app.view, View::Home) => app.move_tile_right(),
+                        (KeyCode::Left, _) | (KeyCode::Char('h'), _) if matches!(app.view, View::Home) => app.move_tile_left(),
+                        (KeyCode::Down, _) | (KeyCode::Char('j'), _) if matches!(app.view, View::Home) => app.move_tile_down(),
+                        (KeyCode::Up, _) | (KeyCode::Char('k'), _) if matches!(app.view, View::Home) => app.move_tile_up(),
 
                         // List navigation
-                        (KeyCode::Up, _) | (KeyCode::Char('k'), _) => app.move_up(),
-                        (KeyCode::Down, _) | (KeyCode::Char('j'), _) => app.move_down(),
+                        (KeyCode::Up, _) | (KeyCode::Char('k'), _) | (KeyCode::Char('h'), _) => app.move_up(),
+                        (KeyCode::Down, _) | (KeyCode::Char('j'), _) | (KeyCode::Char('l'), _) => app.move_down(),
 
+                        // Enter = drill in or open URL
                         (KeyCode::Enter, _) => {
                             let action = compute_enter_action(app);
                             match action {

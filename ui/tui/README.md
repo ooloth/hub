@@ -1,8 +1,8 @@
 # ui/tui
 
-The `hub-tui` binary. A Ratatui terminal dashboard that renders status items,
-auto-refreshes from SQLite, and hands off to the browser or investigation
-skills via keyboard shortcuts.
+The `hub-tui` binary. A Ratatui terminal dashboard that renders status items
+grouped by category, auto-refreshes from SQLite, and opens items in the
+browser via keyboard shortcuts.
 
 ## Architecture
 
@@ -32,14 +32,49 @@ live fetch, discarding the stale row.
 a backward-incompatible way.** Forgetting to bump means old cached bytes get
 deserialized into the new shape and will likely panic or produce garbage.
 
-## Keybindings
+## Navigation
 
-| Key       | Action                              |
-| --------- | ----------------------------------- |
-| ↑ / ↓     | Move selection                      |
-| Enter     | Open selected item's URL in browser |
-| q         | Quit                                |
-| Ctrl-C    | Quit                                |
+Three levels. `Enter` drills in; `Esc` backs out one level.
+
+**Home** — category preview tiles
+
+| Key        | Action                    |
+| ---------- | ------------------------- |
+| h          | left tile (or prev)       |
+| j          | down tile (or next)       |
+| k          | up tile (or prev)         |
+| l          | right tile (or next)      |
+| Tab        | next tile                 |
+| Shift-Tab  | prev tile                 |
+| Enter      | drill into category       |
+| ?          | toggle help               |
+| q / Ctrl-C | quit                      |
+
+**Category** — full-screen item list
+
+| Key        | Action                  |
+| ---------- | ----------------------- |
+| h          | up                      |
+| j          | down                    |
+| k          | up                      |
+| l          | down                    |
+| Enter      | open / drill into group |
+| Esc        | back to home            |
+| ?          | toggle help             |
+| q / Ctrl-C | quit                    |
+
+**Detail** — items within a group
+
+| Key        | Action           |
+| ---------- | ---------------- |
+| h          | up               |
+| j          | down             |
+| k          | up               |
+| l          | down             |
+| Enter      | open URL         |
+| Esc        | back to category |
+| ?          | toggle help      |
+| q / Ctrl-C | quit             |
 
 ## Terminal cleanup
 

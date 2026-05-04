@@ -34,7 +34,7 @@ ui/ → workflows/ → clients/ → domain/
 | Language       | Rust                       |
 | Async runtime  | tokio                      |
 | CLI            | clap (derive)              |
-| TUI            | ratatui (planned)          |
+| TUI            | ratatui                    |
 | HTTP clients   | reqwest                    |
 | SQLite         | rusqlite (bundled) or sqlx |
 | Serialization  | serde                      |
