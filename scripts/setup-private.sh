@@ -7,7 +7,7 @@ set -euo pipefail
 # Usage: bash scripts/setup-private.sh <device-name> [path-to-hub-private]
 # Or:    just setup-private <device-name>
 #
-# <device-name> must match a file in hub-private/devices/<device-name>.toml
+# <device-name> must match files in hub-private/devices/<device-name>.{toml,env}
 
 DEVICE="${1:-}"
 HUB_PRIVATE="${2:-../hub-private}"
@@ -30,6 +30,7 @@ fi
 
 HUB_PRIVATE="$(cd "$HUB_PRIVATE" && pwd)"
 DEVICE_CONFIG="$HUB_PRIVATE/devices/$DEVICE.toml"
+DEVICE_ENV="$HUB_PRIVATE/devices/$DEVICE.env"
 
 if [[ ! -f "$DEVICE_CONFIG" ]]; then
   echo "error: no config found for device '$DEVICE'"
@@ -37,6 +38,12 @@ if [[ ! -f "$DEVICE_CONFIG" ]]; then
   echo ""
   echo "available devices:"
   ls "$HUB_PRIVATE/devices/" 2>/dev/null | sed 's/\.toml$//' | sed 's/^/  /' || echo "  (none)"
+  exit 1
+fi
+
+if [[ ! -f "$DEVICE_ENV" ]]; then
+  echo "error: no .env found for device '$DEVICE'"
+  echo "expected: $DEVICE_ENV"
   exit 1
 fi
 
@@ -58,7 +65,7 @@ link "$HUB_PRIVATE/clients/src"      "$HUB_ROOT/clients/src/private"
 link "$HUB_PRIVATE/workflows/src"    "$HUB_ROOT/workflows/src/private"
 link "$HUB_PRIVATE/ui/cli/src"       "$HUB_ROOT/ui/cli/src/private"
 link "$HUB_PRIVATE/ui/tui/src"       "$HUB_ROOT/ui/tui/src/private"
-link "$HUB_PRIVATE/.env"             "$HUB_ROOT/.env"
+link "$DEVICE_ENV"                   "$HUB_ROOT/.env"
 link "$DEVICE_CONFIG"                "$HUB_ROOT/hub.toml"
 
 echo ""
