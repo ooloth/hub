@@ -38,17 +38,17 @@ Three levels. `Enter` drills in; `Esc` backs out one level.
 
 **Home** — category preview tiles
 
-| Key        | Action                    |
-| ---------- | ------------------------- |
-| h          | left tile (or prev)       |
-| j          | down tile (or next)       |
-| k          | up tile (or prev)         |
-| l          | right tile (or next)      |
-| Tab        | next tile                 |
-| Shift-Tab  | prev tile                 |
-| Enter      | drill into category       |
-| ?          | toggle help               |
-| q / Ctrl-C | quit                      |
+| Key        | Action               |
+| ---------- | -------------------- |
+| h          | left tile (or prev)  |
+| j          | down tile (or next)  |
+| k          | up tile (or prev)    |
+| l          | right tile (or next) |
+| Tab        | next tile            |
+| Shift-Tab  | prev tile            |
+| Enter      | drill into category  |
+| ?          | toggle help          |
+| q / Ctrl-C | quit                 |
 
 **Category** — full-screen item list
 
@@ -85,9 +85,5 @@ sequence runs unconditionally before propagating any error.
 ## Running
 
 ```bash
-just tui          # build and run (no secrets)
-op run --env-file=.env -- cargo run -p hub-tui --features private
+just tui          # build and run (with secrets and hub-private workflows if installed)
 ```
-
-The `private` feature enables private workflow integrations (Sonarr, etc.).
-Without it, only public integrations (GitHub, Linear) are shown.

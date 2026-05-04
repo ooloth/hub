@@ -2,6 +2,8 @@ default:
     @just --list
 
 # auto-enable private integrations when symlinks are in place
+# The `private` feature enables the private workflow integrations defined in `hub-private`.
+# Without it, only the public integrations defined in `hub` are shown.
 _features := if path_exists("clients/src/private") == "true" { "--features private" } else { "" }
 
 # run a recipe with secrets injected from .env via 1Password
