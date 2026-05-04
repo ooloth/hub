@@ -543,7 +543,14 @@ fn render_tile(frame: &mut ratatui::Frame, cat_data: &CatData, focused: bool, ar
     };
 
     let count = cat_data.items.len();
-    let title = format!(" {} ({count}) ", cat_data.cat.label());
+    let title_style = if focused {
+        Style::default()
+            .fg(Color::Green)
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default()
+    };
+    let title = Span::styled(format!(" {} ({count}) ", cat_data.cat.label()), title_style);
     let block = Block::new()
         .title(title)
         .borders(Borders::ALL)
