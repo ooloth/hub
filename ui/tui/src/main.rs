@@ -479,13 +479,27 @@ fn popup_area(area: Rect, content_lines: u16, content_width: u16) -> Rect {
     )
 }
 
-fn build_list_item(dot: Span<'static>, wrapped: Vec<String>) -> ListItem<'static> {
+fn build_list_item(
+    dot: Span<'static>,
+    wrapped: Vec<String>,
+    hint: Option<&'static str>,
+) -> ListItem<'static> {
+    let hint_span = hint.map(|h| {
+        Span::styled(
+            format!("  {h}"),
+            Style::default().add_modifier(Modifier::DIM),
+        )
+    });
     let mut lines: Vec<Line> = wrapped
         .into_iter()
         .enumerate()
         .map(|(j, chunk)| {
             if j == 0 {
-                Line::from(vec![dot.clone(), Span::raw(chunk)])
+                let mut spans = vec![dot.clone(), Span::raw(chunk)];
+                if let Some(ref s) = hint_span {
+                    spans.push(s.clone());
+                }
+                Line::from(spans)
             } else {
                 Line::from(Span::raw(format!("  {chunk}")))
             }
@@ -672,18 +686,30 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
         frame.render_widget(block, content_area);
         let text_width = inner.width.saturating_sub(2) as usize;
         let selected = list_state.selected();
+        let selected_hint: Option<&'static str> =
+            selected
+                .and_then(|i| cat_items.get(i))
+                .and_then(|item| match item {
+                    DisplayItem::Group { .. } => Some("↩ to expand"),
+                    DisplayItem::Single(s) => item_url(s).map(|_| "↩ to open"),
+                });
         let list_items: Vec<ListItem> = cat_items
             .iter()
             .enumerate()
             .map(|(i, item)| {
-                let dot_style = if selected == Some(i) {
+                let is_selected = selected == Some(i);
+                let dot_style = if is_selected {
                     Style::default()
                 } else {
                     urgency_style(display_item_urgency(item))
                 };
+                let hint = if is_selected { selected_hint } else { None };
+                let item_width =
+                    text_width.saturating_sub(hint.map_or(0, |h| h.chars().count() + 2));
                 build_list_item(
                     Span::styled("● ", dot_style),
-                    wrap_text(&display_item_line(item), text_width),
+                    wrap_text(&display_item_line(item), item_width),
+                    hint,
                 )
             })
             .collect();
@@ -727,18 +753,26 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
             frame.render_widget(block, content_area);
             let text_width = inner.width.saturating_sub(2) as usize;
             let selected = list_state.selected();
+            let selected_hint: Option<&'static str> = selected
+                .and_then(|i| items.get(i))
+                .and_then(|item| item_url(item).map(|_| "↩ to open"));
             let list_items: Vec<ListItem> = items
                 .iter()
                 .enumerate()
                 .map(|(i, item)| {
-                    let dot_style = if selected == Some(i) {
+                    let is_selected = selected == Some(i);
+                    let dot_style = if is_selected {
                         Style::default()
                     } else {
                         urgency_style(item_urgency(item))
                     };
+                    let hint = if is_selected { selected_hint } else { None };
+                    let item_width =
+                        text_width.saturating_sub(hint.map_or(0, |h| h.chars().count() + 2));
                     build_list_item(
                         Span::styled("● ", dot_style),
-                        wrap_text(&item_line(item), text_width),
+                        wrap_text(&item_line(item), item_width),
+                        hint,
                     )
                 })
                 .collect();
