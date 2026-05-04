@@ -282,7 +282,7 @@ fn item_urgency(item: &StatusItem) -> domain::Urgency {
 fn display_item_line(item: &DisplayItem) -> String {
     match item {
         DisplayItem::Single(s) => item_line(s),
-        DisplayItem::Group { label, items } => format!("{}  ({})", label, items.len()),
+        DisplayItem::Group { label, items } => format!("{} ({})", label, items.len()),
     }
 }
 
@@ -482,22 +482,23 @@ fn popup_area(area: Rect, content_lines: u16, content_width: u16) -> Rect {
 fn build_list_item(
     dot: Span<'static>,
     wrapped: Vec<String>,
+    dim_suffix: Option<String>,
     hint: Option<&'static str>,
 ) -> ListItem<'static> {
-    let hint_span = hint.map(|h| {
-        Span::styled(
-            format!("  {h}"),
-            Style::default().add_modifier(Modifier::DIM),
-        )
-    });
+    let dim = Style::default().add_modifier(Modifier::DIM);
+    let suffix_span = dim_suffix.map(|s| Span::styled(s, dim));
+    let hint_span = hint.map(|h| Span::styled(format!("  {h}"), dim));
     let mut lines: Vec<Line> = wrapped
         .into_iter()
         .enumerate()
         .map(|(j, chunk)| {
             if j == 0 {
                 let mut spans = vec![dot.clone(), Span::raw(chunk)];
-                if let Some(ref s) = hint_span {
+                if let Some(ref s) = suffix_span {
                     spans.push(s.clone());
+                }
+                if let Some(ref h) = hint_span {
+                    spans.push(h.clone());
                 }
                 Line::from(spans)
             } else {
@@ -593,16 +594,26 @@ fn render_tile(frame: &mut ratatui::Frame, cat_data: &CatData, focused: bool, ar
     };
     let text_width = (inner.width as usize).saturating_sub(2); // "● "
 
+    let dim = Style::default().add_modifier(Modifier::DIM);
     let mut lines: Vec<Line> = cat_data
         .items
         .iter()
         .take(preview_count)
         .map(|item| {
             let dot_style = urgency_style(display_item_urgency(item));
-            Line::from(vec![
-                Span::styled("● ", dot_style),
-                Span::raw(truncate(&display_item_line(item), text_width)),
-            ])
+            let (label, count_suffix) = match item {
+                DisplayItem::Group { label, items } => {
+                    let suffix = format!(" ({})", items.len());
+                    let label_width = text_width.saturating_sub(suffix.chars().count());
+                    (truncate(label, label_width), Some(suffix))
+                }
+                DisplayItem::Single(_) => (truncate(&display_item_line(item), text_width), None),
+            };
+            let mut spans = vec![Span::styled("● ", dot_style), Span::raw(label)];
+            if let Some(s) = count_suffix {
+                spans.push(Span::styled(s, dim));
+            }
+            Line::from(spans)
         })
         .collect();
 
@@ -704,11 +715,20 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
                     urgency_style(display_item_urgency(item))
                 };
                 let hint = if is_selected { selected_hint } else { None };
-                let item_width =
-                    text_width.saturating_sub(hint.map_or(0, |h| h.chars().count() + 2));
+                let (line_text, dim_suffix) = match item {
+                    DisplayItem::Group { label, items } => (
+                        label.as_str().to_string(),
+                        Some(format!(" ({})", items.len())),
+                    ),
+                    DisplayItem::Single(_) => (display_item_line(item), None),
+                };
+                let item_width = text_width
+                    .saturating_sub(dim_suffix.as_ref().map_or(0, |s| s.chars().count()))
+                    .saturating_sub(hint.map_or(0, |h| h.chars().count() + 2));
                 build_list_item(
                     Span::styled("● ", dot_style),
-                    wrap_text(&display_item_line(item), item_width),
+                    wrap_text(&line_text, item_width),
+                    dim_suffix,
                     hint,
                 )
             })
@@ -772,6 +792,7 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
                     build_list_item(
                         Span::styled("● ", dot_style),
                         wrap_text(&item_line(item), item_width),
+                        None,
                         hint,
                     )
                 })
