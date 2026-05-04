@@ -946,6 +946,47 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
     }
 }
 
+struct TerminalSession {
+    terminal: Terminal<CrosstermBackend<io::Stdout>>,
+}
+
+impl TerminalSession {
+    fn start() -> Result<Self> {
+        enable_raw_mode()?;
+
+        let mut stdout = io::stdout();
+        if let Err(err) = execute!(stdout, EnterAlternateScreen) {
+            let _ = disable_raw_mode();
+            return Err(err.into());
+        }
+
+        let backend = CrosstermBackend::new(stdout);
+        let terminal = match Terminal::new(backend) {
+            Ok(terminal) => terminal,
+            Err(err) => {
+                let mut stdout = io::stdout();
+                let _ = execute!(stdout, LeaveAlternateScreen);
+                let _ = disable_raw_mode();
+                return Err(err.into());
+            }
+        };
+
+        Ok(Self { terminal })
+    }
+
+    fn terminal_mut(&mut self) -> &mut Terminal<CrosstermBackend<io::Stdout>> {
+        &mut self.terminal
+    }
+}
+
+impl Drop for TerminalSession {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
+        let _ = self.terminal.show_cursor();
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let config = config::Config::load()?;
@@ -980,19 +1021,17 @@ async fn main() -> Result<()> {
         spawn_fetch(&config, tx.clone());
     }
 
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = TerminalSession::start()?;
 
-    let result = run_loop(&mut terminal, &mut app, &conn, &config, &tx, &mut rx).await;
-
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    terminal.show_cursor()?;
-
-    result
+    run_loop(
+        terminal.terminal_mut(),
+        &mut app,
+        &conn,
+        &config,
+        &tx,
+        &mut rx,
+    )
+    .await
 }
 
 fn spawn_fetch(config: &config::Config, tx: mpsc::Sender<Result<StatusReport>>) {
