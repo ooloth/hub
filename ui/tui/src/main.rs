@@ -687,8 +687,11 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
                 )
             })
             .collect();
-        let list = List::new(list_items)
-            .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+        let list = List::new(list_items).highlight_style(
+            Style::default()
+                .bg(Color::Rgb(41, 45, 62))
+                .add_modifier(Modifier::BOLD),
+        );
         frame.render_stateful_widget(list, inner, list_state);
     } else if let View::Detail {
         cat,
@@ -739,8 +742,11 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
                     )
                 })
                 .collect();
-            let list = List::new(list_items)
-                .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+            let list = List::new(list_items).highlight_style(
+                Style::default()
+                    .bg(Color::Rgb(41, 45, 62))
+                    .add_modifier(Modifier::BOLD),
+            );
             frame.render_stateful_widget(list, inner, list_state);
         }
     }
