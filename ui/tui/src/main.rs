@@ -550,7 +550,7 @@ fn render_tile(frame: &mut ratatui::Frame, cat_data: &CatData, focused: bool, ar
     } else {
         Style::default()
     };
-    let title = Span::styled(format!(" {} ({count}) ", cat_data.cat.label()), title_style);
+    let title = Span::styled(format!(" {} ", cat_data.cat.label()), title_style);
     let block = Block::new()
         .title(title)
         .borders(Borders::ALL)
@@ -654,7 +654,7 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
             .map(|c| c.items.as_slice())
             .unwrap_or(&[]);
         let title = Span::styled(
-            format!(" {} ({}) ", cat.label(), cat_items.len()),
+            format!(" {} ", cat.label()),
             Style::default()
                 .fg(Color::Green)
                 .add_modifier(Modifier::BOLD),
@@ -705,7 +705,7 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
             });
         if let Some((label, items)) = group_data {
             let title = Span::styled(
-                format!(" {} ({}) ", label, items.len()),
+                format!(" {} ", label),
                 Style::default()
                     .fg(Color::Green)
                     .add_modifier(Modifier::BOLD),
