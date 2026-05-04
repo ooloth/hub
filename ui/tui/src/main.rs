@@ -640,8 +640,6 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let [content_area, bar_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
 
-    let text_width = content_area.width.saturating_sub(2) as usize;
-
     if matches!(app.view, View::Home) {
         render_home(frame, app, content_area);
     } else if let View::Category {
@@ -655,6 +653,19 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
             .find(|c| c.cat == cat)
             .map(|c| c.items.as_slice())
             .unwrap_or(&[]);
+        let title = Span::styled(
+            format!(" {} ({}) ", cat.label(), cat_items.len()),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        );
+        let block = Block::new()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Green));
+        let inner = block.inner(content_area);
+        frame.render_widget(block, content_area);
+        let text_width = inner.width.saturating_sub(2) as usize;
         let selected = list_state.selected();
         let list_items: Vec<ListItem> = cat_items
             .iter()
@@ -673,26 +684,39 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
             .collect();
         let list = List::new(list_items)
             .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
-        frame.render_stateful_widget(list, content_area, list_state);
+        frame.render_stateful_widget(list, inner, list_state);
     } else if let View::Detail {
         cat,
         group_index,
         ref mut list_state,
     } = app.view
     {
-        let group_items = app
+        let group_data = app
             .cats
             .iter()
             .find(|c| c.cat == cat)
             .and_then(|c| c.items.get(group_index))
             .and_then(|d| {
-                if let DisplayItem::Group { items, .. } = d {
-                    Some(items.as_slice())
+                if let DisplayItem::Group { label, items } = d {
+                    Some((label.as_str(), items.as_slice()))
                 } else {
                     None
                 }
             });
-        if let Some(items) = group_items {
+        if let Some((label, items)) = group_data {
+            let title = Span::styled(
+                format!(" {} ({}) ", label, items.len()),
+                Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+            );
+            let block = Block::new()
+                .title(title)
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Green));
+            let inner = block.inner(content_area);
+            frame.render_widget(block, content_area);
+            let text_width = inner.width.saturating_sub(2) as usize;
             let selected = list_state.selected();
             let list_items: Vec<ListItem> = items
                 .iter()
@@ -711,7 +735,7 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
                 .collect();
             let list = List::new(list_items)
                 .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
-            frame.render_stateful_widget(list, content_area, list_state);
+            frame.render_stateful_widget(list, inner, list_state);
         }
     }
 
