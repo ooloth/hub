@@ -500,14 +500,7 @@ fn build_list_item(
         .enumerate()
         .map(|(j, chunk)| {
             if j == 0 {
-                let mut spans = vec![dot.clone(), Span::raw(chunk)];
-                if let Some(ref s) = suffix_span {
-                    spans.push(s.clone());
-                }
-                if let Some(ref h) = hint_span {
-                    spans.push(h.clone());
-                }
-                Line::from(spans)
+                Line::from(vec![dot.clone(), Span::raw(chunk)])
             } else {
                 Line::from(Span::raw(format!("  {chunk}")))
             }
@@ -515,6 +508,14 @@ fn build_list_item(
         .collect();
     if lines.is_empty() {
         lines.push(Line::from(vec![dot, Span::raw("")]));
+    }
+    if let Some(last) = lines.last_mut() {
+        if let Some(s) = suffix_span {
+            last.spans.push(s);
+        }
+        if let Some(h) = hint_span {
+            last.spans.push(h);
+        }
     }
     ListItem::new(Text::from(lines))
 }
