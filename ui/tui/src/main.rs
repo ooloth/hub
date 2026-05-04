@@ -11,7 +11,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
     Terminal,
 };
 use std::{collections::HashMap, io};
@@ -557,6 +557,7 @@ fn render_tile(frame: &mut ratatui::Frame, cat_data: &CatData, focused: bool, ar
     let block = Block::new()
         .title(title)
         .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
         .border_style(border_style);
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -665,6 +666,7 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
         let block = Block::new()
             .title(title)
             .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(Color::Green));
         let inner = block.inner(content_area);
         frame.render_widget(block, content_area);
@@ -716,6 +718,7 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
             let block = Block::new()
                 .title(title)
                 .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
                 .border_style(Style::default().fg(Color::Green));
             let inner = block.inner(content_area);
             frame.render_widget(block, content_area);
