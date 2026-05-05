@@ -63,9 +63,25 @@ just cli     # run the CLI
 just tui     # run the TUI
 ```
 
-### Verifying TUI changes visually
+### Verifying TUI changes
 
-The TUI is interactive, so use tmux to drive it and read the screen:
+For any change that affects `ui/tui` rendering, navigation, keybindings,
+selected-item behavior, subprocess launching, or tmux integration, agents must
+run a tmux-driven E2E smoke test before final response. Unit tests and
+`just check` are not sufficient for TUI interaction changes.
+
+Minimum bar:
+
+1. Start the TUI in tmux.
+2. Drive the changed keybinding or interaction with `tmux send-keys`.
+3. Capture the pane with `tmux capture-pane -p`.
+4. If the change launches another pane, window, browser, shell command, or
+   external process, verify that launch behavior live.
+5. Clean up any tmux panes/windows created during the test.
+6. Report exactly what was observed.
+
+If E2E validation cannot be run, explicitly state why and what weaker
+validation was run instead.
 
 ```bash
 tmux new-window -n "tui-test" "j tui; read"
