@@ -111,7 +111,7 @@ async fn main() -> Result<()> {
     let mut app = App {
         cats: build_cats(initial_items),
         focused_tile: 0,
-        view: View::Home,
+        views: vec![View::Home],
         is_refreshing: start_refresh,
         last_updated: initial_updated,
         error: None,
@@ -203,26 +203,17 @@ async fn run_loop(
                         (KeyCode::Esc, _) if app.show_help => app.show_help = false,
 
                         // Esc = back one level
-                        (KeyCode::Esc, _) if matches!(app.view, View::Detail { .. }) => {
-                            let cat = if let View::Detail { cat, .. } = app.view { cat } else { unreachable!() };
-                            let len = app.cats.iter().find(|c| c.cat == cat).map(|c| c.items.len()).unwrap_or(0);
-                            let mut ls = ListState::default();
-                            if len > 0 { ls.select(Some(0)); }
-                            app.view = View::Category { cat, list_state: ls };
-                        }
-                        (KeyCode::Esc, _) if matches!(app.view, View::Category { .. }) => {
-                            app.view = View::Home;
-                        }
+                        (KeyCode::Esc, _) if app.views.len() > 1 => app.pop_view(),
 
                         _ if app.show_help => {}
 
                         // Home tile navigation
-                        (KeyCode::Tab, _) if matches!(app.view, View::Home) => app.move_tile_forward(),
-                        (KeyCode::BackTab, _) if matches!(app.view, View::Home) => app.move_tile_back(),
-                        (KeyCode::Right, _) | (KeyCode::Char('l'), _) if matches!(app.view, View::Home) => app.move_tile_right(),
-                        (KeyCode::Left, _) | (KeyCode::Char('h'), _) if matches!(app.view, View::Home) => app.move_tile_left(),
-                        (KeyCode::Down, _) | (KeyCode::Char('j'), _) if matches!(app.view, View::Home) => app.move_tile_down(),
-                        (KeyCode::Up, _) | (KeyCode::Char('k'), _) if matches!(app.view, View::Home) => app.move_tile_up(),
+                        (KeyCode::Tab, _) if matches!(app.current_view(), View::Home) => app.move_tile_forward(),
+                        (KeyCode::BackTab, _) if matches!(app.current_view(), View::Home) => app.move_tile_back(),
+                        (KeyCode::Right, _) | (KeyCode::Char('l'), _) if matches!(app.current_view(), View::Home) => app.move_tile_right(),
+                        (KeyCode::Left, _) | (KeyCode::Char('h'), _) if matches!(app.current_view(), View::Home) => app.move_tile_left(),
+                        (KeyCode::Down, _) | (KeyCode::Char('j'), _) if matches!(app.current_view(), View::Home) => app.move_tile_down(),
+                        (KeyCode::Up, _) | (KeyCode::Char('k'), _) if matches!(app.current_view(), View::Home) => app.move_tile_up(),
 
                         // List navigation
                         (KeyCode::Up, _) | (KeyCode::Char('k'), _) | (KeyCode::Char('h'), _) => app.move_up(),
@@ -240,12 +231,12 @@ async fn run_loop(
                                     let len = app.cats.iter().find(|c| c.cat == cat).map(|c| c.items.len()).unwrap_or(0);
                                     let mut ls = ListState::default();
                                     if len > 0 { ls.select(Some(0)); }
-                                    app.view = View::Category { cat, list_state: ls };
+                                    app.push_view(View::Category { cat, list_state: ls });
                                 }
                                 EnterAction::OpenDetail { cat, group_index, item_count } => {
                                     let mut ds = ListState::default();
                                     if item_count > 0 { ds.select(Some(0)); }
-                                    app.view = View::Detail { cat, group_index, list_state: ds };
+                                    app.push_view(View::Detail { cat, group_index, list_state: ds });
                                 }
                             }
                         }
@@ -289,7 +280,7 @@ async fn run_loop(
                         let cats = build_cats(report.items);
                         app.focused_tile = app.focused_tile.min(cats.len().saturating_sub(1));
                         app.cats = cats;
-                        app.view = View::Home;
+                        app.views.truncate(1);
                         app.last_updated = Some(Utc::now());
                         app.is_refreshing = false;
                         app.error = None;

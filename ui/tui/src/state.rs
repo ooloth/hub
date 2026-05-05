@@ -10,7 +10,7 @@ pub(crate) const TILE_COLS: usize = 2;
 pub(crate) struct App {
     pub(crate) cats: Vec<CatData>,
     pub(crate) focused_tile: usize,
-    pub(crate) view: View,
+    pub(crate) views: Vec<View>,
     pub(crate) is_refreshing: bool,
     pub(crate) last_updated: Option<DateTime<Utc>>,
     pub(crate) error: Option<String>,
@@ -33,8 +33,22 @@ pub(crate) enum View {
 }
 
 impl App {
+    pub(crate) fn current_view(&self) -> &View {
+        self.views.last().expect("view stack is never empty")
+    }
+
+    pub(crate) fn push_view(&mut self, view: View) {
+        self.views.push(view);
+    }
+
+    pub(crate) fn pop_view(&mut self) {
+        if self.views.len() > 1 {
+            self.views.pop();
+        }
+    }
+
     pub(crate) fn active_list_len(&self) -> usize {
-        match &self.view {
+        match self.views.last().unwrap() {
             View::Home => self.cats.len(),
             View::Category { cat, .. } => self
                 .cats
@@ -130,7 +144,7 @@ impl App {
     }
 
     pub(crate) fn move_up(&mut self) {
-        match &mut self.view {
+        match self.views.last_mut().unwrap() {
             View::Home => {}
             View::Category { list_state, .. } | View::Detail { list_state, .. } => {
                 let sel = list_state.selected().unwrap_or(0);
@@ -143,7 +157,7 @@ impl App {
 
     pub(crate) fn move_down(&mut self) {
         let len = self.active_list_len();
-        match &mut self.view {
+        match self.views.last_mut().unwrap() {
             View::Home => {}
             View::Category { list_state, .. } | View::Detail { list_state, .. } => {
                 let sel = list_state.selected().unwrap_or(0);
@@ -155,7 +169,7 @@ impl App {
     }
 
     pub(crate) fn selected_url(&self) -> Option<&str> {
-        match &self.view {
+        match self.views.last().unwrap() {
             View::Home => None,
             View::Category { cat, list_state } => {
                 let sel = list_state.selected().unwrap_or(0);
@@ -201,7 +215,7 @@ pub(crate) enum InvestigateAction {
 }
 
 pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
-    match &app.view {
+    match app.current_view() {
         View::Home => {
             if app.cats.is_empty() {
                 return EnterAction::None;
@@ -236,7 +250,7 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
 }
 
 pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
-    let item = match &app.view {
+    let item = match app.current_view() {
         View::Home => return InvestigateAction::None,
         View::Category { cat, list_state } => {
             let sel = list_state.selected().unwrap_or(0);
@@ -300,10 +314,10 @@ mod tests {
                 items: vec![DisplayItem::Single(ci_failure())],
             }],
             focused_tile: 0,
-            view: View::Category {
+            views: vec![View::Category {
                 cat: Category::Errors,
                 list_state,
-            },
+            }],
             is_refreshing: false,
             last_updated: None,
             error: None,
@@ -333,11 +347,11 @@ mod tests {
                 }],
             }],
             focused_tile: 0,
-            view: View::Detail {
+            views: vec![View::Detail {
                 cat: Category::Errors,
                 group_index: 0,
                 list_state,
-            },
+            }],
             is_refreshing: false,
             last_updated: None,
             error: None,
@@ -372,10 +386,10 @@ mod tests {
                 }))],
             }],
             focused_tile: 0,
-            view: View::Category {
+            views: vec![View::Category {
                 cat: Category::Issues,
                 list_state,
-            },
+            }],
             is_refreshing: false,
             last_updated: None,
             error: None,

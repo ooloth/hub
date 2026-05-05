@@ -293,17 +293,17 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let [content_area, bar_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
 
-    if matches!(app.view, View::Home) {
+    if matches!(app.current_view(), View::Home) {
         render_home(frame, app, content_area);
     } else if let View::Category {
-        cat,
+        ref cat,
         ref mut list_state,
-    } = app.view
+    } = *app.views.last_mut().unwrap()
     {
         let cat_items = app
             .cats
             .iter()
-            .find(|c| c.cat == cat)
+            .find(|c| c.cat == *cat)
             .map(|c| c.items.as_slice())
             .unwrap_or(&[]);
         let title = Span::styled(
@@ -371,16 +371,16 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         );
         frame.render_stateful_widget(list, inner, list_state);
     } else if let View::Detail {
-        cat,
-        group_index,
+        ref cat,
+        ref group_index,
         ref mut list_state,
-    } = app.view
+    } = *app.views.last_mut().unwrap()
     {
         let group_data = app
             .cats
             .iter()
-            .find(|c| c.cat == cat)
-            .and_then(|c| c.items.get(group_index))
+            .find(|c| c.cat == *cat)
+            .and_then(|c| c.items.get(*group_index))
             .and_then(|d| {
                 if let DisplayItem::Group { label, items } = d {
                     Some((label.as_str(), items.as_slice()))
@@ -469,7 +469,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let left = if let Some(flash) = &app.flash {
         flash.clone()
     } else {
-        match &app.view {
+        match app.current_view() {
             View::Home => {
                 let total: usize = app.cats.iter().map(|c| c.items.len()).sum();
                 format!("{total} items")
@@ -535,7 +535,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     frame.render_widget(Paragraph::new(right_status).style(dim), bar_right);
 
     if app.show_help {
-        let keybinds = match &app.view {
+        let keybinds = match app.current_view() {
             View::Home => KEYBINDS_HOME,
             View::Category { .. } => KEYBINDS_CATEGORY,
             View::Detail { .. } => KEYBINDS_DETAIL,
