@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
 use crossterm::{
     event::{Event, EventStream, KeyCode, KeyModifiers},
@@ -14,7 +14,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
     Terminal,
 };
-use std::{collections::HashMap, io};
+use std::{collections::HashMap, io, path::Path};
 use tokio::sync::mpsc;
 use workflows::status::{StatusItem, StatusReport, SCHEMA_VERSION};
 
@@ -394,6 +394,12 @@ enum EnterAction {
     },
 }
 
+#[derive(Debug, Eq, PartialEq)]
+enum InvestigateAction {
+    None,
+    LaunchCi { repo: String, run_url: String },
+}
+
 fn compute_enter_action(app: &App) -> EnterAction {
     match &app.view {
         View::Home => {
@@ -429,15 +435,20 @@ fn compute_enter_action(app: &App) -> EnterAction {
     }
 }
 
-fn compute_investigate_action(app: &App) -> Option<(String, String)> {
+fn compute_investigate_action(app: &App) -> InvestigateAction {
     let item = match &app.view {
-        View::Home => return None,
+        View::Home => return InvestigateAction::None,
         View::Category { cat, list_state } => {
             let sel = list_state.selected().unwrap_or(0);
-            let cd = app.cats.iter().find(|c| c.cat == *cat)?;
-            match cd.items.get(sel)? {
+            let Some(cd) = app.cats.iter().find(|c| c.cat == *cat) else {
+                return InvestigateAction::None;
+            };
+            let Some(display_item) = cd.items.get(sel) else {
+                return InvestigateAction::None;
+            };
+            match display_item {
                 DisplayItem::Single(item) => item,
-                DisplayItem::Group { .. } => return None,
+                DisplayItem::Group { .. } => return InvestigateAction::None,
             }
         }
         View::Detail {
@@ -446,17 +457,54 @@ fn compute_investigate_action(app: &App) -> Option<(String, String)> {
             list_state,
         } => {
             let sel = list_state.selected().unwrap_or(0);
-            let cd = app.cats.iter().find(|c| c.cat == *cat)?;
-            match cd.items.get(*group_index)? {
-                DisplayItem::Group { items, .. } => items.get(sel)?,
-                _ => return None,
+            let Some(cd) = app.cats.iter().find(|c| c.cat == *cat) else {
+                return InvestigateAction::None;
+            };
+            let Some(display_item) = cd.items.get(*group_index) else {
+                return InvestigateAction::None;
+            };
+            match display_item {
+                DisplayItem::Group { items, .. } => {
+                    let Some(item) = items.get(sel) else {
+                        return InvestigateAction::None;
+                    };
+                    item
+                }
+                _ => return InvestigateAction::None,
             }
         }
     };
     match item {
-        StatusItem::Ci(c) => Some((c.repo.to_string(), c.url.clone())),
-        _ => None,
+        StatusItem::Ci(c) => InvestigateAction::LaunchCi {
+            repo: c.repo.to_string(),
+            run_url: c.url.clone(),
+        },
+        _ => InvestigateAction::None,
     }
+}
+
+fn ci_investigation_command(repo: &str, run_url: &str) -> String {
+    format!("claude '/github-ci-investigate {repo} {run_url}'")
+}
+
+fn launch_ci_investigation(repo: &str, run_url: &str, cwd: &Path) -> Result<()> {
+    if std::env::var("TMUX").is_err() {
+        bail!("not in tmux; investigation requires a tmux session");
+    }
+
+    let command = ci_investigation_command(repo, run_url);
+    let status = std::process::Command::new("tmux")
+        .args(["split-window", "-h", "-c"])
+        .arg(cwd)
+        .arg(command)
+        .status()
+        .context("failed to start tmux split-window")?;
+
+    if !status.success() {
+        bail!("tmux split-window failed with {status}");
+    }
+
+    Ok(())
 }
 
 const KEYBINDS_HOME: &[(&str, &str)] = &[
@@ -610,7 +658,12 @@ fn truncate(text: &str, max_width: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::wrap_text;
+    use super::{
+        ci_investigation_command, compute_investigate_action, wrap_text, App, CatData, Category,
+        DisplayItem, InvestigateAction, View,
+    };
+    use ratatui::widgets::ListState;
+    use workflows::status::StatusItem;
 
     #[test]
     fn wrap_text_treats_zero_width_as_one_column() {
@@ -628,6 +681,124 @@ mod tests {
             wrap_text("alpha beta gamma", 10),
             vec!["alpha beta", "gamma"]
         );
+    }
+
+    #[test]
+    fn investigate_action_launches_ci_from_category_selection() {
+        let mut list_state = ListState::default();
+        list_state.select(Some(0));
+        let app = App {
+            cats: vec![CatData {
+                cat: Category::Errors,
+                items: vec![DisplayItem::Single(ci_failure())],
+            }],
+            focused_tile: 0,
+            view: View::Category {
+                cat: Category::Errors,
+                list_state,
+            },
+            is_refreshing: false,
+            last_updated: None,
+            error: None,
+            show_help: false,
+            flash: None,
+        };
+
+        assert_eq!(
+            compute_investigate_action(&app),
+            InvestigateAction::LaunchCi {
+                repo: "ooloth/hub".to_string(),
+                run_url: "https://github.com/ooloth/hub/actions/runs/123".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn investigate_action_launches_ci_from_detail_selection() {
+        let mut list_state = ListState::default();
+        list_state.select(Some(0));
+        let app = App {
+            cats: vec![CatData {
+                cat: Category::Errors,
+                items: vec![DisplayItem::Group {
+                    label: "group".to_string(),
+                    items: vec![ci_failure()],
+                }],
+            }],
+            focused_tile: 0,
+            view: View::Detail {
+                cat: Category::Errors,
+                group_index: 0,
+                list_state,
+            },
+            is_refreshing: false,
+            last_updated: None,
+            error: None,
+            show_help: false,
+            flash: None,
+        };
+
+        assert_eq!(
+            compute_investigate_action(&app),
+            InvestigateAction::LaunchCi {
+                repo: "ooloth/hub".to_string(),
+                run_url: "https://github.com/ooloth/hub/actions/runs/123".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn investigate_action_ignores_unmapped_items() {
+        let mut list_state = ListState::default();
+        list_state.select(Some(0));
+        let app = App {
+            cats: vec![CatData {
+                cat: Category::Issues,
+                items: vec![DisplayItem::Single(StatusItem::Issue(domain::Issue {
+                    number: 31,
+                    title: "TUI investigation".to_string(),
+                    repo: domain::RepoSlug::new("ooloth", "hub"),
+                    url: "https://github.com/ooloth/hub/issues/31".to_string(),
+                    age: chrono::Duration::zero(),
+                    urgency: domain::Urgency::Low,
+                    labels: vec![],
+                }))],
+            }],
+            focused_tile: 0,
+            view: View::Category {
+                cat: Category::Issues,
+                list_state,
+            },
+            is_refreshing: false,
+            last_updated: None,
+            error: None,
+            show_help: false,
+            flash: None,
+        };
+
+        assert_eq!(compute_investigate_action(&app), InvestigateAction::None);
+    }
+
+    #[test]
+    fn ci_investigation_command_passes_skill_and_context_as_one_prompt() {
+        assert_eq!(
+            ci_investigation_command(
+                "ooloth/hub",
+                "https://github.com/ooloth/hub/actions/runs/123"
+            ),
+            "claude '/github-ci-investigate ooloth/hub https://github.com/ooloth/hub/actions/runs/123'"
+        );
+    }
+
+    fn ci_failure() -> StatusItem {
+        StatusItem::Ci(domain::CiFailure {
+            repo: domain::RepoSlug::new("ooloth", "hub"),
+            workflow_name: "CI".to_string(),
+            conclusion: "failure".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::High,
+            url: "https://github.com/ooloth/hub/actions/runs/123".to_string(),
+        })
     }
 }
 
@@ -949,7 +1120,7 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
                     }
                     _ => String::new(),
                 };
-                let inv_hint = if investigate_action.is_some() {
+                let inv_hint = if matches!(investigate_action, InvestigateAction::LaunchCi { .. }) {
                     " · Press i to investigate"
                 } else {
                     ""
@@ -974,7 +1145,7 @@ fn render(frame: &mut ratatui::Frame, app: &mut App) {
                     EnterAction::OpenUrl(url) => format!(" · Press ↩ to open {url}"),
                     _ => String::new(),
                 };
-                let inv_hint = if investigate_action.is_some() {
+                let inv_hint = if matches!(investigate_action, InvestigateAction::LaunchCi { .. }) {
                     " · Press i to investigate"
                 } else {
                     ""
@@ -1199,22 +1370,15 @@ async fn run_loop(
                         // i = launch investigation skill for selected item
                         (KeyCode::Char('i'), _) => {
                             match compute_investigate_action(app) {
-                                Some((repo, url)) => {
-                                    if std::env::var("TMUX").is_ok() {
-                                        let cmd = format!(
-                                            "claude '/github-ci-investigate {repo} {url}'"
-                                        );
-                                        let _ = std::process::Command::new("tmux")
-                                            .args(["split-window", "-h", &cmd])
-                                            .spawn();
-                                    } else {
-                                        app.flash = Some(
-                                            "Not in tmux — investigation requires a tmux session"
-                                                .to_string(),
-                                        );
+                                InvestigateAction::LaunchCi { repo, run_url } => {
+                                    let cwd = std::env::current_dir()
+                                        .context("failed to resolve current directory")?;
+                                    if let Err(err) = launch_ci_investigation(&repo, &run_url, &cwd)
+                                    {
+                                        app.flash = Some(err.to_string());
                                     }
                                 }
-                                None => {
+                                InvestigateAction::None => {
                                     app.flash = Some("No investigation mapped".to_string());
                                 }
                             }
