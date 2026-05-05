@@ -14,6 +14,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    Fetch,
     Status,
 }
 
@@ -22,6 +23,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let config = config::Config::load()?;
     match cli.command {
+        Commands::Fetch => commands::fetch::run(&config).await?,
         Commands::Status => commands::status::run(&config).await?,
     }
     Ok(())

@@ -1,3 +1,4 @@
+pub mod fetch;
 pub mod status;
 
 #[cfg(feature = "private")]

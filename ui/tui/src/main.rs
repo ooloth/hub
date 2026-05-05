@@ -1255,6 +1255,7 @@ async fn main() -> Result<()> {
     if start_refresh {
         spawn_fetch(&config, tx.clone());
     }
+    spawn_git_fetch(&config);
 
     let mut terminal = TerminalSession::start()?;
 
@@ -1290,6 +1291,20 @@ fn spawn_fetch(config: &config::Config, tx: mpsc::Sender<Result<StatusReport>>) 
         )
         .await;
         let _ = tx.send(result).await;
+    });
+}
+
+fn spawn_git_fetch(config: &config::Config) {
+    let github_token = config.github_token.clone();
+    let projects: Vec<(String, String)> = config
+        .projects
+        .iter()
+        .map(|p| (p.name.clone(), p.repo.clone()))
+        .collect();
+    tokio::spawn(async move {
+        if let Err(e) = workflows::fetch::run(&projects, &github_token).await {
+            eprintln!("hub fetch: {e}");
+        }
     });
 }
 
@@ -1393,6 +1408,7 @@ async fn run_loop(
                     app.is_refreshing = true;
                     app.error = None;
                     spawn_fetch(config, tx.clone());
+                    spawn_git_fetch(config);
                 }
             }
             Some(result) = rx.recv() => {
