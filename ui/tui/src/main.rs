@@ -25,7 +25,7 @@ mod state;
 mod private;
 
 fn ci_investigation_command(repo: &str, run_url: &str) -> String {
-    format!("claude '/github-ci-investigate {repo} {run_url}'")
+    format!("claude  --dangerously-skip-permissions '/github-ci-investigate {repo} {run_url}'")
 }
 
 fn launch_ci_investigation(repo: &str, run_url: &str, cwd: &Path) -> Result<()> {
@@ -254,7 +254,7 @@ mod tests {
                 "ooloth/hub",
                 "https://github.com/ooloth/hub/actions/runs/123"
             ),
-            "claude '/github-ci-investigate ooloth/hub https://github.com/ooloth/hub/actions/runs/123'"
+            "claude  --dangerously-skip-permissions '/github-ci-investigate ooloth/hub https://github.com/ooloth/hub/actions/runs/123'"
         );
     }
 }
