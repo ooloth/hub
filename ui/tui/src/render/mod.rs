@@ -187,9 +187,7 @@ fn status_bar_left(app: &App) -> String {
         Screen::Category(view) => {
             let n = app
                 .data
-                .cats
-                .iter()
-                .find(|c| c.cat == view.cat)
+                .cat_data(view.cat)
                 .map(|c| c.items.len())
                 .unwrap_or(0);
             let pos = view
@@ -212,7 +210,7 @@ fn status_bar_left(app: &App) -> String {
             format!("{pos}{enter_hint}{inv_hint}")
         }
         Screen::Detail { view, .. } => {
-            let cd = app.data.cats.iter().find(|c| c.cat == view.cat);
+            let cd = app.data.cat_data(view.cat);
             let count = match cd.and_then(|c| c.items.get(view.group_index)) {
                 Some(DisplayItem::Group { items, .. }) => items.len(),
                 _ => 0,

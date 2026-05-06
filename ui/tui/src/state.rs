@@ -32,6 +32,12 @@ pub(crate) struct DataState {
     pub(crate) last_updated: Option<DateTime<Utc>>,
 }
 
+impl DataState {
+    pub(crate) fn cat_data(&self, cat: Category) -> Option<&CatData> {
+        self.cats.iter().find(|c| c.cat == cat)
+    }
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct App {
     pub(crate) ui: UiState,
@@ -78,16 +84,12 @@ impl App {
             Screen::Home => self.data.cats.len(),
             Screen::Category(view) => self
                 .data
-                .cats
-                .iter()
-                .find(|c| c.cat == view.cat)
+                .cat_data(view.cat)
                 .map(|c| c.items.len())
                 .unwrap_or(0),
             Screen::Detail { view, .. } => self
                 .data
-                .cats
-                .iter()
-                .find(|c| c.cat == view.cat)
+                .cat_data(view.cat)
                 .and_then(|c| c.items.get(view.group_index))
                 .map(|d| match d {
                     DisplayItem::Group { items, .. } => items.len(),
@@ -320,7 +322,7 @@ impl App {
             Screen::Home => None,
             Screen::Category(view) => {
                 let sel = view.list_state.selected().unwrap_or(0);
-                let cd = self.data.cats.iter().find(|c| c.cat == view.cat)?;
+                let cd = self.data.cat_data(view.cat)?;
                 match cd.items.get(sel)? {
                     DisplayItem::Single(item) => item_url(item),
                     DisplayItem::Group { .. } => None,
@@ -328,7 +330,7 @@ impl App {
             }
             Screen::Detail { view, .. } => {
                 let sel = view.list_state.selected().unwrap_or(0);
-                let cd = self.data.cats.iter().find(|c| c.cat == view.cat)?;
+                let cd = self.data.cat_data(view.cat)?;
                 match cd.items.get(view.group_index)? {
                     DisplayItem::Group { items, .. } => items.get(sel).and_then(item_url),
                     _ => None,
@@ -401,7 +403,7 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
         }
         Screen::Category(view) => {
             let sel = view.list_state.selected().unwrap_or(0);
-            let Some(cd) = app.data.cats.iter().find(|c| c.cat == view.cat) else {
+            let Some(cd) = app.data.cat_data(view.cat) else {
                 return EnterAction::None;
             };
             match cd.items.get(sel) {
@@ -429,7 +431,7 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
         Screen::Home => return InvestigateAction::None,
         Screen::Category(view) => {
             let sel = view.list_state.selected().unwrap_or(0);
-            let Some(cd) = app.data.cats.iter().find(|c| c.cat == view.cat) else {
+            let Some(cd) = app.data.cat_data(view.cat) else {
                 return InvestigateAction::None;
             };
             let Some(display_item) = cd.items.get(sel) else {
@@ -442,7 +444,7 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
         }
         Screen::Detail { view, .. } => {
             let sel = view.list_state.selected().unwrap_or(0);
-            let Some(cd) = app.data.cats.iter().find(|c| c.cat == view.cat) else {
+            let Some(cd) = app.data.cat_data(view.cat) else {
                 return InvestigateAction::None;
             };
             let Some(display_item) = cd.items.get(view.group_index) else {
