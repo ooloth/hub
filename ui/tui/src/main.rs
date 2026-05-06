@@ -1,4 +1,4 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use chrono::Utc;
 use crossterm::{
     event::{Event, EventStream},
@@ -7,7 +7,7 @@ use crossterm::{
 };
 use futures::StreamExt;
 use ratatui::{backend::CrosstermBackend, Terminal};
-use std::{io, path::Path};
+use std::io;
 use tokio::sync::mpsc;
 use workflows::status::{StatusReport, SCHEMA_VERSION};
 
@@ -18,35 +18,12 @@ use crate::state::{App, Effect, ViewStack};
 
 mod display;
 mod input;
+mod investigations;
 mod render;
 mod state;
 
 #[cfg(feature = "private")]
 mod private;
-
-fn ci_investigation_command(repo: &str, run_url: &str) -> String {
-    format!("claude  --dangerously-skip-permissions '/github-ci-investigate {repo} {run_url}'")
-}
-
-fn launch_ci_investigation(repo: &str, run_url: &str, cwd: &Path) -> Result<()> {
-    if std::env::var("TMUX").is_err() {
-        bail!("not in tmux; investigation requires a tmux session");
-    }
-
-    let command = ci_investigation_command(repo, run_url);
-    let status = std::process::Command::new("tmux")
-        .args(["split-window", "-h", "-c"])
-        .arg(cwd)
-        .arg(command)
-        .status()
-        .context("failed to start tmux split-window")?;
-
-    if !status.success() {
-        bail!("tmux split-window failed with {status}");
-    }
-
-    Ok(())
-}
 
 struct TerminalSession {
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
@@ -202,7 +179,7 @@ async fn run_loop(
                                 Effect::LaunchCi { repo, run_url } => {
                                     let cwd = std::env::current_dir()
                                         .context("failed to resolve current directory")?;
-                                    if let Err(err) = launch_ci_investigation(&repo, &run_url, &cwd) {
+                                    if let Err(err) = investigations::ci::launch(&repo, &run_url, &cwd) {
                                         app.flash = Some(err.to_string());
                                     }
                                 }
@@ -244,20 +221,4 @@ async fn run_loop(
     }
 
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::ci_investigation_command;
-
-    #[test]
-    fn ci_investigation_command_passes_skill_and_context_as_one_prompt() {
-        assert_eq!(
-            ci_investigation_command(
-                "ooloth/hub",
-                "https://github.com/ooloth/hub/actions/runs/123"
-            ),
-            "claude  --dangerously-skip-permissions '/github-ci-investigate ooloth/hub https://github.com/ooloth/hub/actions/runs/123'"
-        );
-    }
 }

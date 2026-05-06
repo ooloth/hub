@@ -27,22 +27,26 @@ Keyboard events flow through a pure Elm-style pipeline before any state
 is mutated:
 
 1. `key_to_action(app, key) -> Option<Action>` (`input.rs`) — maps a raw
-   key event to an `Action` variant. Takes the current view and `show_help`
-   flag into account to resolve context-sensitive bindings (e.g. `h` maps
-   to `MoveTileLeft` on Home but `MoveUp` on list views). Returns `None`
-   for unmapped keys.
-2. `App::update(action) -> Effect` (`state.rs`) — applies the action to
-   app state and returns an `Effect` describing any required side effect
-   (`OpenUrl`, `LaunchCi`, `Quit`, or `None`).
-3. The event loop in `main.rs` handles the `Effect` — opens a URL,
-   spawns a tmux split, or breaks the loop.
+   key event to an `Action` variant. Universal keys (quit, help, back) are
+   handled first; the remainder delegates to a per-view function
+   (`home_keys` or `list_keys`). Returns `None` for unmapped keys.
+2. `App::update(action) -> Vec<Effect>` (`state.rs`) — applies the action
+   to app state and returns zero or more `Effect` values describing required
+   side effects (`OpenUrl`, `LaunchCi`, `Quit`).
+3. The event loop in `main.rs` iterates the effects — opens a URL, spawns
+   a tmux split, or breaks the loop. `Quit` short-circuits any remaining
+   effects in the same vec.
 
 **Adding a new interactive behavior:**
 
 1. Add a variant to `Action` in `state.rs`
-2. Map one or more keys to it in `key_to_action()` in `input.rs`
-3. Handle it in `App::update()` in `state.rs` — mutate state and/or return an `Effect`
-4. If a new `Effect` variant is needed, handle it in `run_loop()` in `main.rs`
+2. Map one or more keys to it in the appropriate per-view function in
+   `input.rs` (`home_keys`, `list_keys`, or a new function for a new view)
+3. Handle it in `App::update()` in `state.rs` — mutate state and/or return
+   one or more `Effect` values
+4. If a new `Effect` variant is needed, add it to the enum in `state.rs`,
+   handle it in `run_loop()` in `main.rs`, and if it launches an
+   investigation add a file in `investigations/` (see below)
 
 ## Render model
 
@@ -74,6 +78,32 @@ via `super::`:
 3. Add a render function in `render/`; extract any decision logic (what to
    show, what hint to display) into a pure function alongside it
 4. Dispatch to it in `render()` in `render/mod.rs`
+
+## Investigations
+
+Investigation types live in `investigations/`. Each type is a separate file;
+`mod.rs` provides the shared `launch_in_tmux_split(command, cwd)` helper.
+
+```
+investigations/
+    mod.rs      — shared tmux split-window launcher
+    ci.rs       — CI failure investigation (github-ci-investigate skill)
+```
+
+Each file exposes a `launch(…context…, cwd)` function that builds a command
+string and delegates to `launch_in_tmux_split`. The command string invokes a
+Claude Code skill with the relevant context as arguments.
+
+**Adding a new investigation type** (e.g. Grafana logs):
+
+1. Add an `Effect` variant in `state.rs`: `LaunchGrafana { log_url: String }`
+2. Add a `InvestigateAction` variant and handle it in
+   `compute_investigate_action()` in `state.rs`
+3. Create `investigations/grafana.rs` with a `launch(log_url, cwd)` function
+   and its unit test
+4. Declare `pub(crate) mod grafana;` in `investigations/mod.rs`
+5. Handle the new `Effect` variant in the `for effect in` loop in `run_loop()`
+   in `main.rs`
 
 ## Cache and schema version
 
