@@ -28,7 +28,7 @@ pub enum Urgency {
     Low,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct RepoSlug(String);
 
@@ -44,7 +44,7 @@ impl std::fmt::Display for RepoSlug {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PullRequest {
     pub number: u64,
     pub title: String,
@@ -55,7 +55,7 @@ pub struct PullRequest {
     pub urgency: Urgency,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Issue {
     pub number: u64,
     pub title: String,
@@ -67,7 +67,7 @@ pub struct Issue {
     pub labels: Vec<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LinearIssue {
     pub identifier: String,
     pub title: String,
@@ -78,7 +78,7 @@ pub struct LinearIssue {
     pub urgency: Urgency,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CiFailure {
     pub repo: RepoSlug,
     pub workflow_name: String,

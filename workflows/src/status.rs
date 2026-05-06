@@ -5,7 +5,7 @@ use std::cmp::Reverse;
 
 pub const SCHEMA_VERSION: i32 = 1;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum StatusItem {
     Pr(PullRequest),
     Issue(Issue),
