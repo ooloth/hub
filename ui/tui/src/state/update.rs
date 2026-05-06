@@ -1,240 +1,14 @@
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use ratatui::widgets::ListState;
-use workflows::status::{StatusItem, StatusReport};
 
-use crate::display::{
-    build_cats, item_investigation, item_url, CatData, Category, DisplayItem, InvestigationKind,
+use super::{
+    Action, App, CategoryView, DetailView, Effect, EnterAction, InvestigateAction, Msg,
+    RefreshState, Screen,
 };
-
-pub(crate) const TILE_COLS: usize = 2;
-
-#[derive(Debug, Default)]
-pub(crate) struct UiState {
-    pub(crate) focused_tile: usize,
-    pub(crate) screen: Screen,
-    pub(crate) show_help: bool,
-    pub(crate) flash: Option<String>,
-}
-
-#[derive(Debug, Default)]
-pub(crate) enum RefreshState {
-    #[default]
-    Idle,
-    InProgress,
-    Failed(String),
-}
-
-#[derive(Debug, Default)]
-pub(crate) struct DataState {
-    pub(crate) cats: Vec<CatData>,
-    pub(crate) refresh_state: RefreshState,
-    pub(crate) last_updated: Option<DateTime<Utc>>,
-}
-
-impl DataState {
-    pub(crate) fn cat_data(&self, cat: Category) -> Option<&CatData> {
-        self.cats.iter().find(|c| c.cat == cat)
-    }
-}
-
-#[derive(Debug, Default)]
-pub(crate) struct App {
-    pub(crate) ui: UiState,
-    pub(crate) data: DataState,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct CategoryView {
-    pub(crate) cat: Category,
-    pub(crate) list_state: ListState,
-}
-
-#[derive(Debug)]
-pub(crate) struct DetailView {
-    pub(crate) cat: Category,
-    pub(crate) group_index: usize,
-    pub(crate) list_state: ListState,
-}
-
-// Flat enum, not a Vec<Screen> stack. A ViewStack was tried and removed: it
-// allowed any view to be pushed anywhere (no structural constraint on order),
-// and Detail carried no return address — Back relied on the stack's shape at
-// runtime. The flat enum encodes the valid navigation graph in the type system.
-// Detail::parent is the self-contained return address for Back; there is no
-// stack to corrupt or misread.
-#[derive(Debug, Default)]
-pub(crate) enum Screen {
-    #[default]
-    Home,
-    Category(CategoryView),
-    Detail {
-        parent: CategoryView,
-        view: DetailView,
-    },
-}
-
-impl Screen {
-    // Returns None for Home (no item selected) and for Category when a Group
-    // is selected (the group itself is not a leaf item). Detail drills through
-    // the parent group to return the individual item under the cursor.
-    pub(crate) fn selected_status_item(&self, cats: &[CatData]) -> Option<StatusItem> {
-        match self {
-            Screen::Home => None,
-            Screen::Category(view) => {
-                let sel = view.list_state.selected().unwrap_or(0);
-                let cd = cats.iter().find(|c| c.cat == view.cat)?;
-                match cd.items.get(sel)? {
-                    DisplayItem::Single(item) => Some(item.clone()),
-                    DisplayItem::Group { .. } => None,
-                }
-            }
-            Screen::Detail { view, .. } => {
-                let sel = view.list_state.selected().unwrap_or(0);
-                let cd = cats.iter().find(|c| c.cat == view.cat)?;
-                match cd.items.get(view.group_index)? {
-                    DisplayItem::Group { items, .. } => items.get(sel).cloned(),
-                    _ => None,
-                }
-            }
-        }
-    }
-}
+use crate::display::{build_cats, item_investigation, item_url, DisplayItem, InvestigationKind};
 
 impl App {
-    pub(crate) fn current_screen(&self) -> &Screen {
-        &self.ui.screen
-    }
-
-    pub(crate) fn active_list_len(&self) -> usize {
-        match &self.ui.screen {
-            Screen::Home => self.data.cats.len(),
-            Screen::Category(view) => self
-                .data
-                .cat_data(view.cat)
-                .map(|c| c.items.len())
-                .unwrap_or(0),
-            Screen::Detail { view, .. } => self
-                .data
-                .cat_data(view.cat)
-                .and_then(|c| c.items.get(view.group_index))
-                .map(|d| match d {
-                    DisplayItem::Group { items, .. } => items.len(),
-                    _ => 0,
-                })
-                .unwrap_or(0),
-        }
-    }
-
-    pub(crate) fn move_tile_forward(&mut self) {
-        let len = self.data.cats.len();
-        if len > 0 {
-            self.ui.focused_tile = (self.ui.focused_tile + 1) % len;
-        }
-    }
-
-    pub(crate) fn move_tile_back(&mut self) {
-        let len = self.data.cats.len();
-        if len > 0 {
-            self.ui.focused_tile = (self.ui.focused_tile + len - 1) % len;
-        }
-    }
-
-    pub(crate) fn move_tile_up(&mut self) {
-        let len = self.data.cats.len();
-        if len == 0 {
-            return;
-        }
-        let row = self.ui.focused_tile / TILE_COLS;
-        let col = self.ui.focused_tile % TILE_COLS;
-        if row > 0 {
-            let target = (row - 1) * TILE_COLS + col;
-            if target < len {
-                self.ui.focused_tile = target;
-                return;
-            }
-        }
-        self.ui.focused_tile = (self.ui.focused_tile + len - 1) % len;
-    }
-
-    pub(crate) fn move_tile_down(&mut self) {
-        let len = self.data.cats.len();
-        if len == 0 {
-            return;
-        }
-        let row = self.ui.focused_tile / TILE_COLS;
-        let col = self.ui.focused_tile % TILE_COLS;
-        let target = (row + 1) * TILE_COLS + col;
-        if target < len {
-            self.ui.focused_tile = target;
-        } else {
-            self.ui.focused_tile = (self.ui.focused_tile + 1) % len;
-        }
-    }
-
-    pub(crate) fn move_tile_left(&mut self) {
-        let len = self.data.cats.len();
-        if len == 0 {
-            return;
-        }
-        let col = self.ui.focused_tile % TILE_COLS;
-        if col > 0 {
-            self.ui.focused_tile -= 1;
-        } else {
-            self.ui.focused_tile = (self.ui.focused_tile + len - 1) % len;
-        }
-    }
-
-    pub(crate) fn move_tile_right(&mut self) {
-        let len = self.data.cats.len();
-        if len == 0 {
-            return;
-        }
-        let col = self.ui.focused_tile % TILE_COLS;
-        if col + 1 < TILE_COLS && self.ui.focused_tile + 1 < len {
-            self.ui.focused_tile += 1;
-        } else {
-            self.ui.focused_tile = (self.ui.focused_tile + 1) % len;
-        }
-    }
-
-    pub(crate) fn move_up(&mut self) {
-        match &mut self.ui.screen {
-            Screen::Home => {}
-            Screen::Category(view) => {
-                let sel = view.list_state.selected().unwrap_or(0);
-                if sel > 0 {
-                    view.list_state.select(Some(sel - 1));
-                }
-            }
-            Screen::Detail { view, .. } => {
-                let sel = view.list_state.selected().unwrap_or(0);
-                if sel > 0 {
-                    view.list_state.select(Some(sel - 1));
-                }
-            }
-        }
-    }
-
-    pub(crate) fn move_down(&mut self) {
-        let len = self.active_list_len();
-        match &mut self.ui.screen {
-            Screen::Home => {}
-            Screen::Category(view) => {
-                let sel = view.list_state.selected().unwrap_or(0);
-                if len > 0 && sel < len - 1 {
-                    view.list_state.select(Some(sel + 1));
-                }
-            }
-            Screen::Detail { view, .. } => {
-                let sel = view.list_state.selected().unwrap_or(0);
-                if len > 0 && sel < len - 1 {
-                    view.list_state.select(Some(sel + 1));
-                }
-            }
-        }
-    }
-
     pub(crate) fn update(&mut self, action: Action) -> Vec<Effect> {
         self.ui.flash = None;
         match action {
@@ -450,57 +224,6 @@ impl App {
     }
 }
 
-pub(crate) enum EnterAction {
-    None,
-    OpenUrl(String),
-    OpenCategory {
-        cat: Category,
-    },
-    OpenDetail {
-        cat: Category,
-        group_index: usize,
-        item_count: usize,
-    },
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub(crate) enum InvestigateAction {
-    None,
-    LaunchCi { repo: String, run_url: String },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum Action {
-    Quit,
-    ToggleHelp,
-    CloseHelp,
-    Back,
-    MoveTileForward,
-    MoveTileBack,
-    MoveTileUp,
-    MoveTileDown,
-    MoveTileLeft,
-    MoveTileRight,
-    MoveUp,
-    MoveDown,
-    Enter,
-    Investigate,
-}
-
-pub(crate) enum Effect {
-    Quit,
-    OpenUrl(String),
-    LaunchCi { repo: String, run_url: String },
-    StartRefresh,
-    WriteCache(String),
-}
-
-pub(crate) enum Msg {
-    Action(Action),
-    Tick,
-    FetchResult(Result<StatusReport>),
-}
-
 pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
     match app.current_screen() {
         Screen::Home => {
@@ -580,10 +303,11 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
 #[cfg(test)]
 mod tests {
     use super::{
-        compute_investigate_action, handle_msg, Action, App, Category, DataState, Effect,
-        InvestigateAction, Msg, RefreshState, Screen, UiState,
+        compute_investigate_action, handle_msg, Action, App, Effect, InvestigateAction, Msg,
+        RefreshState, Screen,
     };
-    use crate::display::{CatData, DisplayItem};
+    use crate::display::{CatData, Category, DisplayItem};
+    use crate::state::{DataState, UiState};
     use workflows::status::{StatusItem, StatusReport};
 
     #[test]
