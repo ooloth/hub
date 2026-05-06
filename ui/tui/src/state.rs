@@ -9,58 +9,12 @@ use crate::display::{
 
 pub(crate) const TILE_COLS: usize = 2;
 
-#[derive(Debug)]
-pub(crate) struct ViewStack(pub(crate) Vec<View>);
-
-impl ViewStack {
-    pub(crate) fn new() -> Self {
-        ViewStack(vec![View::Home])
-    }
-
-    pub(crate) fn current(&self) -> &View {
-        self.0.last().expect("view stack is never empty")
-    }
-
-    pub(crate) fn current_mut(&mut self) -> &mut View {
-        self.0.last_mut().expect("view stack is never empty")
-    }
-
-    pub(crate) fn push(&mut self, view: View) {
-        self.0.push(view);
-    }
-
-    pub(crate) fn pop(&mut self) {
-        if self.0.len() > 1 {
-            self.0.pop();
-        }
-    }
-
-    pub(crate) fn reset(&mut self) {
-        self.0.truncate(1);
-    }
-
-    pub(crate) fn can_go_back(&self) -> bool {
-        self.0.len() > 1
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct UiState {
     pub(crate) focused_tile: usize,
-    pub(crate) views: ViewStack,
+    pub(crate) screen: Screen,
     pub(crate) show_help: bool,
     pub(crate) flash: Option<String>,
-}
-
-impl Default for UiState {
-    fn default() -> Self {
-        UiState {
-            focused_tile: 0,
-            views: ViewStack::new(),
-            show_help: false,
-            flash: None,
-        }
-    }
 }
 
 #[derive(Debug, Default)]
@@ -84,7 +38,7 @@ pub(crate) struct App {
     pub(crate) data: DataState,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct CategoryView {
     pub(crate) cat: Category,
     pub(crate) list_state: ListState,
@@ -97,37 +51,33 @@ pub(crate) struct DetailView {
     pub(crate) list_state: ListState,
 }
 
-#[derive(Debug)]
-pub(crate) enum View {
+#[derive(Debug, Default)]
+pub(crate) enum Screen {
+    #[default]
     Home,
     Category(CategoryView),
-    Detail(DetailView),
+    Detail {
+        parent: CategoryView,
+        view: DetailView,
+    },
 }
 
 impl App {
-    pub(crate) fn current_view(&self) -> &View {
-        self.ui.views.current()
-    }
-
-    pub(crate) fn push_view(&mut self, view: View) {
-        self.ui.views.push(view);
-    }
-
-    pub(crate) fn pop_view(&mut self) {
-        self.ui.views.pop();
+    pub(crate) fn current_screen(&self) -> &Screen {
+        &self.ui.screen
     }
 
     pub(crate) fn active_list_len(&self) -> usize {
-        match self.ui.views.current() {
-            View::Home => self.data.cats.len(),
-            View::Category(view) => self
+        match &self.ui.screen {
+            Screen::Home => self.data.cats.len(),
+            Screen::Category(view) => self
                 .data
                 .cats
                 .iter()
                 .find(|c| c.cat == view.cat)
                 .map(|c| c.items.len())
                 .unwrap_or(0),
-            View::Detail(view) => self
+            Screen::Detail { view, .. } => self
                 .data
                 .cats
                 .iter()
@@ -214,15 +164,15 @@ impl App {
     }
 
     pub(crate) fn move_up(&mut self) {
-        match self.ui.views.current_mut() {
-            View::Home => {}
-            View::Category(view) => {
+        match &mut self.ui.screen {
+            Screen::Home => {}
+            Screen::Category(view) => {
                 let sel = view.list_state.selected().unwrap_or(0);
                 if sel > 0 {
                     view.list_state.select(Some(sel - 1));
                 }
             }
-            View::Detail(view) => {
+            Screen::Detail { view, .. } => {
                 let sel = view.list_state.selected().unwrap_or(0);
                 if sel > 0 {
                     view.list_state.select(Some(sel - 1));
@@ -233,15 +183,15 @@ impl App {
 
     pub(crate) fn move_down(&mut self) {
         let len = self.active_list_len();
-        match self.ui.views.current_mut() {
-            View::Home => {}
-            View::Category(view) => {
+        match &mut self.ui.screen {
+            Screen::Home => {}
+            Screen::Category(view) => {
                 let sel = view.list_state.selected().unwrap_or(0);
                 if len > 0 && sel < len - 1 {
                     view.list_state.select(Some(sel + 1));
                 }
             }
-            View::Detail(view) => {
+            Screen::Detail { view, .. } => {
                 let sel = view.list_state.selected().unwrap_or(0);
                 if len > 0 && sel < len - 1 {
                     view.list_state.select(Some(sel + 1));
@@ -263,7 +213,10 @@ impl App {
                 vec![]
             }
             Action::Back => {
-                self.pop_view();
+                self.ui.screen = match std::mem::take(&mut self.ui.screen) {
+                    Screen::Detail { parent, .. } => Screen::Category(parent),
+                    _ => Screen::Home,
+                };
                 vec![]
             }
             Action::MoveTileForward => {
@@ -313,10 +266,10 @@ impl App {
                     if len > 0 {
                         ls.select(Some(0));
                     }
-                    self.push_view(View::Category(CategoryView {
+                    self.ui.screen = Screen::Category(CategoryView {
                         cat,
                         list_state: ls,
-                    }));
+                    });
                     vec![]
                 }
                 EnterAction::OpenDetail {
@@ -324,15 +277,23 @@ impl App {
                     group_index,
                     item_count,
                 } => {
+                    let parent = if let Screen::Category(cv) = &self.ui.screen {
+                        cv.clone()
+                    } else {
+                        return vec![];
+                    };
                     let mut ds = ListState::default();
                     if item_count > 0 {
                         ds.select(Some(0));
                     }
-                    self.push_view(View::Detail(DetailView {
-                        cat,
-                        group_index,
-                        list_state: ds,
-                    }));
+                    self.ui.screen = Screen::Detail {
+                        parent,
+                        view: DetailView {
+                            cat,
+                            group_index,
+                            list_state: ds,
+                        },
+                    };
                     vec![]
                 }
             },
@@ -349,9 +310,9 @@ impl App {
     }
 
     pub(crate) fn selected_url(&self) -> Option<&str> {
-        match self.ui.views.current() {
-            View::Home => None,
-            View::Category(view) => {
+        match &self.ui.screen {
+            Screen::Home => None,
+            Screen::Category(view) => {
                 let sel = view.list_state.selected().unwrap_or(0);
                 let cd = self.data.cats.iter().find(|c| c.cat == view.cat)?;
                 match cd.items.get(sel)? {
@@ -359,7 +320,7 @@ impl App {
                     DisplayItem::Group { .. } => None,
                 }
             }
-            View::Detail(view) => {
+            Screen::Detail { view, .. } => {
                 let sel = view.list_state.selected().unwrap_or(0);
                 let cd = self.data.cats.iter().find(|c| c.cat == view.cat)?;
                 match cd.items.get(view.group_index)? {
@@ -423,8 +384,8 @@ pub(crate) enum Msg {
 }
 
 pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
-    match app.current_view() {
-        View::Home => {
+    match app.current_screen() {
+        Screen::Home => {
             if app.data.cats.is_empty() {
                 return EnterAction::None;
             }
@@ -432,7 +393,7 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
                 cat: app.data.cats[app.ui.focused_tile].cat,
             }
         }
-        View::Category(view) => {
+        Screen::Category(view) => {
             let sel = view.list_state.selected().unwrap_or(0);
             let Some(cd) = app.data.cats.iter().find(|c| c.cat == view.cat) else {
                 return EnterAction::None;
@@ -450,7 +411,7 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
                 None => EnterAction::None,
             }
         }
-        View::Detail(_) => app
+        Screen::Detail { .. } => app
             .selected_url()
             .map(|u| EnterAction::OpenUrl(u.to_string()))
             .unwrap_or(EnterAction::None),
@@ -458,9 +419,9 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
 }
 
 pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
-    let item = match app.current_view() {
-        View::Home => return InvestigateAction::None,
-        View::Category(view) => {
+    let item = match app.current_screen() {
+        Screen::Home => return InvestigateAction::None,
+        Screen::Category(view) => {
             let sel = view.list_state.selected().unwrap_or(0);
             let Some(cd) = app.data.cats.iter().find(|c| c.cat == view.cat) else {
                 return InvestigateAction::None;
@@ -473,7 +434,7 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
                 DisplayItem::Group { .. } => return InvestigateAction::None,
             }
         }
-        View::Detail(view) => {
+        Screen::Detail { view, .. } => {
             let sel = view.list_state.selected().unwrap_or(0);
             let Some(cd) = app.data.cats.iter().find(|c| c.cat == view.cat) else {
                 return InvestigateAction::None;
@@ -517,7 +478,7 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
             let cats = build_cats(report.items);
             app.ui.focused_tile = app.ui.focused_tile.min(cats.len().saturating_sub(1));
             app.data.cats = cats;
-            app.ui.views.reset();
+            app.ui.screen = Screen::Home;
             app.data.last_updated = Some(Utc::now());
             app.data.refresh_state = RefreshState::Idle;
             Ok(vec![Effect::WriteCache(json)])
@@ -533,7 +494,7 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
 mod tests {
     use super::{
         compute_investigate_action, handle_msg, Action, App, Category, CategoryView, DataState,
-        DetailView, Effect, InvestigateAction, Msg, RefreshState, UiState, View, ViewStack,
+        DetailView, Effect, InvestigateAction, Msg, RefreshState, Screen, UiState,
     };
     use crate::display::{CatData, DisplayItem};
     use ratatui::widgets::ListState;
@@ -552,10 +513,10 @@ mod tests {
                 ..DataState::default()
             },
             ui: UiState {
-                views: ViewStack(vec![View::Category(CategoryView {
+                screen: Screen::Category(CategoryView {
                     cat: Category::Errors,
                     list_state,
-                })]),
+                }),
                 ..UiState::default()
             },
         };
@@ -585,11 +546,17 @@ mod tests {
                 ..DataState::default()
             },
             ui: UiState {
-                views: ViewStack(vec![View::Detail(DetailView {
-                    cat: Category::Errors,
-                    group_index: 0,
-                    list_state,
-                })]),
+                screen: Screen::Detail {
+                    parent: CategoryView {
+                        cat: Category::Errors,
+                        list_state: ListState::default(),
+                    },
+                    view: DetailView {
+                        cat: Category::Errors,
+                        group_index: 0,
+                        list_state,
+                    },
+                },
                 ..UiState::default()
             },
         };
@@ -624,10 +591,10 @@ mod tests {
                 ..DataState::default()
             },
             ui: UiState {
-                views: ViewStack(vec![View::Category(CategoryView {
+                screen: Screen::Category(CategoryView {
                     cat: Category::Issues,
                     list_state,
-                })]),
+                }),
                 ..UiState::default()
             },
         };
@@ -645,25 +612,21 @@ mod tests {
     }
 
     #[test]
-    fn update_back_pops_view() {
+    fn update_back_goes_to_home_from_category() {
         let mut list_state = ListState::default();
         list_state.select(Some(0));
         let mut app = App {
             ui: UiState {
-                views: ViewStack(vec![
-                    View::Home,
-                    View::Category(CategoryView {
-                        cat: Category::Errors,
-                        list_state,
-                    }),
-                ]),
+                screen: Screen::Category(CategoryView {
+                    cat: Category::Errors,
+                    list_state,
+                }),
                 ..UiState::default()
             },
             ..App::default()
         };
         app.update(Action::Back);
-        assert!(matches!(app.current_view(), View::Home));
-        assert!(!app.ui.views.can_go_back());
+        assert!(matches!(app.current_screen(), Screen::Home));
     }
 
     #[test]
@@ -701,7 +664,7 @@ mod tests {
             ..App::default()
         };
         app.update(Action::Enter);
-        assert!(matches!(app.current_view(), View::Category { .. }));
+        assert!(matches!(app.current_screen(), Screen::Category(_)));
     }
 
     #[test]
@@ -720,18 +683,15 @@ mod tests {
                 ..DataState::default()
             },
             ui: UiState {
-                views: ViewStack(vec![
-                    View::Home,
-                    View::Category(CategoryView {
-                        cat: Category::Errors,
-                        list_state: ls,
-                    }),
-                ]),
+                screen: Screen::Category(CategoryView {
+                    cat: Category::Errors,
+                    list_state: ls,
+                }),
                 ..UiState::default()
             },
         };
         app.update(Action::Enter);
-        assert!(matches!(app.current_view(), View::Detail { .. }));
+        assert!(matches!(app.current_screen(), Screen::Detail { .. }));
     }
 
     #[test]
@@ -740,24 +700,23 @@ mod tests {
         ls.select(Some(0));
         let mut app = App {
             ui: UiState {
-                views: ViewStack(vec![
-                    View::Home,
-                    View::Category(CategoryView {
+                screen: Screen::Detail {
+                    parent: CategoryView {
                         cat: Category::Errors,
                         list_state: ls.clone(),
-                    }),
-                    View::Detail(DetailView {
+                    },
+                    view: DetailView {
                         cat: Category::Errors,
                         group_index: 0,
                         list_state: ls,
-                    }),
-                ]),
+                    },
+                },
                 ..UiState::default()
             },
             ..App::default()
         };
         app.update(Action::Back);
-        assert!(matches!(app.current_view(), View::Category { .. }));
+        assert!(matches!(app.current_screen(), Screen::Category(_)));
     }
 
     #[test]
@@ -766,26 +725,23 @@ mod tests {
         ls.select(Some(0));
         let mut app = App {
             ui: UiState {
-                views: ViewStack(vec![
-                    View::Home,
-                    View::Category(CategoryView {
-                        cat: Category::Errors,
-                        list_state: ls,
-                    }),
-                ]),
+                screen: Screen::Category(CategoryView {
+                    cat: Category::Errors,
+                    list_state: ls,
+                }),
                 ..UiState::default()
             },
             ..App::default()
         };
         app.update(Action::Back);
-        assert!(matches!(app.current_view(), View::Home));
+        assert!(matches!(app.current_screen(), Screen::Home));
     }
 
     #[test]
     fn back_does_nothing_from_home() {
         let mut app = App::default();
         app.update(Action::Back);
-        assert!(matches!(app.current_view(), View::Home));
+        assert!(matches!(app.current_screen(), Screen::Home));
     }
 
     #[test]
@@ -804,14 +760,13 @@ mod tests {
             ..App::default()
         };
         app.update(Action::Enter);
-        assert!(matches!(app.current_view(), View::Category { .. }));
+        assert!(matches!(app.current_screen(), Screen::Category(_)));
         app.update(Action::Enter);
-        assert!(matches!(app.current_view(), View::Detail { .. }));
+        assert!(matches!(app.current_screen(), Screen::Detail { .. }));
         app.update(Action::Back);
-        assert!(matches!(app.current_view(), View::Category { .. }));
+        assert!(matches!(app.current_screen(), Screen::Category(_)));
         app.update(Action::Back);
-        assert!(matches!(app.current_view(), View::Home));
-        assert!(!app.ui.views.can_go_back());
+        assert!(matches!(app.current_screen(), Screen::Home));
     }
 
     #[test]
@@ -861,18 +816,15 @@ mod tests {
                 ..DataState::default()
             },
             ui: UiState {
-                views: ViewStack(vec![
-                    View::Home,
-                    View::Category(CategoryView {
-                        cat: Category::Errors,
-                        list_state: ls,
-                    }),
-                ]),
+                screen: Screen::Category(CategoryView {
+                    cat: Category::Errors,
+                    list_state: ls,
+                }),
                 ..UiState::default()
             },
         };
         handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
-        assert!(matches!(app.current_view(), View::Home));
+        assert!(matches!(app.current_screen(), Screen::Home));
     }
 
     #[test]

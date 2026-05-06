@@ -14,7 +14,7 @@ use workflows::status::{StatusReport, SCHEMA_VERSION};
 use crate::display::build_cats;
 use crate::input::key_to_action;
 use crate::render::render;
-use crate::state::{handle_msg, App, DataState, Effect, Msg, RefreshState, UiState, ViewStack};
+use crate::state::{handle_msg, App, DataState, Effect, Msg, RefreshState, UiState};
 
 mod display;
 mod input;
@@ -95,10 +95,7 @@ async fn main() -> Result<()> {
             },
             last_updated: initial_updated,
         },
-        ui: UiState {
-            views: ViewStack::new(),
-            ..UiState::default()
-        },
+        ui: UiState::default(),
     };
 
     let (tx, mut rx) = mpsc::channel::<Result<StatusReport>>(1);

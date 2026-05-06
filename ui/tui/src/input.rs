@@ -1,9 +1,9 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::state::{Action, App, View};
+use crate::state::{Action, App, Screen};
 
 pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
-    let can_go_back = app.ui.views.can_go_back();
+    let can_go_back = !matches!(app.ui.screen, Screen::Home);
 
     match (key.code, key.modifiers) {
         (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
@@ -19,9 +19,9 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
         return None;
     }
 
-    match app.current_view() {
-        View::Home => home_keys(key),
-        View::Category(_) | View::Detail(_) => list_keys(key),
+    match app.current_screen() {
+        Screen::Home => home_keys(key),
+        Screen::Category(_) | Screen::Detail { .. } => list_keys(key),
     }
 }
 
@@ -57,7 +57,7 @@ fn list_keys(key: KeyEvent) -> Option<Action> {
 mod tests {
     use super::key_to_action;
     use crate::display::Category;
-    use crate::state::{Action, App, CategoryView, UiState, View, ViewStack};
+    use crate::state::{Action, App, CategoryView, Screen, UiState};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::widgets::ListState;
     use rstest::rstest;
@@ -79,13 +79,10 @@ mod tests {
         ls.select(Some(0));
         App {
             ui: UiState {
-                views: ViewStack(vec![
-                    View::Home,
-                    View::Category(CategoryView {
-                        cat: Category::Errors,
-                        list_state: ls,
-                    }),
-                ]),
+                screen: Screen::Category(CategoryView {
+                    cat: Category::Errors,
+                    list_state: ls,
+                }),
                 ..UiState::default()
             },
             ..App::default()

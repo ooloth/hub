@@ -9,7 +9,7 @@ use ratatui::{
 use crate::display::DisplayItem;
 use crate::state::{
     compute_enter_action, compute_investigate_action, App, EnterAction, InvestigateAction,
-    RefreshState, View,
+    RefreshState, Screen,
 };
 
 mod category;
@@ -179,12 +179,12 @@ fn status_bar_left(app: &App) -> String {
     }
     let enter_action = compute_enter_action(app);
     let investigate_action = compute_investigate_action(app);
-    match app.current_view() {
-        View::Home => {
+    match app.current_screen() {
+        Screen::Home => {
             let total: usize = app.data.cats.iter().map(|c| c.items.len()).sum();
             format!("{total} items")
         }
-        View::Category(view) => {
+        Screen::Category(view) => {
             let n = app
                 .data
                 .cats
@@ -211,7 +211,7 @@ fn status_bar_left(app: &App) -> String {
             };
             format!("{pos}{enter_hint}{inv_hint}")
         }
-        View::Detail(view) => {
+        Screen::Detail { view, .. } => {
             let cd = app.data.cats.iter().find(|c| c.cat == view.cat);
             let count = match cd.and_then(|c| c.items.get(view.group_index)) {
                 Some(DisplayItem::Group { items, .. }) => items.len(),
@@ -240,14 +240,14 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let [content_area, bar_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
 
-    if matches!(app.current_view(), View::Home) {
+    if matches!(app.ui.screen, Screen::Home) {
         home::render_home(frame, app, content_area);
     } else {
         let data = &app.data;
-        match app.ui.views.current_mut() {
-            View::Home => {}
-            View::Category(view) => category::render_category(frame, view, data, content_area),
-            View::Detail(view) => detail::render_detail(frame, view, data, content_area),
+        match &mut app.ui.screen {
+            Screen::Home => {}
+            Screen::Category(view) => category::render_category(frame, view, data, content_area),
+            Screen::Detail { view, .. } => detail::render_detail(frame, view, data, content_area),
         }
     }
 
@@ -277,10 +277,10 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     frame.render_widget(Paragraph::new(right_status).style(dim()), bar_right);
 
     if app.ui.show_help {
-        let keybinds = match app.current_view() {
-            View::Home => KEYBINDS_HOME,
-            View::Category(_) => KEYBINDS_CATEGORY,
-            View::Detail(_) => KEYBINDS_DETAIL,
+        let keybinds = match &app.ui.screen {
+            Screen::Home => KEYBINDS_HOME,
+            Screen::Category(_) => KEYBINDS_CATEGORY,
+            Screen::Detail { .. } => KEYBINDS_DETAIL,
         };
         let text = format_keybinds(keybinds);
         let lines = keybinds.len() as u16;
@@ -298,7 +298,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
 mod tests {
     use super::{status_bar_left, wrap_text};
     use crate::display::{CatData, Category, DisplayItem};
-    use crate::state::{App, CategoryView, DataState, UiState, View, ViewStack};
+    use crate::state::{App, CategoryView, DataState, Screen, UiState};
     use ratatui::widgets::ListState;
     use workflows::status::StatusItem;
 
@@ -363,10 +363,10 @@ mod tests {
                 ..DataState::default()
             },
             ui: UiState {
-                views: ViewStack(vec![View::Category(CategoryView {
+                screen: Screen::Category(CategoryView {
                     cat: Category::Prs,
                     list_state,
-                })]),
+                }),
                 ..UiState::default()
             },
         };
