@@ -24,7 +24,10 @@ impl App {
             Action::Back => {
                 self.ui.screen = match std::mem::take(&mut self.ui.screen) {
                     Screen::Detail { parent, .. } => Screen::Category(parent),
-                    _ => Screen::Home,
+                    Screen::Category(cv) => Screen::Home {
+                        focused_tile: cv.prev_focused_tile,
+                    },
+                    Screen::Home { focused_tile } => Screen::Home { focused_tile },
                 };
                 vec![]
             }
@@ -38,7 +41,7 @@ impl App {
             | Action::MoveDown
             | Action::Enter
             | Action::Investigate => {
-                if matches!(self.ui.screen, Screen::Home) {
+                if matches!(self.ui.screen, Screen::Home { .. }) {
                     self.handle_home(action)
                 } else if matches!(self.ui.screen, Screen::Category(_)) {
                     self.handle_category(action)
@@ -157,6 +160,11 @@ impl App {
             EnterAction::None => vec![],
             EnterAction::OpenUrl(url) => vec![Effect::OpenUrl(url)],
             EnterAction::OpenCategory { cat } => {
+                let prev_focused_tile = if let Screen::Home { focused_tile } = &self.ui.screen {
+                    *focused_tile
+                } else {
+                    0
+                };
                 let len = self
                     .data
                     .cats
@@ -171,6 +179,7 @@ impl App {
                 self.ui.screen = Screen::Category(CategoryView {
                     cat,
                     list_state: ls,
+                    prev_focused_tile,
                 });
                 vec![]
             }
@@ -203,7 +212,7 @@ impl App {
 
     pub(crate) fn selected_url(&self) -> Option<&str> {
         match &self.ui.screen {
-            Screen::Home => None,
+            Screen::Home { .. } => None,
             Screen::Category(view) => {
                 let sel = view.list_state.selected().unwrap_or(0);
                 let cd = self.data.cat_data(view.cat)?;
@@ -226,12 +235,12 @@ impl App {
 
 pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
     match app.current_screen() {
-        Screen::Home => {
+        Screen::Home { focused_tile } => {
             if app.data.cats.is_empty() {
                 return EnterAction::None;
             }
             EnterAction::OpenCategory {
-                cat: app.data.cats[app.ui.focused_tile].cat,
+                cat: app.data.cats[*focused_tile].cat,
             }
         }
         Screen::Category(view) => {
@@ -286,9 +295,14 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
             let json =
                 serde_json::to_string(&report).context("failed to serialize status report")?;
             let cats = build_cats(report.items);
-            app.ui.focused_tile = app.ui.focused_tile.min(cats.len().saturating_sub(1));
+            let current_tile = if let Screen::Home { focused_tile } = &app.ui.screen {
+                *focused_tile
+            } else {
+                0
+            };
+            let focused_tile = current_tile.min(cats.len().saturating_sub(1));
             app.data.cats = cats;
-            app.ui.screen = Screen::Home;
+            app.ui.screen = Screen::Home { focused_tile };
             app.data.last_updated = Some(Utc::now());
             app.data.refresh_state = RefreshState::Idle;
             Ok(vec![Effect::WriteCache(json)])
@@ -431,14 +445,14 @@ mod tests {
     fn back_from_category_returns_to_home() {
         let mut app = app_with_cat(Category::Errors, vec![DisplayItem::Single(ci_failure())]);
         apply(&mut app, &[Action::Enter, Action::Back]);
-        assert!(matches!(app.current_screen(), Screen::Home));
+        assert!(matches!(app.current_screen(), Screen::Home { .. }));
     }
 
     #[test]
     fn back_does_nothing_from_home() {
         let mut app = App::default();
         app.update(Action::Back);
-        assert!(matches!(app.current_screen(), Screen::Home));
+        assert!(matches!(app.current_screen(), Screen::Home { .. }));
     }
 
     #[test]
@@ -457,7 +471,7 @@ mod tests {
         apply(&mut app, &[Action::Back]);
         assert!(matches!(app.current_screen(), Screen::Category(_)));
         apply(&mut app, &[Action::Back]);
-        assert!(matches!(app.current_screen(), Screen::Home));
+        assert!(matches!(app.current_screen(), Screen::Home { .. }));
     }
 
     #[test]
@@ -503,7 +517,7 @@ mod tests {
         apply(&mut app, &[Action::Enter]);
         app.data.refresh_state = RefreshState::InProgress;
         handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
-        assert!(matches!(app.current_screen(), Screen::Home));
+        assert!(matches!(app.current_screen(), Screen::Home { .. }));
     }
 
     #[test]

@@ -15,7 +15,6 @@ pub(crate) const TILE_COLS: usize = 2;
 
 #[derive(Debug, Default)]
 pub(crate) struct UiState {
-    pub(crate) focused_tile: usize,
     pub(crate) screen: Screen,
     pub(crate) show_help: bool,
     pub(crate) flash: Option<String>,
@@ -47,7 +46,7 @@ impl App {
 
     pub(crate) fn active_list_len(&self) -> usize {
         match &self.ui.screen {
-            Screen::Home => self.data.cats.len(),
+            Screen::Home { .. } => self.data.cats.len(),
             Screen::Category(view) => self
                 .data
                 .cat_data(view.cat)
@@ -67,79 +66,97 @@ impl App {
 
     pub(crate) fn move_tile_forward(&mut self) {
         let len = self.data.cats.len();
+        let Screen::Home { focused_tile } = &mut self.ui.screen else {
+            return;
+        };
         if len > 0 {
-            self.ui.focused_tile = (self.ui.focused_tile + 1) % len;
+            *focused_tile = (*focused_tile + 1) % len;
         }
     }
 
     pub(crate) fn move_tile_back(&mut self) {
         let len = self.data.cats.len();
+        let Screen::Home { focused_tile } = &mut self.ui.screen else {
+            return;
+        };
         if len > 0 {
-            self.ui.focused_tile = (self.ui.focused_tile + len - 1) % len;
+            *focused_tile = (*focused_tile + len - 1) % len;
         }
     }
 
     pub(crate) fn move_tile_up(&mut self) {
         let len = self.data.cats.len();
+        let Screen::Home { focused_tile } = &mut self.ui.screen else {
+            return;
+        };
         if len == 0 {
             return;
         }
-        let row = self.ui.focused_tile / TILE_COLS;
-        let col = self.ui.focused_tile % TILE_COLS;
+        let row = *focused_tile / TILE_COLS;
+        let col = *focused_tile % TILE_COLS;
         if row > 0 {
             let target = (row - 1) * TILE_COLS + col;
             if target < len {
-                self.ui.focused_tile = target;
+                *focused_tile = target;
                 return;
             }
         }
-        self.ui.focused_tile = (self.ui.focused_tile + len - 1) % len;
+        *focused_tile = (*focused_tile + len - 1) % len;
     }
 
     pub(crate) fn move_tile_down(&mut self) {
         let len = self.data.cats.len();
+        let Screen::Home { focused_tile } = &mut self.ui.screen else {
+            return;
+        };
         if len == 0 {
             return;
         }
-        let row = self.ui.focused_tile / TILE_COLS;
-        let col = self.ui.focused_tile % TILE_COLS;
+        let row = *focused_tile / TILE_COLS;
+        let col = *focused_tile % TILE_COLS;
         let target = (row + 1) * TILE_COLS + col;
         if target < len {
-            self.ui.focused_tile = target;
+            *focused_tile = target;
         } else {
-            self.ui.focused_tile = (self.ui.focused_tile + 1) % len;
+            *focused_tile = (*focused_tile + 1) % len;
         }
     }
 
     pub(crate) fn move_tile_left(&mut self) {
         let len = self.data.cats.len();
+        let Screen::Home { focused_tile } = &mut self.ui.screen else {
+            return;
+        };
         if len == 0 {
             return;
         }
-        let col = self.ui.focused_tile % TILE_COLS;
+        let col = *focused_tile % TILE_COLS;
         if col > 0 {
-            self.ui.focused_tile -= 1;
+            *focused_tile -= 1;
         } else {
-            self.ui.focused_tile = (self.ui.focused_tile + len - 1) % len;
+            *focused_tile = (*focused_tile + len - 1) % len;
         }
     }
 
     pub(crate) fn move_tile_right(&mut self) {
         let len = self.data.cats.len();
+        let Screen::Home { focused_tile } = &mut self.ui.screen else {
+            return;
+        };
         if len == 0 {
             return;
         }
-        let col = self.ui.focused_tile % TILE_COLS;
-        if col + 1 < TILE_COLS && self.ui.focused_tile + 1 < len {
-            self.ui.focused_tile += 1;
+        let col = *focused_tile % TILE_COLS;
+        if col + 1 < TILE_COLS && *focused_tile + 1 < len {
+            *focused_tile += 1;
         } else {
-            self.ui.focused_tile = (self.ui.focused_tile + 1) % len;
+            *focused_tile = (*focused_tile + 1) % len;
         }
     }
 
     pub(crate) fn move_up(&mut self) {
         match &mut self.ui.screen {
-            Screen::Home => {}
+            Screen::Home { .. } => {}
             Screen::Category(view) => {
                 let sel = view.list_state.selected().unwrap_or(0);
                 if sel > 0 {
@@ -158,7 +175,7 @@ impl App {
     pub(crate) fn move_down(&mut self) {
         let len = self.active_list_len();
         match &mut self.ui.screen {
-            Screen::Home => {}
+            Screen::Home { .. } => {}
             Screen::Category(view) => {
                 let sel = view.list_state.selected().unwrap_or(0);
                 if len > 0 && sel < len - 1 {

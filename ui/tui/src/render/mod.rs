@@ -217,7 +217,7 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
 
 fn position_label(screen: &Screen, cats: &[CatData]) -> String {
     match screen {
-        Screen::Home => String::new(),
+        Screen::Home { .. } => String::new(),
         Screen::Category(view) => {
             let n = cats
                 .iter()
@@ -268,7 +268,7 @@ fn status_bar_left(app: &App) -> String {
         return flash.clone();
     }
     match app.current_screen() {
-        Screen::Home => {
+        Screen::Home { .. } => {
             let total: usize = app.data.cats.iter().map(|c| c.items.len()).sum();
             format!("{total} items")
         }
@@ -286,12 +286,12 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let [content_area, bar_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
 
-    if matches!(app.ui.screen, Screen::Home) {
+    if matches!(app.ui.screen, Screen::Home { .. }) {
         home::render_home(frame, app, content_area);
     } else {
         let data = &app.data;
         match &mut app.ui.screen {
-            Screen::Home => {}
+            Screen::Home { .. } => {}
             Screen::Category(view) => category::render_category(frame, view, data, content_area),
             Screen::Detail { view, .. } => detail::render_detail(frame, view, data, content_area),
         }
@@ -324,7 +324,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
 
     if app.ui.show_help {
         let keybinds = match &app.ui.screen {
-            Screen::Home => KEYBINDS_HOME,
+            Screen::Home { .. } => KEYBINDS_HOME,
             Screen::Category(_) => KEYBINDS_CATEGORY,
             Screen::Detail { .. } => KEYBINDS_DETAIL,
         };
@@ -414,6 +414,7 @@ mod tests {
                 screen: Screen::Category(CategoryView {
                     cat: Category::Prs,
                     list_state,
+                    prev_focused_tile: 0,
                 }),
                 ..UiState::default()
             },
@@ -423,7 +424,7 @@ mod tests {
 
     #[test]
     fn position_label_empty_for_home() {
-        assert_eq!(position_label(&Screen::Home, &[]), "");
+        assert_eq!(position_label(&Screen::Home { focused_tile: 0 }, &[]), "");
     }
 
     #[test]
@@ -433,6 +434,7 @@ mod tests {
         let screen = Screen::Category(CategoryView {
             cat: Category::Prs,
             list_state: ls,
+            prev_focused_tile: 0,
         });
         let cats = vec![CatData {
             cat: Category::Prs,
@@ -453,6 +455,7 @@ mod tests {
             parent: CategoryView {
                 cat: Category::Errors,
                 list_state: ListState::default(),
+                prev_focused_tile: 0,
             },
             view: DetailView {
                 cat: Category::Errors,

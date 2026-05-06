@@ -3,7 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::state::{Action, App, Screen};
 
 pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
-    let can_go_back = !matches!(app.ui.screen, Screen::Home);
+    let can_go_back = !matches!(app.ui.screen, Screen::Home { .. });
 
     match (key.code, key.modifiers) {
         (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
@@ -20,7 +20,7 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
     }
 
     match app.current_screen() {
-        Screen::Home => home_keys(key),
+        Screen::Home { .. } => home_keys(key),
         Screen::Category(_) | Screen::Detail { .. } => list_keys(key),
     }
 }
@@ -82,6 +82,7 @@ mod tests {
                 screen: Screen::Category(CategoryView {
                     cat: Category::Errors,
                     list_state: ls,
+                    prev_focused_tile: 0,
                 }),
                 ..UiState::default()
             },

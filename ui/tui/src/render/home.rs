@@ -6,7 +6,7 @@ use ratatui::{
 };
 
 use crate::display::{display_item_line, display_item_urgency, CatData, DisplayItem};
-use crate::state::{App, TILE_COLS};
+use crate::state::{App, Screen, TILE_COLS};
 
 fn truncate(text: &str, max_width: usize) -> String {
     if text.chars().count() <= max_width {
@@ -96,6 +96,10 @@ fn render_tile(frame: &mut ratatui::Frame, cat_data: &CatData, focused: bool, ar
 }
 
 pub(super) fn render_home(frame: &mut ratatui::Frame, app: &App, area: Rect) {
+    let Screen::Home { focused_tile } = &app.ui.screen else {
+        return;
+    };
+    let focused_tile = *focused_tile;
     let n = app.data.cats.len();
     if n == 0 {
         return;
@@ -125,7 +129,7 @@ pub(super) fn render_home(frame: &mut ratatui::Frame, app: &App, area: Rect) {
             render_tile(
                 frame,
                 &app.data.cats[tile_idx],
-                tile_idx == app.ui.focused_tile,
+                tile_idx == focused_tile,
                 col_area,
             );
         }

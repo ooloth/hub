@@ -16,6 +16,7 @@ pub(crate) enum RefreshState {
 pub(crate) struct CategoryView {
     pub(crate) cat: Category,
     pub(crate) list_state: ListState,
+    pub(crate) prev_focused_tile: usize,
 }
 
 #[derive(Debug)]
@@ -31,15 +32,22 @@ pub(crate) struct DetailView {
 // runtime. The flat enum encodes the valid navigation graph in the type system.
 // Detail::parent is the self-contained return address for Back; there is no
 // stack to corrupt or misread.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) enum Screen {
-    #[default]
-    Home,
+    Home {
+        focused_tile: usize,
+    },
     Category(CategoryView),
     Detail {
         parent: CategoryView,
         view: DetailView,
     },
+}
+
+impl Default for Screen {
+    fn default() -> Self {
+        Screen::Home { focused_tile: 0 }
+    }
 }
 
 impl Screen {
@@ -48,7 +56,7 @@ impl Screen {
     // the parent group to return the individual item under the cursor.
     pub(crate) fn selected_status_item(&self, cats: &[CatData]) -> Option<StatusItem> {
         match self {
-            Screen::Home => None,
+            Screen::Home { .. } => None,
             Screen::Category(view) => {
                 let sel = view.list_state.selected().unwrap_or(0);
                 let cd = cats.iter().find(|c| c.cat == view.cat)?;
