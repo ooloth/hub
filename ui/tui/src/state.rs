@@ -227,6 +227,29 @@ impl App {
                 };
                 vec![]
             }
+            Action::MoveTileForward
+            | Action::MoveTileBack
+            | Action::MoveTileUp
+            | Action::MoveTileDown
+            | Action::MoveTileLeft
+            | Action::MoveTileRight
+            | Action::MoveUp
+            | Action::MoveDown
+            | Action::Enter
+            | Action::Investigate => {
+                if matches!(self.ui.screen, Screen::Home) {
+                    self.handle_home(action)
+                } else if matches!(self.ui.screen, Screen::Category(_)) {
+                    self.handle_category(action)
+                } else {
+                    self.handle_detail(action)
+                }
+            }
+        }
+    }
+
+    fn handle_home(&mut self, action: Action) -> Vec<Effect> {
+        match action {
             Action::MoveTileForward => {
                 self.move_tile_forward();
                 vec![]
@@ -251,6 +274,19 @@ impl App {
                 self.move_tile_right();
                 vec![]
             }
+            Action::Enter => {
+                let ea = compute_enter_action(self);
+                self.apply_enter_action(ea)
+            }
+            Action::MoveUp | Action::MoveDown | Action::Investigate => vec![],
+            Action::Quit | Action::ToggleHelp | Action::CloseHelp | Action::Back => {
+                unreachable!()
+            }
+        }
+    }
+
+    fn handle_category(&mut self, action: Action) -> Vec<Effect> {
+        match action {
             Action::MoveUp => {
                 self.move_up();
                 vec![]
@@ -259,61 +295,108 @@ impl App {
                 self.move_down();
                 vec![]
             }
-            Action::Enter => match compute_enter_action(self) {
-                EnterAction::None => vec![],
-                EnterAction::OpenUrl(url) => vec![Effect::OpenUrl(url)],
-                EnterAction::OpenCategory { cat } => {
-                    let len = self
-                        .data
-                        .cats
-                        .iter()
-                        .find(|c| c.cat == cat)
-                        .map(|c| c.items.len())
-                        .unwrap_or(0);
-                    let mut ls = ListState::default();
-                    if len > 0 {
-                        ls.select(Some(0));
-                    }
-                    self.ui.screen = Screen::Category(CategoryView {
-                        cat,
-                        list_state: ls,
-                    });
-                    vec![]
+            Action::Enter => {
+                let ea = compute_enter_action(self);
+                self.apply_enter_action(ea)
+            }
+            Action::Investigate => self.handle_investigate(),
+            Action::MoveTileForward
+            | Action::MoveTileBack
+            | Action::MoveTileUp
+            | Action::MoveTileDown
+            | Action::MoveTileLeft
+            | Action::MoveTileRight => vec![],
+            Action::Quit | Action::ToggleHelp | Action::CloseHelp | Action::Back => {
+                unreachable!()
+            }
+        }
+    }
+
+    fn handle_detail(&mut self, action: Action) -> Vec<Effect> {
+        match action {
+            Action::MoveUp => {
+                self.move_up();
+                vec![]
+            }
+            Action::MoveDown => {
+                self.move_down();
+                vec![]
+            }
+            Action::Enter => {
+                let ea = compute_enter_action(self);
+                self.apply_enter_action(ea)
+            }
+            Action::Investigate => self.handle_investigate(),
+            Action::MoveTileForward
+            | Action::MoveTileBack
+            | Action::MoveTileUp
+            | Action::MoveTileDown
+            | Action::MoveTileLeft
+            | Action::MoveTileRight => vec![],
+            Action::Quit | Action::ToggleHelp | Action::CloseHelp | Action::Back => {
+                unreachable!()
+            }
+        }
+    }
+
+    fn handle_investigate(&mut self) -> Vec<Effect> {
+        match compute_investigate_action(self) {
+            InvestigateAction::LaunchCi { repo, run_url } => {
+                vec![Effect::LaunchCi { repo, run_url }]
+            }
+            InvestigateAction::None => {
+                self.ui.flash = Some("No investigation mapped".to_string());
+                vec![]
+            }
+        }
+    }
+
+    fn apply_enter_action(&mut self, ea: EnterAction) -> Vec<Effect> {
+        match ea {
+            EnterAction::None => vec![],
+            EnterAction::OpenUrl(url) => vec![Effect::OpenUrl(url)],
+            EnterAction::OpenCategory { cat } => {
+                let len = self
+                    .data
+                    .cats
+                    .iter()
+                    .find(|c| c.cat == cat)
+                    .map(|c| c.items.len())
+                    .unwrap_or(0);
+                let mut ls = ListState::default();
+                if len > 0 {
+                    ls.select(Some(0));
                 }
-                EnterAction::OpenDetail {
+                self.ui.screen = Screen::Category(CategoryView {
                     cat,
-                    group_index,
-                    item_count,
-                } => {
-                    let parent = if let Screen::Category(cv) = &self.ui.screen {
-                        cv.clone()
-                    } else {
-                        return vec![];
-                    };
-                    let mut ds = ListState::default();
-                    if item_count > 0 {
-                        ds.select(Some(0));
-                    }
-                    self.ui.screen = Screen::Detail {
-                        parent,
-                        view: DetailView {
-                            cat,
-                            group_index,
-                            list_state: ds,
-                        },
-                    };
-                    vec![]
+                    list_state: ls,
+                });
+                vec![]
+            }
+            EnterAction::OpenDetail {
+                cat,
+                group_index,
+                item_count,
+            } => {
+                let parent = if let Screen::Category(cv) = &self.ui.screen {
+                    cv.clone()
+                } else {
+                    return vec![];
+                };
+                let mut ds = ListState::default();
+                if item_count > 0 {
+                    ds.select(Some(0));
                 }
-            },
-            Action::Investigate => match compute_investigate_action(self) {
-                InvestigateAction::LaunchCi { repo, run_url } => {
-                    vec![Effect::LaunchCi { repo, run_url }]
-                }
-                InvestigateAction::None => {
-                    self.ui.flash = Some("No investigation mapped".to_string());
-                    vec![]
-                }
-            },
+                self.ui.screen = Screen::Detail {
+                    parent,
+                    view: DetailView {
+                        cat,
+                        group_index,
+                        list_state: ds,
+                    },
+                };
+                vec![]
+            }
         }
     }
 
