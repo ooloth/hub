@@ -51,6 +51,12 @@ pub(crate) struct DetailView {
     pub(crate) list_state: ListState,
 }
 
+// Flat enum, not a Vec<Screen> stack. A ViewStack was tried and removed: it
+// allowed any view to be pushed anywhere (no structural constraint on order),
+// and Detail carried no return address — Back relied on the stack's shape at
+// runtime. The flat enum encodes the valid navigation graph in the type system.
+// Detail::parent is the self-contained return address for Back; there is no
+// stack to corrupt or misread.
 #[derive(Debug, Default)]
 pub(crate) enum Screen {
     #[default]
