@@ -14,7 +14,7 @@ use workflows::status::{StatusReport, SCHEMA_VERSION};
 use crate::display::build_cats;
 use crate::input::key_to_action;
 use crate::render::render;
-use crate::state::{App, DataState, Effect, UiState, ViewStack};
+use crate::state::{App, DataState, Effect, RefreshState, UiState, ViewStack};
 
 mod display;
 mod input;
@@ -88,9 +88,12 @@ async fn main() -> Result<()> {
     let mut app = App {
         data: DataState {
             cats: build_cats(initial_items),
-            is_refreshing: start_refresh,
+            refresh_state: if start_refresh {
+                RefreshState::InProgress
+            } else {
+                RefreshState::Idle
+            },
             last_updated: initial_updated,
-            ..DataState::default()
         },
         ui: UiState {
             views: ViewStack::new(),
@@ -194,9 +197,8 @@ async fn run_loop(
                 }
             }
             _ = refresh_interval.tick() => {
-                if !app.data.is_refreshing {
-                    app.data.is_refreshing = true;
-                    app.data.error = None;
+                if !matches!(app.data.refresh_state, RefreshState::InProgress) {
+                    app.data.refresh_state = RefreshState::InProgress;
                     spawn_fetch(config, tx.clone());
                     spawn_git_fetch(config);
                 }
@@ -213,12 +215,10 @@ async fn run_loop(
                         app.data.cats = cats;
                         app.ui.views.reset();
                         app.data.last_updated = Some(Utc::now());
-                        app.data.is_refreshing = false;
-                        app.data.error = None;
+                        app.data.refresh_state = RefreshState::Idle;
                     }
                     Err(e) => {
-                        app.data.is_refreshing = false;
-                        app.data.error = Some(e.to_string());
+                        app.data.refresh_state = RefreshState::Failed(e.to_string());
                     }
                 }
             }

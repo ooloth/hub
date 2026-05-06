@@ -62,11 +62,18 @@ impl Default for UiState {
 }
 
 #[derive(Debug, Default)]
+pub(crate) enum RefreshState {
+    #[default]
+    Idle,
+    InProgress,
+    Failed(String),
+}
+
+#[derive(Debug, Default)]
 pub(crate) struct DataState {
     pub(crate) cats: Vec<CatData>,
-    pub(crate) is_refreshing: bool,
+    pub(crate) refresh_state: RefreshState,
     pub(crate) last_updated: Option<DateTime<Utc>>,
-    pub(crate) error: Option<String>,
 }
 
 #[derive(Debug, Default)]

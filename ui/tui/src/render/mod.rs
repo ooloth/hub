@@ -8,7 +8,8 @@ use ratatui::{
 
 use crate::display::DisplayItem;
 use crate::state::{
-    compute_enter_action, compute_investigate_action, App, EnterAction, InvestigateAction, View,
+    compute_enter_action, compute_investigate_action, App, EnterAction, InvestigateAction,
+    RefreshState, View,
 };
 
 mod category;
@@ -250,21 +251,21 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         }
     }
 
-    let right_status = if app.data.is_refreshing {
-        if let Some(err) = &app.data.error {
-            format!("refresh failed: {err}")
-        } else {
-            "refreshing…".to_string()
+    let right_status = match &app.data.refresh_state {
+        RefreshState::InProgress => "refreshing…".to_string(),
+        RefreshState::Failed(err) => format!("refresh failed: {err}"),
+        RefreshState::Idle => {
+            if let Some(t) = app.data.last_updated {
+                let mins = (Utc::now() - t).num_minutes();
+                if mins == 0 {
+                    "updated just now".to_string()
+                } else {
+                    format!("updated {mins}m ago")
+                }
+            } else {
+                String::new()
+            }
         }
-    } else if let Some(t) = app.data.last_updated {
-        let mins = (Utc::now() - t).num_minutes();
-        if mins == 0 {
-            "updated just now".to_string()
-        } else {
-            format!("updated {mins}m ago")
-        }
-    } else {
-        String::new()
     };
 
     let left = status_bar_left(app);
