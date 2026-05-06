@@ -183,15 +183,16 @@ fn status_bar_left(app: &App) -> String {
             let total: usize = app.data.cats.iter().map(|c| c.items.len()).sum();
             format!("{total} items")
         }
-        View::Category { cat, list_state } => {
+        View::Category(view) => {
             let n = app
                 .data
                 .cats
                 .iter()
-                .find(|c| c.cat == *cat)
+                .find(|c| c.cat == view.cat)
                 .map(|c| c.items.len())
                 .unwrap_or(0);
-            let pos = list_state
+            let pos = view
+                .list_state
                 .selected()
                 .map(|i| format!("{}/{n}", i + 1))
                 .unwrap_or_default();
@@ -209,17 +210,14 @@ fn status_bar_left(app: &App) -> String {
             };
             format!("{pos}{enter_hint}{inv_hint}")
         }
-        View::Detail {
-            cat,
-            group_index,
-            list_state,
-        } => {
-            let cd = app.data.cats.iter().find(|c| c.cat == *cat);
-            let count = match cd.and_then(|c| c.items.get(*group_index)) {
+        View::Detail(view) => {
+            let cd = app.data.cats.iter().find(|c| c.cat == view.cat);
+            let count = match cd.and_then(|c| c.items.get(view.group_index)) {
                 Some(DisplayItem::Group { items, .. }) => items.len(),
                 _ => 0,
             };
-            let pos = list_state
+            let pos = view
+                .list_state
                 .selected()
                 .map(|i| format!("{}/{count}", i + 1))
                 .unwrap_or_default();
@@ -243,10 +241,13 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
 
     if matches!(app.current_view(), View::Home) {
         home::render_home(frame, app, content_area);
-    } else if matches!(app.current_view(), View::Category { .. }) {
-        category::render_category(frame, app, content_area);
-    } else if matches!(app.current_view(), View::Detail { .. }) {
-        detail::render_detail(frame, app, content_area);
+    } else {
+        let data = &app.data;
+        match app.ui.views.current_mut() {
+            View::Home => {}
+            View::Category(view) => category::render_category(frame, view, data, content_area),
+            View::Detail(view) => detail::render_detail(frame, view, data, content_area),
+        }
     }
 
     let right_status = if app.data.is_refreshing {
@@ -277,8 +278,8 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     if app.ui.show_help {
         let keybinds = match app.current_view() {
             View::Home => KEYBINDS_HOME,
-            View::Category { .. } => KEYBINDS_CATEGORY,
-            View::Detail { .. } => KEYBINDS_DETAIL,
+            View::Category(_) => KEYBINDS_CATEGORY,
+            View::Detail(_) => KEYBINDS_DETAIL,
         };
         let text = format_keybinds(keybinds);
         let lines = keybinds.len() as u16;
@@ -296,7 +297,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
 mod tests {
     use super::{status_bar_left, wrap_text};
     use crate::display::{CatData, Category, DisplayItem};
-    use crate::state::{App, DataState, UiState, View, ViewStack};
+    use crate::state::{App, CategoryView, DataState, UiState, View, ViewStack};
     use ratatui::widgets::ListState;
     use workflows::status::StatusItem;
 
@@ -361,10 +362,10 @@ mod tests {
                 ..DataState::default()
             },
             ui: UiState {
-                views: ViewStack(vec![View::Category {
+                views: ViewStack(vec![View::Category(CategoryView {
                     cat: Category::Prs,
                     list_state,
-                }]),
+                })]),
                 ..UiState::default()
             },
         };

@@ -75,17 +75,23 @@ pub(crate) struct App {
 }
 
 #[derive(Debug)]
+pub(crate) struct CategoryView {
+    pub(crate) cat: Category,
+    pub(crate) list_state: ListState,
+}
+
+#[derive(Debug)]
+pub(crate) struct DetailView {
+    pub(crate) cat: Category,
+    pub(crate) group_index: usize,
+    pub(crate) list_state: ListState,
+}
+
+#[derive(Debug)]
 pub(crate) enum View {
     Home,
-    Category {
-        cat: Category,
-        list_state: ListState,
-    },
-    Detail {
-        cat: Category,
-        group_index: usize,
-        list_state: ListState,
-    },
+    Category(CategoryView),
+    Detail(DetailView),
 }
 
 impl App {
@@ -104,21 +110,19 @@ impl App {
     pub(crate) fn active_list_len(&self) -> usize {
         match self.ui.views.current() {
             View::Home => self.data.cats.len(),
-            View::Category { cat, .. } => self
+            View::Category(view) => self
                 .data
                 .cats
                 .iter()
-                .find(|c| c.cat == *cat)
+                .find(|c| c.cat == view.cat)
                 .map(|c| c.items.len())
                 .unwrap_or(0),
-            View::Detail {
-                cat, group_index, ..
-            } => self
+            View::Detail(view) => self
                 .data
                 .cats
                 .iter()
-                .find(|c| c.cat == *cat)
-                .and_then(|c| c.items.get(*group_index))
+                .find(|c| c.cat == view.cat)
+                .and_then(|c| c.items.get(view.group_index))
                 .map(|d| match d {
                     DisplayItem::Group { items, .. } => items.len(),
                     _ => 0,
@@ -202,10 +206,16 @@ impl App {
     pub(crate) fn move_up(&mut self) {
         match self.ui.views.current_mut() {
             View::Home => {}
-            View::Category { list_state, .. } | View::Detail { list_state, .. } => {
-                let sel = list_state.selected().unwrap_or(0);
+            View::Category(view) => {
+                let sel = view.list_state.selected().unwrap_or(0);
                 if sel > 0 {
-                    list_state.select(Some(sel - 1));
+                    view.list_state.select(Some(sel - 1));
+                }
+            }
+            View::Detail(view) => {
+                let sel = view.list_state.selected().unwrap_or(0);
+                if sel > 0 {
+                    view.list_state.select(Some(sel - 1));
                 }
             }
         }
@@ -215,10 +225,16 @@ impl App {
         let len = self.active_list_len();
         match self.ui.views.current_mut() {
             View::Home => {}
-            View::Category { list_state, .. } | View::Detail { list_state, .. } => {
-                let sel = list_state.selected().unwrap_or(0);
+            View::Category(view) => {
+                let sel = view.list_state.selected().unwrap_or(0);
                 if len > 0 && sel < len - 1 {
-                    list_state.select(Some(sel + 1));
+                    view.list_state.select(Some(sel + 1));
+                }
+            }
+            View::Detail(view) => {
+                let sel = view.list_state.selected().unwrap_or(0);
+                if len > 0 && sel < len - 1 {
+                    view.list_state.select(Some(sel + 1));
                 }
             }
         }
@@ -287,10 +303,10 @@ impl App {
                     if len > 0 {
                         ls.select(Some(0));
                     }
-                    self.push_view(View::Category {
+                    self.push_view(View::Category(CategoryView {
                         cat,
                         list_state: ls,
-                    });
+                    }));
                     vec![]
                 }
                 EnterAction::OpenDetail {
@@ -302,11 +318,11 @@ impl App {
                     if item_count > 0 {
                         ds.select(Some(0));
                     }
-                    self.push_view(View::Detail {
+                    self.push_view(View::Detail(DetailView {
                         cat,
                         group_index,
                         list_state: ds,
-                    });
+                    }));
                     vec![]
                 }
             },
@@ -325,22 +341,18 @@ impl App {
     pub(crate) fn selected_url(&self) -> Option<&str> {
         match self.ui.views.current() {
             View::Home => None,
-            View::Category { cat, list_state } => {
-                let sel = list_state.selected().unwrap_or(0);
-                let cd = self.data.cats.iter().find(|c| c.cat == *cat)?;
+            View::Category(view) => {
+                let sel = view.list_state.selected().unwrap_or(0);
+                let cd = self.data.cats.iter().find(|c| c.cat == view.cat)?;
                 match cd.items.get(sel)? {
                     DisplayItem::Single(item) => item_url(item),
                     DisplayItem::Group { .. } => None,
                 }
             }
-            View::Detail {
-                cat,
-                group_index,
-                list_state,
-            } => {
-                let sel = list_state.selected().unwrap_or(0);
-                let cd = self.data.cats.iter().find(|c| c.cat == *cat)?;
-                match cd.items.get(*group_index)? {
+            View::Detail(view) => {
+                let sel = view.list_state.selected().unwrap_or(0);
+                let cd = self.data.cats.iter().find(|c| c.cat == view.cat)?;
+                match cd.items.get(view.group_index)? {
                     DisplayItem::Group { items, .. } => items.get(sel).and_then(item_url),
                     _ => None,
                 }
@@ -402,14 +414,14 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
                 cat: app.data.cats[app.ui.focused_tile].cat,
             }
         }
-        View::Category { cat, list_state } => {
-            let sel = list_state.selected().unwrap_or(0);
-            let Some(cd) = app.data.cats.iter().find(|c| c.cat == *cat) else {
+        View::Category(view) => {
+            let sel = view.list_state.selected().unwrap_or(0);
+            let Some(cd) = app.data.cats.iter().find(|c| c.cat == view.cat) else {
                 return EnterAction::None;
             };
             match cd.items.get(sel) {
                 Some(DisplayItem::Group { items, .. }) => EnterAction::OpenDetail {
-                    cat: *cat,
+                    cat: view.cat,
                     group_index: sel,
                     item_count: items.len(),
                 },
@@ -420,7 +432,7 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
                 None => EnterAction::None,
             }
         }
-        View::Detail { .. } => app
+        View::Detail(_) => app
             .selected_url()
             .map(|u| EnterAction::OpenUrl(u.to_string()))
             .unwrap_or(EnterAction::None),
@@ -430,9 +442,9 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
 pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
     let item = match app.current_view() {
         View::Home => return InvestigateAction::None,
-        View::Category { cat, list_state } => {
-            let sel = list_state.selected().unwrap_or(0);
-            let Some(cd) = app.data.cats.iter().find(|c| c.cat == *cat) else {
+        View::Category(view) => {
+            let sel = view.list_state.selected().unwrap_or(0);
+            let Some(cd) = app.data.cats.iter().find(|c| c.cat == view.cat) else {
                 return InvestigateAction::None;
             };
             let Some(display_item) = cd.items.get(sel) else {
@@ -443,16 +455,12 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
                 DisplayItem::Group { .. } => return InvestigateAction::None,
             }
         }
-        View::Detail {
-            cat,
-            group_index,
-            list_state,
-        } => {
-            let sel = list_state.selected().unwrap_or(0);
-            let Some(cd) = app.data.cats.iter().find(|c| c.cat == *cat) else {
+        View::Detail(view) => {
+            let sel = view.list_state.selected().unwrap_or(0);
+            let Some(cd) = app.data.cats.iter().find(|c| c.cat == view.cat) else {
                 return InvestigateAction::None;
             };
-            let Some(display_item) = cd.items.get(*group_index) else {
+            let Some(display_item) = cd.items.get(view.group_index) else {
                 return InvestigateAction::None;
             };
             match display_item {
@@ -478,8 +486,8 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
 #[cfg(test)]
 mod tests {
     use super::{
-        compute_investigate_action, Action, App, Category, DataState, Effect, InvestigateAction,
-        UiState, View, ViewStack,
+        compute_investigate_action, Action, App, Category, CategoryView, DataState, DetailView,
+        Effect, InvestigateAction, UiState, View, ViewStack,
     };
     use crate::display::{CatData, DisplayItem};
     use ratatui::widgets::ListState;
@@ -498,10 +506,10 @@ mod tests {
                 ..DataState::default()
             },
             ui: UiState {
-                views: ViewStack(vec![View::Category {
+                views: ViewStack(vec![View::Category(CategoryView {
                     cat: Category::Errors,
                     list_state,
-                }]),
+                })]),
                 ..UiState::default()
             },
         };
@@ -531,11 +539,11 @@ mod tests {
                 ..DataState::default()
             },
             ui: UiState {
-                views: ViewStack(vec![View::Detail {
+                views: ViewStack(vec![View::Detail(DetailView {
                     cat: Category::Errors,
                     group_index: 0,
                     list_state,
-                }]),
+                })]),
                 ..UiState::default()
             },
         };
@@ -570,10 +578,10 @@ mod tests {
                 ..DataState::default()
             },
             ui: UiState {
-                views: ViewStack(vec![View::Category {
+                views: ViewStack(vec![View::Category(CategoryView {
                     cat: Category::Issues,
                     list_state,
-                }]),
+                })]),
                 ..UiState::default()
             },
         };
@@ -598,10 +606,10 @@ mod tests {
             ui: UiState {
                 views: ViewStack(vec![
                     View::Home,
-                    View::Category {
+                    View::Category(CategoryView {
                         cat: Category::Errors,
                         list_state,
-                    },
+                    }),
                 ]),
                 ..UiState::default()
             },
@@ -668,10 +676,10 @@ mod tests {
             ui: UiState {
                 views: ViewStack(vec![
                     View::Home,
-                    View::Category {
+                    View::Category(CategoryView {
                         cat: Category::Errors,
                         list_state: ls,
-                    },
+                    }),
                 ]),
                 ..UiState::default()
             },
@@ -688,15 +696,15 @@ mod tests {
             ui: UiState {
                 views: ViewStack(vec![
                     View::Home,
-                    View::Category {
+                    View::Category(CategoryView {
                         cat: Category::Errors,
                         list_state: ls.clone(),
-                    },
-                    View::Detail {
+                    }),
+                    View::Detail(DetailView {
                         cat: Category::Errors,
                         group_index: 0,
                         list_state: ls,
-                    },
+                    }),
                 ]),
                 ..UiState::default()
             },
@@ -714,10 +722,10 @@ mod tests {
             ui: UiState {
                 views: ViewStack(vec![
                     View::Home,
-                    View::Category {
+                    View::Category(CategoryView {
                         cat: Category::Errors,
                         list_state: ls,
-                    },
+                    }),
                 ]),
                 ..UiState::default()
             },

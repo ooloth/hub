@@ -21,7 +21,7 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
 
     match app.current_view() {
         View::Home => home_keys(key),
-        View::Category { .. } | View::Detail { .. } => list_keys(key),
+        View::Category(_) | View::Detail(_) => list_keys(key),
     }
 }
 
@@ -57,7 +57,7 @@ fn list_keys(key: KeyEvent) -> Option<Action> {
 mod tests {
     use super::key_to_action;
     use crate::display::Category;
-    use crate::state::{Action, App, UiState, View, ViewStack};
+    use crate::state::{Action, App, CategoryView, UiState, View, ViewStack};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::widgets::ListState;
     use rstest::rstest;
@@ -81,10 +81,10 @@ mod tests {
             ui: UiState {
                 views: ViewStack(vec![
                     View::Home,
-                    View::Category {
+                    View::Category(CategoryView {
                         cat: Category::Errors,
                         list_state: ls,
-                    },
+                    }),
                 ]),
                 ..UiState::default()
             },

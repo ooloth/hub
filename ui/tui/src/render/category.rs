@@ -7,7 +7,7 @@ use ratatui::{
 use workflows::status::StatusItem;
 
 use crate::display::{display_item_line, display_item_urgency, item_url, DisplayItem};
-use crate::state::{App, View};
+use crate::state::{CategoryView, DataState};
 
 pub(super) fn hint_for_category_item(item: &DisplayItem) -> Option<String> {
     match item {
@@ -17,25 +17,21 @@ pub(super) fn hint_for_category_item(item: &DisplayItem) -> Option<String> {
     }
 }
 
-pub(super) fn render_category(frame: &mut ratatui::Frame, app: &mut App, content_area: Rect) {
-    let View::Category {
-        ref cat,
-        ref mut list_state,
-    } = *app.ui.views.current_mut()
-    else {
-        return;
-    };
-
-    let cat_items = app
-        .data
+pub(super) fn render_category(
+    frame: &mut ratatui::Frame,
+    view: &mut CategoryView,
+    data: &DataState,
+    content_area: Rect,
+) {
+    let cat_items = data
         .cats
         .iter()
-        .find(|c| c.cat == *cat)
+        .find(|c| c.cat == view.cat)
         .map(|c| c.items.as_slice())
         .unwrap_or(&[]);
 
     let title = Span::styled(
-        format!(" {} ", cat.label()),
+        format!(" {} ", view.cat.label()),
         Style::default()
             .fg(super::FOCUS_COLOR)
             .add_modifier(Modifier::BOLD),
@@ -49,7 +45,7 @@ pub(super) fn render_category(frame: &mut ratatui::Frame, app: &mut App, content
     frame.render_widget(block, content_area);
 
     let text_width = inner.width.saturating_sub(2) as usize;
-    let selected = list_state.selected();
+    let selected = view.list_state.selected();
     let selected_hint: Option<String> = selected
         .and_then(|i| cat_items.get(i))
         .and_then(hint_for_category_item);
@@ -89,7 +85,7 @@ pub(super) fn render_category(frame: &mut ratatui::Frame, app: &mut App, content
         .collect();
 
     let list = List::new(list_items).highlight_style(super::list_highlight());
-    frame.render_stateful_widget(list, inner, list_state);
+    frame.render_stateful_widget(list, inner, &mut view.list_state);
 }
 
 #[cfg(test)]

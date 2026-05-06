@@ -7,7 +7,7 @@ use ratatui::{
 use workflows::status::StatusItem;
 
 use crate::display::{item_line, item_urgency, item_url, DisplayItem};
-use crate::state::{App, View};
+use crate::state::{DataState, DetailView};
 
 pub(super) fn hint_for_detail_item(item: &StatusItem) -> Option<String> {
     match item {
@@ -16,22 +16,17 @@ pub(super) fn hint_for_detail_item(item: &StatusItem) -> Option<String> {
     }
 }
 
-pub(super) fn render_detail(frame: &mut ratatui::Frame, app: &mut App, content_area: Rect) {
-    let View::Detail {
-        ref cat,
-        ref group_index,
-        ref mut list_state,
-    } = *app.ui.views.current_mut()
-    else {
-        return;
-    };
-
-    let group_data = app
-        .data
+pub(super) fn render_detail(
+    frame: &mut ratatui::Frame,
+    view: &mut DetailView,
+    data: &DataState,
+    content_area: Rect,
+) {
+    let group_data = data
         .cats
         .iter()
-        .find(|c| c.cat == *cat)
-        .and_then(|c| c.items.get(*group_index))
+        .find(|c| c.cat == view.cat)
+        .and_then(|c| c.items.get(view.group_index))
         .and_then(|d| {
             if let DisplayItem::Group { label, items } = d {
                 Some((label.as_str(), items.as_slice()))
@@ -59,7 +54,7 @@ pub(super) fn render_detail(frame: &mut ratatui::Frame, app: &mut App, content_a
     frame.render_widget(block, content_area);
 
     let text_width = inner.width.saturating_sub(2) as usize;
-    let selected = list_state.selected();
+    let selected = view.list_state.selected();
     let selected_hint: Option<String> = selected
         .and_then(|i| items.get(i))
         .and_then(hint_for_detail_item);
@@ -91,7 +86,7 @@ pub(super) fn render_detail(frame: &mut ratatui::Frame, app: &mut App, content_a
         .collect();
 
     let list = List::new(list_items).highlight_style(super::list_highlight());
-    frame.render_stateful_widget(list, inner, list_state);
+    frame.render_stateful_widget(list, inner, &mut view.list_state);
 }
 
 #[cfg(test)]
