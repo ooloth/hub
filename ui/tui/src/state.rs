@@ -359,7 +359,7 @@ pub(crate) enum InvestigateAction {
     LaunchCi { repo: String, run_url: String },
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Action {
     Quit,
     ToggleHelp,
@@ -501,33 +501,16 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
 #[cfg(test)]
 mod tests {
     use super::{
-        compute_investigate_action, handle_msg, Action, App, Category, CategoryView, DataState,
-        DetailView, Effect, InvestigateAction, Msg, RefreshState, Screen, UiState,
+        compute_investigate_action, handle_msg, Action, App, Category, DataState, Effect,
+        InvestigateAction, Msg, RefreshState, Screen, UiState,
     };
     use crate::display::{CatData, DisplayItem};
-    use ratatui::widgets::ListState;
     use workflows::status::{StatusItem, StatusReport};
 
     #[test]
     fn investigate_action_launches_ci_from_category_selection() {
-        let mut list_state = ListState::default();
-        list_state.select(Some(0));
-        let app = App {
-            data: DataState {
-                cats: vec![CatData {
-                    cat: Category::Errors,
-                    items: vec![DisplayItem::Single(ci_failure())],
-                }],
-                ..DataState::default()
-            },
-            ui: UiState {
-                screen: Screen::Category(CategoryView {
-                    cat: Category::Errors,
-                    list_state,
-                }),
-                ..UiState::default()
-            },
-        };
+        let mut app = app_with_cat(Category::Errors, vec![DisplayItem::Single(ci_failure())]);
+        apply(&mut app, &[Action::Enter]);
 
         assert_eq!(
             compute_investigate_action(&app),
@@ -540,34 +523,14 @@ mod tests {
 
     #[test]
     fn investigate_action_launches_ci_from_detail_selection() {
-        let mut list_state = ListState::default();
-        list_state.select(Some(0));
-        let app = App {
-            data: DataState {
-                cats: vec![CatData {
-                    cat: Category::Errors,
-                    items: vec![DisplayItem::Group {
-                        label: "group".to_string(),
-                        items: vec![ci_failure()],
-                    }],
-                }],
-                ..DataState::default()
-            },
-            ui: UiState {
-                screen: Screen::Detail {
-                    parent: CategoryView {
-                        cat: Category::Errors,
-                        list_state: ListState::default(),
-                    },
-                    view: DetailView {
-                        cat: Category::Errors,
-                        group_index: 0,
-                        list_state,
-                    },
-                },
-                ..UiState::default()
-            },
-        };
+        let mut app = app_with_cat(
+            Category::Errors,
+            vec![DisplayItem::Group {
+                label: "group".to_string(),
+                items: vec![ci_failure()],
+            }],
+        );
+        apply(&mut app, &[Action::Enter, Action::Enter]);
 
         assert_eq!(
             compute_investigate_action(&app),
@@ -580,32 +543,19 @@ mod tests {
 
     #[test]
     fn investigate_action_ignores_unmapped_items() {
-        let mut list_state = ListState::default();
-        list_state.select(Some(0));
-        let app = App {
-            data: DataState {
-                cats: vec![CatData {
-                    cat: Category::Issues,
-                    items: vec![DisplayItem::Single(StatusItem::Issue(domain::Issue {
-                        number: 31,
-                        title: "TUI investigation".to_string(),
-                        repo: domain::RepoSlug::new("ooloth", "hub"),
-                        url: "https://github.com/ooloth/hub/issues/31".to_string(),
-                        age: chrono::Duration::zero(),
-                        urgency: domain::Urgency::Low,
-                        labels: vec![],
-                    }))],
-                }],
-                ..DataState::default()
-            },
-            ui: UiState {
-                screen: Screen::Category(CategoryView {
-                    cat: Category::Issues,
-                    list_state,
-                }),
-                ..UiState::default()
-            },
-        };
+        let mut app = app_with_cat(
+            Category::Issues,
+            vec![DisplayItem::Single(StatusItem::Issue(domain::Issue {
+                number: 31,
+                title: "TUI investigation".to_string(),
+                repo: domain::RepoSlug::new("ooloth", "hub"),
+                url: "https://github.com/ooloth/hub/issues/31".to_string(),
+                age: chrono::Duration::zero(),
+                urgency: domain::Urgency::Low,
+                labels: vec![],
+            }))],
+        );
+        apply(&mut app, &[Action::Enter]);
 
         assert_eq!(compute_investigate_action(&app), InvestigateAction::None);
     }
@@ -617,24 +567,6 @@ mod tests {
         assert!(app.ui.show_help);
         app.update(Action::ToggleHelp);
         assert!(!app.ui.show_help);
-    }
-
-    #[test]
-    fn update_back_goes_to_home_from_category() {
-        let mut list_state = ListState::default();
-        list_state.select(Some(0));
-        let mut app = App {
-            ui: UiState {
-                screen: Screen::Category(CategoryView {
-                    cat: Category::Errors,
-                    list_state,
-                }),
-                ..UiState::default()
-            },
-            ..App::default()
-        };
-        app.update(Action::Back);
-        assert!(matches!(app.current_screen(), Screen::Home));
     }
 
     #[test]
@@ -661,87 +593,41 @@ mod tests {
 
     #[test]
     fn update_enter_on_home_opens_category() {
-        let mut app = App {
-            data: DataState {
-                cats: vec![CatData {
-                    cat: Category::Errors,
-                    items: vec![DisplayItem::Single(ci_failure())],
-                }],
-                ..DataState::default()
-            },
-            ..App::default()
-        };
+        let mut app = app_with_cat(Category::Errors, vec![DisplayItem::Single(ci_failure())]);
         app.update(Action::Enter);
         assert!(matches!(app.current_screen(), Screen::Category(_)));
     }
 
     #[test]
     fn enter_on_group_in_category_opens_detail() {
-        let mut ls = ListState::default();
-        ls.select(Some(0));
-        let mut app = App {
-            data: DataState {
-                cats: vec![CatData {
-                    cat: Category::Errors,
-                    items: vec![DisplayItem::Group {
-                        label: "hub".to_string(),
-                        items: vec![ci_failure()],
-                    }],
-                }],
-                ..DataState::default()
-            },
-            ui: UiState {
-                screen: Screen::Category(CategoryView {
-                    cat: Category::Errors,
-                    list_state: ls,
-                }),
-                ..UiState::default()
-            },
-        };
-        app.update(Action::Enter);
+        let mut app = app_with_cat(
+            Category::Errors,
+            vec![DisplayItem::Group {
+                label: "hub".to_string(),
+                items: vec![ci_failure()],
+            }],
+        );
+        apply(&mut app, &[Action::Enter, Action::Enter]);
         assert!(matches!(app.current_screen(), Screen::Detail { .. }));
     }
 
     #[test]
     fn back_from_detail_returns_to_category() {
-        let mut ls = ListState::default();
-        ls.select(Some(0));
-        let mut app = App {
-            ui: UiState {
-                screen: Screen::Detail {
-                    parent: CategoryView {
-                        cat: Category::Errors,
-                        list_state: ls.clone(),
-                    },
-                    view: DetailView {
-                        cat: Category::Errors,
-                        group_index: 0,
-                        list_state: ls,
-                    },
-                },
-                ..UiState::default()
-            },
-            ..App::default()
-        };
-        app.update(Action::Back);
+        let mut app = app_with_cat(
+            Category::Errors,
+            vec![DisplayItem::Group {
+                label: "hub".to_string(),
+                items: vec![ci_failure()],
+            }],
+        );
+        apply(&mut app, &[Action::Enter, Action::Enter, Action::Back]);
         assert!(matches!(app.current_screen(), Screen::Category(_)));
     }
 
     #[test]
     fn back_from_category_returns_to_home() {
-        let mut ls = ListState::default();
-        ls.select(Some(0));
-        let mut app = App {
-            ui: UiState {
-                screen: Screen::Category(CategoryView {
-                    cat: Category::Errors,
-                    list_state: ls,
-                }),
-                ..UiState::default()
-            },
-            ..App::default()
-        };
-        app.update(Action::Back);
+        let mut app = app_with_cat(Category::Errors, vec![DisplayItem::Single(ci_failure())]);
+        apply(&mut app, &[Action::Enter, Action::Back]);
         assert!(matches!(app.current_screen(), Screen::Home));
     }
 
@@ -754,26 +640,20 @@ mod tests {
 
     #[test]
     fn full_navigation_round_trip() {
-        let mut app = App {
-            data: DataState {
-                cats: vec![CatData {
-                    cat: Category::Errors,
-                    items: vec![DisplayItem::Group {
-                        label: "hub".to_string(),
-                        items: vec![ci_failure()],
-                    }],
-                }],
-                ..DataState::default()
-            },
-            ..App::default()
-        };
-        app.update(Action::Enter);
+        let mut app = app_with_cat(
+            Category::Errors,
+            vec![DisplayItem::Group {
+                label: "hub".to_string(),
+                items: vec![ci_failure()],
+            }],
+        );
+        apply(&mut app, &[Action::Enter]);
         assert!(matches!(app.current_screen(), Screen::Category(_)));
-        app.update(Action::Enter);
+        apply(&mut app, &[Action::Enter]);
         assert!(matches!(app.current_screen(), Screen::Detail { .. }));
-        app.update(Action::Back);
+        apply(&mut app, &[Action::Back]);
         assert!(matches!(app.current_screen(), Screen::Category(_)));
-        app.update(Action::Back);
+        apply(&mut app, &[Action::Back]);
         assert!(matches!(app.current_screen(), Screen::Home));
     }
 
@@ -816,21 +696,9 @@ mod tests {
 
     #[test]
     fn handle_msg_fetch_ok_resets_to_home() {
-        let mut ls = ListState::default();
-        ls.select(Some(0));
-        let mut app = App {
-            data: DataState {
-                refresh_state: RefreshState::InProgress,
-                ..DataState::default()
-            },
-            ui: UiState {
-                screen: Screen::Category(CategoryView {
-                    cat: Category::Errors,
-                    list_state: ls,
-                }),
-                ..UiState::default()
-            },
-        };
+        let mut app = app_with_cat(Category::Errors, vec![DisplayItem::Single(ci_failure())]);
+        apply(&mut app, &[Action::Enter]);
+        app.data.refresh_state = RefreshState::InProgress;
         handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
         assert!(matches!(app.current_screen(), Screen::Home));
     }
@@ -865,6 +733,22 @@ mod tests {
         let mut app = App::default();
         let effects = handle_msg(&mut app, Msg::Action(Action::Quit)).unwrap();
         assert!(matches!(effects.as_slice(), [Effect::Quit]));
+    }
+
+    fn app_with_cat(cat: Category, items: Vec<DisplayItem>) -> App {
+        App {
+            data: DataState {
+                cats: vec![CatData { cat, items }],
+                ..DataState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    fn apply(app: &mut App, actions: &[Action]) {
+        for action in actions {
+            app.update(*action);
+        }
     }
 
     fn report_with_ci() -> StatusReport {
