@@ -181,7 +181,10 @@ async fn run_loop(
                                 Effect::LaunchCi { repo, run_url } => {
                                     let cwd = std::env::current_dir()
                                         .context("failed to resolve current directory")?;
-                                    if let Err(err) = investigations::ci::launch(&repo, &run_url, &cwd) {
+                                    if let Err(err) = investigations::launch(
+                                        investigations::ci::config(&repo, &run_url),
+                                        &cwd,
+                                    ) {
                                         app.ui.flash = Some(err.to_string());
                                     }
                                 }

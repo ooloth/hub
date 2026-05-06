@@ -3,7 +3,11 @@ use std::path::Path;
 
 pub(crate) mod ci;
 
-pub(crate) fn launch_in_tmux_split(command: &str, cwd: &Path) -> Result<()> {
+pub(crate) struct LaunchConfig {
+    pub(crate) command: String,
+}
+
+pub(crate) fn launch(config: LaunchConfig, cwd: &Path) -> Result<()> {
     if std::env::var("TMUX").is_err() {
         bail!("not in tmux; investigation requires a tmux session");
     }
@@ -11,7 +15,7 @@ pub(crate) fn launch_in_tmux_split(command: &str, cwd: &Path) -> Result<()> {
     let status = std::process::Command::new("tmux")
         .args(["split-window", "-h", "-c"])
         .arg(cwd)
-        .arg(command)
+        .arg(&config.command)
         .status()
         .context("failed to start tmux split-window")?;
 
