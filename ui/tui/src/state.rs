@@ -168,57 +168,57 @@ impl App {
         }
     }
 
-    pub(crate) fn update(&mut self, action: Action) -> Effect {
+    pub(crate) fn update(&mut self, action: Action) -> Vec<Effect> {
         self.flash = None;
         match action {
-            Action::Quit => Effect::Quit,
+            Action::Quit => vec![Effect::Quit],
             Action::ToggleHelp => {
                 self.show_help = !self.show_help;
-                Effect::None
+                vec![]
             }
             Action::CloseHelp => {
                 self.show_help = false;
-                Effect::None
+                vec![]
             }
             Action::Back => {
                 self.pop_view();
-                Effect::None
+                vec![]
             }
             Action::MoveTileForward => {
                 self.move_tile_forward();
-                Effect::None
+                vec![]
             }
             Action::MoveTileBack => {
                 self.move_tile_back();
-                Effect::None
+                vec![]
             }
             Action::MoveTileUp => {
                 self.move_tile_up();
-                Effect::None
+                vec![]
             }
             Action::MoveTileDown => {
                 self.move_tile_down();
-                Effect::None
+                vec![]
             }
             Action::MoveTileLeft => {
                 self.move_tile_left();
-                Effect::None
+                vec![]
             }
             Action::MoveTileRight => {
                 self.move_tile_right();
-                Effect::None
+                vec![]
             }
             Action::MoveUp => {
                 self.move_up();
-                Effect::None
+                vec![]
             }
             Action::MoveDown => {
                 self.move_down();
-                Effect::None
+                vec![]
             }
             Action::Enter => match compute_enter_action(self) {
-                EnterAction::None => Effect::None,
-                EnterAction::OpenUrl(url) => Effect::OpenUrl(url),
+                EnterAction::None => vec![],
+                EnterAction::OpenUrl(url) => vec![Effect::OpenUrl(url)],
                 EnterAction::OpenCategory { cat } => {
                     let len = self
                         .cats
@@ -234,7 +234,7 @@ impl App {
                         cat,
                         list_state: ls,
                     });
-                    Effect::None
+                    vec![]
                 }
                 EnterAction::OpenDetail {
                     cat,
@@ -250,14 +250,16 @@ impl App {
                         group_index,
                         list_state: ds,
                     });
-                    Effect::None
+                    vec![]
                 }
             },
             Action::Investigate => match compute_investigate_action(self) {
-                InvestigateAction::LaunchCi { repo, run_url } => Effect::LaunchCi { repo, run_url },
+                InvestigateAction::LaunchCi { repo, run_url } => {
+                    vec![Effect::LaunchCi { repo, run_url }]
+                }
                 InvestigateAction::None => {
                     self.flash = Some("No investigation mapped".to_string());
-                    Effect::None
+                    vec![]
                 }
             },
         }
@@ -327,7 +329,6 @@ pub(crate) enum Action {
 }
 
 pub(crate) enum Effect {
-    None,
     Quit,
     OpenUrl(String),
     LaunchCi { repo: String, run_url: String },
@@ -575,7 +576,10 @@ mod tests {
     #[test]
     fn update_quit_returns_quit_effect() {
         let mut app = minimal_app();
-        assert!(matches!(app.update(Action::Quit), Effect::Quit));
+        assert!(matches!(
+            app.update(Action::Quit).as_slice(),
+            [Effect::Quit]
+        ));
     }
 
     #[test]

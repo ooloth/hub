@@ -188,24 +188,25 @@ async fn run_loop(
     let mut refresh_interval = tokio::time::interval(tokio::time::Duration::from_secs(30 * 60));
     refresh_interval.tick().await;
 
-    loop {
+    'run: loop {
         terminal.draw(|f| render(f, app))?;
 
         tokio::select! {
             Some(event) = events.next() => {
                 if let Event::Key(key) = event.context("terminal event error")? {
                     if let Some(action) = key_to_action(app, key) {
-                        match app.update(action) {
-                            Effect::Quit => break,
-                            Effect::OpenUrl(url) => { let _ = open::that_detached(url); }
-                            Effect::LaunchCi { repo, run_url } => {
-                                let cwd = std::env::current_dir()
-                                    .context("failed to resolve current directory")?;
-                                if let Err(err) = launch_ci_investigation(&repo, &run_url, &cwd) {
-                                    app.flash = Some(err.to_string());
+                        for effect in app.update(action) {
+                            match effect {
+                                Effect::Quit => break 'run,
+                                Effect::OpenUrl(url) => { let _ = open::that_detached(url); }
+                                Effect::LaunchCi { repo, run_url } => {
+                                    let cwd = std::env::current_dir()
+                                        .context("failed to resolve current directory")?;
+                                    if let Err(err) = launch_ci_investigation(&repo, &run_url, &cwd) {
+                                        app.flash = Some(err.to_string());
+                                    }
                                 }
                             }
-                            Effect::None => {}
                         }
                     }
                 }
