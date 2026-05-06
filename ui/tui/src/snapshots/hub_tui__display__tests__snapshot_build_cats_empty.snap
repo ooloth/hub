@@ -1,0 +1,18 @@
+---
+source: ui/tui/src/display.rs
+expression: "build_cats(vec![])"
+---
+[
+    CatData {
+        cat: Errors,
+        items: [],
+    },
+    CatData {
+        cat: Prs,
+        items: [],
+    },
+    CatData {
+        cat: Issues,
+        items: [],
+    },
+]

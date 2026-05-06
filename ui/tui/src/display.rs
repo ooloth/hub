@@ -303,4 +303,56 @@ mod tests {
         assert_eq!(prs.items.len(), 1);
         assert_eq!(issues.items.len(), 1);
     }
+
+    #[test]
+    fn snapshot_build_cats_empty() {
+        insta::assert_debug_snapshot!(build_cats(vec![]));
+    }
+
+    #[test]
+    fn snapshot_build_cats_one_of_each_type() {
+        insta::assert_debug_snapshot!(build_cats(vec![pr(), issue(), ci(), linear()]));
+    }
+
+    #[test]
+    fn snapshot_build_cats_multiple_per_category() {
+        let pr2 = StatusItem::Pr(domain::PullRequest {
+            number: 99,
+            title: "Another PR".to_string(),
+            repo: domain::RepoSlug::new("owner", "other"),
+            url: "https://github.com/owner/other/pull/99".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::High,
+        });
+        let ci2 = StatusItem::Ci(domain::CiFailure {
+            repo: domain::RepoSlug::new("owner", "other"),
+            workflow_name: "Lint".to_string(),
+            conclusion: "failure".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+            url: "https://github.com/owner/other/actions/runs/2".to_string(),
+        });
+        insta::assert_debug_snapshot!(build_cats(vec![pr(), pr2, issue(), ci(), ci2]));
+    }
+
+    #[test]
+    fn snapshot_build_cats_mixed_urgency() {
+        let ci_critical = StatusItem::Ci(domain::CiFailure {
+            repo: domain::RepoSlug::new("owner", "repo"),
+            workflow_name: "Deploy".to_string(),
+            conclusion: "failure".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Critical,
+            url: "https://github.com/owner/repo/actions/runs/3".to_string(),
+        });
+        let pr_low = StatusItem::Pr(domain::PullRequest {
+            number: 1,
+            title: "Docs".to_string(),
+            repo: domain::RepoSlug::new("owner", "repo"),
+            url: "https://github.com/owner/repo/pull/1".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+        });
+        insta::assert_debug_snapshot!(build_cats(vec![ci_critical, pr_low, issue()]));
+    }
 }

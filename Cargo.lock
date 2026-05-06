@@ -1000,6 +1000,7 @@ dependencies = [
  "crossterm 0.28.1",
  "domain",
  "futures",
+ "insta",
  "open",
  "ratatui",
  "rstest 0.23.0",

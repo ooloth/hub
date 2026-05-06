@@ -26,4 +26,5 @@ tokio = { version = "1", features = ["full"] }
 workflows = { path = "../../workflows" }
 
 [dev-dependencies]
+insta = "1"
 rstest = "0.23"
