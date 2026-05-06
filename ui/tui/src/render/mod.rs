@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Clear, ListItem, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
 };
 
 use crate::display::DisplayItem;
@@ -96,6 +96,48 @@ fn popup_area(area: Rect, content_lines: u16, content_width: u16) -> Rect {
         width,
         height,
     )
+}
+
+pub(super) fn render_list_view<T>(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    items: &[T],
+    list_state: &mut ListState,
+    item_data: impl Fn(&T) -> (String, Option<String>, domain::Urgency),
+    hint_fn: impl Fn(&T) -> Option<String>,
+) {
+    let text_width = area.width.saturating_sub(2) as usize;
+    let selected = list_state.selected();
+    let selected_hint = selected.and_then(|i| items.get(i)).and_then(hint_fn);
+    let list_items: Vec<ListItem> = items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            let is_selected = selected == Some(i);
+            let (line_text, dim_suffix, urgency) = item_data(item);
+            let dot_style = if is_selected {
+                Style::default()
+            } else {
+                urgency_style(urgency)
+            };
+            let hint = if is_selected {
+                selected_hint.clone()
+            } else {
+                None
+            };
+            let item_width = text_width
+                .saturating_sub(dim_suffix.as_ref().map_or(0, |s| s.chars().count()))
+                .saturating_sub(hint.as_ref().map_or(0, |h| h.chars().count() + 2));
+            build_list_item(
+                Span::styled("● ", dot_style),
+                wrap_text(&line_text, item_width),
+                dim_suffix,
+                hint,
+            )
+        })
+        .collect();
+    let list = List::new(list_items).highlight_style(list_highlight());
+    frame.render_stateful_widget(list, area, list_state);
 }
 
 fn build_list_item(

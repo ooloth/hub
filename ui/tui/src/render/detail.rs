@@ -4,7 +4,7 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::Span,
-    widgets::{Block, BorderType, Borders, List},
+    widgets::{Block, BorderType, Borders},
 };
 
 pub(super) fn render_detail(
@@ -44,36 +44,12 @@ pub(super) fn render_detail(
     let inner = block.inner(content_area);
     frame.render_widget(block, content_area);
 
-    let text_width = inner.width.saturating_sub(2) as usize;
-    let selected = view.list_state.selected();
-    let selected_hint: Option<String> = selected.and_then(|i| items.get(i)).and_then(item_hint);
-
-    let list_items: Vec<ratatui::widgets::ListItem> = items
-        .iter()
-        .enumerate()
-        .map(|(i, item)| {
-            let is_selected = selected == Some(i);
-            let dot_style = if is_selected {
-                Style::default()
-            } else {
-                super::urgency_style(item_urgency(item))
-            };
-            let hint = if is_selected {
-                selected_hint.clone()
-            } else {
-                None
-            };
-            let item_width =
-                text_width.saturating_sub(hint.as_ref().map_or(0, |h| h.chars().count() + 2));
-            super::build_list_item(
-                Span::styled("● ", dot_style),
-                super::wrap_text(&item_line(item), item_width),
-                None,
-                hint,
-            )
-        })
-        .collect();
-
-    let list = List::new(list_items).highlight_style(super::list_highlight());
-    frame.render_stateful_widget(list, inner, &mut view.list_state);
+    super::render_list_view(
+        frame,
+        inner,
+        items,
+        &mut view.list_state,
+        |item| (item_line(item), None, item_urgency(item)),
+        item_hint,
+    );
 }
