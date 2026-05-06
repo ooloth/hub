@@ -6,7 +6,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
 };
 
-use crate::display::DisplayItem;
+use crate::display::{CatData, DisplayItem};
 use crate::state::{
     compute_enter_action, compute_investigate_action, App, EnterAction, InvestigateAction,
     RefreshState, Screen,
@@ -215,63 +215,69 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
+fn position_label(screen: &Screen, cats: &[CatData]) -> String {
+    match screen {
+        Screen::Home => String::new(),
+        Screen::Category(view) => {
+            let n = cats
+                .iter()
+                .find(|c| c.cat == view.cat)
+                .map(|c| c.items.len())
+                .unwrap_or(0);
+            view.list_state
+                .selected()
+                .map(|i| format!("{}/{n}", i + 1))
+                .unwrap_or_default()
+        }
+        Screen::Detail { view, .. } => {
+            let count = cats
+                .iter()
+                .find(|c| c.cat == view.cat)
+                .and_then(|c| c.items.get(view.group_index))
+                .and_then(|d| match d {
+                    DisplayItem::Group { items, .. } => Some(items.len()),
+                    _ => None,
+                })
+                .unwrap_or(0);
+            view.list_state
+                .selected()
+                .map(|i| format!("{}/{count}", i + 1))
+                .unwrap_or_default()
+        }
+    }
+}
+
+fn action_hints(enter: &EnterAction, investigate: &InvestigateAction) -> String {
+    let enter_hint = match enter {
+        EnterAction::OpenUrl(url) => format!(" · Press ↩ to open {url}"),
+        EnterAction::OpenDetail { item_count, .. } => {
+            format!(" · Press ↩ to expand ({item_count} items)")
+        }
+        EnterAction::OpenCategory { .. } | EnterAction::None => String::new(),
+    };
+    let inv_hint = if matches!(investigate, InvestigateAction::LaunchCi { .. }) {
+        " · Press i to investigate"
+    } else {
+        ""
+    };
+    format!("{enter_hint}{inv_hint}")
+}
+
 fn status_bar_left(app: &App) -> String {
     if let Some(flash) = &app.ui.flash {
         return flash.clone();
     }
-    let enter_action = compute_enter_action(app);
-    let investigate_action = compute_investigate_action(app);
     match app.current_screen() {
         Screen::Home => {
             let total: usize = app.data.cats.iter().map(|c| c.items.len()).sum();
             format!("{total} items")
         }
-        Screen::Category(view) => {
-            let n = app
-                .data
-                .cat_data(view.cat)
-                .map(|c| c.items.len())
-                .unwrap_or(0);
-            let pos = view
-                .list_state
-                .selected()
-                .map(|i| format!("{}/{n}", i + 1))
-                .unwrap_or_default();
-            let enter_hint = match &enter_action {
-                EnterAction::OpenUrl(url) => format!(" · Press ↩ to open {url}"),
-                EnterAction::OpenDetail { item_count, .. } => {
-                    format!(" · Press ↩ to expand ({item_count} items)")
-                }
-                _ => String::new(),
-            };
-            let inv_hint = if matches!(investigate_action, InvestigateAction::LaunchCi { .. }) {
-                " · Press i to investigate"
-            } else {
-                ""
-            };
-            format!("{pos}{enter_hint}{inv_hint}")
-        }
-        Screen::Detail { view, .. } => {
-            let cd = app.data.cat_data(view.cat);
-            let count = match cd.and_then(|c| c.items.get(view.group_index)) {
-                Some(DisplayItem::Group { items, .. }) => items.len(),
-                _ => 0,
-            };
-            let pos = view
-                .list_state
-                .selected()
-                .map(|i| format!("{}/{count}", i + 1))
-                .unwrap_or_default();
-            let enter_hint = match &enter_action {
-                EnterAction::OpenUrl(url) => format!(" · Press ↩ to open {url}"),
-                _ => String::new(),
-            };
-            let inv_hint = if matches!(investigate_action, InvestigateAction::LaunchCi { .. }) {
-                " · Press i to investigate"
-            } else {
-                ""
-            };
-            format!("{pos}{enter_hint}{inv_hint}")
+        Screen::Category(_) | Screen::Detail { .. } => {
+            let enter_action = compute_enter_action(app);
+            let investigate_action = compute_investigate_action(app);
+            let pos = position_label(app.current_screen(), &app.data.cats);
+            let hints = action_hints(&enter_action, &investigate_action);
+            format!("{pos}{hints}")
         }
     }
 }
@@ -336,9 +342,11 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
 
 #[cfg(test)]
 mod tests {
-    use super::{status_bar_left, wrap_text};
+    use super::{action_hints, position_label, status_bar_left, wrap_text};
     use crate::display::{CatData, Category, DisplayItem};
-    use crate::state::{App, CategoryView, DataState, Screen, UiState};
+    use crate::state::{
+        App, CategoryView, DataState, DetailView, EnterAction, InvestigateAction, Screen, UiState,
+    };
     use ratatui::widgets::ListState;
     use workflows::status::StatusItem;
 
@@ -411,6 +419,99 @@ mod tests {
             },
         };
         assert!(status_bar_left(&app).starts_with("2/2"));
+    }
+
+    #[test]
+    fn position_label_empty_for_home() {
+        assert_eq!(position_label(&Screen::Home, &[]), "");
+    }
+
+    #[test]
+    fn position_label_category_shows_index_of_n() {
+        let mut ls = ListState::default();
+        ls.select(Some(1));
+        let screen = Screen::Category(CategoryView {
+            cat: Category::Prs,
+            list_state: ls,
+        });
+        let cats = vec![CatData {
+            cat: Category::Prs,
+            items: vec![
+                DisplayItem::Single(pr()),
+                DisplayItem::Single(pr()),
+                DisplayItem::Single(pr()),
+            ],
+        }];
+        assert_eq!(position_label(&screen, &cats), "2/3");
+    }
+
+    #[test]
+    fn position_label_detail_shows_index_within_group() {
+        let mut ls = ListState::default();
+        ls.select(Some(0));
+        let screen = Screen::Detail {
+            parent: CategoryView {
+                cat: Category::Errors,
+                list_state: ListState::default(),
+            },
+            view: DetailView {
+                cat: Category::Errors,
+                group_index: 0,
+                list_state: ls,
+            },
+        };
+        let cats = vec![CatData {
+            cat: Category::Errors,
+            items: vec![DisplayItem::Group {
+                label: "hub".to_string(),
+                items: vec![pr(), pr()],
+            }],
+        }];
+        assert_eq!(position_label(&screen, &cats), "1/2");
+    }
+
+    #[test]
+    fn action_hints_open_url() {
+        let enter = EnterAction::OpenUrl("https://example.com".to_string());
+        let inv = InvestigateAction::None;
+        assert_eq!(
+            action_hints(&enter, &inv),
+            " · Press ↩ to open https://example.com"
+        );
+    }
+
+    #[test]
+    fn action_hints_expand_group() {
+        let enter = EnterAction::OpenDetail {
+            cat: Category::Errors,
+            group_index: 0,
+            item_count: 3,
+        };
+        let inv = InvestigateAction::None;
+        assert_eq!(action_hints(&enter, &inv), " · Press ↩ to expand (3 items)");
+    }
+
+    #[test]
+    fn action_hints_investigate() {
+        let enter = EnterAction::None;
+        let inv = InvestigateAction::LaunchCi {
+            repo: "owner/repo".to_string(),
+            run_url: "https://example.com".to_string(),
+        };
+        assert_eq!(action_hints(&enter, &inv), " · Press i to investigate");
+    }
+
+    #[test]
+    fn action_hints_combined() {
+        let enter = EnterAction::OpenUrl("https://example.com".to_string());
+        let inv = InvestigateAction::LaunchCi {
+            repo: "owner/repo".to_string(),
+            run_url: "https://example.com".to_string(),
+        };
+        assert_eq!(
+            action_hints(&enter, &inv),
+            " · Press ↩ to open https://example.com · Press i to investigate"
+        );
     }
 
     #[test]
