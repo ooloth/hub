@@ -23,7 +23,7 @@ fn truncate(text: &str, max_width: usize) -> String {
 
 fn render_tile(frame: &mut ratatui::Frame, cat_data: &CatData, focused: bool, area: Rect) {
     let border_style = if focused {
-        Style::default().fg(Color::Green)
+        Style::default().fg(super::FOCUS_COLOR)
     } else {
         Style::default().add_modifier(Modifier::DIM)
     };
@@ -31,7 +31,7 @@ fn render_tile(frame: &mut ratatui::Frame, cat_data: &CatData, focused: bool, ar
     let count = cat_data.items.len();
     let title_style = if focused {
         Style::default()
-            .fg(Color::Green)
+            .fg(super::FOCUS_COLOR)
             .add_modifier(Modifier::BOLD)
     } else {
         Style::default()
@@ -49,10 +49,7 @@ fn render_tile(frame: &mut ratatui::Frame, cat_data: &CatData, focused: bool, ar
     frame.render_widget(block, area);
 
     if count == 0 {
-        frame.render_widget(
-            Paragraph::new("(none)").style(Style::default().add_modifier(Modifier::DIM)),
-            inner,
-        );
+        frame.render_widget(Paragraph::new("(none)").style(super::dim()), inner);
         return;
     }
 
@@ -65,7 +62,6 @@ fn render_tile(frame: &mut ratatui::Frame, cat_data: &CatData, focused: bool, ar
     };
     let text_width = (inner.width as usize).saturating_sub(2); // "● "
 
-    let dim = Style::default().add_modifier(Modifier::DIM);
     let mut lines: Vec<Line> = cat_data
         .items
         .iter()
@@ -82,7 +78,7 @@ fn render_tile(frame: &mut ratatui::Frame, cat_data: &CatData, focused: bool, ar
             };
             let mut spans = vec![Span::styled("● ", dot_style), Span::raw(label)];
             if let Some(s) = count_suffix {
-                spans.push(Span::styled(s, dim));
+                spans.push(Span::styled(s, super::dim()));
             }
             Line::from(spans)
         })
@@ -92,7 +88,7 @@ fn render_tile(frame: &mut ratatui::Frame, cat_data: &CatData, focused: bool, ar
         let more = count - preview_count;
         lines.push(Line::from(Span::styled(
             format!("  ↓ {more} more"),
-            Style::default().add_modifier(Modifier::DIM),
+            super::dim(),
         )));
     }
 
