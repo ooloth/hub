@@ -21,7 +21,7 @@ pub(super) fn render_category(frame: &mut ratatui::Frame, app: &mut App, content
     let View::Category {
         ref cat,
         ref mut list_state,
-    } = *app.views.last_mut().unwrap()
+    } = *app.views.current_mut()
     else {
         return;
     };

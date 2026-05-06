@@ -21,7 +21,7 @@ pub(super) fn render_detail(frame: &mut ratatui::Frame, app: &mut App, content_a
         ref cat,
         ref group_index,
         ref mut list_state,
-    } = *app.views.last_mut().unwrap()
+    } = *app.views.current_mut()
     else {
         return;
     };

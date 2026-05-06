@@ -295,7 +295,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
 mod tests {
     use super::{status_bar_left, wrap_text};
     use crate::display::{CatData, Category, DisplayItem};
-    use crate::state::{App, View};
+    use crate::state::{App, View, ViewStack};
     use ratatui::widgets::ListState;
     use workflows::status::StatusItem;
 
@@ -303,7 +303,7 @@ mod tests {
         App {
             cats: vec![],
             focused_tile: 0,
-            views: vec![View::Home],
+            views: ViewStack::new(),
             is_refreshing: false,
             last_updated: None,
             error: None,
@@ -363,10 +363,10 @@ mod tests {
                 cat: Category::Prs,
                 items: vec![DisplayItem::Single(pr()), DisplayItem::Single(pr())],
             }],
-            views: vec![View::Category {
+            views: ViewStack(vec![View::Category {
                 cat: Category::Prs,
                 list_state,
-            }],
+            }]),
             ..minimal_app()
         };
         assert!(status_bar_left(&app).starts_with("2/2"));

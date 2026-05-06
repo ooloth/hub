@@ -3,7 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::state::{Action, App, View};
 
 pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
-    let can_go_back = app.views.len() > 1;
+    let can_go_back = app.views.can_go_back();
 
     match (key.code, key.modifiers) {
         (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {

@@ -7,10 +7,45 @@ use crate::display::{item_url, CatData, Category, DisplayItem};
 pub(crate) const TILE_COLS: usize = 2;
 
 #[derive(Debug)]
+pub(crate) struct ViewStack(pub(crate) Vec<View>);
+
+impl ViewStack {
+    pub(crate) fn new() -> Self {
+        ViewStack(vec![View::Home])
+    }
+
+    pub(crate) fn current(&self) -> &View {
+        self.0.last().expect("view stack is never empty")
+    }
+
+    pub(crate) fn current_mut(&mut self) -> &mut View {
+        self.0.last_mut().expect("view stack is never empty")
+    }
+
+    pub(crate) fn push(&mut self, view: View) {
+        self.0.push(view);
+    }
+
+    pub(crate) fn pop(&mut self) {
+        if self.0.len() > 1 {
+            self.0.pop();
+        }
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.0.truncate(1);
+    }
+
+    pub(crate) fn can_go_back(&self) -> bool {
+        self.0.len() > 1
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct App {
     pub(crate) cats: Vec<CatData>,
     pub(crate) focused_tile: usize,
-    pub(crate) views: Vec<View>,
+    pub(crate) views: ViewStack,
     pub(crate) is_refreshing: bool,
     pub(crate) last_updated: Option<DateTime<Utc>>,
     pub(crate) error: Option<String>,
@@ -34,7 +69,7 @@ pub(crate) enum View {
 
 impl App {
     pub(crate) fn current_view(&self) -> &View {
-        self.views.last().expect("view stack is never empty")
+        self.views.current()
     }
 
     pub(crate) fn push_view(&mut self, view: View) {
@@ -42,13 +77,11 @@ impl App {
     }
 
     pub(crate) fn pop_view(&mut self) {
-        if self.views.len() > 1 {
-            self.views.pop();
-        }
+        self.views.pop();
     }
 
     pub(crate) fn active_list_len(&self) -> usize {
-        match self.views.last().unwrap() {
+        match self.views.current() {
             View::Home => self.cats.len(),
             View::Category { cat, .. } => self
                 .cats
@@ -144,7 +177,7 @@ impl App {
     }
 
     pub(crate) fn move_up(&mut self) {
-        match self.views.last_mut().unwrap() {
+        match self.views.current_mut() {
             View::Home => {}
             View::Category { list_state, .. } | View::Detail { list_state, .. } => {
                 let sel = list_state.selected().unwrap_or(0);
@@ -157,7 +190,7 @@ impl App {
 
     pub(crate) fn move_down(&mut self) {
         let len = self.active_list_len();
-        match self.views.last_mut().unwrap() {
+        match self.views.current_mut() {
             View::Home => {}
             View::Category { list_state, .. } | View::Detail { list_state, .. } => {
                 let sel = list_state.selected().unwrap_or(0);
@@ -266,7 +299,7 @@ impl App {
     }
 
     pub(crate) fn selected_url(&self) -> Option<&str> {
-        match self.views.last().unwrap() {
+        match self.views.current() {
             View::Home => None,
             View::Category { cat, list_state } => {
                 let sel = list_state.selected().unwrap_or(0);
@@ -421,6 +454,7 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
 mod tests {
     use super::{
         compute_investigate_action, Action, App, Category, Effect, InvestigateAction, View,
+        ViewStack,
     };
     use crate::display::{CatData, DisplayItem};
     use ratatui::widgets::ListState;
@@ -430,7 +464,7 @@ mod tests {
         App {
             cats: vec![],
             focused_tile: 0,
-            views: vec![View::Home],
+            views: ViewStack::new(),
             is_refreshing: false,
             last_updated: None,
             error: None,
@@ -449,10 +483,10 @@ mod tests {
                 items: vec![DisplayItem::Single(ci_failure())],
             }],
             focused_tile: 0,
-            views: vec![View::Category {
+            views: ViewStack(vec![View::Category {
                 cat: Category::Errors,
                 list_state,
-            }],
+            }]),
             is_refreshing: false,
             last_updated: None,
             error: None,
@@ -482,11 +516,11 @@ mod tests {
                 }],
             }],
             focused_tile: 0,
-            views: vec![View::Detail {
+            views: ViewStack(vec![View::Detail {
                 cat: Category::Errors,
                 group_index: 0,
                 list_state,
-            }],
+            }]),
             is_refreshing: false,
             last_updated: None,
             error: None,
@@ -521,10 +555,10 @@ mod tests {
                 }))],
             }],
             focused_tile: 0,
-            views: vec![View::Category {
+            views: ViewStack(vec![View::Category {
                 cat: Category::Issues,
                 list_state,
-            }],
+            }]),
             is_refreshing: false,
             last_updated: None,
             error: None,
@@ -549,18 +583,18 @@ mod tests {
         let mut list_state = ListState::default();
         list_state.select(Some(0));
         let mut app = App {
-            views: vec![
+            views: ViewStack(vec![
                 View::Home,
                 View::Category {
                     cat: Category::Errors,
                     list_state,
                 },
-            ],
+            ]),
             ..minimal_app()
         };
         app.update(Action::Back);
         assert!(matches!(app.current_view(), View::Home));
-        assert_eq!(app.views.len(), 1);
+        assert!(!app.views.can_go_back());
     }
 
     #[test]

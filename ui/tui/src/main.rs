@@ -14,7 +14,7 @@ use workflows::status::{StatusReport, SCHEMA_VERSION};
 use crate::display::build_cats;
 use crate::input::key_to_action;
 use crate::render::render;
-use crate::state::{App, Effect, View};
+use crate::state::{App, Effect, ViewStack};
 
 mod display;
 mod input;
@@ -111,7 +111,7 @@ async fn main() -> Result<()> {
     let mut app = App {
         cats: build_cats(initial_items),
         focused_tile: 0,
-        views: vec![View::Home],
+        views: ViewStack::new(),
         is_refreshing: start_refresh,
         last_updated: initial_updated,
         error: None,
@@ -229,7 +229,7 @@ async fn run_loop(
                         let cats = build_cats(report.items);
                         app.focused_tile = app.focused_tile.min(cats.len().saturating_sub(1));
                         app.cats = cats;
-                        app.views.truncate(1);
+                        app.views.reset();
                         app.last_updated = Some(Utc::now());
                         app.is_refreshing = false;
                         app.error = None;
