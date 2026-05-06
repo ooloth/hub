@@ -368,6 +368,7 @@ pub(crate) enum InvestigateAction {
     LaunchCi { repo: String, run_url: String },
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub(crate) enum Action {
     Quit,
     ToggleHelp,
@@ -647,6 +648,116 @@ mod tests {
         };
         app.update(Action::Enter);
         assert!(matches!(app.current_view(), View::Category { .. }));
+    }
+
+    #[test]
+    fn enter_on_group_in_category_opens_detail() {
+        let mut ls = ListState::default();
+        ls.select(Some(0));
+        let mut app = App {
+            data: DataState {
+                cats: vec![CatData {
+                    cat: Category::Errors,
+                    items: vec![DisplayItem::Group {
+                        label: "hub".to_string(),
+                        items: vec![ci_failure()],
+                    }],
+                }],
+                ..DataState::default()
+            },
+            ui: UiState {
+                views: ViewStack(vec![
+                    View::Home,
+                    View::Category {
+                        cat: Category::Errors,
+                        list_state: ls,
+                    },
+                ]),
+                ..UiState::default()
+            },
+        };
+        app.update(Action::Enter);
+        assert!(matches!(app.current_view(), View::Detail { .. }));
+    }
+
+    #[test]
+    fn back_from_detail_returns_to_category() {
+        let mut ls = ListState::default();
+        ls.select(Some(0));
+        let mut app = App {
+            ui: UiState {
+                views: ViewStack(vec![
+                    View::Home,
+                    View::Category {
+                        cat: Category::Errors,
+                        list_state: ls.clone(),
+                    },
+                    View::Detail {
+                        cat: Category::Errors,
+                        group_index: 0,
+                        list_state: ls,
+                    },
+                ]),
+                ..UiState::default()
+            },
+            ..App::default()
+        };
+        app.update(Action::Back);
+        assert!(matches!(app.current_view(), View::Category { .. }));
+    }
+
+    #[test]
+    fn back_from_category_returns_to_home() {
+        let mut ls = ListState::default();
+        ls.select(Some(0));
+        let mut app = App {
+            ui: UiState {
+                views: ViewStack(vec![
+                    View::Home,
+                    View::Category {
+                        cat: Category::Errors,
+                        list_state: ls,
+                    },
+                ]),
+                ..UiState::default()
+            },
+            ..App::default()
+        };
+        app.update(Action::Back);
+        assert!(matches!(app.current_view(), View::Home));
+    }
+
+    #[test]
+    fn back_does_nothing_from_home() {
+        let mut app = App::default();
+        app.update(Action::Back);
+        assert!(matches!(app.current_view(), View::Home));
+    }
+
+    #[test]
+    fn full_navigation_round_trip() {
+        let mut app = App {
+            data: DataState {
+                cats: vec![CatData {
+                    cat: Category::Errors,
+                    items: vec![DisplayItem::Group {
+                        label: "hub".to_string(),
+                        items: vec![ci_failure()],
+                    }],
+                }],
+                ..DataState::default()
+            },
+            ..App::default()
+        };
+        app.update(Action::Enter);
+        assert!(matches!(app.current_view(), View::Category { .. }));
+        app.update(Action::Enter);
+        assert!(matches!(app.current_view(), View::Detail { .. }));
+        app.update(Action::Back);
+        assert!(matches!(app.current_view(), View::Category { .. }));
+        app.update(Action::Back);
+        assert!(matches!(app.current_view(), View::Home));
+        assert!(!app.ui.views.can_go_back());
     }
 
     fn ci_failure() -> StatusItem {
