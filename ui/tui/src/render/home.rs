@@ -96,7 +96,7 @@ fn render_tile(frame: &mut ratatui::Frame, cat_data: &CatData, focused: bool, ar
 }
 
 pub(super) fn render_home(frame: &mut ratatui::Frame, app: &App, area: Rect) {
-    let n = app.cats.len();
+    let n = app.data.cats.len();
     if n == 0 {
         return;
     }
@@ -124,8 +124,8 @@ pub(super) fn render_home(frame: &mut ratatui::Frame, app: &App, area: Rect) {
             let tile_idx = start + col_idx;
             render_tile(
                 frame,
-                &app.cats[tile_idx],
-                tile_idx == app.focused_tile,
+                &app.data.cats[tile_idx],
+                tile_idx == app.ui.focused_tile,
                 col_area,
             );
         }

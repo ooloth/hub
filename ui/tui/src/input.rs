@@ -3,19 +3,19 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::state::{Action, App, View};
 
 pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
-    let can_go_back = app.views.can_go_back();
+    let can_go_back = app.ui.views.can_go_back();
 
     match (key.code, key.modifiers) {
         (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
             return Some(Action::Quit);
         }
         (KeyCode::Char('?'), _) => return Some(Action::ToggleHelp),
-        (KeyCode::Esc, _) if app.show_help => return Some(Action::CloseHelp),
+        (KeyCode::Esc, _) if app.ui.show_help => return Some(Action::CloseHelp),
         (KeyCode::Esc, _) if can_go_back => return Some(Action::Back),
         _ => {}
     }
 
-    if app.show_help {
+    if app.ui.show_help {
         return None;
     }
 

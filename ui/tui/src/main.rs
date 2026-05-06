@@ -14,7 +14,7 @@ use workflows::status::{StatusReport, SCHEMA_VERSION};
 use crate::display::build_cats;
 use crate::input::key_to_action;
 use crate::render::render;
-use crate::state::{App, Effect, ViewStack};
+use crate::state::{App, DataState, Effect, UiState, ViewStack};
 
 mod display;
 mod input;
@@ -86,14 +86,16 @@ async fn main() -> Result<()> {
         };
 
     let mut app = App {
-        cats: build_cats(initial_items),
-        focused_tile: 0,
-        views: ViewStack::new(),
-        is_refreshing: start_refresh,
-        last_updated: initial_updated,
-        error: None,
-        show_help: false,
-        flash: None,
+        data: DataState {
+            cats: build_cats(initial_items),
+            is_refreshing: start_refresh,
+            last_updated: initial_updated,
+            ..DataState::default()
+        },
+        ui: UiState {
+            views: ViewStack::new(),
+            ..UiState::default()
+        },
     };
 
     let (tx, mut rx) = mpsc::channel::<Result<StatusReport>>(1);
@@ -180,7 +182,7 @@ async fn run_loop(
                                     let cwd = std::env::current_dir()
                                         .context("failed to resolve current directory")?;
                                     if let Err(err) = investigations::ci::launch(&repo, &run_url, &cwd) {
-                                        app.flash = Some(err.to_string());
+                                        app.ui.flash = Some(err.to_string());
                                     }
                                 }
                             }
@@ -189,9 +191,9 @@ async fn run_loop(
                 }
             }
             _ = refresh_interval.tick() => {
-                if !app.is_refreshing {
-                    app.is_refreshing = true;
-                    app.error = None;
+                if !app.data.is_refreshing {
+                    app.data.is_refreshing = true;
+                    app.data.error = None;
                     spawn_fetch(config, tx.clone());
                     spawn_git_fetch(config);
                 }
@@ -204,16 +206,16 @@ async fn run_loop(
                         store::status::upsert(conn, &json, SCHEMA_VERSION)
                             .context("failed to upsert status cache")?;
                         let cats = build_cats(report.items);
-                        app.focused_tile = app.focused_tile.min(cats.len().saturating_sub(1));
-                        app.cats = cats;
-                        app.views.reset();
-                        app.last_updated = Some(Utc::now());
-                        app.is_refreshing = false;
-                        app.error = None;
+                        app.ui.focused_tile = app.ui.focused_tile.min(cats.len().saturating_sub(1));
+                        app.data.cats = cats;
+                        app.ui.views.reset();
+                        app.data.last_updated = Some(Utc::now());
+                        app.data.is_refreshing = false;
+                        app.data.error = None;
                     }
                     Err(e) => {
-                        app.is_refreshing = false;
-                        app.error = Some(e.to_string());
+                        app.data.is_refreshing = false;
+                        app.data.error = Some(e.to_string());
                     }
                 }
             }

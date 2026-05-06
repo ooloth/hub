@@ -21,12 +21,13 @@ pub(super) fn render_category(frame: &mut ratatui::Frame, app: &mut App, content
     let View::Category {
         ref cat,
         ref mut list_state,
-    } = *app.views.current_mut()
+    } = *app.ui.views.current_mut()
     else {
         return;
     };
 
     let cat_items = app
+        .data
         .cats
         .iter()
         .find(|c| c.cat == *cat)

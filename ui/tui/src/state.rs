@@ -42,15 +42,36 @@ impl ViewStack {
 }
 
 #[derive(Debug)]
-pub(crate) struct App {
-    pub(crate) cats: Vec<CatData>,
+pub(crate) struct UiState {
     pub(crate) focused_tile: usize,
     pub(crate) views: ViewStack,
+    pub(crate) show_help: bool,
+    pub(crate) flash: Option<String>,
+}
+
+impl Default for UiState {
+    fn default() -> Self {
+        UiState {
+            focused_tile: 0,
+            views: ViewStack::new(),
+            show_help: false,
+            flash: None,
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct DataState {
+    pub(crate) cats: Vec<CatData>,
     pub(crate) is_refreshing: bool,
     pub(crate) last_updated: Option<DateTime<Utc>>,
     pub(crate) error: Option<String>,
-    pub(crate) show_help: bool,
-    pub(crate) flash: Option<String>,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct App {
+    pub(crate) ui: UiState,
+    pub(crate) data: DataState,
 }
 
 #[derive(Debug)]
@@ -69,21 +90,22 @@ pub(crate) enum View {
 
 impl App {
     pub(crate) fn current_view(&self) -> &View {
-        self.views.current()
+        self.ui.views.current()
     }
 
     pub(crate) fn push_view(&mut self, view: View) {
-        self.views.push(view);
+        self.ui.views.push(view);
     }
 
     pub(crate) fn pop_view(&mut self) {
-        self.views.pop();
+        self.ui.views.pop();
     }
 
     pub(crate) fn active_list_len(&self) -> usize {
-        match self.views.current() {
-            View::Home => self.cats.len(),
+        match self.ui.views.current() {
+            View::Home => self.data.cats.len(),
             View::Category { cat, .. } => self
+                .data
                 .cats
                 .iter()
                 .find(|c| c.cat == *cat)
@@ -92,6 +114,7 @@ impl App {
             View::Detail {
                 cat, group_index, ..
             } => self
+                .data
                 .cats
                 .iter()
                 .find(|c| c.cat == *cat)
@@ -105,79 +128,79 @@ impl App {
     }
 
     pub(crate) fn move_tile_forward(&mut self) {
-        let len = self.cats.len();
+        let len = self.data.cats.len();
         if len > 0 {
-            self.focused_tile = (self.focused_tile + 1) % len;
+            self.ui.focused_tile = (self.ui.focused_tile + 1) % len;
         }
     }
 
     pub(crate) fn move_tile_back(&mut self) {
-        let len = self.cats.len();
+        let len = self.data.cats.len();
         if len > 0 {
-            self.focused_tile = (self.focused_tile + len - 1) % len;
+            self.ui.focused_tile = (self.ui.focused_tile + len - 1) % len;
         }
     }
 
     pub(crate) fn move_tile_up(&mut self) {
-        let len = self.cats.len();
+        let len = self.data.cats.len();
         if len == 0 {
             return;
         }
-        let row = self.focused_tile / TILE_COLS;
-        let col = self.focused_tile % TILE_COLS;
+        let row = self.ui.focused_tile / TILE_COLS;
+        let col = self.ui.focused_tile % TILE_COLS;
         if row > 0 {
             let target = (row - 1) * TILE_COLS + col;
             if target < len {
-                self.focused_tile = target;
+                self.ui.focused_tile = target;
                 return;
             }
         }
-        self.focused_tile = (self.focused_tile + len - 1) % len;
+        self.ui.focused_tile = (self.ui.focused_tile + len - 1) % len;
     }
 
     pub(crate) fn move_tile_down(&mut self) {
-        let len = self.cats.len();
+        let len = self.data.cats.len();
         if len == 0 {
             return;
         }
-        let row = self.focused_tile / TILE_COLS;
-        let col = self.focused_tile % TILE_COLS;
+        let row = self.ui.focused_tile / TILE_COLS;
+        let col = self.ui.focused_tile % TILE_COLS;
         let target = (row + 1) * TILE_COLS + col;
         if target < len {
-            self.focused_tile = target;
+            self.ui.focused_tile = target;
         } else {
-            self.focused_tile = (self.focused_tile + 1) % len;
+            self.ui.focused_tile = (self.ui.focused_tile + 1) % len;
         }
     }
 
     pub(crate) fn move_tile_left(&mut self) {
-        let len = self.cats.len();
+        let len = self.data.cats.len();
         if len == 0 {
             return;
         }
-        let col = self.focused_tile % TILE_COLS;
+        let col = self.ui.focused_tile % TILE_COLS;
         if col > 0 {
-            self.focused_tile -= 1;
+            self.ui.focused_tile -= 1;
         } else {
-            self.focused_tile = (self.focused_tile + len - 1) % len;
+            self.ui.focused_tile = (self.ui.focused_tile + len - 1) % len;
         }
     }
 
     pub(crate) fn move_tile_right(&mut self) {
-        let len = self.cats.len();
+        let len = self.data.cats.len();
         if len == 0 {
             return;
         }
-        let col = self.focused_tile % TILE_COLS;
-        if col + 1 < TILE_COLS && self.focused_tile + 1 < len {
-            self.focused_tile += 1;
+        let col = self.ui.focused_tile % TILE_COLS;
+        if col + 1 < TILE_COLS && self.ui.focused_tile + 1 < len {
+            self.ui.focused_tile += 1;
         } else {
-            self.focused_tile = (self.focused_tile + 1) % len;
+            self.ui.focused_tile = (self.ui.focused_tile + 1) % len;
         }
     }
 
     pub(crate) fn move_up(&mut self) {
-        match self.views.current_mut() {
+        match self.ui.views.current_mut() {
             View::Home => {}
             View::Category { list_state, .. } | View::Detail { list_state, .. } => {
                 let sel = list_state.selected().unwrap_or(0);
@@ -190,7 +213,7 @@ impl App {
 
     pub(crate) fn move_down(&mut self) {
         let len = self.active_list_len();
-        match self.views.current_mut() {
+        match self.ui.views.current_mut() {
             View::Home => {}
             View::Category { list_state, .. } | View::Detail { list_state, .. } => {
                 let sel = list_state.selected().unwrap_or(0);
@@ -202,15 +225,15 @@ impl App {
     }
 
     pub(crate) fn update(&mut self, action: Action) -> Vec<Effect> {
-        self.flash = None;
+        self.ui.flash = None;
         match action {
             Action::Quit => vec![Effect::Quit],
             Action::ToggleHelp => {
-                self.show_help = !self.show_help;
+                self.ui.show_help = !self.ui.show_help;
                 vec![]
             }
             Action::CloseHelp => {
-                self.show_help = false;
+                self.ui.show_help = false;
                 vec![]
             }
             Action::Back => {
@@ -254,6 +277,7 @@ impl App {
                 EnterAction::OpenUrl(url) => vec![Effect::OpenUrl(url)],
                 EnterAction::OpenCategory { cat } => {
                     let len = self
+                        .data
                         .cats
                         .iter()
                         .find(|c| c.cat == cat)
@@ -291,7 +315,7 @@ impl App {
                     vec![Effect::LaunchCi { repo, run_url }]
                 }
                 InvestigateAction::None => {
-                    self.flash = Some("No investigation mapped".to_string());
+                    self.ui.flash = Some("No investigation mapped".to_string());
                     vec![]
                 }
             },
@@ -299,11 +323,11 @@ impl App {
     }
 
     pub(crate) fn selected_url(&self) -> Option<&str> {
-        match self.views.current() {
+        match self.ui.views.current() {
             View::Home => None,
             View::Category { cat, list_state } => {
                 let sel = list_state.selected().unwrap_or(0);
-                let cd = self.cats.iter().find(|c| c.cat == *cat)?;
+                let cd = self.data.cats.iter().find(|c| c.cat == *cat)?;
                 match cd.items.get(sel)? {
                     DisplayItem::Single(item) => item_url(item),
                     DisplayItem::Group { .. } => None,
@@ -315,7 +339,7 @@ impl App {
                 list_state,
             } => {
                 let sel = list_state.selected().unwrap_or(0);
-                let cd = self.cats.iter().find(|c| c.cat == *cat)?;
+                let cd = self.data.cats.iter().find(|c| c.cat == *cat)?;
                 match cd.items.get(*group_index)? {
                     DisplayItem::Group { items, .. } => items.get(sel).and_then(item_url),
                     _ => None,
@@ -370,16 +394,16 @@ pub(crate) enum Effect {
 pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
     match app.current_view() {
         View::Home => {
-            if app.cats.is_empty() {
+            if app.data.cats.is_empty() {
                 return EnterAction::None;
             }
             EnterAction::OpenCategory {
-                cat: app.cats[app.focused_tile].cat,
+                cat: app.data.cats[app.ui.focused_tile].cat,
             }
         }
         View::Category { cat, list_state } => {
             let sel = list_state.selected().unwrap_or(0);
-            let Some(cd) = app.cats.iter().find(|c| c.cat == *cat) else {
+            let Some(cd) = app.data.cats.iter().find(|c| c.cat == *cat) else {
                 return EnterAction::None;
             };
             match cd.items.get(sel) {
@@ -407,7 +431,7 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
         View::Home => return InvestigateAction::None,
         View::Category { cat, list_state } => {
             let sel = list_state.selected().unwrap_or(0);
-            let Some(cd) = app.cats.iter().find(|c| c.cat == *cat) else {
+            let Some(cd) = app.data.cats.iter().find(|c| c.cat == *cat) else {
                 return InvestigateAction::None;
             };
             let Some(display_item) = cd.items.get(sel) else {
@@ -424,7 +448,7 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
             list_state,
         } => {
             let sel = list_state.selected().unwrap_or(0);
-            let Some(cd) = app.cats.iter().find(|c| c.cat == *cat) else {
+            let Some(cd) = app.data.cats.iter().find(|c| c.cat == *cat) else {
                 return InvestigateAction::None;
             };
             let Some(display_item) = cd.items.get(*group_index) else {
@@ -453,45 +477,32 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
 #[cfg(test)]
 mod tests {
     use super::{
-        compute_investigate_action, Action, App, Category, Effect, InvestigateAction, View,
-        ViewStack,
+        compute_investigate_action, Action, App, Category, DataState, Effect, InvestigateAction,
+        UiState, View, ViewStack,
     };
     use crate::display::{CatData, DisplayItem};
     use ratatui::widgets::ListState;
     use workflows::status::StatusItem;
-
-    fn minimal_app() -> App {
-        App {
-            cats: vec![],
-            focused_tile: 0,
-            views: ViewStack::new(),
-            is_refreshing: false,
-            last_updated: None,
-            error: None,
-            show_help: false,
-            flash: None,
-        }
-    }
 
     #[test]
     fn investigate_action_launches_ci_from_category_selection() {
         let mut list_state = ListState::default();
         list_state.select(Some(0));
         let app = App {
-            cats: vec![CatData {
-                cat: Category::Errors,
-                items: vec![DisplayItem::Single(ci_failure())],
-            }],
-            focused_tile: 0,
-            views: ViewStack(vec![View::Category {
-                cat: Category::Errors,
-                list_state,
-            }]),
-            is_refreshing: false,
-            last_updated: None,
-            error: None,
-            show_help: false,
-            flash: None,
+            data: DataState {
+                cats: vec![CatData {
+                    cat: Category::Errors,
+                    items: vec![DisplayItem::Single(ci_failure())],
+                }],
+                ..DataState::default()
+            },
+            ui: UiState {
+                views: ViewStack(vec![View::Category {
+                    cat: Category::Errors,
+                    list_state,
+                }]),
+                ..UiState::default()
+            },
         };
 
         assert_eq!(
@@ -508,24 +519,24 @@ mod tests {
         let mut list_state = ListState::default();
         list_state.select(Some(0));
         let app = App {
-            cats: vec![CatData {
-                cat: Category::Errors,
-                items: vec![DisplayItem::Group {
-                    label: "group".to_string(),
-                    items: vec![ci_failure()],
+            data: DataState {
+                cats: vec![CatData {
+                    cat: Category::Errors,
+                    items: vec![DisplayItem::Group {
+                        label: "group".to_string(),
+                        items: vec![ci_failure()],
+                    }],
                 }],
-            }],
-            focused_tile: 0,
-            views: ViewStack(vec![View::Detail {
-                cat: Category::Errors,
-                group_index: 0,
-                list_state,
-            }]),
-            is_refreshing: false,
-            last_updated: None,
-            error: None,
-            show_help: false,
-            flash: None,
+                ..DataState::default()
+            },
+            ui: UiState {
+                views: ViewStack(vec![View::Detail {
+                    cat: Category::Errors,
+                    group_index: 0,
+                    list_state,
+                }]),
+                ..UiState::default()
+            },
         };
 
         assert_eq!(
@@ -542,28 +553,28 @@ mod tests {
         let mut list_state = ListState::default();
         list_state.select(Some(0));
         let app = App {
-            cats: vec![CatData {
-                cat: Category::Issues,
-                items: vec![DisplayItem::Single(StatusItem::Issue(domain::Issue {
-                    number: 31,
-                    title: "TUI investigation".to_string(),
-                    repo: domain::RepoSlug::new("ooloth", "hub"),
-                    url: "https://github.com/ooloth/hub/issues/31".to_string(),
-                    age: chrono::Duration::zero(),
-                    urgency: domain::Urgency::Low,
-                    labels: vec![],
-                }))],
-            }],
-            focused_tile: 0,
-            views: ViewStack(vec![View::Category {
-                cat: Category::Issues,
-                list_state,
-            }]),
-            is_refreshing: false,
-            last_updated: None,
-            error: None,
-            show_help: false,
-            flash: None,
+            data: DataState {
+                cats: vec![CatData {
+                    cat: Category::Issues,
+                    items: vec![DisplayItem::Single(StatusItem::Issue(domain::Issue {
+                        number: 31,
+                        title: "TUI investigation".to_string(),
+                        repo: domain::RepoSlug::new("ooloth", "hub"),
+                        url: "https://github.com/ooloth/hub/issues/31".to_string(),
+                        age: chrono::Duration::zero(),
+                        urgency: domain::Urgency::Low,
+                        labels: vec![],
+                    }))],
+                }],
+                ..DataState::default()
+            },
+            ui: UiState {
+                views: ViewStack(vec![View::Category {
+                    cat: Category::Issues,
+                    list_state,
+                }]),
+                ..UiState::default()
+            },
         };
 
         assert_eq!(compute_investigate_action(&app), InvestigateAction::None);
@@ -571,11 +582,11 @@ mod tests {
 
     #[test]
     fn update_toggle_help_flips_flag() {
-        let mut app = minimal_app();
+        let mut app = App::default();
         app.update(Action::ToggleHelp);
-        assert!(app.show_help);
+        assert!(app.ui.show_help);
         app.update(Action::ToggleHelp);
-        assert!(!app.show_help);
+        assert!(!app.ui.show_help);
     }
 
     #[test]
@@ -583,33 +594,39 @@ mod tests {
         let mut list_state = ListState::default();
         list_state.select(Some(0));
         let mut app = App {
-            views: ViewStack(vec![
-                View::Home,
-                View::Category {
-                    cat: Category::Errors,
-                    list_state,
-                },
-            ]),
-            ..minimal_app()
+            ui: UiState {
+                views: ViewStack(vec![
+                    View::Home,
+                    View::Category {
+                        cat: Category::Errors,
+                        list_state,
+                    },
+                ]),
+                ..UiState::default()
+            },
+            ..App::default()
         };
         app.update(Action::Back);
         assert!(matches!(app.current_view(), View::Home));
-        assert!(!app.views.can_go_back());
+        assert!(!app.ui.views.can_go_back());
     }
 
     #[test]
     fn update_clears_flash_before_applying_action() {
         let mut app = App {
-            flash: Some("stale".to_string()),
-            ..minimal_app()
+            ui: UiState {
+                flash: Some("stale".to_string()),
+                ..UiState::default()
+            },
+            ..App::default()
         };
         app.update(Action::ToggleHelp);
-        assert!(app.flash.is_none());
+        assert!(app.ui.flash.is_none());
     }
 
     #[test]
     fn update_quit_returns_quit_effect() {
-        let mut app = minimal_app();
+        let mut app = App::default();
         assert!(matches!(
             app.update(Action::Quit).as_slice(),
             [Effect::Quit]
@@ -619,11 +636,14 @@ mod tests {
     #[test]
     fn update_enter_on_home_opens_category() {
         let mut app = App {
-            cats: vec![CatData {
-                cat: Category::Errors,
-                items: vec![DisplayItem::Single(ci_failure())],
-            }],
-            ..minimal_app()
+            data: DataState {
+                cats: vec![CatData {
+                    cat: Category::Errors,
+                    items: vec![DisplayItem::Single(ci_failure())],
+                }],
+                ..DataState::default()
+            },
+            ..App::default()
         };
         app.update(Action::Enter);
         assert!(matches!(app.current_view(), View::Category { .. }));

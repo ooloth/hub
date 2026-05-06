@@ -173,18 +173,19 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
 }
 
 fn status_bar_left(app: &App) -> String {
-    if let Some(flash) = &app.flash {
+    if let Some(flash) = &app.ui.flash {
         return flash.clone();
     }
     let enter_action = compute_enter_action(app);
     let investigate_action = compute_investigate_action(app);
     match app.current_view() {
         View::Home => {
-            let total: usize = app.cats.iter().map(|c| c.items.len()).sum();
+            let total: usize = app.data.cats.iter().map(|c| c.items.len()).sum();
             format!("{total} items")
         }
         View::Category { cat, list_state } => {
             let n = app
+                .data
                 .cats
                 .iter()
                 .find(|c| c.cat == *cat)
@@ -213,7 +214,7 @@ fn status_bar_left(app: &App) -> String {
             group_index,
             list_state,
         } => {
-            let cd = app.cats.iter().find(|c| c.cat == *cat);
+            let cd = app.data.cats.iter().find(|c| c.cat == *cat);
             let count = match cd.and_then(|c| c.items.get(*group_index)) {
                 Some(DisplayItem::Group { items, .. }) => items.len(),
                 _ => 0,
@@ -248,13 +249,13 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         detail::render_detail(frame, app, content_area);
     }
 
-    let right_status = if app.is_refreshing {
-        if let Some(err) = &app.error {
+    let right_status = if app.data.is_refreshing {
+        if let Some(err) = &app.data.error {
             format!("refresh failed: {err}")
         } else {
             "refreshing…".to_string()
         }
-    } else if let Some(t) = app.last_updated {
+    } else if let Some(t) = app.data.last_updated {
         let mins = (Utc::now() - t).num_minutes();
         if mins == 0 {
             "updated just now".to_string()
@@ -273,7 +274,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     frame.render_widget(Paragraph::new(left).style(dim()), bar_left);
     frame.render_widget(Paragraph::new(right_status).style(dim()), bar_right);
 
-    if app.show_help {
+    if app.ui.show_help {
         let keybinds = match app.current_view() {
             View::Home => KEYBINDS_HOME,
             View::Category { .. } => KEYBINDS_CATEGORY,
@@ -295,22 +296,9 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
 mod tests {
     use super::{status_bar_left, wrap_text};
     use crate::display::{CatData, Category, DisplayItem};
-    use crate::state::{App, View, ViewStack};
+    use crate::state::{App, DataState, UiState, View, ViewStack};
     use ratatui::widgets::ListState;
     use workflows::status::StatusItem;
-
-    fn minimal_app() -> App {
-        App {
-            cats: vec![],
-            focused_tile: 0,
-            views: ViewStack::new(),
-            is_refreshing: false,
-            last_updated: None,
-            error: None,
-            show_help: false,
-            flash: None,
-        }
-    }
 
     fn pr() -> StatusItem {
         StatusItem::Pr(domain::PullRequest {
@@ -326,8 +314,11 @@ mod tests {
     #[test]
     fn status_bar_shows_flash_when_set() {
         let app = App {
-            flash: Some("something went wrong".to_string()),
-            ..minimal_app()
+            ui: UiState {
+                flash: Some("something went wrong".to_string()),
+                ..UiState::default()
+            },
+            ..App::default()
         };
         assert_eq!(status_bar_left(&app), "something went wrong");
     }
@@ -335,21 +326,24 @@ mod tests {
     #[test]
     fn status_bar_home_shows_total_item_count() {
         let app = App {
-            cats: vec![
-                CatData {
-                    cat: Category::Errors,
-                    items: vec![DisplayItem::Single(pr())],
-                },
-                CatData {
-                    cat: Category::Prs,
-                    items: vec![DisplayItem::Single(pr()), DisplayItem::Single(pr())],
-                },
-                CatData {
-                    cat: Category::Issues,
-                    items: vec![],
-                },
-            ],
-            ..minimal_app()
+            data: DataState {
+                cats: vec![
+                    CatData {
+                        cat: Category::Errors,
+                        items: vec![DisplayItem::Single(pr())],
+                    },
+                    CatData {
+                        cat: Category::Prs,
+                        items: vec![DisplayItem::Single(pr()), DisplayItem::Single(pr())],
+                    },
+                    CatData {
+                        cat: Category::Issues,
+                        items: vec![],
+                    },
+                ],
+                ..DataState::default()
+            },
+            ..App::default()
         };
         assert_eq!(status_bar_left(&app), "3 items");
     }
@@ -359,15 +353,20 @@ mod tests {
         let mut list_state = ListState::default();
         list_state.select(Some(1));
         let app = App {
-            cats: vec![CatData {
-                cat: Category::Prs,
-                items: vec![DisplayItem::Single(pr()), DisplayItem::Single(pr())],
-            }],
-            views: ViewStack(vec![View::Category {
-                cat: Category::Prs,
-                list_state,
-            }]),
-            ..minimal_app()
+            data: DataState {
+                cats: vec![CatData {
+                    cat: Category::Prs,
+                    items: vec![DisplayItem::Single(pr()), DisplayItem::Single(pr())],
+                }],
+                ..DataState::default()
+            },
+            ui: UiState {
+                views: ViewStack(vec![View::Category {
+                    cat: Category::Prs,
+                    list_state,
+                }]),
+                ..UiState::default()
+            },
         };
         assert!(status_bar_left(&app).starts_with("2/2"));
     }
