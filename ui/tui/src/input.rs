@@ -3,37 +3,52 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::state::{Action, App, View};
 
 pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
-    let on_home = matches!(app.current_view(), View::Home);
     let can_go_back = app.views.len() > 1;
 
     match (key.code, key.modifiers) {
-        (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => Some(Action::Quit),
+        (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+            return Some(Action::Quit);
+        }
+        (KeyCode::Char('?'), _) => return Some(Action::ToggleHelp),
+        (KeyCode::Esc, _) if app.show_help => return Some(Action::CloseHelp),
+        (KeyCode::Esc, _) if can_go_back => return Some(Action::Back),
+        _ => {}
+    }
 
-        (KeyCode::Char('?'), _) => Some(Action::ToggleHelp),
-        (KeyCode::Esc, _) if app.show_help => Some(Action::CloseHelp),
-        (KeyCode::Esc, _) if can_go_back => Some(Action::Back),
+    if app.show_help {
+        return None;
+    }
 
-        _ if app.show_help => None,
+    match app.current_view() {
+        View::Home => home_keys(key),
+        View::Category { .. } | View::Detail { .. } => list_keys(key),
+    }
+}
 
-        // Home tile navigation
-        (KeyCode::Tab, _) if on_home => Some(Action::MoveTileForward),
-        (KeyCode::BackTab, _) if on_home => Some(Action::MoveTileBack),
-        (KeyCode::Right, _) | (KeyCode::Char('l'), _) if on_home => Some(Action::MoveTileRight),
-        (KeyCode::Left, _) | (KeyCode::Char('h'), _) if on_home => Some(Action::MoveTileLeft),
-        (KeyCode::Down, _) | (KeyCode::Char('j'), _) if on_home => Some(Action::MoveTileDown),
-        (KeyCode::Up, _) | (KeyCode::Char('k'), _) if on_home => Some(Action::MoveTileUp),
+fn home_keys(key: KeyEvent) -> Option<Action> {
+    match (key.code, key.modifiers) {
+        (KeyCode::Tab, _) => Some(Action::MoveTileForward),
+        (KeyCode::BackTab, _) => Some(Action::MoveTileBack),
+        (KeyCode::Right, _) | (KeyCode::Char('l'), _) => Some(Action::MoveTileRight),
+        (KeyCode::Left, _) | (KeyCode::Char('h'), _) => Some(Action::MoveTileLeft),
+        (KeyCode::Down, _) | (KeyCode::Char('j'), _) => Some(Action::MoveTileDown),
+        (KeyCode::Up, _) | (KeyCode::Char('k'), _) => Some(Action::MoveTileUp),
+        (KeyCode::Enter, _) => Some(Action::Enter),
+        (KeyCode::Char('i'), _) => Some(Action::Investigate),
+        _ => None,
+    }
+}
 
-        // List navigation
+fn list_keys(key: KeyEvent) -> Option<Action> {
+    match (key.code, key.modifiers) {
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) | (KeyCode::Char('h'), _) => {
             Some(Action::MoveUp)
         }
         (KeyCode::Down, _) | (KeyCode::Char('j'), _) | (KeyCode::Char('l'), _) => {
             Some(Action::MoveDown)
         }
-
         (KeyCode::Enter, _) => Some(Action::Enter),
         (KeyCode::Char('i'), _) => Some(Action::Investigate),
-
         _ => None,
     }
 }
