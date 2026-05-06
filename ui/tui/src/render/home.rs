@@ -135,3 +135,58 @@ pub(super) fn render_home(frame: &mut ratatui::Frame, app: &App, area: Rect) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use ratatui::{
+        backend::TestBackend,
+        style::{Color, Modifier},
+        Terminal,
+    };
+
+    use crate::display::{CatData, Category};
+    use crate::state::{App, DataState};
+
+    fn two_cat_app() -> App {
+        App {
+            data: DataState {
+                cats: vec![
+                    CatData {
+                        cat: Category::Errors,
+                        items: vec![],
+                    },
+                    CatData {
+                        cat: Category::Prs,
+                        items: vec![],
+                    },
+                ],
+                ..DataState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    #[test]
+    fn focused_tile_has_green_border() {
+        let app = two_cat_app(); // focused_tile: 0 (Errors tile)
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| super::render_home(f, &app, f.area()))
+            .unwrap();
+        let cell = terminal.backend().buffer().get(0, 0);
+        assert_eq!(cell.fg, Color::Green);
+    }
+
+    #[test]
+    fn unfocused_tile_is_dimmed() {
+        let app = two_cat_app(); // focused_tile: 0, so Prs tile (x=40) is unfocused
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|f| super::render_home(f, &app, f.area()))
+            .unwrap();
+        let cell = terminal.backend().buffer().get(40, 0);
+        assert!(cell.modifier.contains(Modifier::DIM));
+    }
+}
