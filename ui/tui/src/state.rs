@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use ratatui::widgets::ListState;
-use workflows::status::StatusReport;
+use workflows::status::{StatusItem, StatusReport};
 
 use crate::display::{
     build_cats, item_investigation, item_url, CatData, Category, DisplayItem, InvestigationKind,
@@ -72,6 +72,33 @@ pub(crate) enum Screen {
         parent: CategoryView,
         view: DetailView,
     },
+}
+
+impl Screen {
+    // Returns None for Home (no item selected) and for Category when a Group
+    // is selected (the group itself is not a leaf item). Detail drills through
+    // the parent group to return the individual item under the cursor.
+    pub(crate) fn selected_status_item(&self, cats: &[CatData]) -> Option<StatusItem> {
+        match self {
+            Screen::Home => None,
+            Screen::Category(view) => {
+                let sel = view.list_state.selected().unwrap_or(0);
+                let cd = cats.iter().find(|c| c.cat == view.cat)?;
+                match cd.items.get(sel)? {
+                    DisplayItem::Single(item) => Some(item.clone()),
+                    DisplayItem::Group { .. } => None,
+                }
+            }
+            Screen::Detail { view, .. } => {
+                let sel = view.list_state.selected().unwrap_or(0);
+                let cd = cats.iter().find(|c| c.cat == view.cat)?;
+                match cd.items.get(view.group_index)? {
+                    DisplayItem::Group { items, .. } => items.get(sel).cloned(),
+                    _ => None,
+                }
+            }
+        }
+    }
 }
 
 impl App {
@@ -510,41 +537,10 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
 }
 
 pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
-    let item = match app.current_screen() {
-        Screen::Home => return InvestigateAction::None,
-        Screen::Category(view) => {
-            let sel = view.list_state.selected().unwrap_or(0);
-            let Some(cd) = app.data.cat_data(view.cat) else {
-                return InvestigateAction::None;
-            };
-            let Some(display_item) = cd.items.get(sel) else {
-                return InvestigateAction::None;
-            };
-            match display_item {
-                DisplayItem::Single(item) => item,
-                DisplayItem::Group { .. } => return InvestigateAction::None,
-            }
-        }
-        Screen::Detail { view, .. } => {
-            let sel = view.list_state.selected().unwrap_or(0);
-            let Some(cd) = app.data.cat_data(view.cat) else {
-                return InvestigateAction::None;
-            };
-            let Some(display_item) = cd.items.get(view.group_index) else {
-                return InvestigateAction::None;
-            };
-            match display_item {
-                DisplayItem::Group { items, .. } => {
-                    let Some(item) = items.get(sel) else {
-                        return InvestigateAction::None;
-                    };
-                    item
-                }
-                _ => return InvestigateAction::None,
-            }
-        }
+    let Some(item) = app.ui.screen.selected_status_item(&app.data.cats) else {
+        return InvestigateAction::None;
     };
-    match item_investigation(item) {
+    match item_investigation(&item) {
         Some(InvestigationKind::Ci { repo, run_url }) => {
             InvestigateAction::LaunchCi { repo, run_url }
         }
