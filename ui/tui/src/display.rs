@@ -49,6 +49,27 @@ pub(crate) fn item_url(item: &StatusItem) -> Option<&str> {
     }
 }
 
+pub(crate) fn item_hint(item: &StatusItem) -> Option<String> {
+    match item {
+        StatusItem::Ci(_) => Some("↩ to open · i to investigate".to_string()),
+        item => item_url(item).map(|_| "↩ to open".to_string()),
+    }
+}
+
+pub(crate) enum InvestigationKind {
+    Ci { repo: String, run_url: String },
+}
+
+pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind> {
+    match item {
+        StatusItem::Ci(c) => Some(InvestigationKind::Ci {
+            repo: c.repo.to_string(),
+            run_url: c.url.clone(),
+        }),
+        _ => None,
+    }
+}
+
 pub(crate) fn item_line(item: &StatusItem) -> String {
     match item {
         StatusItem::Pr(pr) => format!("{} · {} (#{})", pr.repo, pr.title, pr.number),
@@ -252,6 +273,32 @@ mod tests {
     #[test]
     fn item_line_formats_ci() {
         assert_eq!(item_line(&ci()), "owner/repo · CI · failure");
+    }
+
+    #[test]
+    fn item_hint_ci_includes_investigate() {
+        assert_eq!(
+            item_hint(&ci()),
+            Some("↩ to open · i to investigate".to_string())
+        );
+    }
+
+    #[test]
+    fn item_hint_pr_is_open_only() {
+        assert_eq!(item_hint(&pr()), Some("↩ to open".to_string()));
+    }
+
+    #[test]
+    fn item_investigation_ci_returns_kind() {
+        assert!(matches!(
+            item_investigation(&ci()),
+            Some(InvestigationKind::Ci { .. })
+        ));
+    }
+
+    #[test]
+    fn item_investigation_pr_returns_none() {
+        assert!(item_investigation(&pr()).is_none());
     }
 
     #[test]

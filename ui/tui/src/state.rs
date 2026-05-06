@@ -1,8 +1,9 @@
 use chrono::{DateTime, Utc};
 use ratatui::widgets::ListState;
-use workflows::status::StatusItem;
 
-use crate::display::{item_url, CatData, Category, DisplayItem};
+use crate::display::{
+    item_investigation, item_url, CatData, Category, DisplayItem, InvestigationKind,
+};
 
 pub(crate) const TILE_COLS: usize = 2;
 
@@ -474,12 +475,11 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
             }
         }
     };
-    match item {
-        StatusItem::Ci(c) => InvestigateAction::LaunchCi {
-            repo: c.repo.to_string(),
-            run_url: c.url.clone(),
-        },
-        _ => InvestigateAction::None,
+    match item_investigation(item) {
+        Some(InvestigationKind::Ci { repo, run_url }) => {
+            InvestigateAction::LaunchCi { repo, run_url }
+        }
+        None => InvestigateAction::None,
     }
 }
 

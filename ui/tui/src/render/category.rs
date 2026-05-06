@@ -1,19 +1,16 @@
+use crate::display::{display_item_line, display_item_urgency, item_hint, DisplayItem};
+use crate::state::{CategoryView, DataState};
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::Span,
     widgets::{Block, BorderType, Borders, List},
 };
-use workflows::status::StatusItem;
-
-use crate::display::{display_item_line, display_item_urgency, item_url, DisplayItem};
-use crate::state::{CategoryView, DataState};
 
 pub(super) fn hint_for_category_item(item: &DisplayItem) -> Option<String> {
     match item {
         DisplayItem::Group { .. } => Some("↩ to expand".to_string()),
-        DisplayItem::Single(StatusItem::Ci(_)) => Some("↩ to open · i to investigate".to_string()),
-        DisplayItem::Single(s) => item_url(s).map(|_| "↩ to open".to_string()),
+        DisplayItem::Single(s) => item_hint(s),
     }
 }
 

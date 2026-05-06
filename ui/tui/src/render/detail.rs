@@ -1,20 +1,11 @@
+use crate::display::{item_hint, item_line, item_urgency, DisplayItem};
+use crate::state::{DataState, DetailView};
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::Span,
     widgets::{Block, BorderType, Borders, List},
 };
-use workflows::status::StatusItem;
-
-use crate::display::{item_line, item_urgency, item_url, DisplayItem};
-use crate::state::{DataState, DetailView};
-
-pub(super) fn hint_for_detail_item(item: &StatusItem) -> Option<String> {
-    match item {
-        StatusItem::Ci(_) => Some("↩ to open · i to investigate".to_string()),
-        item => item_url(item).map(|_| "↩ to open".to_string()),
-    }
-}
 
 pub(super) fn render_detail(
     frame: &mut ratatui::Frame,
@@ -55,9 +46,7 @@ pub(super) fn render_detail(
 
     let text_width = inner.width.saturating_sub(2) as usize;
     let selected = view.list_state.selected();
-    let selected_hint: Option<String> = selected
-        .and_then(|i| items.get(i))
-        .and_then(hint_for_detail_item);
+    let selected_hint: Option<String> = selected.and_then(|i| items.get(i)).and_then(item_hint);
 
     let list_items: Vec<ratatui::widgets::ListItem> = items
         .iter()
@@ -87,45 +76,4 @@ pub(super) fn render_detail(
 
     let list = List::new(list_items).highlight_style(super::list_highlight());
     frame.render_stateful_widget(list, inner, &mut view.list_state);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::hint_for_detail_item;
-    use workflows::status::StatusItem;
-
-    fn ci() -> StatusItem {
-        StatusItem::Ci(domain::CiFailure {
-            repo: domain::RepoSlug::new("owner", "repo"),
-            workflow_name: "CI".to_string(),
-            conclusion: "failure".to_string(),
-            age: chrono::Duration::zero(),
-            urgency: domain::Urgency::High,
-            url: "https://github.com/owner/repo/actions/runs/1".to_string(),
-        })
-    }
-
-    fn pr() -> StatusItem {
-        StatusItem::Pr(domain::PullRequest {
-            number: 1,
-            title: "Fix".to_string(),
-            repo: domain::RepoSlug::new("owner", "repo"),
-            url: "https://github.com/owner/repo/pull/1".to_string(),
-            age: chrono::Duration::zero(),
-            urgency: domain::Urgency::Low,
-        })
-    }
-
-    #[test]
-    fn ci_hint_includes_investigate() {
-        assert_eq!(
-            hint_for_detail_item(&ci()),
-            Some("↩ to open · i to investigate".to_string())
-        );
-    }
-
-    #[test]
-    fn pr_hint_is_open_only() {
-        assert_eq!(hint_for_detail_item(&pr()), Some("↩ to open".to_string()));
-    }
 }
