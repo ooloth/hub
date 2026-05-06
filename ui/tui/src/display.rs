@@ -173,3 +173,134 @@ pub(crate) fn build_cats(items: Vec<StatusItem>) -> Vec<CatData> {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use workflows::status::StatusItem;
+
+    fn pr() -> StatusItem {
+        StatusItem::Pr(domain::PullRequest {
+            number: 42,
+            title: "Add feature".to_string(),
+            repo: domain::RepoSlug::new("owner", "repo"),
+            url: "https://github.com/owner/repo/pull/42".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Medium,
+        })
+    }
+
+    fn issue() -> StatusItem {
+        StatusItem::Issue(domain::Issue {
+            number: 7,
+            title: "Fix bug".to_string(),
+            repo: domain::RepoSlug::new("owner", "repo"),
+            url: "https://github.com/owner/repo/issues/7".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+            labels: vec![],
+        })
+    }
+
+    fn ci() -> StatusItem {
+        StatusItem::Ci(domain::CiFailure {
+            repo: domain::RepoSlug::new("owner", "repo"),
+            workflow_name: "CI".to_string(),
+            conclusion: "failure".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::High,
+            url: "https://github.com/owner/repo/actions/runs/1".to_string(),
+        })
+    }
+
+    fn linear() -> StatusItem {
+        StatusItem::Linear(domain::LinearIssue {
+            identifier: "ENG-99".to_string(),
+            title: "Do the thing".to_string(),
+            url: "https://linear.app/eng/issue/ENG-99".to_string(),
+            state: "In Progress".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Medium,
+        })
+    }
+
+    #[test]
+    fn item_category_ci_is_errors() {
+        assert_eq!(item_category(&ci()), Category::Errors);
+    }
+
+    #[test]
+    fn item_category_pr_is_prs() {
+        assert_eq!(item_category(&pr()), Category::Prs);
+    }
+
+    #[test]
+    fn item_category_issue_is_issues() {
+        assert_eq!(item_category(&issue()), Category::Issues);
+    }
+
+    #[test]
+    fn item_category_linear_is_issues() {
+        assert_eq!(item_category(&linear()), Category::Issues);
+    }
+
+    #[test]
+    fn item_line_formats_pr() {
+        assert_eq!(item_line(&pr()), "owner/repo · Add feature (#42)");
+    }
+
+    #[test]
+    fn item_line_formats_ci() {
+        assert_eq!(item_line(&ci()), "owner/repo · CI · failure");
+    }
+
+    #[test]
+    fn display_item_line_group_shows_label_and_count() {
+        let group = DisplayItem::Group {
+            label: "Import blocked".to_string(),
+            items: vec![ci(), ci()],
+        };
+        assert_eq!(display_item_line(&group), "Import blocked (2)");
+    }
+
+    #[test]
+    fn display_item_urgency_group_uses_first_item() {
+        let group = DisplayItem::Group {
+            label: "g".to_string(),
+            items: vec![ci(), issue()],
+        };
+        assert_eq!(display_item_urgency(&group), domain::Urgency::High);
+    }
+
+    #[test]
+    fn aggregate_wraps_singles_without_grouping() {
+        let items = vec![pr(), issue()];
+        let result = aggregate(items);
+        assert_eq!(result.len(), 2);
+        assert!(matches!(result[0], DisplayItem::Single(_)));
+        assert!(matches!(result[1], DisplayItem::Single(_)));
+    }
+
+    #[test]
+    fn aggregate_empty_input_gives_empty_output() {
+        assert!(aggregate(vec![]).is_empty());
+    }
+
+    #[test]
+    fn build_cats_produces_categories_in_all_order() {
+        let cats = build_cats(vec![]);
+        let order: Vec<Category> = cats.iter().map(|c| c.cat).collect();
+        assert_eq!(order, Category::ALL.to_vec());
+    }
+
+    #[test]
+    fn build_cats_routes_items_to_correct_categories() {
+        let cats = build_cats(vec![pr(), issue(), ci()]);
+        let errors = cats.iter().find(|c| c.cat == Category::Errors).unwrap();
+        let prs = cats.iter().find(|c| c.cat == Category::Prs).unwrap();
+        let issues = cats.iter().find(|c| c.cat == Category::Issues).unwrap();
+        assert_eq!(errors.items.len(), 1);
+        assert_eq!(prs.items.len(), 1);
+        assert_eq!(issues.items.len(), 1);
+    }
+}
