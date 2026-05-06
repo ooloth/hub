@@ -12,9 +12,9 @@ use tokio::sync::mpsc;
 use workflows::status::{StatusReport, SCHEMA_VERSION};
 
 use crate::display::build_cats;
-use crate::input::{handle_key, Effect};
+use crate::input::key_to_action;
 use crate::render::render;
-use crate::state::{App, View};
+use crate::state::{App, Effect, View};
 
 mod display;
 mod input;
@@ -194,17 +194,19 @@ async fn run_loop(
         tokio::select! {
             Some(event) = events.next() => {
                 if let Event::Key(key) = event.context("terminal event error")? {
-                    match handle_key(&mut *app, key) {
-                        Effect::Quit => break,
-                        Effect::OpenUrl(url) => { let _ = open::that_detached(url); }
-                        Effect::LaunchCi { repo, run_url } => {
-                            let cwd = std::env::current_dir()
-                                .context("failed to resolve current directory")?;
-                            if let Err(err) = launch_ci_investigation(&repo, &run_url, &cwd) {
-                                app.flash = Some(err.to_string());
+                    if let Some(action) = key_to_action(app, key) {
+                        match app.update(action) {
+                            Effect::Quit => break,
+                            Effect::OpenUrl(url) => { let _ = open::that_detached(url); }
+                            Effect::LaunchCi { repo, run_url } => {
+                                let cwd = std::env::current_dir()
+                                    .context("failed to resolve current directory")?;
+                                if let Err(err) = launch_ci_investigation(&repo, &run_url, &cwd) {
+                                    app.flash = Some(err.to_string());
+                                }
                             }
+                            Effect::None => {}
                         }
-                        Effect::None => {}
                     }
                 }
             }

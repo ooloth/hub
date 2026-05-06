@@ -168,6 +168,101 @@ impl App {
         }
     }
 
+    pub(crate) fn update(&mut self, action: Action) -> Effect {
+        self.flash = None;
+        match action {
+            Action::Quit => Effect::Quit,
+            Action::ToggleHelp => {
+                self.show_help = !self.show_help;
+                Effect::None
+            }
+            Action::CloseHelp => {
+                self.show_help = false;
+                Effect::None
+            }
+            Action::Back => {
+                self.pop_view();
+                Effect::None
+            }
+            Action::MoveTileForward => {
+                self.move_tile_forward();
+                Effect::None
+            }
+            Action::MoveTileBack => {
+                self.move_tile_back();
+                Effect::None
+            }
+            Action::MoveTileUp => {
+                self.move_tile_up();
+                Effect::None
+            }
+            Action::MoveTileDown => {
+                self.move_tile_down();
+                Effect::None
+            }
+            Action::MoveTileLeft => {
+                self.move_tile_left();
+                Effect::None
+            }
+            Action::MoveTileRight => {
+                self.move_tile_right();
+                Effect::None
+            }
+            Action::MoveUp => {
+                self.move_up();
+                Effect::None
+            }
+            Action::MoveDown => {
+                self.move_down();
+                Effect::None
+            }
+            Action::Enter => match compute_enter_action(self) {
+                EnterAction::None => Effect::None,
+                EnterAction::OpenUrl(url) => Effect::OpenUrl(url),
+                EnterAction::OpenCategory { cat } => {
+                    let len = self
+                        .cats
+                        .iter()
+                        .find(|c| c.cat == cat)
+                        .map(|c| c.items.len())
+                        .unwrap_or(0);
+                    let mut ls = ListState::default();
+                    if len > 0 {
+                        ls.select(Some(0));
+                    }
+                    self.push_view(View::Category {
+                        cat,
+                        list_state: ls,
+                    });
+                    Effect::None
+                }
+                EnterAction::OpenDetail {
+                    cat,
+                    group_index,
+                    item_count,
+                } => {
+                    let mut ds = ListState::default();
+                    if item_count > 0 {
+                        ds.select(Some(0));
+                    }
+                    self.push_view(View::Detail {
+                        cat,
+                        group_index,
+                        list_state: ds,
+                    });
+                    Effect::None
+                }
+            },
+            Action::Investigate => match compute_investigate_action(self) {
+                InvestigateAction::LaunchCi { repo, run_url } => Effect::LaunchCi { repo, run_url },
+                InvestigateAction::None => {
+                    self.flash = Some("No investigation mapped".to_string());
+                    Effect::None
+                }
+            },
+        }
+    }
+
     pub(crate) fn selected_url(&self) -> Option<&str> {
         match self.views.last().unwrap() {
             View::Home => None,
@@ -211,6 +306,30 @@ pub(crate) enum EnterAction {
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum InvestigateAction {
     None,
+    LaunchCi { repo: String, run_url: String },
+}
+
+pub(crate) enum Action {
+    Quit,
+    ToggleHelp,
+    CloseHelp,
+    Back,
+    MoveTileForward,
+    MoveTileBack,
+    MoveTileUp,
+    MoveTileDown,
+    MoveTileLeft,
+    MoveTileRight,
+    MoveUp,
+    MoveDown,
+    Enter,
+    Investigate,
+}
+
+pub(crate) enum Effect {
+    None,
+    Quit,
+    OpenUrl(String),
     LaunchCi { repo: String, run_url: String },
 }
 
@@ -299,10 +418,25 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
 
 #[cfg(test)]
 mod tests {
-    use super::{compute_investigate_action, App, Category, InvestigateAction, View};
+    use super::{
+        compute_investigate_action, Action, App, Category, Effect, InvestigateAction, View,
+    };
     use crate::display::{CatData, DisplayItem};
     use ratatui::widgets::ListState;
     use workflows::status::StatusItem;
+
+    fn minimal_app() -> App {
+        App {
+            cats: vec![],
+            focused_tile: 0,
+            views: vec![View::Home],
+            is_refreshing: false,
+            last_updated: None,
+            error: None,
+            show_help: false,
+            flash: None,
+        }
+    }
 
     #[test]
     fn investigate_action_launches_ci_from_category_selection() {
@@ -398,6 +532,63 @@ mod tests {
         };
 
         assert_eq!(compute_investigate_action(&app), InvestigateAction::None);
+    }
+
+    #[test]
+    fn update_toggle_help_flips_flag() {
+        let mut app = minimal_app();
+        app.update(Action::ToggleHelp);
+        assert!(app.show_help);
+        app.update(Action::ToggleHelp);
+        assert!(!app.show_help);
+    }
+
+    #[test]
+    fn update_back_pops_view() {
+        let mut list_state = ListState::default();
+        list_state.select(Some(0));
+        let mut app = App {
+            views: vec![
+                View::Home,
+                View::Category {
+                    cat: Category::Errors,
+                    list_state,
+                },
+            ],
+            ..minimal_app()
+        };
+        app.update(Action::Back);
+        assert!(matches!(app.current_view(), View::Home));
+        assert_eq!(app.views.len(), 1);
+    }
+
+    #[test]
+    fn update_clears_flash_before_applying_action() {
+        let mut app = App {
+            flash: Some("stale".to_string()),
+            ..minimal_app()
+        };
+        app.update(Action::ToggleHelp);
+        assert!(app.flash.is_none());
+    }
+
+    #[test]
+    fn update_quit_returns_quit_effect() {
+        let mut app = minimal_app();
+        assert!(matches!(app.update(Action::Quit), Effect::Quit));
+    }
+
+    #[test]
+    fn update_enter_on_home_opens_category() {
+        let mut app = App {
+            cats: vec![CatData {
+                cat: Category::Errors,
+                items: vec![DisplayItem::Single(ci_failure())],
+            }],
+            ..minimal_app()
+        };
+        app.update(Action::Enter);
+        assert!(matches!(app.current_view(), View::Category { .. }));
     }
 
     fn ci_failure() -> StatusItem {
