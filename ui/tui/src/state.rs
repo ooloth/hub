@@ -1,8 +1,10 @@
+use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use ratatui::widgets::ListState;
+use workflows::status::StatusReport;
 
 use crate::display::{
-    item_investigation, item_url, CatData, Category, DisplayItem, InvestigationKind,
+    build_cats, item_investigation, item_url, CatData, Category, DisplayItem, InvestigationKind,
 };
 
 pub(crate) const TILE_COLS: usize = 2;
@@ -410,6 +412,14 @@ pub(crate) enum Effect {
     Quit,
     OpenUrl(String),
     LaunchCi { repo: String, run_url: String },
+    StartRefresh,
+    WriteCache(String),
+}
+
+pub(crate) enum Msg {
+    Action(Action),
+    Tick,
+    FetchResult(Result<StatusReport>),
 }
 
 pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
@@ -490,15 +500,44 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
     }
 }
 
+pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
+    match msg {
+        Msg::Action(action) => Ok(app.update(action)),
+        Msg::Tick => {
+            if !matches!(app.data.refresh_state, RefreshState::InProgress) {
+                app.data.refresh_state = RefreshState::InProgress;
+                Ok(vec![Effect::StartRefresh])
+            } else {
+                Ok(vec![])
+            }
+        }
+        Msg::FetchResult(Ok(report)) => {
+            let json =
+                serde_json::to_string(&report).context("failed to serialize status report")?;
+            let cats = build_cats(report.items);
+            app.ui.focused_tile = app.ui.focused_tile.min(cats.len().saturating_sub(1));
+            app.data.cats = cats;
+            app.ui.views.reset();
+            app.data.last_updated = Some(Utc::now());
+            app.data.refresh_state = RefreshState::Idle;
+            Ok(vec![Effect::WriteCache(json)])
+        }
+        Msg::FetchResult(Err(e)) => {
+            app.data.refresh_state = RefreshState::Failed(e.to_string());
+            Ok(vec![])
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        compute_investigate_action, Action, App, Category, CategoryView, DataState, DetailView,
-        Effect, InvestigateAction, UiState, View, ViewStack,
+        compute_investigate_action, handle_msg, Action, App, Category, CategoryView, DataState,
+        DetailView, Effect, InvestigateAction, Msg, RefreshState, UiState, View, ViewStack,
     };
     use crate::display::{CatData, DisplayItem};
     use ratatui::widgets::ListState;
-    use workflows::status::StatusItem;
+    use workflows::status::{StatusItem, StatusReport};
 
     #[test]
     fn investigate_action_launches_ci_from_category_selection() {
@@ -773,6 +812,105 @@ mod tests {
         app.update(Action::Back);
         assert!(matches!(app.current_view(), View::Home));
         assert!(!app.ui.views.can_go_back());
+    }
+
+    #[test]
+    fn handle_msg_tick_when_idle_starts_refresh() {
+        let mut app = App::default();
+        let effects = handle_msg(&mut app, Msg::Tick).unwrap();
+        assert!(matches!(app.data.refresh_state, RefreshState::InProgress));
+        assert!(matches!(effects.as_slice(), [Effect::StartRefresh]));
+    }
+
+    #[test]
+    fn handle_msg_tick_when_in_progress_does_nothing() {
+        let mut app = App {
+            data: DataState {
+                refresh_state: RefreshState::InProgress,
+                ..DataState::default()
+            },
+            ..App::default()
+        };
+        let effects = handle_msg(&mut app, Msg::Tick).unwrap();
+        assert!(matches!(app.data.refresh_state, RefreshState::InProgress));
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn handle_msg_fetch_ok_sets_idle_and_updates_cats() {
+        let mut app = App {
+            data: DataState {
+                refresh_state: RefreshState::InProgress,
+                ..DataState::default()
+            },
+            ..App::default()
+        };
+        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        assert!(matches!(app.data.refresh_state, RefreshState::Idle));
+        assert!(!app.data.cats.is_empty());
+        assert!(app.data.last_updated.is_some());
+    }
+
+    #[test]
+    fn handle_msg_fetch_ok_resets_to_home() {
+        let mut ls = ListState::default();
+        ls.select(Some(0));
+        let mut app = App {
+            data: DataState {
+                refresh_state: RefreshState::InProgress,
+                ..DataState::default()
+            },
+            ui: UiState {
+                views: ViewStack(vec![
+                    View::Home,
+                    View::Category(CategoryView {
+                        cat: Category::Errors,
+                        list_state: ls,
+                    }),
+                ]),
+                ..UiState::default()
+            },
+        };
+        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        assert!(matches!(app.current_view(), View::Home));
+    }
+
+    #[test]
+    fn handle_msg_fetch_ok_returns_write_cache_effect() {
+        let mut app = App::default();
+        let effects = handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        assert!(matches!(effects.as_slice(), [Effect::WriteCache(_)]));
+    }
+
+    #[test]
+    fn handle_msg_fetch_err_sets_failed_state() {
+        let mut app = App {
+            data: DataState {
+                refresh_state: RefreshState::InProgress,
+                ..DataState::default()
+            },
+            ..App::default()
+        };
+        let effects = handle_msg(
+            &mut app,
+            Msg::FetchResult(Err(anyhow::anyhow!("network error"))),
+        )
+        .unwrap();
+        assert!(matches!(app.data.refresh_state, RefreshState::Failed(_)));
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn handle_msg_action_delegates_to_update() {
+        let mut app = App::default();
+        let effects = handle_msg(&mut app, Msg::Action(Action::Quit)).unwrap();
+        assert!(matches!(effects.as_slice(), [Effect::Quit]));
+    }
+
+    fn report_with_ci() -> StatusReport {
+        StatusReport {
+            items: vec![ci_failure()],
+        }
     }
 
     fn ci_failure() -> StatusItem {

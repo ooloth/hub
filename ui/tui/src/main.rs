@@ -14,7 +14,7 @@ use workflows::status::{StatusReport, SCHEMA_VERSION};
 use crate::display::build_cats;
 use crate::input::key_to_action;
 use crate::render::render;
-use crate::state::{App, DataState, Effect, RefreshState, UiState, ViewStack};
+use crate::state::{handle_msg, App, DataState, Effect, Msg, RefreshState, UiState, ViewStack};
 
 mod display;
 mod input;
@@ -173,53 +173,44 @@ async fn run_loop(
     'run: loop {
         terminal.draw(|f| render(f, app))?;
 
-        tokio::select! {
+        let effects: Vec<Effect> = tokio::select! {
             Some(event) = events.next() => {
                 if let Event::Key(key) = event.context("terminal event error")? {
                     if let Some(action) = key_to_action(app, key) {
-                        for effect in app.update(action) {
-                            match effect {
-                                Effect::Quit => break 'run,
-                                Effect::OpenUrl(url) => { let _ = open::that_detached(url); }
-                                Effect::LaunchCi { repo, run_url } => {
-                                    let cwd = std::env::current_dir()
-                                        .context("failed to resolve current directory")?;
-                                    if let Err(err) = investigations::launch(
-                                        investigations::ci::config(&repo, &run_url),
-                                        &cwd,
-                                    ) {
-                                        app.ui.flash = Some(err.to_string());
-                                    }
-                                }
-                            }
-                        }
+                        handle_msg(app, Msg::Action(action))?
+                    } else {
+                        vec![]
                     }
+                } else {
+                    vec![]
                 }
             }
-            _ = refresh_interval.tick() => {
-                if !matches!(app.data.refresh_state, RefreshState::InProgress) {
-                    app.data.refresh_state = RefreshState::InProgress;
+            _ = refresh_interval.tick() => handle_msg(app, Msg::Tick)?,
+            Some(result) = rx.recv() => handle_msg(app, Msg::FetchResult(result))?,
+        };
+
+        for effect in effects {
+            match effect {
+                Effect::Quit => break 'run,
+                Effect::OpenUrl(url) => {
+                    let _ = open::that_detached(url);
+                }
+                Effect::LaunchCi { repo, run_url } => {
+                    let cwd =
+                        std::env::current_dir().context("failed to resolve current directory")?;
+                    if let Err(err) =
+                        investigations::launch(investigations::ci::config(&repo, &run_url), &cwd)
+                    {
+                        app.ui.flash = Some(err.to_string());
+                    }
+                }
+                Effect::StartRefresh => {
                     spawn_fetch(config, tx.clone());
                     spawn_git_fetch(config);
                 }
-            }
-            Some(result) = rx.recv() => {
-                match result {
-                    Ok(report) => {
-                        let json = serde_json::to_string(&report)
-                            .context("failed to serialize status report")?;
-                        store::status::upsert(conn, &json, SCHEMA_VERSION)
-                            .context("failed to upsert status cache")?;
-                        let cats = build_cats(report.items);
-                        app.ui.focused_tile = app.ui.focused_tile.min(cats.len().saturating_sub(1));
-                        app.data.cats = cats;
-                        app.ui.views.reset();
-                        app.data.last_updated = Some(Utc::now());
-                        app.data.refresh_state = RefreshState::Idle;
-                    }
-                    Err(e) => {
-                        app.data.refresh_state = RefreshState::Failed(e.to_string());
-                    }
+                Effect::WriteCache(json) => {
+                    store::status::upsert(conn, &json, SCHEMA_VERSION)
+                        .context("failed to upsert status cache")?;
                 }
             }
         }
