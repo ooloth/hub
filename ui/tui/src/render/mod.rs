@@ -47,6 +47,7 @@ const KEYBINDS_HOME: &[(&str, &str)] = &[
     ("Tab", "next tile"),
     ("Shift-Tab", "prev tile"),
     ("Enter", "drill into category"),
+    ("r", "refresh"),
     ("q / Ctrl-C", "quit"),
 ];
 
@@ -58,6 +59,7 @@ const KEYBINDS_CATEGORY: &[(&str, &str)] = &[
     ("l", "next"),
     ("Enter", "open / drill into group"),
     ("i", "investigate"),
+    ("r", "refresh"),
     ("Esc", "back to home"),
     ("q / Ctrl-C", "quit"),
 ];
@@ -70,6 +72,7 @@ const KEYBINDS_DETAIL: &[(&str, &str)] = &[
     ("l", "next"),
     ("Enter", "open URL"),
     ("i", "investigate"),
+    ("r", "refresh"),
     ("Esc", "back to category"),
     ("q / Ctrl-C", "quit"),
 ];

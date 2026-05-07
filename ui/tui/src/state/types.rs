@@ -120,6 +120,7 @@ pub(crate) enum Action {
     MoveDown,
     Enter,
     Investigate,
+    Refresh,
 }
 
 pub(crate) enum Effect {

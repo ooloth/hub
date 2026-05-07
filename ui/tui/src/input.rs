@@ -10,6 +10,7 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
             return Some(Action::Quit);
         }
         (KeyCode::Char('?'), _) => return Some(Action::ToggleHelp),
+        (KeyCode::Char('r'), _) => return Some(Action::Refresh),
         (KeyCode::Esc, _) if app.ui.show_help => return Some(Action::CloseHelp),
         (KeyCode::Esc, _) if can_go_back => return Some(Action::Back),
         _ => {}
@@ -94,6 +95,7 @@ mod tests {
     #[case(ch('q'), Some(Action::Quit))]
     #[case(ctrl('c'), Some(Action::Quit))]
     #[case(ch('?'), Some(Action::ToggleHelp))]
+    #[case(ch('r'), Some(Action::Refresh))]
     fn universal_keys_fire_in_home_view(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
         assert_eq!(key_to_action(&App::default(), key), expected);
     }
@@ -102,6 +104,7 @@ mod tests {
     #[case(ch('q'), Some(Action::Quit))]
     #[case(ctrl('c'), Some(Action::Quit))]
     #[case(ch('?'), Some(Action::ToggleHelp))]
+    #[case(ch('r'), Some(Action::Refresh))]
     fn universal_keys_fire_in_category_view(
         #[case] key: KeyEvent,
         #[case] expected: Option<Action>,

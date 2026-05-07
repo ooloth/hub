@@ -21,6 +21,14 @@ impl App {
                 self.ui.show_help = false;
                 vec![]
             }
+            Action::Refresh => {
+                if !matches!(self.data.refresh_state, RefreshState::InProgress) {
+                    self.data.refresh_state = RefreshState::InProgress;
+                    vec![Effect::StartRefresh]
+                } else {
+                    vec![]
+                }
+            }
             Action::Back => {
                 self.ui.screen = match std::mem::take(&mut self.ui.screen) {
                     Screen::Detail { parent, .. } => Screen::Category(parent),
@@ -83,7 +91,11 @@ impl App {
                 self.apply_enter_action(ea)
             }
             Action::MoveUp | Action::MoveDown | Action::Investigate => vec![],
-            Action::Quit | Action::ToggleHelp | Action::CloseHelp | Action::Back => {
+            Action::Quit
+            | Action::ToggleHelp
+            | Action::CloseHelp
+            | Action::Back
+            | Action::Refresh => {
                 unreachable!()
             }
         }
@@ -110,7 +122,11 @@ impl App {
             | Action::MoveTileDown
             | Action::MoveTileLeft
             | Action::MoveTileRight => vec![],
-            Action::Quit | Action::ToggleHelp | Action::CloseHelp | Action::Back => {
+            Action::Quit
+            | Action::ToggleHelp
+            | Action::CloseHelp
+            | Action::Back
+            | Action::Refresh => {
                 unreachable!()
             }
         }
@@ -137,7 +153,11 @@ impl App {
             | Action::MoveTileDown
             | Action::MoveTileLeft
             | Action::MoveTileRight => vec![],
-            Action::Quit | Action::ToggleHelp | Action::CloseHelp | Action::Back => {
+            Action::Quit
+            | Action::ToggleHelp
+            | Action::CloseHelp
+            | Action::Back
+            | Action::Refresh => {
                 unreachable!()
             }
         }
@@ -480,6 +500,28 @@ mod tests {
         assert!(matches!(app.current_screen(), Screen::Category(_)));
         apply(&mut app, &[Action::Back]);
         assert!(matches!(app.current_screen(), Screen::Home { .. }));
+    }
+
+    #[test]
+    fn refresh_action_when_idle_starts_refresh() {
+        let mut app = App::default();
+        let effects = handle_msg(&mut app, Msg::Action(Action::Refresh)).unwrap();
+        assert!(matches!(app.data.refresh_state, RefreshState::InProgress));
+        assert!(matches!(effects.as_slice(), [Effect::StartRefresh]));
+    }
+
+    #[test]
+    fn refresh_action_when_in_progress_does_nothing() {
+        let mut app = App {
+            data: DataState {
+                refresh_state: RefreshState::InProgress,
+                ..DataState::default()
+            },
+            ..App::default()
+        };
+        let effects = handle_msg(&mut app, Msg::Action(Action::Refresh)).unwrap();
+        assert!(matches!(app.data.refresh_state, RefreshState::InProgress));
+        assert!(effects.is_empty());
     }
 
     #[test]
