@@ -42,10 +42,13 @@ pub(crate) fn item_url(item: &StatusItem) -> Option<&str> {
         StatusItem::Ci(c) => Some(&c.url),
         StatusItem::Linear(l) => Some(&l.url),
         #[cfg(feature = "private")]
-        StatusItem::MediaBlocked(_)
-        | StatusItem::MediaMissing(_)
-        | StatusItem::MediaHealth(_)
-        | StatusItem::MediaBacklog { .. } => None,
+        StatusItem::MediaBlocked(b) => Some(&b.url),
+        #[cfg(feature = "private")]
+        StatusItem::MediaMissing(m) => Some(&m.url),
+        #[cfg(feature = "private")]
+        StatusItem::MediaHealth(h) => Some(&h.url),
+        #[cfg(feature = "private")]
+        StatusItem::MediaBacklog { .. } => None,
     }
 }
 
@@ -208,6 +211,41 @@ mod tests {
     use super::*;
     use workflows::status::StatusItem;
 
+    #[cfg(feature = "private")]
+    fn media_blocked() -> StatusItem {
+        StatusItem::MediaBlocked(workflows::private::status::BlockedItem {
+            source: "Sonarr".to_string(),
+            urgency: domain::Urgency::High,
+            age: chrono::Duration::zero(),
+            title: "Show — S01E01".to_string(),
+            error: "Invalid video file".to_string(),
+            url: "http://sonarr/activity/queue".to_string(),
+        })
+    }
+
+    #[cfg(feature = "private")]
+    fn media_missing() -> StatusItem {
+        StatusItem::MediaMissing(workflows::private::status::MissingItem {
+            source: "Sonarr".to_string(),
+            urgency: domain::Urgency::Medium,
+            age: chrono::Duration::zero(),
+            title: "Show — S01E02".to_string(),
+            air_date: "2024-01-01".to_string(),
+            url: "http://sonarr/wanted/missing".to_string(),
+        })
+    }
+
+    #[cfg(feature = "private")]
+    fn media_health() -> StatusItem {
+        StatusItem::MediaHealth(workflows::private::status::HealthItem {
+            source: "Sonarr".to_string(),
+            urgency: domain::Urgency::Low,
+            age: chrono::Duration::zero(),
+            message: "Indexer unavailable".to_string(),
+            url: "https://wiki.servarr.com/sonarr/system#indexers".to_string(),
+        })
+    }
+
     fn pr() -> StatusItem {
         StatusItem::Pr(domain::PullRequest {
             number: 42,
@@ -332,6 +370,75 @@ mod tests {
     #[test]
     fn item_hint_pr_is_open_only() {
         assert_eq!(item_hint(&pr()), Some("↩ to open".to_string()));
+    }
+
+    #[test]
+    fn item_url_pr_returns_url() {
+        assert_eq!(
+            item_url(&pr()),
+            Some("https://github.com/owner/repo/pull/42")
+        );
+    }
+
+    #[test]
+    fn item_url_ci_returns_url() {
+        assert_eq!(
+            item_url(&ci()),
+            Some("https://github.com/owner/repo/actions/runs/1")
+        );
+    }
+
+    #[test]
+    fn item_url_issue_returns_url() {
+        assert_eq!(
+            item_url(&issue()),
+            Some("https://github.com/owner/repo/issues/7")
+        );
+    }
+
+    #[cfg(feature = "private")]
+    #[test]
+    fn item_url_media_blocked_returns_queue_url() {
+        assert_eq!(
+            item_url(&media_blocked()),
+            Some("http://sonarr/activity/queue")
+        );
+    }
+
+    #[cfg(feature = "private")]
+    #[test]
+    fn item_url_media_missing_returns_wanted_url() {
+        assert_eq!(
+            item_url(&media_missing()),
+            Some("http://sonarr/wanted/missing")
+        );
+    }
+
+    #[cfg(feature = "private")]
+    #[test]
+    fn item_url_media_health_returns_wiki_url() {
+        assert_eq!(
+            item_url(&media_health()),
+            Some("https://wiki.servarr.com/sonarr/system#indexers")
+        );
+    }
+
+    #[cfg(feature = "private")]
+    #[test]
+    fn item_hint_media_blocked_is_open_only() {
+        assert_eq!(item_hint(&media_blocked()), Some("↩ to open".to_string()));
+    }
+
+    #[cfg(feature = "private")]
+    #[test]
+    fn item_hint_media_missing_is_open_only() {
+        assert_eq!(item_hint(&media_missing()), Some("↩ to open".to_string()));
+    }
+
+    #[cfg(feature = "private")]
+    #[test]
+    fn item_hint_media_health_is_open_only() {
+        assert_eq!(item_hint(&media_health()), Some("↩ to open".to_string()));
     }
 
     #[test]
