@@ -148,6 +148,10 @@ impl App {
             InvestigateAction::LaunchCi { repo, run_url } => {
                 vec![Effect::LaunchCi { repo, run_url }]
             }
+            #[cfg(feature = "private")]
+            InvestigateAction::LaunchSonarrBlocked { title, error } => {
+                vec![Effect::LaunchSonarrBlocked { title, error }]
+            }
             InvestigateAction::None => {
                 self.ui.flash = Some("No investigation mapped".to_string());
                 vec![]
@@ -275,6 +279,10 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
     match item_investigation(&item) {
         Some(InvestigationKind::Ci { repo, run_url }) => {
             InvestigateAction::LaunchCi { repo, run_url }
+        }
+        #[cfg(feature = "private")]
+        Some(InvestigationKind::SonarrBlocked { title, error }) => {
+            InvestigateAction::LaunchSonarrBlocked { title, error }
         }
         None => InvestigateAction::None,
     }
@@ -572,6 +580,54 @@ mod tests {
         StatusReport {
             items: vec![ci_failure()],
         }
+    }
+
+    #[cfg(feature = "private")]
+    fn media_blocked() -> StatusItem {
+        StatusItem::MediaBlocked(workflows::private::status::BlockedItem {
+            source: "Sonarr".to_string(),
+            urgency: domain::Urgency::High,
+            age: chrono::Duration::zero(),
+            title: "Show — S01E01".to_string(),
+            error: "Invalid video file".to_string(),
+            url: "http://sonarr/activity/queue".to_string(),
+        })
+    }
+
+    #[cfg(feature = "private")]
+    #[test]
+    fn investigate_action_launches_sonarr_from_category_selection() {
+        let mut app = app_with_cat(Category::Errors, vec![DisplayItem::Single(media_blocked())]);
+        apply(&mut app, &[Action::Enter]);
+
+        assert_eq!(
+            compute_investigate_action(&app),
+            InvestigateAction::LaunchSonarrBlocked {
+                title: "Show — S01E01".to_string(),
+                error: "Invalid video file".to_string(),
+            }
+        );
+    }
+
+    #[cfg(feature = "private")]
+    #[test]
+    fn investigate_action_launches_sonarr_from_detail_selection() {
+        let mut app = app_with_cat(
+            Category::Errors,
+            vec![DisplayItem::Group {
+                label: "Sonarr · Import blocked · Invalid video file".to_string(),
+                items: vec![media_blocked()],
+            }],
+        );
+        apply(&mut app, &[Action::Enter, Action::Enter]);
+
+        assert_eq!(
+            compute_investigate_action(&app),
+            InvestigateAction::LaunchSonarrBlocked {
+                title: "Show — S01E01".to_string(),
+                error: "Invalid video file".to_string(),
+            }
+        );
     }
 
     fn ci_failure() -> StatusItem {

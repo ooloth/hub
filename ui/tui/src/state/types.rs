@@ -93,7 +93,15 @@ pub(crate) enum EnterAction {
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum InvestigateAction {
     None,
-    LaunchCi { repo: String, run_url: String },
+    LaunchCi {
+        repo: String,
+        run_url: String,
+    },
+    #[cfg(feature = "private")]
+    LaunchSonarrBlocked {
+        title: String,
+        error: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -117,7 +125,15 @@ pub(crate) enum Action {
 pub(crate) enum Effect {
     Quit,
     OpenUrl(String),
-    LaunchCi { repo: String, run_url: String },
+    LaunchCi {
+        repo: String,
+        run_url: String,
+    },
+    #[cfg(feature = "private")]
+    LaunchSonarrBlocked {
+        title: String,
+        error: String,
+    },
     StartRefresh,
     WriteCache(String),
 }

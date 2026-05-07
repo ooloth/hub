@@ -232,6 +232,23 @@ async fn run_loop(
                         Err(msg) => app.ui.flash = Some(msg),
                     }
                 }
+                #[cfg(feature = "private")]
+                Effect::LaunchSonarrBlocked { title, error } => match std::env::current_dir() {
+                    Ok(cwd) => {
+                        let mut cfg = investigations::sonarr::config(&title, &error);
+                        for var in ["SONARR_URL", "SONARR_API_KEY"] {
+                            if let Ok(val) = std::env::var(var) {
+                                cfg.env.push((var.to_string(), val));
+                            }
+                        }
+                        if let Err(err) = investigations::launch(cfg, &cwd) {
+                            app.ui.flash = Some(err.to_string());
+                        }
+                    }
+                    Err(e) => {
+                        app.ui.flash = Some(format!("Cannot determine working directory: {e}"));
+                    }
+                },
                 Effect::StartRefresh => {
                     spawn_fetch(config, tx.clone());
                     spawn_git_fetch(config);

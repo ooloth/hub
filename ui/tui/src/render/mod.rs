@@ -57,7 +57,7 @@ const KEYBINDS_CATEGORY: &[(&str, &str)] = &[
     ("k", "up"),
     ("l", "next"),
     ("Enter", "open / drill into group"),
-    ("i", "investigate CI failure"),
+    ("i", "investigate"),
     ("Esc", "back to home"),
     ("q / Ctrl-C", "quit"),
 ];
@@ -69,7 +69,7 @@ const KEYBINDS_DETAIL: &[(&str, &str)] = &[
     ("k", "up"),
     ("l", "next"),
     ("Enter", "open URL"),
-    ("i", "investigate CI failure"),
+    ("i", "investigate"),
     ("Esc", "back to category"),
     ("q / Ctrl-C", "quit"),
 ];
@@ -255,10 +255,10 @@ fn action_hints(enter: &EnterAction, investigate: &InvestigateAction) -> String 
         }
         EnterAction::OpenCategory { .. } | EnterAction::None => String::new(),
     };
-    let inv_hint = if matches!(investigate, InvestigateAction::LaunchCi { .. }) {
-        " · Press i to investigate"
-    } else {
+    let inv_hint = if matches!(investigate, InvestigateAction::None) {
         ""
+    } else {
+        " · Press i to investigate"
     };
     format!("{enter_hint}{inv_hint}")
 }
@@ -495,11 +495,22 @@ mod tests {
     }
 
     #[test]
-    fn action_hints_investigate() {
+    fn action_hints_investigate_ci() {
         let enter = EnterAction::None;
         let inv = InvestigateAction::LaunchCi {
             repo: "owner/repo".to_string(),
             run_url: "https://example.com".to_string(),
+        };
+        assert_eq!(action_hints(&enter, &inv), " · Press i to investigate");
+    }
+
+    #[cfg(feature = "private")]
+    #[test]
+    fn action_hints_investigate_sonarr() {
+        let enter = EnterAction::None;
+        let inv = InvestigateAction::LaunchSonarrBlocked {
+            title: "Show — S01E01".to_string(),
+            error: "Invalid video file".to_string(),
         };
         assert_eq!(action_hints(&enter, &inv), " · Press i to investigate");
     }

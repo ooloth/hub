@@ -55,12 +55,22 @@ pub(crate) fn item_url(item: &StatusItem) -> Option<&str> {
 pub(crate) fn item_hint(item: &StatusItem) -> Option<String> {
     match item {
         StatusItem::Ci(_) => Some("↩ to open · i to investigate".to_string()),
+        #[cfg(feature = "private")]
+        StatusItem::MediaBlocked(_) => Some("↩ to open · i to investigate".to_string()),
         item => item_url(item).map(|_| "↩ to open".to_string()),
     }
 }
 
 pub(crate) enum InvestigationKind {
-    Ci { repo: String, run_url: String },
+    Ci {
+        repo: String,
+        run_url: String,
+    },
+    #[cfg(feature = "private")]
+    SonarrBlocked {
+        title: String,
+        error: String,
+    },
 }
 
 pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind> {
@@ -68,6 +78,11 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
         StatusItem::Ci(c) => Some(InvestigationKind::Ci {
             repo: c.repo.to_string(),
             run_url: c.url.clone(),
+        }),
+        #[cfg(feature = "private")]
+        StatusItem::MediaBlocked(b) => Some(InvestigationKind::SonarrBlocked {
+            title: b.title.clone(),
+            error: b.error.clone(),
         }),
         _ => None,
     }
@@ -425,8 +440,11 @@ mod tests {
 
     #[cfg(feature = "private")]
     #[test]
-    fn item_hint_media_blocked_is_open_only() {
-        assert_eq!(item_hint(&media_blocked()), Some("↩ to open".to_string()));
+    fn item_hint_media_blocked_includes_investigate() {
+        assert_eq!(
+            item_hint(&media_blocked()),
+            Some("↩ to open · i to investigate".to_string())
+        );
     }
 
     #[cfg(feature = "private")]
@@ -452,6 +470,27 @@ mod tests {
     #[test]
     fn item_investigation_pr_returns_none() {
         assert!(item_investigation(&pr()).is_none());
+    }
+
+    #[cfg(feature = "private")]
+    #[test]
+    fn item_investigation_media_blocked_returns_sonarr_kind() {
+        assert!(matches!(
+            item_investigation(&media_blocked()),
+            Some(InvestigationKind::SonarrBlocked { .. })
+        ));
+    }
+
+    #[cfg(feature = "private")]
+    #[test]
+    fn item_investigation_media_missing_returns_none() {
+        assert!(item_investigation(&media_missing()).is_none());
+    }
+
+    #[cfg(feature = "private")]
+    #[test]
+    fn item_investigation_media_health_returns_none() {
+        assert!(item_investigation(&media_health()).is_none());
     }
 
     #[test]

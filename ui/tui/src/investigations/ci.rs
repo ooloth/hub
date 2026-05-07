@@ -5,6 +5,7 @@ pub(crate) fn config(repo: &str, run_url: &str) -> LaunchConfig {
         command: format!(
             "claude  --dangerously-skip-permissions '/github-ci-investigate {repo} {run_url}'"
         ),
+        env: vec![],
     }
 }
 
