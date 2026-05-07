@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 pub(crate) mod ci;
+pub(crate) mod loki;
 #[cfg(feature = "private")]
 pub(crate) mod sonarr;
 

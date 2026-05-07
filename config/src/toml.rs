@@ -27,6 +27,7 @@ pub struct Environment {
     pub cluster: Option<String>,
     pub namespace: Option<String>,
     pub loki_endpoint: Option<String>,
+    pub grafana_url: Option<String>,
     #[serde(default)]
     pub workflow: Vec<WorkflowConfig>,
 }

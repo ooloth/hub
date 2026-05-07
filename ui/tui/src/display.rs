@@ -41,7 +41,7 @@ pub(crate) fn item_url(item: &StatusItem) -> Option<&str> {
         StatusItem::Issue(i) => Some(&i.url),
         StatusItem::Ci(c) => Some(&c.url),
         StatusItem::Linear(l) => Some(&l.url),
-        StatusItem::Loki(_) => None,
+        StatusItem::Loki(l) => Some(l.url.as_str()).filter(|u| !u.is_empty()),
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => Some(&b.url),
         #[cfg(feature = "private")]
@@ -55,7 +55,7 @@ pub(crate) fn item_url(item: &StatusItem) -> Option<&str> {
 
 pub(crate) fn item_hint(item: &StatusItem) -> Option<String> {
     match item {
-        StatusItem::Ci(_) => Some("↩ to open · i to investigate".to_string()),
+        StatusItem::Ci(_) | StatusItem::Loki(_) => Some("↩ to open · i to investigate".to_string()),
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(_) => Some("↩ to open · i to investigate".to_string()),
         item => item_url(item).map(|_| "↩ to open".to_string()),
@@ -66,6 +66,13 @@ pub(crate) enum InvestigationKind {
     Ci {
         repo: String,
         run_url: String,
+    },
+    Loki {
+        project: String,
+        env: String,
+        title: String,
+        message: String,
+        line: String,
     },
     #[cfg(feature = "private")]
     SonarrBlocked {
@@ -79,6 +86,13 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
         StatusItem::Ci(c) => Some(InvestigationKind::Ci {
             repo: c.repo.to_string(),
             run_url: c.url.clone(),
+        }),
+        StatusItem::Loki(l) => Some(InvestigationKind::Loki {
+            project: l.project.clone(),
+            env: l.env.clone(),
+            title: l.title.clone(),
+            message: l.message.clone(),
+            line: l.line.clone(),
         }),
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => Some(InvestigationKind::SonarrBlocked {
@@ -103,10 +117,9 @@ pub(crate) fn item_line(item: &StatusItem) -> String {
             }
         }
         StatusItem::Linear(l) => format!("Linear · {} ({})", l.title, l.identifier),
-        StatusItem::Loki(l) => format!(
-            "{} · {} · {} · {} errors in {}",
-            l.project, l.env, l.title, l.error_count, l.lookback
-        ),
+        StatusItem::Loki(l) => {
+            format!("{} · {} · {} · {}", l.project, l.env, l.title, l.message)
+        }
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => format!("{} · Import blocked · {}", b.source, b.title),
         #[cfg(feature = "private")]
@@ -173,9 +186,15 @@ pub(crate) fn item_category(item: &StatusItem) -> Category {
     }
 }
 
-pub(crate) fn group_key(_item: &StatusItem) -> Option<String> {
+pub(crate) fn group_key(item: &StatusItem) -> Option<String> {
+    if let StatusItem::Loki(l) = item {
+        return Some(format!(
+            "{} · {} · {} · {}",
+            l.project, l.env, l.title, l.message
+        ));
+    }
     #[cfg(feature = "private")]
-    if let StatusItem::MediaBlocked(b) = _item {
+    if let StatusItem::MediaBlocked(b) = item {
         return Some(format!("{} · Import blocked · {}", b.source, b.error));
     }
     None

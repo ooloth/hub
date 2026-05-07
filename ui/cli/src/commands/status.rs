@@ -98,14 +98,12 @@ fn render_line(item: &StatusItem) {
             l.url,
         ),
         StatusItem::Loki(l) => println!(
-            "  {}  {} · {} · {} · {} errors in {} (threshold: {})",
+            "  {}  {} · {} · {} · {}",
             tier_label(l.urgency),
             l.project,
             l.env,
             l.title,
-            l.error_count,
-            l.lookback,
-            l.threshold,
+            l.message,
         ),
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => println!(

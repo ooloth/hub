@@ -31,6 +31,7 @@ HubToml {
                         "default",
                     ),
                     loki_endpoint: None,
+                    grafana_url: None,
                     workflow: [
                         LokiLogs {
                             title: "app errors",
@@ -58,6 +59,7 @@ HubToml {
                     cluster: None,
                     namespace: None,
                     loki_endpoint: None,
+                    grafana_url: None,
                     workflow: [
                         UserActivityGcp {
                             include_users: [

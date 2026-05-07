@@ -239,6 +239,25 @@ async fn run_loop(
                         Err(msg) => app.ui.flash = Some(msg),
                     }
                 }
+                Effect::LaunchLoki {
+                    project,
+                    env,
+                    title,
+                    message,
+                    line,
+                } => match std::env::current_dir() {
+                    Ok(cwd) => {
+                        if let Err(err) = investigations::launch(
+                            investigations::loki::config(&project, &env, &title, &message, &line),
+                            &cwd,
+                        ) {
+                            app.ui.flash = Some(err.to_string());
+                        }
+                    }
+                    Err(e) => {
+                        app.ui.flash = Some(format!("Cannot determine working directory: {e}"));
+                    }
+                },
                 #[cfg(feature = "private")]
                 Effect::LaunchSonarrBlocked { title, error } => match std::env::current_dir() {
                     Ok(cwd) => {

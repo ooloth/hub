@@ -168,6 +168,19 @@ impl App {
             InvestigateAction::LaunchCi { repo, run_url } => {
                 vec![Effect::LaunchCi { repo, run_url }]
             }
+            InvestigateAction::LaunchLoki {
+                project,
+                env,
+                title,
+                message,
+                line,
+            } => vec![Effect::LaunchLoki {
+                project,
+                env,
+                title,
+                message,
+                line,
+            }],
             #[cfg(feature = "private")]
             InvestigateAction::LaunchSonarrBlocked { title, error } => {
                 vec![Effect::LaunchSonarrBlocked { title, error }]
@@ -300,6 +313,19 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
         Some(InvestigationKind::Ci { repo, run_url }) => {
             InvestigateAction::LaunchCi { repo, run_url }
         }
+        Some(InvestigationKind::Loki {
+            project,
+            env,
+            title,
+            message,
+            line,
+        }) => InvestigateAction::LaunchLoki {
+            project,
+            env,
+            title,
+            message,
+            line,
+        },
         #[cfg(feature = "private")]
         Some(InvestigationKind::SonarrBlocked { title, error }) => {
             InvestigateAction::LaunchSonarrBlocked { title, error }

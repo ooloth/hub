@@ -107,19 +107,24 @@ pub struct LokiEnv {
     pub env: String,
     pub endpoint: String,
     pub token: Option<String>,
+    pub grafana_url: Option<String>,
     pub queries: Vec<LokiQuery>,
 }
 
-/// Emitted when a Loki query returns at least `threshold` entries.
+/// One log entry returned by a Loki query that breached its threshold.
+/// Emitted once per raw log line; the display layer groups by `message`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LokiErrors {
+pub struct LokiEntry {
     pub title: String,
     pub project: String,
     pub env: String,
-    pub error_count: u32,
-    pub threshold: u32,
+    /// The `message` stream label — stable error category, used as the grouping key.
+    pub message: String,
+    /// Raw JSON log line, passed to investigation agents for context.
+    pub line: String,
     pub lookback: String,
     #[serde(with = "duration_secs")]
     pub age: chrono::Duration,
     pub urgency: Urgency,
+    pub url: String,
 }

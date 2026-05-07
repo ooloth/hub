@@ -76,6 +76,10 @@
           "type": "string",
           "description": "Base URL of the Loki HTTP API — e.g. https://loki.example.com. Required by loki-logs workflows."
         },
+        "grafana_url": {
+          "type": "string",
+          "description": "Base URL of the Grafana instance — e.g. https://grafana.example.com. When set, loki-logs items link to Grafana Explore."
+        },
         "workflow": {
           "type": "array",
           "description": "Workflows scoped to this environment.",

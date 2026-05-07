@@ -120,6 +120,7 @@ impl Config {
                         env: env.env.clone(),
                         endpoint,
                         token: self.loki_token.clone(),
+                        grafana_url: env.grafana_url.clone(),
                         queries,
                     })
                 })

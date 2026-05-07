@@ -3,7 +3,7 @@ use domain::{CiFailure, Issue, LinearIssue, PullRequest, Urgency};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 
-pub const SCHEMA_VERSION: i32 = 4;
+pub const SCHEMA_VERSION: i32 = 5;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum StatusItem {
@@ -11,7 +11,7 @@ pub enum StatusItem {
     Issue(Issue),
     Ci(CiFailure),
     Linear(LinearIssue),
-    Loki(domain::LokiErrors),
+    Loki(domain::LokiEntry),
     #[cfg(feature = "private")]
     MediaBlocked(crate::private::status::BlockedItem),
     #[cfg(feature = "private")]

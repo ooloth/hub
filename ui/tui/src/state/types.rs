@@ -97,6 +97,13 @@ pub(crate) enum InvestigateAction {
         repo: String,
         run_url: String,
     },
+    LaunchLoki {
+        project: String,
+        env: String,
+        title: String,
+        message: String,
+        line: String,
+    },
     #[cfg(feature = "private")]
     LaunchSonarrBlocked {
         title: String,
@@ -129,6 +136,13 @@ pub(crate) enum Effect {
     LaunchCi {
         repo: String,
         run_url: String,
+    },
+    LaunchLoki {
+        project: String,
+        env: String,
+        title: String,
+        message: String,
+        line: String,
     },
     #[cfg(feature = "private")]
     LaunchSonarrBlocked {
