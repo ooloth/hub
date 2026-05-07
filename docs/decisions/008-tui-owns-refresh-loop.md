@@ -16,8 +16,7 @@ from the cache. Daemon must be running for either to see fresh data.
 **B — TUI owns the refresh loop.** The TUI process starts its own tokio
 interval task, reads from SQLite on launch (whatever is cached), and
 writes back after each refresh. No separate process. The CLI continues
-doing live fetches, but can also read from the same SQLite cache as a
-convenience when the TUI has been running recently.
+doing live fetches on every invocation; it does not read from the cache.
 
 ## Decision
 

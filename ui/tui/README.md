@@ -96,9 +96,9 @@ Claude Code skill with the relevant context as arguments.
 
 **Adding a new investigation type** (e.g. Grafana logs):
 
-1. Add an `Effect` variant in `state.rs`: `LaunchGrafana { log_url: String }`
-2. Add a `InvestigateAction` variant and handle it in
-   `compute_investigate_action()` in `state.rs`
+1. Add an `Effect` variant in `state/types.rs`: `LaunchGrafana { log_url: String }`
+2. Add an `InvestigateAction` variant in `state/types.rs` and handle it in
+   `compute_investigate_action()` in `state/update.rs`
 3. Create `investigations/grafana.rs` with a `launch(log_url, cwd)` function
    and its unit test
 4. Declare `pub(crate) mod grafana;` in `investigations/mod.rs`
@@ -113,8 +113,16 @@ constant in `workflows::status`. When the TUI reads a cached row, it checks
 live fetch, discarding the stale row.
 
 **Bump `SCHEMA_VERSION` whenever `StatusReport` or any nested type changes in
-a backward-incompatible way.** Forgetting to bump means old cached bytes get
-deserialized into the new shape and will likely panic or produce garbage.
+a way that would break deserialization of a cached row.** Forgetting to bump
+means old cached bytes get deserialized into the new shape and will likely
+panic or produce garbage.
+
+Rules of thumb:
+- Adding a new variant to `StatusItem` → bump (old cache won't have the tag)
+- Removing or renaming a field → bump
+- Changing a field's type → bump
+- Adding a new optional field with `#[serde(default)]` → no bump needed
+- Renaming the enum variant itself → bump
 
 ## Navigation
 

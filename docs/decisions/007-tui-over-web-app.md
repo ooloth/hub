@@ -24,9 +24,10 @@ navigation is the entire UI needed. Nothing about this loop requires a browser.
 
 The agent interaction layer is Claude Code, not hub. Hub's job is to surface
 signals and hand off to the right investigation skill with context pre-loaded.
-A keybinding that opens `claude /loki-investigate` in a new tmux pane, with
-hub.toml already providing the endpoint, query, and project name, is the
-complete agent integration story. Hub is the launcher; Claude Code is the
+A keybinding that opens `claude /github-ci-investigate` in a new tmux pane,
+with the repo and run URL pre-loaded from the selected item, is the pattern —
+already implemented for CI failures. The same pattern extends to any signal
+type (logs, alerts, disk usage). Hub is the launcher; Claude Code is the
 investigator. Hub does not need to build a chat interface.
 
 The TUI constraints are features, not limitations:
@@ -42,10 +43,10 @@ The TUI constraints are features, not limitations:
 - Ratatui is the UI library. No browser dependencies, no HTTP server, no
   JavaScript build toolchain.
 - The keybinding that launches a Claude Code skill from a selected item is
-  load-bearing. It must pre-load hub.toml context (endpoint, query, project
-  name) so the investigation starts immediately with zero manual setup.
-  Design this handoff explicitly — it is the seam between hub and the
-  agent layer.
+  load-bearing. It must pre-load context from the selected item and hub.toml
+  so the investigation starts immediately with zero manual setup. Design each
+  new handoff explicitly — it is the seam between hub and the agent layer.
+  See `ui/tui/src/investigations/` for the existing CI pattern.
 - Features that seem to call for browser UI are a signal to question whether
   the feature is core, not a signal to add a web app. "This would be easier
   in HTML/CSS" is not a sufficient reason to abandon the no-server constraint.
