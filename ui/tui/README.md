@@ -56,8 +56,8 @@ Decision logic is extracted into pure helper functions that can be:
 - `status_bar_left(app)` (`render/mod.rs`) — computes the left status bar
   string from the current view state and selected item
 - `hint_for_category_item(item)` (`render/category.rs`) — returns the
-  action hint text for the selected item in a category list
-- `hint_for_detail_item(item)` (`render/detail.rs`) — same for detail view
+  action hint text for the selected item in a category list (wraps
+  `item_hint` from `display.rs` and adds Group-specific handling)
 
 Visual constants live in `render/mod.rs` and are accessed by submodules
 via `super::`:
@@ -72,7 +72,7 @@ via `super::`:
 
 **Adding a new view:**
 
-1. Add a variant to `View` in `state.rs`; include a `ListState` field if
+1. Add a variant to `Screen` in `state/types.rs`; include a `ListState` field if
    the view has a scrollable list
 2. Push the new view from `App::update(Action::Enter)` when appropriate
 3. Add a render function in `render/`; extract any decision logic (what to

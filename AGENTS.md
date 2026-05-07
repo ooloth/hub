@@ -14,7 +14,7 @@ store/       # local SQLite reads/writes
 workflows/   # orchestrated operations; the "what hub does"
 ui/
   cli/       # hub binary — bootstraps config, wires deps, calls workflows
-  tui/       # hub-tui binary (planned)
+  tui/       # hub-tui binary
 scripts/     # dev/ops scripts; not part of the binary
 docs/        # architecture, conventions, decisions
 ```

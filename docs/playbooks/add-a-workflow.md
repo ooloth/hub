@@ -100,3 +100,9 @@ If the workflow is private (not for the public repo), add it to `hub-private`
 instead: client in `hub-private/clients/src/`, workflow in
 `hub-private/workflows/src/`, and re-export it from the respective `mod.rs`.
 See [Add a Private Workflow](add-a-private-workflow.md) and [Private Workflows](../architecture/private-workflows.md) for the full model.
+
+## Done when
+
+`just check` and `just test` pass, and adding the workflow name to `hub.toml`
+causes `just cli` (or `just tui`) to display the workflow's items in the
+status output.

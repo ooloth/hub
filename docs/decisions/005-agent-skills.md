@@ -22,11 +22,12 @@ they must not be conflated:
 
 ## Decision
 
-### Background automation → `agents/` crate
+### Background automation → `agents/` crate (planned, not yet built)
 
-Automation skills live in an `agents/` crate alongside `clients/`. The
-Anthropic API is treated as another external service — `agents/` is
-its adapter, the same way `clients/github/` adapts the GitHub API.
+The intended home for automation skills is an `agents/` crate alongside
+`clients/`. The Anthropic API would be treated as another external
+service — `agents/` would be its adapter, the same way `clients/github/`
+adapts the GitHub API.
 
 ```
 workflows/ → clients/github    # fetch (deterministic)
@@ -34,8 +35,8 @@ workflows/ → clients/github    # fetch (deterministic)
            → clients/github    # act (deterministic)
 ```
 
-Individual skills are named functions in `agents/` — each wraps a
-prompt and returns structured output. Examples:
+Individual skills would be named functions in `agents/` — each wrapping a
+prompt and returning structured output. Examples:
 
 - `agents::classify::score_urgency(items) -> Vec<ScoredItem>`
 - `agents::errors::group_traces(traces) -> Vec<ErrorGroup>`
@@ -45,6 +46,11 @@ Keeping `agents/` separate from `clients/` makes the non-determinism
 explicit: everything in `clients/` is deterministic and testable with
 fixed inputs; everything in `agents/` involves LLM judgment and
 requires different testing strategies (snapshot tests, evals).
+
+**The `agents/` crate has not been built yet.** All current hub agent
+capability lives in `.claude/skills/` (interactive investigation skills).
+Background automation will be added to `agents/` when a concrete use case
+warrants it.
 
 ### Interactive investigation → Claude Code skills in hub's repo
 
@@ -70,11 +76,11 @@ See [Decision 006](006-hub-as-skill-library.md) for the full model.
 
 ## Consequences
 
-- Automation skills in `agents/` are called by workflows, run
+- When built, automation skills in `agents/` will be called by workflows, run
   unattended, and must handle degraded mode gracefully (fall back to
   rule-based logic if the LLM call fails).
-- `agents/` imports `domain/` for input/output types, same as
-  `clients/`. It does not import `clients/` or `store/`.
+- `agents/` will import `domain/` for input/output types, same as
+  `clients/`. It will not import `clients/` or `store/`.
 - Investigation skills in `.claude/skills/` are invoked by the user,
   not by workflows. They are conversations, not function calls.
 - Craft skills (drafting, reviewing, analyzing — useful interactively

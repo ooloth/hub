@@ -40,14 +40,14 @@ This is a third category of agent capability, distinct from:
 
 | Category | Location | Mode | Who runs it |
 |---|---|---|---|
-| Background automation | `agents/` crate | Single API call, structured output | Hub workflows, unattended |
+| Background automation | `agents/` crate (planned, not yet built) | Single API call, structured output | Hub workflows, unattended |
 | Hub investigation skills | `.claude/skills/` in hub's repo | Multi-turn, iterative | Human, on demand |
 | General craft skills | `~/.claude/skills/` globally | Multi-turn, general-purpose | Human, any project |
 
 ## Consequences
 
 - Hub's `.claude/skills/` directory is a first-class artifact,
-  maintained alongside `clients/`, `workflows/`, and `agents/`.
+  maintained alongside `clients/` and `workflows/`.
 - Skills are added via the `add-a-skill` playbook, not the
   `add-a-workflow` playbook.
 - Skills read hub.toml config via context that the user has loaded

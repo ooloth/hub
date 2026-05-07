@@ -66,3 +66,8 @@ doesn't error.
 - Taplo will validate your config against the schema in
   `config/schemas/hub.toml.schema.json` and surface unknown fields or
   missing required keys inline in your editor.
+
+## Done when
+
+`just check` passes and `just cli` (or `just tui`) shows the project's
+workflow items alongside existing projects.
