@@ -125,6 +125,7 @@ fn spawn_fetch(config: &config::Config, tx: mpsc::Sender<Result<StatusReport>>) 
     let ci_repos = config.github_ci_repos();
     let linear_token = config.linear_token.clone();
     let private_names = config.private_monitor_workflow_names();
+    let loki_envs = config.loki_envs();
 
     tokio::spawn(async move {
         let result = workflows::status::run(
@@ -135,6 +136,7 @@ fn spawn_fetch(config: &config::Config, tx: mpsc::Sender<Result<StatusReport>>) 
             &ci_repos,
             linear_token.as_deref(),
             private_names,
+            &loki_envs,
         )
         .await;
         let _ = tx.send(result).await;

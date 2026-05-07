@@ -3,7 +3,7 @@ use domain::{CiFailure, Issue, LinearIssue, PullRequest, Urgency};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 
-pub const SCHEMA_VERSION: i32 = 3;
+pub const SCHEMA_VERSION: i32 = 4;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum StatusItem {
@@ -11,6 +11,7 @@ pub enum StatusItem {
     Issue(Issue),
     Ci(CiFailure),
     Linear(LinearIssue),
+    Loki(domain::LokiErrors),
     #[cfg(feature = "private")]
     MediaBlocked(crate::private::status::BlockedItem),
     #[cfg(feature = "private")]
@@ -31,6 +32,7 @@ impl StatusItem {
             Self::Issue(i) => i.urgency,
             Self::Ci(c) => c.urgency,
             Self::Linear(l) => l.urgency,
+            Self::Loki(l) => l.urgency,
             #[cfg(feature = "private")]
             Self::MediaBlocked(b) => b.urgency,
             #[cfg(feature = "private")]
@@ -48,6 +50,7 @@ impl StatusItem {
             Self::Issue(i) => i.age,
             Self::Ci(c) => c.age,
             Self::Linear(l) => l.age,
+            Self::Loki(l) => l.age,
             #[cfg(feature = "private")]
             Self::MediaBlocked(b) => b.age,
             #[cfg(feature = "private")]
@@ -78,6 +81,7 @@ pub async fn run(
     ci_repos: &[(String, String)],
     linear_token: Option<&str>,
     private_workflow_names: Vec<String>,
+    loki_envs: &[domain::LokiEnv],
 ) -> Result<StatusReport> {
     let (prs, issues, assigned_issues, ci_failures, linear_issues) = tokio::join!(
         clients::github::prs_awaiting_review(github_token, pr_repos),
@@ -101,6 +105,13 @@ pub async fn run(
     items.extend(github_issues.into_iter().map(StatusItem::Issue));
     items.extend(ci_failures?.into_iter().map(StatusItem::Ci));
     items.extend(linear_issues?.into_iter().map(StatusItem::Linear));
+
+    for env in loki_envs {
+        match crate::loki::run(env).await {
+            Ok(errors) => items.extend(errors.into_iter().map(StatusItem::Loki)),
+            Err(e) => eprintln!("loki ({} · {}): {e}", env.project, env.env),
+        }
+    }
 
     #[cfg(feature = "private")]
     {

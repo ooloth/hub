@@ -16,6 +16,7 @@ pub(crate) async fn run(config: &Config) -> Result<()> {
         &config.github_ci_repos(),
         config.linear_token.as_deref(),
         config.private_monitor_workflow_names(),
+        &config.loki_envs(),
     )
     .await?;
 
@@ -95,6 +96,16 @@ fn render_line(item: &StatusItem) {
             l.title,
             l.state,
             l.url,
+        ),
+        StatusItem::Loki(l) => println!(
+            "  {}  {} · {} · {} · {} errors in {} (threshold: {})",
+            tier_label(l.urgency),
+            l.project,
+            l.env,
+            l.title,
+            l.error_count,
+            l.lookback,
+            l.threshold,
         ),
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => println!(

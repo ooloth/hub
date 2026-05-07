@@ -41,6 +41,7 @@ pub(crate) fn item_url(item: &StatusItem) -> Option<&str> {
         StatusItem::Issue(i) => Some(&i.url),
         StatusItem::Ci(c) => Some(&c.url),
         StatusItem::Linear(l) => Some(&l.url),
+        StatusItem::Loki(_) => None,
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => Some(&b.url),
         #[cfg(feature = "private")]
@@ -102,6 +103,10 @@ pub(crate) fn item_line(item: &StatusItem) -> String {
             }
         }
         StatusItem::Linear(l) => format!("Linear · {} ({})", l.title, l.identifier),
+        StatusItem::Loki(l) => format!(
+            "{} · {} · {} · {} errors in {}",
+            l.project, l.env, l.title, l.error_count, l.lookback
+        ),
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => format!("{} · Import blocked · {}", b.source, b.title),
         #[cfg(feature = "private")]
@@ -126,6 +131,7 @@ pub(crate) fn item_urgency(item: &StatusItem) -> domain::Urgency {
         StatusItem::Issue(i) => i.urgency,
         StatusItem::Ci(c) => c.urgency,
         StatusItem::Linear(l) => l.urgency,
+        StatusItem::Loki(l) => l.urgency,
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => b.urgency,
         #[cfg(feature = "private")]
@@ -156,7 +162,7 @@ pub(crate) fn display_item_urgency(item: &DisplayItem) -> domain::Urgency {
 
 pub(crate) fn item_category(item: &StatusItem) -> Category {
     match item {
-        StatusItem::Ci(_) => Category::Errors,
+        StatusItem::Ci(_) | StatusItem::Loki(_) => Category::Errors,
         StatusItem::Pr(_) => Category::Prs,
         StatusItem::Issue(_) | StatusItem::Linear(_) => Category::Issues,
         #[cfg(feature = "private")]
