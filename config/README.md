@@ -4,8 +4,8 @@ Reads env vars and `hub.toml` into typed structs. The single place where
 env var names and config file structure are known.
 
 **Rules:**
-- Only imported by `ui/cli` and `ui/tui` — never by workflows, clients, or store
-- Inner layers receive config values as arguments; they never reach out for them
+- Only `ui/cli` and `ui/tui` have this crate as a Rust dependency — workflows, clients, and store never import it
+- Inner layers receive config values as function arguments; they do not call back into config
 - Never reads secrets from files — secrets arrive as env vars, injected by `op run`
 
 **Lives here:** `std::env::var` calls, `hub.toml` parsing, validation, typed config structs,

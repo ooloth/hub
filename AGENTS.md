@@ -22,10 +22,14 @@ docs/        # architecture, conventions, decisions
 Import direction (never import rightward's left neighbor):
 
 ```
-ui/ → workflows/ → clients/ → domain/
-                 → store/   → domain/
-      config/               → domain/
+ui/ → config/              → domain/
+   → workflows/ → clients/ → domain/
+                → store/   → domain/
 ```
+
+`config/` is a direct dependency of `ui/cli` and `ui/tui`. Config values
+are passed as function arguments into workflows and clients — those crates
+do not depend on `config/` directly.
 
 ## Stack
 
@@ -122,3 +126,9 @@ tmux kill-window -t "tui-test"                  # clean up
 
 - `AGENTS.md` and `CLAUDE.md` are symlinked
 - `.agents/skills/` and `.claude/skills/` are symlinked
+
+## Directory notes
+
+`.agents/` is the agent harness tracking directory — it holds skill files and
+session state for agent runs. It is not a Rust crate. The `agents/` Rust crate
+for background automation is described in Decision 005 but has not been built yet.
