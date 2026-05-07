@@ -82,7 +82,9 @@ pub struct LinearIssue {
 pub struct CiFailure {
     pub repo: RepoSlug,
     pub workflow_name: String,
-    pub conclusion: String,
+    pub job_name: Option<String>,
+    pub step_name: Option<String>,
+    pub error: Option<String>,
     #[serde(with = "duration_secs")]
     pub age: chrono::Duration,
     pub urgency: Urgency,

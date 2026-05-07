@@ -69,7 +69,9 @@ mod tests {
         DisplayItem::Single(StatusItem::Ci(domain::CiFailure {
             repo: domain::RepoSlug::new("owner", "repo"),
             workflow_name: "CI".to_string(),
-            conclusion: "failure".to_string(),
+            job_name: None,
+            step_name: None,
+            error: None,
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::High,
             url: "https://github.com/owner/repo/actions/runs/1".to_string(),

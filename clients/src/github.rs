@@ -118,12 +118,38 @@ struct RunsResponse {
 
 #[derive(Deserialize, Clone)]
 struct WorkflowRun {
+    id: u64,
     path: String,
     name: String,
     head_branch: String,
     conclusion: Option<String>,
     created_at: String,
     html_url: String,
+}
+
+#[derive(Deserialize)]
+struct JobsResponse {
+    jobs: Vec<Job>,
+}
+
+#[derive(Deserialize)]
+struct Job {
+    id: u64,
+    name: String,
+    conclusion: Option<String>,
+    steps: Vec<Step>,
+}
+
+#[derive(Deserialize)]
+struct Step {
+    name: String,
+    conclusion: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct Annotation {
+    annotation_level: String,
+    message: String,
 }
 
 const FAILING_CONCLUSIONS: &[&str] =
@@ -169,22 +195,107 @@ async fn fetch_repo_ci_failures(token: &str, repo: &str, lookback: &str) -> Resu
         cutoff,
     );
 
-    filtered
+    let futures: Vec<_> = filtered
         .into_iter()
         .map(|run| {
-            let (owner, name) = repo
-                .split_once('/')
-                .ok_or_else(|| anyhow::anyhow!("expected 'owner/repo', got: {repo}"))?;
-            Ok(CiFailure {
-                repo: RepoSlug::new(owner, name),
-                workflow_name: run.name,
-                conclusion: run.conclusion.unwrap_or_default(),
-                age: age(&run.created_at),
-                urgency: Urgency::High,
-                url: run.html_url,
-            })
+            let token = token.to_string();
+            let repo = repo.to_string();
+            async move { enrich_run(&token, &repo, run).await }
         })
+        .collect();
+
+    futures::future::join_all(futures)
+        .await
+        .into_iter()
         .collect()
+}
+
+async fn enrich_run(token: &str, repo: &str, run: WorkflowRun) -> Result<CiFailure> {
+    let (owner, name) = repo
+        .split_once('/')
+        .ok_or_else(|| anyhow::anyhow!("expected 'owner/repo', got: {repo}"))?;
+
+    let (job_name, step_name, job_id) = match get_failed_job(token, repo, run.id).await {
+        Some((j, s, id)) => (Some(j), s, Some(id)),
+        None => (None, None, None),
+    };
+
+    let error = match job_id {
+        Some(id) => get_first_error_annotation(token, repo, id).await,
+        None => None,
+    };
+
+    Ok(CiFailure {
+        repo: RepoSlug::new(owner, name),
+        workflow_name: run.name,
+        job_name,
+        step_name,
+        error,
+        age: age(&run.created_at),
+        urgency: Urgency::High,
+        url: run.html_url,
+    })
+}
+
+/// Returns the first failed job's name, its first failed step name (if any), and its id.
+async fn get_failed_job(
+    token: &str,
+    repo: &str,
+    run_id: u64,
+) -> Option<(String, Option<String>, u64)> {
+    let response: JobsResponse = reqwest::Client::new()
+        .get(format!(
+            "https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs"
+        ))
+        .bearer_auth(token)
+        .header("User-Agent", "hub-cli")
+        .header("Accept", "application/vnd.github.v3+json")
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+
+    let job = response
+        .jobs
+        .into_iter()
+        .find(|j| j.conclusion.as_deref() == Some("failure"))?;
+
+    let step_name = job
+        .steps
+        .iter()
+        .find(|s| s.conclusion.as_deref() == Some("failure"))
+        .map(|s| s.name.clone());
+
+    Some((job.name, step_name, job.id))
+}
+
+/// Returns the first line of the first failure-level annotation for a job.
+async fn get_first_error_annotation(token: &str, repo: &str, job_id: u64) -> Option<String> {
+    let annotations: Vec<Annotation> = reqwest::Client::new()
+        .get(format!(
+            "https://api.github.com/repos/{repo}/check-runs/{job_id}/annotations"
+        ))
+        .bearer_auth(token)
+        .header("User-Agent", "hub-cli")
+        .header("Accept", "application/vnd.github.v3+json")
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?
+        .json()
+        .await
+        .ok()?;
+
+    annotations
+        .into_iter()
+        .find(|a| a.annotation_level == "failure")
+        .and_then(|a| a.message.lines().next().map(str::to_string))
+        .filter(|s| !s.is_empty())
 }
 
 fn parse_cutoff(lookback: &str) -> Result<chrono::DateTime<Utc>> {
@@ -343,6 +454,7 @@ mod tests {
         created_at: &str,
     ) -> WorkflowRun {
         WorkflowRun {
+            id: 0,
             path: path.into(),
             name: name.into(),
             head_branch: branch.into(),

@@ -578,7 +578,9 @@ mod tests {
         StatusItem::Ci(domain::CiFailure {
             repo: domain::RepoSlug::new("ooloth", "hub"),
             workflow_name: "CI".to_string(),
-            conclusion: "failure".to_string(),
+            job_name: None,
+            step_name: None,
+            error: None,
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::High,
             url: "https://github.com/ooloth/hub/actions/runs/123".to_string(),

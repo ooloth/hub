@@ -81,11 +81,10 @@ fn render_line(item: &StatusItem) {
             }
         }
         StatusItem::Ci(c) => println!(
-            "  {}  {}  {}  {}  {}  {}",
+            "  {}  {}  {}  {}  {}",
             tier_label(c.urgency),
             c.repo,
             c.workflow_name,
-            c.conclusion,
             fmt_age(c.age),
             c.url,
         ),

@@ -74,7 +74,15 @@ pub(crate) fn item_line(item: &StatusItem) -> String {
     match item {
         StatusItem::Pr(pr) => format!("{} · {} (#{})", pr.repo, pr.title, pr.number),
         StatusItem::Issue(i) => format!("{} · {} (#{})", i.repo, i.title, i.number),
-        StatusItem::Ci(c) => format!("{} · {} · {}", c.repo, c.workflow_name, c.conclusion),
+        StatusItem::Ci(c) => {
+            let base = format!("{} · CI", c.repo);
+            match (&c.job_name, &c.step_name, &c.error) {
+                (Some(job), Some(step), Some(err)) => format!("{base} · {job} / {step} · {err}"),
+                (Some(job), Some(step), None) => format!("{base} · {job} / {step} · failed"),
+                (Some(job), None, _) => format!("{base} · {job} · failed"),
+                _ => format!("{base} · failed"),
+            }
+        }
         StatusItem::Linear(l) => format!("Linear · {} ({})", l.title, l.identifier),
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => format!("{} · Import blocked · {}", b.source, b.title),
@@ -227,7 +235,9 @@ mod tests {
         StatusItem::Ci(domain::CiFailure {
             repo: domain::RepoSlug::new("owner", "repo"),
             workflow_name: "CI".to_string(),
-            conclusion: "failure".to_string(),
+            job_name: None,
+            step_name: None,
+            error: None,
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::High,
             url: "https://github.com/owner/repo/actions/runs/1".to_string(),
@@ -271,8 +281,44 @@ mod tests {
     }
 
     #[test]
-    fn item_line_formats_ci() {
-        assert_eq!(item_line(&ci()), "owner/repo · CI · failure");
+    fn item_line_formats_ci_no_job_info() {
+        assert_eq!(item_line(&ci()), "owner/repo · CI · failed");
+    }
+
+    #[test]
+    fn item_line_formats_ci_with_job_and_step() {
+        let item = StatusItem::Ci(domain::CiFailure {
+            repo: domain::RepoSlug::new("owner", "repo"),
+            workflow_name: "CI".to_string(),
+            job_name: Some("Build".to_string()),
+            step_name: Some("cargo check".to_string()),
+            error: None,
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::High,
+            url: "https://github.com/owner/repo/actions/runs/1".to_string(),
+        });
+        assert_eq!(
+            item_line(&item),
+            "owner/repo · CI · Build / cargo check · failed"
+        );
+    }
+
+    #[test]
+    fn item_line_formats_ci_with_full_info() {
+        let item = StatusItem::Ci(domain::CiFailure {
+            repo: domain::RepoSlug::new("owner", "repo"),
+            workflow_name: "CI".to_string(),
+            job_name: Some("Build".to_string()),
+            step_name: Some("cargo check".to_string()),
+            error: Some("error[E0308]: mismatched types".to_string()),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::High,
+            url: "https://github.com/owner/repo/actions/runs/1".to_string(),
+        });
+        assert_eq!(
+            item_line(&item),
+            "owner/repo · CI · Build / cargo check · error[E0308]: mismatched types"
+        );
     }
 
     #[test]
@@ -374,7 +420,9 @@ mod tests {
         let ci2 = StatusItem::Ci(domain::CiFailure {
             repo: domain::RepoSlug::new("owner", "other"),
             workflow_name: "Lint".to_string(),
-            conclusion: "failure".to_string(),
+            job_name: None,
+            step_name: None,
+            error: None,
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::Low,
             url: "https://github.com/owner/other/actions/runs/2".to_string(),
@@ -387,7 +435,9 @@ mod tests {
         let ci_critical = StatusItem::Ci(domain::CiFailure {
             repo: domain::RepoSlug::new("owner", "repo"),
             workflow_name: "Deploy".to_string(),
-            conclusion: "failure".to_string(),
+            job_name: None,
+            step_name: None,
+            error: None,
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::Critical,
             url: "https://github.com/owner/repo/actions/runs/3".to_string(),

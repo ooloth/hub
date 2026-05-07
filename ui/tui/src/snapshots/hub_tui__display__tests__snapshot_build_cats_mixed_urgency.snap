@@ -1,5 +1,6 @@
 ---
 source: ui/tui/src/display.rs
+assertion_line: 453
 expression: "build_cats(vec![ci_critical, pr_low, issue()])"
 ---
 [
@@ -13,7 +14,9 @@ expression: "build_cats(vec![ci_critical, pr_low, issue()])"
                             "owner/repo",
                         ),
                         workflow_name: "Deploy",
-                        conclusion: "failure",
+                        job_name: None,
+                        step_name: None,
+                        error: None,
                         age: TimeDelta {
                             secs: 0,
                             nanos: 0,

@@ -1,5 +1,6 @@
 ---
 source: ui/tui/src/display.rs
+assertion_line: 430
 expression: "build_cats(vec![pr(), pr2, issue(), ci(), ci2])"
 ---
 [
@@ -13,7 +14,9 @@ expression: "build_cats(vec![pr(), pr2, issue(), ci(), ci2])"
                             "owner/repo",
                         ),
                         workflow_name: "CI",
-                        conclusion: "failure",
+                        job_name: None,
+                        step_name: None,
+                        error: None,
                         age: TimeDelta {
                             secs: 0,
                             nanos: 0,
@@ -30,7 +33,9 @@ expression: "build_cats(vec![pr(), pr2, issue(), ci(), ci2])"
                             "owner/other",
                         ),
                         workflow_name: "Lint",
-                        conclusion: "failure",
+                        job_name: None,
+                        step_name: None,
+                        error: None,
                         age: TimeDelta {
                             secs: 0,
                             nanos: 0,
