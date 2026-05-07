@@ -7,7 +7,7 @@ use crossterm::{
 };
 use futures::StreamExt;
 use ratatui::{backend::CrosstermBackend, Terminal};
-use std::io;
+use std::{io, path::PathBuf};
 use tokio::sync::mpsc;
 use workflows::status::{StatusReport, SCHEMA_VERSION};
 
@@ -141,6 +141,33 @@ fn spawn_fetch(config: &config::Config, tx: mpsc::Sender<Result<StatusReport>>) 
     });
 }
 
+async fn resolve_investigation_cwd(config: &config::Config, repo: &str) -> Result<PathBuf, String> {
+    let name = config
+        .projects
+        .iter()
+        .find(|p| p.repo == repo)
+        .map(|p| p.name.as_str())
+        .ok_or_else(|| format!("No project found for {repo}"))?;
+
+    let repos = workflows::fetch::repos_dir();
+    let bare = repos.join(name);
+
+    if !bare.exists() {
+        return Err("Not fetched yet; run hub fetch".to_string());
+    }
+
+    if let Some(wt) = workflows::fetch::default_branch_worktree(&repos, name) {
+        return Ok(wt);
+    }
+
+    workflows::fetch::ensure_default_branch_worktree(&bare)
+        .await
+        .map_err(|e| format!("Failed to create worktree: {e}"))?;
+
+    workflows::fetch::default_branch_worktree(&repos, name)
+        .ok_or_else(|| "Worktree creation succeeded but path not found".to_string())
+}
+
 fn spawn_git_fetch(config: &config::Config) {
     let github_token = config.github_token.clone();
     let projects: Vec<(String, String)> = config
@@ -193,12 +220,16 @@ async fn run_loop(
                     let _ = open::that_detached(url);
                 }
                 Effect::LaunchCi { repo, run_url } => {
-                    let cwd =
-                        std::env::current_dir().context("failed to resolve current directory")?;
-                    if let Err(err) =
-                        investigations::launch(investigations::ci::config(&repo, &run_url), &cwd)
-                    {
-                        app.ui.flash = Some(err.to_string());
+                    match resolve_investigation_cwd(config, &repo).await {
+                        Ok(cwd) => {
+                            if let Err(err) = investigations::launch(
+                                investigations::ci::config(&repo, &run_url),
+                                &cwd,
+                            ) {
+                                app.ui.flash = Some(err.to_string());
+                            }
+                        }
+                        Err(msg) => app.ui.flash = Some(msg),
                     }
                 }
                 Effect::StartRefresh => {
