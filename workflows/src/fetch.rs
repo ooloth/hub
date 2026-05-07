@@ -2,9 +2,23 @@ use anyhow::{Context, Result};
 use std::{collections::HashSet, path::Path, path::PathBuf};
 use tokio::process::Command;
 
-fn repos_dir() -> PathBuf {
+pub fn repos_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
     PathBuf::from(home).join(".hub").join("repos")
+}
+
+/// Returns the path to the default-branch worktree for `name` if it exists.
+pub fn default_branch_worktree(repos_dir: &Path, name: &str) -> Option<PathBuf> {
+    let bare = repos_dir.join(name);
+    let branch = read_default_branch(&bare)?;
+    let worktree = bare.join(branch);
+    worktree.is_dir().then_some(worktree)
+}
+
+fn read_default_branch(bare: &Path) -> Option<String> {
+    let head = std::fs::read_to_string(bare.join("HEAD")).ok()?;
+    let branch = head.trim().strip_prefix("ref: refs/heads/")?;
+    Some(branch.to_owned())
 }
 
 /// Creates or updates a bare clone for each project under `~/.hub/repos/<name>/`.
@@ -54,6 +68,7 @@ async fn fetch_project(name: &str, repo: &str, github_token: &str, repos_dir: &P
             anyhow::bail!("git fetch failed for {name}: {stderr}");
         }
         clean_merged_worktrees(&dir_str).await?;
+        ensure_default_branch_worktree(&dir).await?;
     } else {
         let authed_url = format!("https://x-access-token:{github_token}@github.com/{repo}.git");
         let out = Command::new("git")
@@ -76,6 +91,84 @@ async fn fetch_project(name: &str, repo: &str, github_token: &str, repos_dir: &P
             let stderr = String::from_utf8_lossy(&reset.stderr);
             anyhow::bail!("git remote set-url failed for {name}: {stderr}");
         }
+        // Reconfigure the refspec so subsequent fetches go into refs/remotes/origin/*
+        // rather than refs/heads/*. This avoids git refusing to update a branch that
+        // is checked out in the default-branch worktree.
+        let cfg = Command::new("git")
+            .args([
+                "-C",
+                &dir_str,
+                "config",
+                "remote.origin.fetch",
+                "+refs/heads/*:refs/remotes/origin/*",
+            ])
+            .output()
+            .await
+            .with_context(|| format!("git config refspec failed for {name}"))?;
+        if !cfg.status.success() {
+            let stderr = String::from_utf8_lossy(&cfg.stderr);
+            anyhow::bail!("git config refspec failed for {name}: {stderr}");
+        }
+        // Populate refs/remotes/origin/* with the new refspec.
+        let fetch = Command::new("git")
+            .args(["-C", &dir_str, "-c", &rewrite, "fetch", "origin"])
+            .env("GIT_TERMINAL_PROMPT", "0")
+            .output()
+            .await
+            .with_context(|| format!("initial git fetch failed for {name}"))?;
+        if !fetch.status.success() {
+            let stderr = String::from_utf8_lossy(&fetch.stderr);
+            anyhow::bail!("initial git fetch failed for {name}: {stderr}");
+        }
+        ensure_default_branch_worktree(&dir).await?;
+    }
+
+    Ok(())
+}
+
+pub async fn ensure_default_branch_worktree(bare: &Path) -> Result<()> {
+    let bare_str = bare.to_string_lossy().into_owned();
+    let branch = read_default_branch(bare)
+        .ok_or_else(|| anyhow::anyhow!("could not detect default branch in {bare_str}"))?;
+    let worktree = bare.join(&branch);
+    let worktree_str = worktree.to_string_lossy().into_owned();
+
+    if !worktree.is_dir() {
+        let add = Command::new("git")
+            .args(["-C", &bare_str, "worktree", "add", &worktree_str, &branch])
+            .output()
+            .await
+            .with_context(|| format!("git worktree add failed for {branch}"))?;
+        if !add.status.success() {
+            let stderr = String::from_utf8_lossy(&add.stderr);
+            anyhow::bail!("git worktree add failed for {branch}: {stderr}");
+        }
+    }
+
+    let reset = Command::new("git")
+        .args([
+            "-C",
+            &worktree_str,
+            "reset",
+            "--hard",
+            &format!("origin/{branch}"),
+        ])
+        .output()
+        .await
+        .with_context(|| format!("git reset failed for {branch} worktree"))?;
+    if !reset.status.success() {
+        let stderr = String::from_utf8_lossy(&reset.stderr);
+        anyhow::bail!("git reset failed for {branch} worktree: {stderr}");
+    }
+
+    let clean = Command::new("git")
+        .args(["-C", &worktree_str, "clean", "-fd"])
+        .output()
+        .await
+        .with_context(|| format!("git clean failed for {branch} worktree"))?;
+    if !clean.status.success() {
+        let stderr = String::from_utf8_lossy(&clean.stderr);
+        anyhow::bail!("git clean failed for {branch} worktree: {stderr}");
     }
 
     Ok(())
@@ -159,6 +252,45 @@ fn warn_orphans(repos_dir: &Path, project_names: &HashSet<&str>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn read_default_branch_extracts_branch_name() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        assert_eq!(read_default_branch(dir.path()).as_deref(), Some("main"));
+    }
+
+    #[test]
+    fn read_default_branch_returns_none_for_detached_head() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("HEAD"), "abc1234567890abcdef\n").unwrap();
+        assert!(read_default_branch(dir.path()).is_none());
+    }
+
+    #[test]
+    fn default_branch_worktree_returns_none_when_worktree_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        // No main/ subdir created
+        assert!(default_branch_worktree(
+            dir.path().parent().unwrap(),
+            dir.path().file_name().unwrap().to_str().unwrap()
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn default_branch_worktree_returns_path_when_worktree_exists() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        let worktree = dir.path().join("main");
+        std::fs::create_dir(&worktree).unwrap();
+        let result = default_branch_worktree(
+            dir.path().parent().unwrap(),
+            dir.path().file_name().unwrap().to_str().unwrap(),
+        );
+        assert_eq!(result, Some(worktree));
+    }
 
     #[test]
     fn parse_worktree_list_bare_only() {

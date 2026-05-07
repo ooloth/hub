@@ -15,3 +15,6 @@ clients = { path = "../clients" }
 domain = { path = "../domain" }
 store = { path = "../store" }
 tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies]
+tempfile = "3"
