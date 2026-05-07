@@ -30,7 +30,20 @@ branch to `run()` that checks for your workflow name in `workflow_names` and cal
 your workflow, populating the relevant field on `PrivateStatusData` (add the field
 if it doesn't exist yet).
 
-## 4. Add CLI rendering
+## 4. Add variants to the public StatusItem enum
+
+In the public hub repo, open `workflows/src/status.rs` and add one or more
+`#[cfg(feature = "private")]` variants to `StatusItem` for the new workflow:
+
+```rust
+#[cfg(feature = "private")]
+MyNewItem(crate::private::status::MyNewItem),
+```
+
+Also add match arms for `urgency()` and `age()` on the new variants. This is
+required for the new items to be sorted into the unified ranked list.
+
+## 5. Add CLI rendering
 
 Add (or extend) `hub-private/ui/cli/src/status.rs` to render the new field. The
 public hub binary calls `crate::private::status::render(&report.private)` — your
@@ -38,11 +51,11 @@ renderer reads from `PrivateStatusData` and prints lines to stdout.
 
 Add a corresponding renderer in `hub-private/ui/tui/src/` for any TUI-specific display logic.
 
-## 5. Add credentials to .env
+## 6. Add credentials to .env
 
 Add the required `op://` secret references to `hub-private/.env`.
 
-## 6. Enable on your device
+## 7. Enable on your device
 
 Add a `[[monitor.workflow]]` entry to the relevant `hub-private/devices/<device>.toml`
 files, using the workflow name your `status.rs` checks for:
@@ -56,7 +69,7 @@ name = "your-workflow-name"
 a specific code project. Use `[[project.workflow]]` inside a `[[project]]` block for
 integrations that are scoped to a repo.
 
-## 7. Verify
+## 8. Verify
 
 ```bash
 just check

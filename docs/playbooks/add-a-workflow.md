@@ -48,6 +48,14 @@ the right place to encode domain knowledge like "a CI failure is always High"
 or "an issue assigned to me is Medium". Use `domain::Urgency::{Critical, High,
 Medium, Low}`.
 
+**Error handling:** return `Err` if the upstream API is completely unavailable
+(network error, auth failure). The status orchestrator propagates the error and
+hub surfaces it to the user. Do not silently return an empty vec when credentials
+are missing — that looks identical to "no items", which hides the problem.
+If a workflow calls multiple APIs and one fails, propagate the first error
+rather than returning partial results; partial data in a unified ranked list
+is harder to reason about than a clear error.
+
 ## 4. Wire into hub status
 
 Workflows that surface items in `hub status` plug into the unified pipeline —

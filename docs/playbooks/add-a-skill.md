@@ -154,3 +154,10 @@ internal infrastructure), add it to `hub-private` instead:
 `.claude/skills/` in the hub-private repo, symlinked into hub's
 `.claude/skills/` directory. Follow the same pattern as private
 workflows.
+
+## Done when
+
+- The skill runs to completion non-interactively (`claude -p --dangerously-skip-permissions /skill-name args`) and produces a useful output
+- `hub.toml.example` has been updated with the config fields the skill reads
+- The config schema and Rust enum have been updated if the skill introduced a new `[[project.workflow]]` name
+- If this is a new investigation category, `docs/vision.md` has been updated

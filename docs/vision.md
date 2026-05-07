@@ -106,7 +106,7 @@ Current:
 | GitHub CI     | Failing workflow runs on watched repos              |
 | Linear        | Incomplete issues assigned to me                    |
 
-Planned:
+Planned (public repo — some may already exist in hub-private):
 
 | Workflow          | What it tracks                                      |
 | ----------------- | --------------------------------------------------- |
@@ -115,6 +115,10 @@ Planned:
 | Home server: disk | Drive usage on media drives                         |
 
 Future candidates: Notion tasks, calendar conflicts.
+
+Private workflows live in hub-private and are compiled in under
+`#[cfg(feature = "private")]`. They follow the same architecture as
+public workflows but reference infrastructure that isn't in the public repo.
 
 ## Investigation
 
@@ -126,8 +130,8 @@ Investigation skills are Claude Code skills that live in hub's
 `.claude/skills/` directory. They are multi-turn conversations — Claude
 uses CLI tools (`logcli`, `gh`, etc.) to query data iteratively,
 forming hypotheses and validating them, until it can produce a
-diagnosis. This is distinct from the `agents/` crate, which handles
-single-call, unattended background automation.
+diagnosis. This is distinct from the `agents/` crate (planned, not yet built), which
+will handle single-call, unattended background automation.
 
 Hub's role in this layer is **context provider**. Hub knows (from
 `hub.toml`) the Loki endpoint for a project's production environment,
@@ -137,11 +141,11 @@ to look up, no query to compose from scratch. The investigation starts
 immediately.
 
 ```
-hub status                      # "prod: 12 errors in last hour (3× baseline)"
-claude /loki-investigate        # iterates until diagnosed; hub.toml provides context
-
 hub status                      # "github ci (1)  ooloth/hub  CI  failure  0h"
 claude /github-ci-investigate   # fetches failed step logs and surfaces root cause
+
+hub status                      # "prod: 12 errors in last hour (3× baseline)"
+claude /loki-investigate        # iterates until diagnosed; hub.toml provides context (planned)
 
 claude /repo-scan docs          # scans all hub.toml repos for doc quality issues;
                                 # surfaces findings and files GitHub issues for confirmed ones
@@ -176,6 +180,12 @@ is stable and the investigation logic is understood, it can be scripted into a p
 Not every workflow needs to reach Tier 3 — some signals genuinely require human judgment
 every time.
 
+A signal pattern is stable when its urgency classification rules haven't needed adjustment after
+several weeks of live use — the workflow emits items at the expected rate, and the urgency tiers
+feel right without tweaking. Investigation logic is understood when the diagnosis steps are
+repeatable: the same query sequence, the same hypothesis chain, the same conclusion format, every
+time. If each investigation still requires novel judgment, the pattern isn't ready to script.
+
 Trust in proposal quality is earned incrementally. An automated PR that's wrong wastes more
 time than no automation at all. Tier 3 is reserved for categories where the pattern is reliable
 enough to stake the cost of a bad proposal on.
@@ -183,12 +193,11 @@ enough to stake the cost of a bad proposal on.
 ## UI evolution
 
 1. **CLI** — `hub status` prints a ranked list to the terminal. Fast,
-   scriptable, works from anywhere. Current state.
+   scriptable, works from anywhere.
 2. **TUI** — a Ratatui terminal dashboard with panels per workflow,
-   auto-refresh, and keyboard navigation. The "command center"
-   aesthetic. Planned next. The TUI is not just a display: it is a
-   place to zoom in. You see everything you're responsible for at a
-   glance, then press a key on a signal to launch the investigation
+   auto-refresh, and keyboard navigation. The TUI is not just a display:
+   it is a place to zoom in. You see everything you're responsible for at
+   a glance, then press a key on a signal to launch the investigation
    skill for it — with context pre-loaded from hub's config.
 
 Both entry points share the same workflows and data layer. The UI is a
