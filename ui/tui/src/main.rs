@@ -193,6 +193,10 @@ async fn run_loop(
     let mut events = EventStream::new();
     let mut refresh_interval = tokio::time::interval(tokio::time::Duration::from_secs(30 * 60));
     refresh_interval.tick().await;
+    // Wakes the loop every minute so the "updated Xm ago" timestamp
+    // advances without requiring a keypress.
+    let mut display_interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
+    display_interval.tick().await;
 
     'run: loop {
         terminal.draw(|f| render(f, app))?;
@@ -210,6 +214,7 @@ async fn run_loop(
                 }
             }
             _ = refresh_interval.tick() => handle_msg(app, Msg::Tick)?,
+            _ = display_interval.tick() => vec![], // redraw only; no state change
             Some(result) = rx.recv() => handle_msg(app, Msg::FetchResult(result))?,
         };
 
