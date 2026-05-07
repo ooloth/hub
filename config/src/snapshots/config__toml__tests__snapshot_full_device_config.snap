@@ -30,18 +30,17 @@ HubToml {
                     namespace: Some(
                         "default",
                     ),
+                    loki_endpoint: None,
                     workflow: [
-                        UserActivityLoki {
-                            include_users: [],
-                            exclude_users: [
-                                "bot@example.com",
-                            ],
-                        },
-                        ErrorsLoki {
-                            exclude_users: [],
-                        },
-                        WarningsLoki {
-                            exclude_users: [],
+                        LokiLogs {
+                            title: "app errors",
+                            query: "{app=\"myapp\"} | logfmt | level=\"error\"",
+                            lookback: Some(
+                                "1h",
+                            ),
+                            error_threshold: Some(
+                                10,
+                            ),
                         },
                     ],
                 },
@@ -58,6 +57,7 @@ HubToml {
                     ),
                     cluster: None,
                     namespace: None,
+                    loki_endpoint: None,
                     workflow: [
                         UserActivityGcp {
                             include_users: [

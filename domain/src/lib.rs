@@ -90,3 +90,36 @@ pub struct CiFailure {
     pub urgency: Urgency,
     pub url: String,
 }
+
+/// A Loki query to run for one monitoring scenario (e.g. app errors, worker panics).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LokiQuery {
+    pub title: String,
+    pub query: String,
+    pub lookback: String,
+    pub threshold: u32,
+}
+
+/// All Loki queries configured for one deployment environment.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LokiEnv {
+    pub project: String,
+    pub env: String,
+    pub endpoint: String,
+    pub token: Option<String>,
+    pub queries: Vec<LokiQuery>,
+}
+
+/// Emitted when a Loki query returns at least `threshold` entries.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LokiErrors {
+    pub title: String,
+    pub project: String,
+    pub env: String,
+    pub error_count: u32,
+    pub threshold: u32,
+    pub lookback: String,
+    #[serde(with = "duration_secs")]
+    pub age: chrono::Duration,
+    pub urgency: Urgency,
+}

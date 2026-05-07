@@ -26,6 +26,7 @@ pub struct Environment {
     pub service: Option<String>,
     pub cluster: Option<String>,
     pub namespace: Option<String>,
+    pub loki_endpoint: Option<String>,
     #[serde(default)]
     pub workflow: Vec<WorkflowConfig>,
 }
@@ -64,22 +65,12 @@ pub enum WorkflowConfig {
         #[serde(default)]
         exclude_users: Vec<String>,
     },
-    #[serde(rename = "user-activity-loki")]
-    UserActivityLoki {
-        #[serde(default)]
-        include_users: Vec<String>,
-        #[serde(default)]
-        exclude_users: Vec<String>,
-    },
-    #[serde(rename = "errors-loki")]
-    ErrorsLoki {
-        #[serde(default)]
-        exclude_users: Vec<String>,
-    },
-    #[serde(rename = "warnings-loki")]
-    WarningsLoki {
-        #[serde(default)]
-        exclude_users: Vec<String>,
+    #[serde(rename = "loki-logs")]
+    LokiLogs {
+        title: String,
+        query: String,
+        lookback: Option<String>,
+        error_threshold: Option<u32>,
     },
     #[serde(rename = "repo-scan-docs")]
     RepoScanDocs,
@@ -126,14 +117,11 @@ mod tests {
 
     #[rstest]
     #[case("errors-gcp", WorkflowConfig::ErrorsGcp { exclude_users: vec![] })]
-    #[case("errors-loki", WorkflowConfig::ErrorsLoki { exclude_users: vec![] })]
     #[case("github-ci", WorkflowConfig::GithubCi { lookback: None })]
     #[case("github-issues", WorkflowConfig::GithubIssues { exclude_labels: vec![], assigned_only: false })]
     #[case("github-prs", WorkflowConfig::GithubPrs { exclude_authors: vec![] })]
     #[case("user-activity-gcp", WorkflowConfig::UserActivityGcp { include_users: vec![], exclude_users: vec![] })]
-    #[case("user-activity-loki", WorkflowConfig::UserActivityLoki { include_users: vec![], exclude_users: vec![] })]
     #[case("warnings-gcp", WorkflowConfig::WarningsGcp { exclude_users: vec![] })]
-    #[case("warnings-loki", WorkflowConfig::WarningsLoki { exclude_users: vec![] })]
     #[case("repo-scan-docs", WorkflowConfig::RepoScanDocs)]
     fn all_workflow_types_parse_with_name_only(
         #[case] name: &str,
@@ -216,6 +204,73 @@ mod tests {
             vec![WorkflowConfig::GithubIssues {
                 exclude_labels: vec!["wontfix".into(), "duplicate".into()],
                 assigned_only: false,
+            }]
+        );
+    }
+
+    #[test]
+    fn loki_logs_parses_with_required_fields_only() {
+        let result = parse(
+            r#"
+            [[project]]
+            name = "myapp"
+            repo = "org/myapp"
+
+            [[project.environment]]
+            env = "internal"
+            loki_endpoint = "https://loki.example.com"
+
+            [[project.environment.workflow]]
+            name = "loki-logs"
+            title = "app errors"
+            query = '{app="myapp"} | logfmt | level="error"'
+        "#,
+        )
+        .unwrap();
+        let env = &result.project[0].environment[0];
+        assert_eq!(
+            env.loki_endpoint.as_deref(),
+            Some("https://loki.example.com")
+        );
+        assert_eq!(
+            env.workflow,
+            vec![WorkflowConfig::LokiLogs {
+                title: "app errors".into(),
+                query: "{app=\"myapp\"} | logfmt | level=\"error\"".into(),
+                lookback: None,
+                error_threshold: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn loki_logs_parses_with_all_fields() {
+        let result = parse(
+            r#"
+            [[project]]
+            name = "myapp"
+            repo = "org/myapp"
+
+            [[project.environment]]
+            env = "internal"
+            loki_endpoint = "https://loki.example.com"
+
+            [[project.environment.workflow]]
+            name = "loki-logs"
+            title = "worker panics"
+            query = '{app="myapp",component="worker"} |= "panic"'
+            lookback = "30m"
+            error_threshold = 1
+        "#,
+        )
+        .unwrap();
+        assert_eq!(
+            result.project[0].environment[0].workflow,
+            vec![WorkflowConfig::LokiLogs {
+                title: "worker panics".into(),
+                query: r#"{app="myapp",component="worker"} |= "panic""#.into(),
+                lookback: Some("30m".into()),
+                error_threshold: Some(1),
             }]
         );
     }
@@ -348,14 +403,11 @@ mod tests {
             namespace = "default"
 
             [[project.environment.workflow]]
-            name = "user-activity-loki"
-            exclude_users = ["bot@example.com"]
-
-            [[project.environment.workflow]]
-            name = "errors-loki"
-
-            [[project.environment.workflow]]
-            name = "warnings-loki"
+            name = "loki-logs"
+            title = "app errors"
+            query = '{app="myapp"} | logfmt | level="error"'
+            lookback = "1h"
+            error_threshold = 10
 
             [[project.environment]]
             env = "prod"

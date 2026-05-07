@@ -68,19 +68,20 @@ name = "repo-scan-docs"
 # env = "dev"
 # cluster = "my-cluster"
 # namespace = "my-app"
+# loki_endpoint = "https://loki.example.com"  # required by loki-logs workflows
 #
 # [[project.environment.workflow]]
-# name = "errors-loki"
-# exclude_users = ["bot@my-org.com"]
+# name = "loki-logs"
+# title = "app errors"                         # required; shown in hub status
+# query = '{app="my-app"} | logfmt | level="error"'  # complete LogQL expression
+# lookback = "1h"                              # default: 1h
+# error_threshold = 10                         # default: 10
 #
 # [[project.environment.workflow]]
-# name = "warnings-loki"
-# exclude_users = ["bot@my-org.com"]
-#
-# [[project.environment.workflow]]
-# name = "user-activity-loki"
-# include_users = ["alice@my-org.com"]
-# exclude_users = ["bot@my-org.com"]
+# name = "loki-logs"
+# title = "worker panics"
+# query = '{app="my-app",component="worker"} |= "panic"'
+# error_threshold = 1
 
 # ── Monitor ───────────────────────────────────────────────────────────────────
 # Non-project observations: home server health, calendar, etc.

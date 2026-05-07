@@ -72,6 +72,10 @@
           "type": "string",
           "description": "Kubernetes namespace."
         },
+        "loki_endpoint": {
+          "type": "string",
+          "description": "Base URL of the Loki HTTP API — e.g. https://loki.example.com. Required by loki-logs workflows."
+        },
         "workflow": {
           "type": "array",
           "description": "Workflows scoped to this environment.",
@@ -83,15 +87,13 @@
       "description": "A workflow instance. Entries are sorted alphabetically by workflow name slug.",
       "oneOf": [
         { "$ref": "#/definitions/workflow_errors_gcp" },
-        { "$ref": "#/definitions/workflow_errors_loki" },
         { "$ref": "#/definitions/workflow_github_ci" },
         { "$ref": "#/definitions/workflow_github_issues" },
         { "$ref": "#/definitions/workflow_github_prs" },
+        { "$ref": "#/definitions/workflow_loki_logs" },
         { "$ref": "#/definitions/workflow_repo_scan_docs" },
         { "$ref": "#/definitions/workflow_user_activity_gcp" },
-        { "$ref": "#/definitions/workflow_user_activity_loki" },
         { "$ref": "#/definitions/workflow_warnings_gcp" },
-        { "$ref": "#/definitions/workflow_warnings_loki" },
         { "$ref": "#/definitions/workflow_private" }
       ]
     },
@@ -102,20 +104,6 @@
       "additionalProperties": false,
       "properties": {
         "name": { "const": "errors-gcp" },
-        "exclude_users": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Exclude errors from these principals — e.g. bot service accounts."
-        }
-      }
-    },
-    "workflow_errors_loki": {
-      "type": "object",
-      "description": "Surfaces errors from Loki logs. Reads cluster from parent environment. Credentials via LOKI_TOKEN.",
-      "required": ["name"],
-      "additionalProperties": false,
-      "properties": {
-        "name": { "const": "errors-loki" },
         "exclude_users": {
           "type": "array",
           "items": { "type": "string" },
@@ -168,6 +156,32 @@
         }
       }
     },
+    "workflow_loki_logs": {
+      "type": "object",
+      "description": "Emits a LokiErrors signal when a LogQL query returns at least error_threshold entries. Reads loki_endpoint from parent environment. Credentials via LOKI_TOKEN (optional for VPN-only endpoints).",
+      "required": ["name", "title", "query"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "const": "loki-logs" },
+        "title": {
+          "type": "string",
+          "description": "Human-readable label for this signal — e.g. 'app errors', 'worker panics'."
+        },
+        "query": {
+          "type": "string",
+          "description": "Complete LogQL expression. All returned entries count toward the threshold."
+        },
+        "lookback": {
+          "type": "string",
+          "description": "How far back to query — e.g. '1h', '30m'. Default: '1h'."
+        },
+        "error_threshold": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Minimum entry count to emit a signal. Default: 10."
+        }
+      }
+    },
     "workflow_repo_scan_docs": {
       "type": "object",
       "description": "Scans the repo for documentation quality issues (stale, drifted, inconsistent, or missing docs). Reads repo from parent project. Invoked via /repo-scan docs.",
@@ -196,25 +210,6 @@
         }
       }
     },
-    "workflow_user_activity_loki": {
-      "type": "object",
-      "description": "Surfaces user activity from Loki logs. Reads cluster from parent environment. Credentials via LOKI_TOKEN.",
-      "required": ["name"],
-      "additionalProperties": false,
-      "properties": {
-        "name": { "const": "user-activity-loki" },
-        "include_users": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Only surface activity from these principals. When set, all others are ignored."
-        },
-        "exclude_users": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Exclude activity from these principals — e.g. bot service accounts."
-        }
-      }
-    },
     "workflow_warnings_gcp": {
       "type": "object",
       "description": "Surfaces warnings from Google Cloud Logging. Reads gcp_project and service from parent environment. Credentials via GCP_TOKEN.",
@@ -222,20 +217,6 @@
       "additionalProperties": false,
       "properties": {
         "name": { "const": "warnings-gcp" },
-        "exclude_users": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Exclude warnings from these principals — e.g. bot service accounts."
-        }
-      }
-    },
-    "workflow_warnings_loki": {
-      "type": "object",
-      "description": "Surfaces warnings from Loki logs. Reads cluster from parent environment. Credentials via LOKI_TOKEN.",
-      "required": ["name"],
-      "additionalProperties": false,
-      "properties": {
-        "name": { "const": "warnings-loki" },
         "exclude_users": {
           "type": "array",
           "items": { "type": "string" },
@@ -253,15 +234,13 @@
           "not": {
             "enum": [
               "errors-gcp",
-              "errors-loki",
               "github-ci",
               "github-issues",
               "github-prs",
+              "loki-logs",
               "repo-scan-docs",
               "user-activity-gcp",
-              "user-activity-loki",
-              "warnings-gcp",
-              "warnings-loki"
+              "warnings-gcp"
             ]
           }
         }

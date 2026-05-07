@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 pub struct Config {
     pub github_token: String,
     pub linear_token: Option<String>,
+    pub loki_token: Option<String>,
     pub projects: Vec<toml::Project>,
     pub monitor: Option<toml::Monitor>,
 }
@@ -19,6 +20,7 @@ impl Config {
         Ok(Self {
             github_token: std::env::var("GITHUB_TOKEN").context("GITHUB_TOKEN not set")?,
             linear_token: std::env::var("LINEAR_TOKEN").ok(),
+            loki_token: std::env::var("LOKI_TOKEN").ok(),
             projects: hub_toml.project,
             monitor: hub_toml.monitor,
         })
@@ -78,6 +80,51 @@ impl Config {
             .as_ref()
             .map(|m| m.workflow.iter().map(|w| w.name.clone()).collect())
             .unwrap_or_default()
+    }
+
+    /// Returns one `LokiEnv` per environment that has a `loki_endpoint` and at least
+    /// one `loki-logs` workflow. Lookback defaults to `"1h"` and threshold to `10`.
+    pub fn loki_envs(&self) -> Vec<domain::LokiEnv> {
+        self.projects
+            .iter()
+            .flat_map(|p| {
+                p.environment.iter().filter_map(|env| {
+                    let endpoint = env.loki_endpoint.clone()?;
+                    let queries: Vec<domain::LokiQuery> = env
+                        .workflow
+                        .iter()
+                        .filter_map(|w| {
+                            if let toml::WorkflowConfig::LokiLogs {
+                                title,
+                                query,
+                                lookback,
+                                error_threshold,
+                            } = w
+                            {
+                                Some(domain::LokiQuery {
+                                    title: title.clone(),
+                                    query: query.clone(),
+                                    lookback: lookback.clone().unwrap_or_else(|| "1h".into()),
+                                    threshold: error_threshold.unwrap_or(10),
+                                })
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if queries.is_empty() {
+                        return None;
+                    }
+                    Some(domain::LokiEnv {
+                        project: p.name.clone(),
+                        env: env.env.clone(),
+                        endpoint,
+                        token: self.loki_token.clone(),
+                        queries,
+                    })
+                })
+            })
+            .collect()
     }
 
     pub fn github_assigned_issue_repos(&self) -> Vec<String> {
