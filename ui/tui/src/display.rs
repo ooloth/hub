@@ -121,7 +121,7 @@ pub(crate) fn item_line(item: &StatusItem) -> String {
             format!("{} · {} · {} · {}", l.project, l.env, l.title, l.message)
         }
         #[cfg(feature = "private")]
-        StatusItem::MediaBlocked(b) => format!("{} · Import blocked · {}", b.source, b.title),
+        StatusItem::MediaBlocked(b) => format!("{} · Import blocked · {}", b.source, b.error),
         #[cfg(feature = "private")]
         StatusItem::MediaMissing(m) => {
             format!(
@@ -136,6 +136,14 @@ pub(crate) fn item_line(item: &StatusItem) -> String {
             format!("{source} · {count} episodes in backlog")
         }
     }
+}
+
+pub(crate) fn item_detail_line(item: &StatusItem) -> String {
+    #[cfg(feature = "private")]
+    if let StatusItem::MediaBlocked(b) = item {
+        return format!("{} — {}", b.title, b.error);
+    }
+    item_line(item)
 }
 
 pub(crate) fn item_urgency(item: &StatusItem) -> domain::Urgency {

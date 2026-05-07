@@ -1,4 +1,4 @@
-use crate::display::{item_hint, item_line, item_urgency, DisplayItem};
+use crate::display::{item_detail_line, item_hint, item_urgency, DisplayItem};
 use crate::state::{DataState, DetailView};
 use ratatui::{
     layout::Rect,
@@ -49,7 +49,7 @@ pub(super) fn render_detail(
         inner,
         items,
         &mut view.list_state,
-        |item| (item_line(item), None, item_urgency(item)),
+        |item| (item_detail_line(item), None, item_urgency(item)),
         item_hint,
     );
 }
