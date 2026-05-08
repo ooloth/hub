@@ -6,15 +6,13 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
 };
 
-use crate::display::{CatData, DisplayItem};
+use crate::display::{display_item_line, display_item_urgency, DisplayItem};
 use crate::state::{
     compute_enter_action, compute_investigate_action, App, EnterAction, InvestigateAction,
     RefreshState, Screen,
 };
 
-mod category;
 mod detail;
-mod home;
 
 pub(super) const FOCUS_COLOR: Color = Color::Green;
 pub(super) const SELECTION_BG: Color = Color::Rgb(41, 45, 62);
@@ -38,42 +36,24 @@ pub(crate) fn urgency_style(u: domain::Urgency) -> Style {
     }
 }
 
-const KEYBINDS_HOME: &[(&str, &str)] = &[
+const KEYBINDS_LIST: &[(&str, &str)] = &[
     ("?", "toggle help"),
-    ("h", "left (or prev tile)"),
-    ("j", "down (or next tile)"),
-    ("k", "up (or prev tile)"),
-    ("l", "right (or next tile)"),
-    ("Tab", "next tile"),
-    ("Shift-Tab", "prev tile"),
-    ("Enter", "drill into category"),
-    ("r", "refresh"),
-    ("q / Ctrl-C", "quit"),
-];
-
-const KEYBINDS_CATEGORY: &[(&str, &str)] = &[
-    ("?", "toggle help"),
-    ("h", "previous"),
-    ("j", "down"),
-    ("k", "up"),
-    ("l", "next"),
+    ("h / k", "up"),
+    ("j / l", "down"),
     ("Enter", "open / drill into group"),
     ("i", "investigate"),
     ("r", "refresh"),
-    ("Esc", "back to home"),
     ("q / Ctrl-C", "quit"),
 ];
 
 const KEYBINDS_DETAIL: &[(&str, &str)] = &[
     ("?", "toggle help"),
-    ("h", "previous"),
-    ("j", "down"),
-    ("k", "up"),
-    ("l", "next"),
+    ("h / k", "up"),
+    ("j / l", "down"),
     ("Enter", "open URL"),
     ("i", "investigate"),
     ("r", "refresh"),
-    ("Esc", "back to category"),
+    ("Esc", "back to list"),
     ("q / Ctrl-C", "quit"),
 ];
 
@@ -218,30 +198,23 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
     lines
 }
 
-fn position_label(screen: &Screen, cats: &[CatData]) -> String {
+fn position_label(screen: &Screen) -> String {
     match screen {
-        Screen::Home { .. } => String::new(),
-        Screen::Category(view) => {
-            let n = cats
-                .iter()
-                .find(|c| c.cat == view.cat)
-                .map(|c| c.items.len())
-                .unwrap_or(0);
-            view.list_state
-                .selected()
-                .map(|i| format!("{}/{n}", i + 1))
-                .unwrap_or_default()
+        Screen::UnifiedList {
+            items, selected, ..
+        } => {
+            let n = items.len();
+            if n == 0 {
+                String::new()
+            } else {
+                format!("{}/{n}", selected + 1)
+            }
         }
-        Screen::Detail { view, .. } => {
-            let count = cats
-                .iter()
-                .find(|c| c.cat == view.cat)
-                .and_then(|c| c.items.get(view.group_index))
-                .and_then(|d| match d {
-                    DisplayItem::Group { items, .. } => Some(items.len()),
-                    _ => None,
-                })
-                .unwrap_or(0);
+        Screen::Detail { parent, view } => {
+            let count = match parent.items.get(view.group_index) {
+                Some(DisplayItem::Group { items, .. }) => items.len(),
+                _ => 0,
+            };
             view.list_state
                 .selected()
                 .map(|i| format!("{}/{count}", i + 1))
@@ -256,7 +229,7 @@ fn action_hints(enter: &EnterAction, investigate: &InvestigateAction) -> String 
         EnterAction::OpenDetail { item_count, .. } => {
             format!(" · Press ↩ to expand ({item_count} items)")
         }
-        EnterAction::OpenCategory { .. } | EnterAction::None => String::new(),
+        EnterAction::None => String::new(),
     };
     let inv_hint = if matches!(investigate, InvestigateAction::None) {
         ""
@@ -270,33 +243,63 @@ fn status_bar_left(app: &App) -> String {
     if let Some(flash) = &app.ui.flash {
         return flash.clone();
     }
-    match app.current_screen() {
-        Screen::Home { .. } => {
-            let total: usize = app.data.cats.iter().map(|c| c.items.len()).sum();
-            format!("{total} items")
-        }
-        Screen::Category(_) | Screen::Detail { .. } => {
-            let enter_action = compute_enter_action(app);
-            let investigate_action = compute_investigate_action(app);
-            let pos = position_label(app.current_screen(), &app.data.cats);
-            let hints = action_hints(&enter_action, &investigate_action);
-            format!("{pos}{hints}")
-        }
+    let enter_action = compute_enter_action(app);
+    let investigate_action = compute_investigate_action(app);
+    let pos = position_label(app.current_screen());
+    let hints = action_hints(&enter_action, &investigate_action);
+    format!("{pos}{hints}")
+}
+
+// Stub render for the unified list. Reuses render_list_view with a
+// ratatui ListState driven by `selected`. Step 3 will replace this
+// with urgency-tier dividers and the full line format.
+fn render_unified_stub(
+    frame: &mut ratatui::Frame,
+    items: &[DisplayItem],
+    selected: usize,
+    area: Rect,
+) {
+    let block = Block::new().borders(Borders::ALL);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let mut ls = ListState::default();
+    if !items.is_empty() {
+        ls.select(Some(selected));
     }
+    render_list_view(
+        frame,
+        inner,
+        items,
+        &mut ls,
+        |item| {
+            let (line_text, dim_suffix) = match item {
+                DisplayItem::Group { label, items } => {
+                    (label.clone(), Some(format!(" ({})", items.len())))
+                }
+                DisplayItem::Single(_) => (display_item_line(item), None),
+            };
+            (line_text, dim_suffix, display_item_urgency(item))
+        },
+        |item| match item {
+            DisplayItem::Group { .. } => Some("↩ to expand".to_string()),
+            DisplayItem::Single(s) => crate::display::item_hint(s),
+        },
+    );
 }
 
 pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let [content_area, bar_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
 
-    if matches!(app.ui.screen, Screen::Home { .. }) {
-        home::render_home(frame, app, content_area);
-    } else {
-        let data = &app.data;
-        match &mut app.ui.screen {
-            Screen::Home { .. } => {}
-            Screen::Category(view) => category::render_category(frame, view, data, content_area),
-            Screen::Detail { view, .. } => detail::render_detail(frame, view, data, content_area),
+    match &mut app.ui.screen {
+        Screen::UnifiedList {
+            items, selected, ..
+        } => {
+            render_unified_stub(frame, items, *selected, content_area);
+        }
+        Screen::Detail { parent, view } => {
+            detail::render_detail(frame, view, parent, content_area);
         }
     }
 
@@ -327,8 +330,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
 
     if app.ui.show_help {
         let keybinds = match &app.ui.screen {
-            Screen::Home { .. } => KEYBINDS_HOME,
-            Screen::Category(_) => KEYBINDS_CATEGORY,
+            Screen::UnifiedList { .. } => KEYBINDS_LIST,
             Screen::Detail { .. } => KEYBINDS_DETAIL,
         };
         let text = format_keybinds(keybinds);
@@ -346,9 +348,9 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::{action_hints, position_label, status_bar_left, wrap_text};
-    use crate::display::{CatData, Category, DisplayItem};
+    use crate::display::{CatData, Category, DisplayItem, Filter, ListSnapshot};
     use crate::state::{
-        App, CategoryView, DataState, DetailView, EnterAction, InvestigateAction, Screen, UiState,
+        App, DataState, DetailView, EnterAction, InvestigateAction, Screen, UiState,
     };
     use ratatui::widgets::ListState;
     use workflows::status::StatusItem;
@@ -364,6 +366,42 @@ mod tests {
         })
     }
 
+    fn unified_list_app(items: Vec<DisplayItem>) -> App {
+        App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    items,
+                    selected: 0,
+                    filter: Filter::default(),
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    fn detail_app(snapshot_items: Vec<DisplayItem>, group_index: usize, sel: usize) -> App {
+        let mut ls = ListState::default();
+        ls.select(Some(sel));
+        App {
+            ui: UiState {
+                screen: Screen::Detail {
+                    parent: ListSnapshot {
+                        items: snapshot_items,
+                        selected: 0,
+                        filter: Filter::default(),
+                    },
+                    view: DetailView {
+                        group_index,
+                        list_state: ls,
+                    },
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
     #[test]
     fn status_bar_shows_flash_when_set() {
         let app = App {
@@ -377,103 +415,52 @@ mod tests {
     }
 
     #[test]
-    fn status_bar_home_shows_total_item_count() {
-        let app = App {
-            data: DataState {
-                cats: vec![
-                    CatData {
-                        cat: Category::Errors,
-                        items: vec![DisplayItem::Single(pr())],
-                    },
-                    CatData {
-                        cat: Category::Prs,
-                        items: vec![DisplayItem::Single(pr()), DisplayItem::Single(pr())],
-                    },
-                    CatData {
-                        cat: Category::Issues,
-                        items: vec![],
-                    },
-                ],
-                ..DataState::default()
-            },
-            ..App::default()
-        };
-        assert_eq!(status_bar_left(&app), "3 items");
+    fn status_bar_unified_list_shows_position() {
+        let app = unified_list_app(vec![DisplayItem::Single(pr()), DisplayItem::Single(pr())]);
+        assert!(status_bar_left(&app).starts_with("1/2"));
     }
 
     #[test]
-    fn status_bar_category_shows_position() {
-        let mut list_state = ListState::default();
-        list_state.select(Some(1));
-        let app = App {
-            data: DataState {
-                cats: vec![CatData {
-                    cat: Category::Prs,
-                    items: vec![DisplayItem::Single(pr()), DisplayItem::Single(pr())],
-                }],
-                ..DataState::default()
-            },
-            ui: UiState {
-                screen: Screen::Category(CategoryView {
-                    cat: Category::Prs,
-                    list_state,
-                    prev_focused_tile: 0,
-                }),
-                ..UiState::default()
-            },
-        };
-        assert!(status_bar_left(&app).starts_with("2/2"));
+    fn status_bar_empty_unified_list_shows_no_position() {
+        let app = unified_list_app(vec![]);
+        assert!(!status_bar_left(&app).starts_with("1/"));
     }
 
     #[test]
-    fn position_label_empty_for_home() {
-        assert_eq!(position_label(&Screen::Home { focused_tile: 0 }, &[]), "");
-    }
-
-    #[test]
-    fn position_label_category_shows_index_of_n() {
-        let mut ls = ListState::default();
-        ls.select(Some(1));
-        let screen = Screen::Category(CategoryView {
-            cat: Category::Prs,
-            list_state: ls,
-            prev_focused_tile: 0,
-        });
-        let cats = vec![CatData {
-            cat: Category::Prs,
+    fn position_label_unified_list_shows_index_of_n() {
+        let screen = Screen::UnifiedList {
             items: vec![
                 DisplayItem::Single(pr()),
                 DisplayItem::Single(pr()),
                 DisplayItem::Single(pr()),
             ],
-        }];
-        assert_eq!(position_label(&screen, &cats), "2/3");
+            selected: 1,
+            filter: Filter::default(),
+        };
+        assert_eq!(position_label(&screen), "2/3");
+    }
+
+    #[test]
+    fn position_label_empty_unified_list_is_empty() {
+        let screen = Screen::UnifiedList {
+            items: vec![],
+            selected: 0,
+            filter: Filter::default(),
+        };
+        assert_eq!(position_label(&screen), "");
     }
 
     #[test]
     fn position_label_detail_shows_index_within_group() {
-        let mut ls = ListState::default();
-        ls.select(Some(0));
-        let screen = Screen::Detail {
-            parent: CategoryView {
-                cat: Category::Errors,
-                list_state: ListState::default(),
-                prev_focused_tile: 0,
-            },
-            view: DetailView {
-                cat: Category::Errors,
-                group_index: 0,
-                list_state: ls,
-            },
-        };
-        let cats = vec![CatData {
-            cat: Category::Errors,
-            items: vec![DisplayItem::Group {
+        let app = detail_app(
+            vec![DisplayItem::Group {
                 label: "hub".to_string(),
                 items: vec![pr(), pr()],
             }],
-        }];
-        assert_eq!(position_label(&screen, &cats), "1/2");
+            0,
+            0,
+        );
+        assert_eq!(position_label(app.current_screen()), "1/2");
     }
 
     #[test]
@@ -489,7 +476,6 @@ mod tests {
     #[test]
     fn action_hints_expand_group() {
         let enter = EnterAction::OpenDetail {
-            cat: Category::Errors,
             group_index: 0,
             item_count: 3,
         };
@@ -547,5 +533,18 @@ mod tests {
             wrap_text("alpha beta gamma", 10),
             vec!["alpha beta", "gamma"]
         );
+    }
+
+    // Keep DataState with cats alive for test helpers that still use it
+    // (will be cleaned in Step 5).
+    #[allow(dead_code)]
+    fn _cats_helper() -> DataState {
+        DataState {
+            cats: vec![CatData {
+                cat: Category::Prs,
+                items: vec![],
+            }],
+            ..DataState::default()
+        }
     }
 }

@@ -1,5 +1,5 @@
-use crate::display::{item_detail_line, item_hint, item_urgency, DisplayItem};
-use crate::state::{DataState, DetailView};
+use crate::display::{item_detail_line, item_hint, item_urgency, DisplayItem, ListSnapshot};
+use crate::state::DetailView;
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
@@ -10,21 +10,16 @@ use ratatui::{
 pub(super) fn render_detail(
     frame: &mut ratatui::Frame,
     view: &mut DetailView,
-    data: &DataState,
+    parent: &ListSnapshot,
     content_area: Rect,
 ) {
-    let group_data = data
-        .cats
-        .iter()
-        .find(|c| c.cat == view.cat)
-        .and_then(|c| c.items.get(view.group_index))
-        .and_then(|d| {
-            if let DisplayItem::Group { label, items } = d {
-                Some((label.as_str(), items.as_slice()))
-            } else {
-                None
-            }
-        });
+    let group_data = parent.items.get(view.group_index).and_then(|d| {
+        if let DisplayItem::Group { label, items } = d {
+            Some((label.as_str(), items.as_slice()))
+        } else {
+            None
+        }
+    });
 
     let Some((label, items)) = group_data else {
         return;

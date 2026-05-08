@@ -3,10 +3,12 @@ use chrono::Utc;
 use ratatui::widgets::ListState;
 
 use super::{
-    Action, App, CategoryView, DetailView, Effect, EnterAction, InvestigateAction, Msg,
-    RefreshState, Screen,
+    Action, App, DetailView, Effect, EnterAction, InvestigateAction, Msg, RefreshState, Screen,
 };
-use crate::display::{build_cats, item_investigation, item_url, DisplayItem, InvestigationKind};
+use crate::display::{
+    build_cats, build_unified, item_investigation, item_url, DisplayItem, InvestigationKind,
+    ListSnapshot,
+};
 
 impl App {
     pub(crate) fn update(&mut self, action: Action) -> Vec<Effect> {
@@ -31,28 +33,19 @@ impl App {
             }
             Action::Back => {
                 self.ui.screen = match std::mem::take(&mut self.ui.screen) {
-                    Screen::Detail { parent, .. } => Screen::Category(parent),
-                    Screen::Category(cv) => Screen::Home {
-                        focused_tile: cv.prev_focused_tile,
+                    Screen::Detail { parent, .. } => Screen::UnifiedList {
+                        items: parent.items,
+                        selected: parent.selected,
+                        filter: parent.filter,
                     },
-                    Screen::Home { focused_tile } => Screen::Home { focused_tile },
+                    // Already at top level — no-op.
+                    other => other,
                 };
                 vec![]
             }
-            Action::MoveTileForward
-            | Action::MoveTileBack
-            | Action::MoveTileUp
-            | Action::MoveTileDown
-            | Action::MoveTileLeft
-            | Action::MoveTileRight
-            | Action::MoveUp
-            | Action::MoveDown
-            | Action::Enter
-            | Action::Investigate => {
-                if matches!(self.ui.screen, Screen::Home { .. }) {
-                    self.handle_home(action)
-                } else if matches!(self.ui.screen, Screen::Category(_)) {
-                    self.handle_category(action)
+            Action::MoveUp | Action::MoveDown | Action::Enter | Action::Investigate => {
+                if matches!(self.ui.screen, Screen::UnifiedList { .. }) {
+                    self.handle_unified_list(action)
                 } else {
                     self.handle_detail(action)
                 }
@@ -60,48 +53,7 @@ impl App {
         }
     }
 
-    fn handle_home(&mut self, action: Action) -> Vec<Effect> {
-        match action {
-            Action::MoveTileForward => {
-                self.move_tile_forward();
-                vec![]
-            }
-            Action::MoveTileBack => {
-                self.move_tile_back();
-                vec![]
-            }
-            Action::MoveTileUp => {
-                self.move_tile_up();
-                vec![]
-            }
-            Action::MoveTileDown => {
-                self.move_tile_down();
-                vec![]
-            }
-            Action::MoveTileLeft => {
-                self.move_tile_left();
-                vec![]
-            }
-            Action::MoveTileRight => {
-                self.move_tile_right();
-                vec![]
-            }
-            Action::Enter => {
-                let ea = compute_enter_action(self);
-                self.apply_enter_action(ea)
-            }
-            Action::MoveUp | Action::MoveDown | Action::Investigate => vec![],
-            Action::Quit
-            | Action::ToggleHelp
-            | Action::CloseHelp
-            | Action::Back
-            | Action::Refresh => {
-                unreachable!()
-            }
-        }
-    }
-
-    fn handle_category(&mut self, action: Action) -> Vec<Effect> {
+    fn handle_unified_list(&mut self, action: Action) -> Vec<Effect> {
         match action {
             Action::MoveUp => {
                 self.move_up();
@@ -116,12 +68,6 @@ impl App {
                 self.apply_enter_action(ea)
             }
             Action::Investigate => self.handle_investigate(),
-            Action::MoveTileForward
-            | Action::MoveTileBack
-            | Action::MoveTileUp
-            | Action::MoveTileDown
-            | Action::MoveTileLeft
-            | Action::MoveTileRight => vec![],
             Action::Quit
             | Action::ToggleHelp
             | Action::CloseHelp
@@ -147,12 +93,6 @@ impl App {
                 self.apply_enter_action(ea)
             }
             Action::Investigate => self.handle_investigate(),
-            Action::MoveTileForward
-            | Action::MoveTileBack
-            | Action::MoveTileUp
-            | Action::MoveTileDown
-            | Action::MoveTileLeft
-            | Action::MoveTileRight => vec![],
             Action::Quit
             | Action::ToggleHelp
             | Action::CloseHelp
@@ -196,48 +136,30 @@ impl App {
         match ea {
             EnterAction::None => vec![],
             EnterAction::OpenUrl(url) => vec![Effect::OpenUrl(url)],
-            EnterAction::OpenCategory { cat } => {
-                let prev_focused_tile = if let Screen::Home { focused_tile } = &self.ui.screen {
-                    *focused_tile
-                } else {
-                    0
-                };
-                let len = self
-                    .data
-                    .cats
-                    .iter()
-                    .find(|c| c.cat == cat)
-                    .map(|c| c.items.len())
-                    .unwrap_or(0);
-                let mut ls = ListState::default();
-                if len > 0 {
-                    ls.select(Some(0));
-                }
-                self.ui.screen = Screen::Category(CategoryView {
-                    cat,
-                    list_state: ls,
-                    prev_focused_tile,
-                });
-                vec![]
-            }
             EnterAction::OpenDetail {
-                cat,
                 group_index,
                 item_count,
             } => {
-                let parent = if let Screen::Category(cv) = &self.ui.screen {
-                    cv.clone()
-                } else {
+                let Screen::UnifiedList {
+                    items,
+                    selected,
+                    filter,
+                } = &self.ui.screen
+                else {
                     return vec![];
+                };
+                let snapshot = ListSnapshot {
+                    items: items.clone(),
+                    selected: *selected,
+                    filter: filter.clone(),
                 };
                 let mut ds = ListState::default();
                 if item_count > 0 {
                     ds.select(Some(0));
                 }
                 self.ui.screen = Screen::Detail {
-                    parent,
+                    parent: snapshot,
                     view: DetailView {
-                        cat,
                         group_index,
                         list_state: ds,
                     },
@@ -249,19 +171,15 @@ impl App {
 
     pub(crate) fn selected_url(&self) -> Option<&str> {
         match &self.ui.screen {
-            Screen::Home { .. } => None,
-            Screen::Category(view) => {
+            Screen::UnifiedList {
+                items, selected, ..
+            } => match items.get(*selected)? {
+                DisplayItem::Single(item) => item_url(item),
+                DisplayItem::Group { .. } => None,
+            },
+            Screen::Detail { parent, view } => {
                 let sel = view.list_state.selected().unwrap_or(0);
-                let cd = self.data.cat_data(view.cat)?;
-                match cd.items.get(sel)? {
-                    DisplayItem::Single(item) => item_url(item),
-                    DisplayItem::Group { .. } => None,
-                }
-            }
-            Screen::Detail { view, .. } => {
-                let sel = view.list_state.selected().unwrap_or(0);
-                let cd = self.data.cat_data(view.cat)?;
-                match cd.items.get(view.group_index)? {
+                match parent.items.get(view.group_index)? {
                     DisplayItem::Group { items, .. } => items.get(sel).and_then(item_url),
                     _ => None,
                 }
@@ -272,32 +190,21 @@ impl App {
 
 pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
     match app.current_screen() {
-        Screen::Home { focused_tile } => {
-            if app.data.cats.is_empty() {
-                return EnterAction::None;
-            }
-            EnterAction::OpenCategory {
-                cat: app.data.cats[*focused_tile].cat,
-            }
-        }
-        Screen::Category(view) => {
-            let sel = view.list_state.selected().unwrap_or(0);
-            let Some(cd) = app.data.cat_data(view.cat) else {
-                return EnterAction::None;
-            };
-            match cd.items.get(sel) {
-                Some(DisplayItem::Group { items, .. }) => EnterAction::OpenDetail {
-                    cat: view.cat,
-                    group_index: sel,
-                    item_count: items.len(),
-                },
-                Some(DisplayItem::Single(_)) => app
-                    .selected_url()
-                    .map(|u| EnterAction::OpenUrl(u.to_string()))
-                    .unwrap_or(EnterAction::None),
-                None => EnterAction::None,
-            }
-        }
+        Screen::UnifiedList {
+            items, selected, ..
+        } => match items.get(*selected) {
+            Some(DisplayItem::Group {
+                items: group_items, ..
+            }) => EnterAction::OpenDetail {
+                group_index: *selected,
+                item_count: group_items.len(),
+            },
+            Some(DisplayItem::Single(_)) => app
+                .selected_url()
+                .map(|u| EnterAction::OpenUrl(u.to_string()))
+                .unwrap_or(EnterAction::None),
+            None => EnterAction::None,
+        },
         Screen::Detail { .. } => app
             .selected_url()
             .map(|u| EnterAction::OpenUrl(u.to_string()))
@@ -306,7 +213,7 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
 }
 
 pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
-    let Some(item) = app.ui.screen.selected_status_item(&app.data.cats) else {
+    let Some(item) = app.ui.screen.selected_status_item() else {
         return InvestigateAction::None;
     };
     match item_investigation(&item) {
@@ -348,15 +255,18 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
         Msg::FetchResult(Ok(report)) => {
             let json =
                 serde_json::to_string(&report).context("failed to serialize status report")?;
-            let cats = build_cats(report.items);
-            let current_tile = if let Screen::Home { focused_tile } = &app.ui.screen {
-                *focused_tile
-            } else {
-                0
+            let filter = match &app.ui.screen {
+                Screen::UnifiedList { filter, .. } => filter.clone(),
+                Screen::Detail { parent, .. } => parent.filter.clone(),
             };
-            let focused_tile = current_tile.min(cats.len().saturating_sub(1));
+            let cats = build_cats(report.items.clone());
+            let items = build_unified(report.items, &filter);
             app.data.cats = cats;
-            app.ui.screen = Screen::Home { focused_tile };
+            app.ui.screen = Screen::UnifiedList {
+                items,
+                selected: 0,
+                filter,
+            };
             app.data.last_updated = Some(Utc::now());
             app.data.refresh_state = RefreshState::Idle;
             Ok(vec![Effect::WriteCache(json)])
@@ -374,15 +284,92 @@ mod tests {
         compute_investigate_action, handle_msg, Action, App, Effect, InvestigateAction, Msg,
         RefreshState, Screen,
     };
-    use crate::display::{CatData, Category, DisplayItem};
-    use crate::state::{DataState, UiState};
+    use crate::display::{DisplayItem, Filter, ListSnapshot};
+    use crate::state::{DataState, DetailView, UiState};
     use workflows::status::{StatusItem, StatusReport};
 
-    #[test]
-    fn investigate_action_launches_ci_from_category_selection() {
-        let mut app = app_with_cat(Category::Errors, vec![DisplayItem::Single(ci_failure())]);
-        apply(&mut app, &[Action::Enter]);
+    fn app_with_items(items: Vec<DisplayItem>) -> App {
+        App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    items,
+                    selected: 0,
+                    filter: Filter::default(),
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
 
+    fn app_in_detail(group_items: Vec<StatusItem>) -> App {
+        let snapshot = ListSnapshot {
+            items: vec![DisplayItem::Group {
+                label: "group".to_string(),
+                items: group_items,
+            }],
+            selected: 0,
+            filter: Filter::default(),
+        };
+        App {
+            ui: UiState {
+                screen: Screen::Detail {
+                    parent: snapshot,
+                    view: DetailView {
+                        group_index: 0,
+                        list_state: {
+                            let mut ls = ratatui::widgets::ListState::default();
+                            ls.select(Some(0));
+                            ls
+                        },
+                    },
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    fn apply(app: &mut App, actions: &[Action]) {
+        for action in actions {
+            app.update(*action);
+        }
+    }
+
+    fn report_with_ci() -> StatusReport {
+        StatusReport {
+            items: vec![ci_failure()],
+        }
+    }
+
+    fn ci_failure() -> StatusItem {
+        StatusItem::Ci(domain::CiFailure {
+            repo: domain::RepoSlug::new("ooloth", "hub"),
+            workflow_name: "CI".to_string(),
+            job_name: None,
+            step_name: None,
+            error: None,
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::High,
+            url: "https://github.com/ooloth/hub/actions/runs/123".to_string(),
+        })
+    }
+
+    #[cfg(feature = "private")]
+    fn media_blocked() -> StatusItem {
+        StatusItem::MediaBlocked(workflows::private::status::BlockedItem {
+            source: "Sonarr".to_string(),
+            urgency: domain::Urgency::High,
+            age: chrono::Duration::zero(),
+            title: "Show — S01E01".to_string(),
+            error: "Invalid video file".to_string(),
+            url: "http://sonarr/activity/queue".to_string(),
+        })
+    }
+
+    #[test]
+    fn investigate_action_launches_ci_from_unified_list_selection() {
+        let app = app_with_items(vec![DisplayItem::Single(ci_failure())]);
         assert_eq!(
             compute_investigate_action(&app),
             InvestigateAction::LaunchCi {
@@ -394,15 +381,7 @@ mod tests {
 
     #[test]
     fn investigate_action_launches_ci_from_detail_selection() {
-        let mut app = app_with_cat(
-            Category::Errors,
-            vec![DisplayItem::Group {
-                label: "group".to_string(),
-                items: vec![ci_failure()],
-            }],
-        );
-        apply(&mut app, &[Action::Enter, Action::Enter]);
-
+        let app = app_in_detail(vec![ci_failure()]);
         assert_eq!(
             compute_investigate_action(&app),
             InvestigateAction::LaunchCi {
@@ -414,9 +393,8 @@ mod tests {
 
     #[test]
     fn investigate_action_ignores_unmapped_items() {
-        let mut app = app_with_cat(
-            Category::Issues,
-            vec![DisplayItem::Single(StatusItem::Issue(domain::Issue {
+        let app = app_with_items(vec![DisplayItem::Single(StatusItem::Issue(
+            domain::Issue {
                 number: 31,
                 title: "TUI investigation".to_string(),
                 repo: domain::RepoSlug::new("ooloth", "hub"),
@@ -424,10 +402,8 @@ mod tests {
                 age: chrono::Duration::zero(),
                 urgency: domain::Urgency::Low,
                 labels: vec![],
-            }))],
-        );
-        apply(&mut app, &[Action::Enter]);
-
+            },
+        ))]);
         assert_eq!(compute_investigate_action(&app), InvestigateAction::None);
     }
 
@@ -463,69 +439,59 @@ mod tests {
     }
 
     #[test]
-    fn update_enter_on_home_opens_category() {
-        let mut app = app_with_cat(Category::Errors, vec![DisplayItem::Single(ci_failure())]);
+    fn enter_on_group_in_unified_list_opens_detail() {
+        let mut app = app_with_items(vec![DisplayItem::Group {
+            label: "hub".to_string(),
+            items: vec![ci_failure()],
+        }]);
         app.update(Action::Enter);
-        assert!(matches!(app.current_screen(), Screen::Category(_)));
-    }
-
-    #[test]
-    fn enter_on_group_in_category_opens_detail() {
-        let mut app = app_with_cat(
-            Category::Errors,
-            vec![DisplayItem::Group {
-                label: "hub".to_string(),
-                items: vec![ci_failure()],
-            }],
-        );
-        apply(&mut app, &[Action::Enter, Action::Enter]);
         assert!(matches!(app.current_screen(), Screen::Detail { .. }));
     }
 
     #[test]
-    fn back_from_detail_returns_to_category() {
-        let mut app = app_with_cat(
-            Category::Errors,
-            vec![DisplayItem::Group {
+    fn back_from_detail_returns_to_unified_list() {
+        let mut app = app_with_items(vec![DisplayItem::Group {
+            label: "hub".to_string(),
+            items: vec![ci_failure()],
+        }]);
+        apply(&mut app, &[Action::Enter, Action::Back]);
+        assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
+    }
+
+    #[test]
+    fn back_from_detail_restores_selection() {
+        let mut app = app_with_items(vec![
+            DisplayItem::Single(ci_failure()),
+            DisplayItem::Group {
                 label: "hub".to_string(),
                 items: vec![ci_failure()],
-            }],
-        );
-        apply(&mut app, &[Action::Enter, Action::Enter, Action::Back]);
-        assert!(matches!(app.current_screen(), Screen::Category(_)));
+            },
+        ]);
+        // move to second item (the group) then drill in
+        apply(&mut app, &[Action::MoveDown, Action::Enter, Action::Back]);
+        let Screen::UnifiedList { selected, .. } = app.current_screen() else {
+            panic!("expected UnifiedList");
+        };
+        assert_eq!(*selected, 1);
     }
 
     #[test]
-    fn back_from_category_returns_to_home() {
-        let mut app = app_with_cat(Category::Errors, vec![DisplayItem::Single(ci_failure())]);
-        apply(&mut app, &[Action::Enter, Action::Back]);
-        assert!(matches!(app.current_screen(), Screen::Home { .. }));
-    }
-
-    #[test]
-    fn back_does_nothing_from_home() {
+    fn back_does_nothing_from_unified_list() {
         let mut app = App::default();
         app.update(Action::Back);
-        assert!(matches!(app.current_screen(), Screen::Home { .. }));
+        assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
     }
 
     #[test]
     fn full_navigation_round_trip() {
-        let mut app = app_with_cat(
-            Category::Errors,
-            vec![DisplayItem::Group {
-                label: "hub".to_string(),
-                items: vec![ci_failure()],
-            }],
-        );
-        apply(&mut app, &[Action::Enter]);
-        assert!(matches!(app.current_screen(), Screen::Category(_)));
+        let mut app = app_with_items(vec![DisplayItem::Group {
+            label: "hub".to_string(),
+            items: vec![ci_failure()],
+        }]);
         apply(&mut app, &[Action::Enter]);
         assert!(matches!(app.current_screen(), Screen::Detail { .. }));
         apply(&mut app, &[Action::Back]);
-        assert!(matches!(app.current_screen(), Screen::Category(_)));
-        apply(&mut app, &[Action::Back]);
-        assert!(matches!(app.current_screen(), Screen::Home { .. }));
+        assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
     }
 
     #[test]
@@ -573,7 +539,7 @@ mod tests {
     }
 
     #[test]
-    fn handle_msg_fetch_ok_sets_idle_and_updates_cats() {
+    fn handle_msg_fetch_ok_sets_idle_and_populates_items() {
         let mut app = App {
             data: DataState {
                 refresh_state: RefreshState::InProgress,
@@ -583,17 +549,23 @@ mod tests {
         };
         handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
         assert!(matches!(app.data.refresh_state, RefreshState::Idle));
-        assert!(!app.data.cats.is_empty());
+        assert!(matches!(
+            app.current_screen(),
+            Screen::UnifiedList { items, .. } if !items.is_empty()
+        ));
         assert!(app.data.last_updated.is_some());
     }
 
     #[test]
-    fn handle_msg_fetch_ok_resets_to_home() {
-        let mut app = app_with_cat(Category::Errors, vec![DisplayItem::Single(ci_failure())]);
+    fn handle_msg_fetch_ok_resets_to_unified_list() {
+        let mut app = app_with_items(vec![DisplayItem::Group {
+            label: "hub".to_string(),
+            items: vec![ci_failure()],
+        }]);
         apply(&mut app, &[Action::Enter]);
         app.data.refresh_state = RefreshState::InProgress;
         handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
-        assert!(matches!(app.current_screen(), Screen::Home { .. }));
+        assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
     }
 
     #[test]
@@ -628,46 +600,10 @@ mod tests {
         assert!(matches!(effects.as_slice(), [Effect::Quit]));
     }
 
-    fn app_with_cat(cat: Category, items: Vec<DisplayItem>) -> App {
-        App {
-            data: DataState {
-                cats: vec![CatData { cat, items }],
-                ..DataState::default()
-            },
-            ..App::default()
-        }
-    }
-
-    fn apply(app: &mut App, actions: &[Action]) {
-        for action in actions {
-            app.update(*action);
-        }
-    }
-
-    fn report_with_ci() -> StatusReport {
-        StatusReport {
-            items: vec![ci_failure()],
-        }
-    }
-
-    #[cfg(feature = "private")]
-    fn media_blocked() -> StatusItem {
-        StatusItem::MediaBlocked(workflows::private::status::BlockedItem {
-            source: "Sonarr".to_string(),
-            urgency: domain::Urgency::High,
-            age: chrono::Duration::zero(),
-            title: "Show — S01E01".to_string(),
-            error: "Invalid video file".to_string(),
-            url: "http://sonarr/activity/queue".to_string(),
-        })
-    }
-
     #[cfg(feature = "private")]
     #[test]
-    fn investigate_action_launches_sonarr_from_category_selection() {
-        let mut app = app_with_cat(Category::Errors, vec![DisplayItem::Single(media_blocked())]);
-        apply(&mut app, &[Action::Enter]);
-
+    fn investigate_action_launches_sonarr_from_unified_list_selection() {
+        let app = app_with_items(vec![DisplayItem::Single(media_blocked())]);
         assert_eq!(
             compute_investigate_action(&app),
             InvestigateAction::LaunchSonarrBlocked {
@@ -680,15 +616,7 @@ mod tests {
     #[cfg(feature = "private")]
     #[test]
     fn investigate_action_launches_sonarr_from_detail_selection() {
-        let mut app = app_with_cat(
-            Category::Errors,
-            vec![DisplayItem::Group {
-                label: "Sonarr · Import blocked · Invalid video file".to_string(),
-                items: vec![media_blocked()],
-            }],
-        );
-        apply(&mut app, &[Action::Enter, Action::Enter]);
-
+        let app = app_in_detail(vec![media_blocked()]);
         assert_eq!(
             compute_investigate_action(&app),
             InvestigateAction::LaunchSonarrBlocked {
@@ -696,18 +624,5 @@ mod tests {
                 error: "Invalid video file".to_string(),
             }
         );
-    }
-
-    fn ci_failure() -> StatusItem {
-        StatusItem::Ci(domain::CiFailure {
-            repo: domain::RepoSlug::new("ooloth", "hub"),
-            workflow_name: "CI".to_string(),
-            job_name: None,
-            step_name: None,
-            error: None,
-            age: chrono::Duration::zero(),
-            urgency: domain::Urgency::High,
-            url: "https://github.com/ooloth/hub/actions/runs/123".to_string(),
-        })
     }
 }

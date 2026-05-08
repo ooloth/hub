@@ -20,13 +20,20 @@ impl Category {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) enum DisplayItem {
     Single(StatusItem),
     Group {
         label: String,
         items: Vec<StatusItem>,
     },
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ListSnapshot {
+    pub(crate) items: Vec<DisplayItem>,
+    pub(crate) selected: usize,
+    pub(crate) filter: Filter,
 }
 
 #[derive(Debug)]

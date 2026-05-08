@@ -3,7 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::state::{Action, App, Screen};
 
 pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
-    let can_go_back = !matches!(app.ui.screen, Screen::Home { .. });
+    let can_go_back = matches!(app.ui.screen, Screen::Detail { .. });
 
     match (key.code, key.modifiers) {
         (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
@@ -20,24 +20,7 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
         return None;
     }
 
-    match app.current_screen() {
-        Screen::Home { .. } => home_keys(key),
-        Screen::Category(_) | Screen::Detail { .. } => list_keys(key),
-    }
-}
-
-fn home_keys(key: KeyEvent) -> Option<Action> {
-    match (key.code, key.modifiers) {
-        (KeyCode::Tab, _) => Some(Action::MoveTileForward),
-        (KeyCode::BackTab, _) => Some(Action::MoveTileBack),
-        (KeyCode::Right, _) | (KeyCode::Char('l'), _) => Some(Action::MoveTileRight),
-        (KeyCode::Left, _) | (KeyCode::Char('h'), _) => Some(Action::MoveTileLeft),
-        (KeyCode::Down, _) | (KeyCode::Char('j'), _) => Some(Action::MoveTileDown),
-        (KeyCode::Up, _) | (KeyCode::Char('k'), _) => Some(Action::MoveTileUp),
-        (KeyCode::Enter, _) => Some(Action::Enter),
-        (KeyCode::Char('i'), _) => Some(Action::Investigate),
-        _ => None,
-    }
+    list_keys(key)
 }
 
 fn list_keys(key: KeyEvent) -> Option<Action> {
@@ -57,10 +40,9 @@ fn list_keys(key: KeyEvent) -> Option<Action> {
 #[cfg(test)]
 mod tests {
     use super::key_to_action;
-    use crate::display::Category;
-    use crate::state::{Action, App, CategoryView, Screen, UiState};
+    use crate::display::{DisplayItem, Filter, ListSnapshot};
+    use crate::state::{Action, App, DetailView, Screen, UiState};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use ratatui::widgets::ListState;
     use rstest::rstest;
 
     fn k(code: KeyCode) -> KeyEvent {
@@ -75,16 +57,24 @@ mod tests {
         KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
     }
 
-    fn category_app() -> App {
-        let mut ls = ListState::default();
-        ls.select(Some(0));
+    fn detail_app() -> App {
+        let snapshot = ListSnapshot {
+            items: vec![DisplayItem::Group {
+                label: "group".to_string(),
+                items: vec![],
+            }],
+            selected: 0,
+            filter: Filter::default(),
+        };
         App {
             ui: UiState {
-                screen: Screen::Category(CategoryView {
-                    cat: Category::Errors,
-                    list_state: ls,
-                    prev_focused_tile: 0,
-                }),
+                screen: Screen::Detail {
+                    parent: snapshot,
+                    view: DetailView {
+                        group_index: 0,
+                        list_state: ratatui::widgets::ListState::default(),
+                    },
+                },
                 ..UiState::default()
             },
             ..App::default()
@@ -96,7 +86,10 @@ mod tests {
     #[case(ctrl('c'), Some(Action::Quit))]
     #[case(ch('?'), Some(Action::ToggleHelp))]
     #[case(ch('r'), Some(Action::Refresh))]
-    fn universal_keys_fire_in_home_view(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
+    fn universal_keys_fire_in_unified_list(
+        #[case] key: KeyEvent,
+        #[case] expected: Option<Action>,
+    ) {
         assert_eq!(key_to_action(&App::default(), key), expected);
     }
 
@@ -105,11 +98,8 @@ mod tests {
     #[case(ctrl('c'), Some(Action::Quit))]
     #[case(ch('?'), Some(Action::ToggleHelp))]
     #[case(ch('r'), Some(Action::Refresh))]
-    fn universal_keys_fire_in_category_view(
-        #[case] key: KeyEvent,
-        #[case] expected: Option<Action>,
-    ) {
-        assert_eq!(key_to_action(&category_app(), key), expected);
+    fn universal_keys_fire_in_detail(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
+        assert_eq!(key_to_action(&detail_app(), key), expected);
     }
 
     #[test]
@@ -128,15 +118,15 @@ mod tests {
     }
 
     #[test]
-    fn esc_goes_back_when_can_go_back() {
+    fn esc_goes_back_from_detail() {
         assert_eq!(
-            key_to_action(&category_app(), k(KeyCode::Esc)),
+            key_to_action(&detail_app(), k(KeyCode::Esc)),
             Some(Action::Back)
         );
     }
 
     #[test]
-    fn esc_does_nothing_from_home_without_help() {
+    fn esc_does_nothing_from_unified_list_without_help() {
         assert_eq!(key_to_action(&App::default(), k(KeyCode::Esc)), None);
     }
 
@@ -154,20 +144,16 @@ mod tests {
     }
 
     #[rstest]
-    #[case(k(KeyCode::Tab), Some(Action::MoveTileForward))]
-    #[case(k(KeyCode::BackTab), Some(Action::MoveTileBack))]
-    #[case(k(KeyCode::Right), Some(Action::MoveTileRight))]
-    #[case(ch('l'), Some(Action::MoveTileRight))]
-    #[case(k(KeyCode::Left), Some(Action::MoveTileLeft))]
-    #[case(ch('h'), Some(Action::MoveTileLeft))]
-    #[case(k(KeyCode::Down), Some(Action::MoveTileDown))]
-    #[case(ch('j'), Some(Action::MoveTileDown))]
-    #[case(k(KeyCode::Up), Some(Action::MoveTileUp))]
-    #[case(ch('k'), Some(Action::MoveTileUp))]
+    #[case(k(KeyCode::Up), Some(Action::MoveUp))]
+    #[case(ch('k'), Some(Action::MoveUp))]
+    #[case(ch('h'), Some(Action::MoveUp))]
+    #[case(k(KeyCode::Down), Some(Action::MoveDown))]
+    #[case(ch('j'), Some(Action::MoveDown))]
+    #[case(ch('l'), Some(Action::MoveDown))]
     #[case(k(KeyCode::Enter), Some(Action::Enter))]
     #[case(ch('i'), Some(Action::Investigate))]
     #[case(ch('x'), None)]
-    fn home_view_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
+    fn unified_list_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
         assert_eq!(key_to_action(&App::default(), key), expected);
     }
 
@@ -181,17 +167,7 @@ mod tests {
     #[case(k(KeyCode::Enter), Some(Action::Enter))]
     #[case(ch('i'), Some(Action::Investigate))]
     #[case(ch('x'), None)]
-    fn category_view_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
-        assert_eq!(key_to_action(&category_app(), key), expected);
-    }
-
-    #[test]
-    fn h_and_l_mean_different_things_in_home_vs_list_views() {
-        let home = App::default();
-        let cat = category_app();
-        assert_eq!(key_to_action(&home, ch('h')), Some(Action::MoveTileLeft));
-        assert_eq!(key_to_action(&cat, ch('h')), Some(Action::MoveUp));
-        assert_eq!(key_to_action(&home, ch('l')), Some(Action::MoveTileRight));
-        assert_eq!(key_to_action(&cat, ch('l')), Some(Action::MoveDown));
+    fn detail_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
+        assert_eq!(key_to_action(&detail_app(), key), expected);
     }
 }
