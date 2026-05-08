@@ -8,16 +8,16 @@ pub(crate) async fn run(config: &Config) -> Result<()> {
         println!("skipping: linear (LINEAR_TOKEN not set)");
     }
 
-    let report = workflows::status::run(
-        &config.github_token,
-        &config.github_pr_repos(),
-        &config.github_open_issue_repos(),
-        &config.github_assigned_issue_repos(),
-        &config.github_ci_repos(),
-        config.linear_token.as_deref(),
-        config.private_monitor_workflow_names(),
-        &config.loki_envs(),
-    )
+    let report = workflows::status::run(workflows::status::StatusParams {
+        github_token: config.github_token.clone(),
+        pr_repos: config.github_pr_repos(),
+        issue_repos: config.github_open_issue_repos(),
+        assigned_issue_repos: config.github_assigned_issue_repos(),
+        ci_repos: config.github_ci_repos(),
+        linear_token: config.linear_token.clone(),
+        private_workflow_names: config.private_monitor_workflow_names(),
+        loki_envs: config.loki_envs(),
+    })
     .await?;
 
     println!("status ({})", report.items.len());

@@ -68,28 +68,30 @@ pub struct StatusReport {
     pub items: Vec<StatusItem>,
 }
 
+pub struct StatusParams {
+    pub github_token: String,
+    pub pr_repos: Vec<String>,
+    pub issue_repos: Vec<String>,
+    pub assigned_issue_repos: Vec<String>,
+    pub ci_repos: Vec<(String, String)>,
+    pub linear_token: Option<String>,
+    pub private_workflow_names: Vec<String>,
+    pub loki_envs: Vec<domain::LokiEnv>,
+}
+
 /// Fetches all status data concurrently, merges into a unified list, and sorts
 /// by (urgency ascending, age descending) so the most pressing item is first.
 ///
 /// # Errors
 /// Returns an error if any API call fails.
-pub async fn run(
-    github_token: &str,
-    pr_repos: &[String],
-    issue_repos: &[String],
-    assigned_issue_repos: &[String],
-    ci_repos: &[(String, String)],
-    linear_token: Option<&str>,
-    private_workflow_names: Vec<String>,
-    loki_envs: &[domain::LokiEnv],
-) -> Result<StatusReport> {
+pub async fn run(params: StatusParams) -> Result<StatusReport> {
     let (prs, issues, assigned_issues, ci_failures, linear_issues) = tokio::join!(
-        clients::github::prs_awaiting_review(github_token, pr_repos),
-        clients::github::issues(github_token, issue_repos, false),
-        clients::github::issues(github_token, assigned_issue_repos, true),
-        clients::github::ci_failures(github_token, ci_repos),
+        clients::github::prs_awaiting_review(&params.github_token, &params.pr_repos),
+        clients::github::issues(&params.github_token, &params.issue_repos, false),
+        clients::github::issues(&params.github_token, &params.assigned_issue_repos, true),
+        clients::github::ci_failures(&params.github_token, &params.ci_repos),
         async {
-            match linear_token {
+            match params.linear_token.as_deref() {
                 Some(token) => clients::linear::issues(token).await,
                 None => Ok(vec![]),
             }
@@ -106,7 +108,7 @@ pub async fn run(
     items.extend(ci_failures?.into_iter().map(StatusItem::Ci));
     items.extend(linear_issues?.into_iter().map(StatusItem::Linear));
 
-    for env in loki_envs {
+    for env in &params.loki_envs {
         match crate::loki::run(env).await {
             Ok(errors) => items.extend(errors.into_iter().map(StatusItem::Loki)),
             Err(e) => eprintln!("loki ({} · {}): {e}", env.project, env.env),
@@ -115,7 +117,7 @@ pub async fn run(
 
     #[cfg(feature = "private")]
     {
-        let private = crate::private::status::run(private_workflow_names).await?;
+        let private = crate::private::status::run(params.private_workflow_names).await?;
         if let Some(media) = private.media {
             items.extend(media.blocked.into_iter().map(StatusItem::MediaBlocked));
             items.extend(
@@ -135,7 +137,7 @@ pub async fn run(
     }
 
     #[cfg(not(feature = "private"))]
-    let _ = private_workflow_names;
+    let _ = params.private_workflow_names;
 
     items.sort_by_key(|i| (i.urgency(), Reverse(i.age())));
 

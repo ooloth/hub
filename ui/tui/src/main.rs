@@ -128,28 +128,19 @@ async fn main() -> Result<()> {
 }
 
 fn spawn_fetch(config: &config::Config, tx: mpsc::Sender<Result<StatusReport>>) {
-    let github_token = config.github_token.clone();
-    let pr_repos = config.github_pr_repos();
-    let issue_repos = config.github_open_issue_repos();
-    let assigned_repos = config.github_assigned_issue_repos();
-    let ci_repos = config.github_ci_repos();
-    let linear_token = config.linear_token.clone();
-    let private_names = config.private_monitor_workflow_names();
-    let loki_envs = config.loki_envs();
+    let params = workflows::status::StatusParams {
+        github_token: config.github_token.clone(),
+        pr_repos: config.github_pr_repos(),
+        issue_repos: config.github_open_issue_repos(),
+        assigned_issue_repos: config.github_assigned_issue_repos(),
+        ci_repos: config.github_ci_repos(),
+        linear_token: config.linear_token.clone(),
+        private_workflow_names: config.private_monitor_workflow_names(),
+        loki_envs: config.loki_envs(),
+    };
 
     tokio::spawn(async move {
-        let result = workflows::status::run(
-            &github_token,
-            &pr_repos,
-            &issue_repos,
-            &assigned_repos,
-            &ci_repos,
-            linear_token.as_deref(),
-            private_names,
-            &loki_envs,
-        )
-        .await;
-        let _ = tx.send(result).await;
+        let _ = tx.send(workflows::status::run(params).await).await;
     });
 }
 
