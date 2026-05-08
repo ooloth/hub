@@ -269,14 +269,21 @@ fn unified_title(filter: &Filter, query_input: Option<&str>) -> String {
     }
 }
 
-fn urgency_divider(width: usize, filter_active: bool) -> ListItem<'static> {
-    let line = "─".repeat(width);
-    let style = if filter_active {
+/// Returns the style for filter-related chrome (border, dividers).
+/// Yellow while a query is being typed; green once any filter is committed; dim otherwise.
+fn filter_chrome_style(filter: &Filter, query_input: Option<&str>) -> Style {
+    if query_input.is_some() {
         Style::default().fg(Color::Yellow)
+    } else if !filter.is_empty() {
+        Style::default().fg(FOCUS_COLOR)
     } else {
         dim()
-    };
-    ListItem::new(Line::from(Span::styled(line, style)))
+    }
+}
+
+fn urgency_divider(width: usize, chrome: Style) -> ListItem<'static> {
+    let line = "─".repeat(width);
+    ListItem::new(Line::from(Span::styled(line, chrome)))
 }
 
 fn render_unified(
@@ -287,26 +294,16 @@ fn render_unified(
     query_input: Option<&str>,
     area: Rect,
 ) {
-    let filter_active = !filter.is_empty() || query_input.is_some();
-    let title_style = Style::default()
+    let chrome = filter_chrome_style(filter, query_input);
+    let title_style = chrome
         .add_modifier(Modifier::BOLD)
-        .remove_modifier(Modifier::DIM)
-        .fg(if filter_active {
-            Color::Yellow
-        } else {
-            Color::Reset
-        });
+        .remove_modifier(Modifier::DIM);
     let title = Span::styled(unified_title(filter, query_input), title_style);
-    let border_style = if filter_active {
-        Style::default().fg(Color::Yellow)
-    } else {
-        dim()
-    };
     let block = Block::new()
         .title(title)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(border_style);
+        .border_style(chrome);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -323,7 +320,7 @@ fn render_unified(
         let urgency = display_item_urgency(item);
         // Inject a divider between urgency tiers, but not before the first group.
         if prev_urgency.is_some() && Some(urgency) != prev_urgency {
-            display_items.push(urgency_divider(width, filter_active));
+            display_items.push(urgency_divider(width, chrome));
         }
         prev_urgency = Some(urgency);
 
