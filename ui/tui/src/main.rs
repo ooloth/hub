@@ -11,9 +11,10 @@ use std::{io, path::PathBuf};
 use tokio::sync::mpsc;
 use workflows::status::{StatusReport, SCHEMA_VERSION};
 
+use crate::display::{build_unified, Filter};
 use crate::input::key_to_action;
 use crate::render::render;
-use crate::state::{handle_msg, App, DataState, Effect, Msg, RefreshState, UiState};
+use crate::state::{handle_msg, App, DataState, Effect, Msg, RefreshState, Screen, UiState};
 
 mod display;
 mod input;
@@ -84,6 +85,9 @@ async fn main() -> Result<()> {
             _ => (vec![], None, true),
         };
 
+    let initial_filter = Filter::default();
+    let initial_display = build_unified(initial_items.clone(), &initial_filter);
+
     let mut app = App {
         data: DataState {
             raw_items: initial_items,
@@ -94,7 +98,14 @@ async fn main() -> Result<()> {
             },
             last_updated: initial_updated,
         },
-        ui: UiState::default(),
+        ui: UiState {
+            screen: Screen::UnifiedList {
+                items: initial_display,
+                selected: 0,
+                filter: initial_filter,
+            },
+            ..UiState::default()
+        },
     };
 
     let (tx, mut rx) = mpsc::channel::<Result<StatusReport>>(1);
