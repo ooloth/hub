@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
-use domain::{CiFailure, Issue, PullRequest, RepoSlug, Urgency};
+use domain::{CiFailure, Issue, PrKind, PullRequest, RepoSlug, Urgency};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -16,8 +16,6 @@ struct SearchItem {
     repository_url: String,
     created_at: String,
     labels: Vec<Label>,
-    #[serde(default)]
-    draft: bool,
     assignee: Option<SearchAssignee>,
 }
 
@@ -53,7 +51,7 @@ pub async fn prs_awaiting_review(token: &str, repos: &[String]) -> Result<Vec<Pu
     }
     let query = scoped_query("is:open is:pr review-requested:@me", repos);
     let response: SearchResponse = search(token, &query).await?;
-    items_to_prs(response.items, Urgency::Medium)
+    items_to_prs(response.items, Urgency::Medium, PrKind::Review)
 }
 
 /// Returns open non-draft PRs across the given repos authored by `github_username`,
@@ -78,6 +76,7 @@ pub async fn my_open_prs(
             .filter(|item| owned_by(item, github_username))
             .collect(),
         Urgency::High,
+        PrKind::Open,
     )
 }
 
@@ -103,6 +102,7 @@ pub async fn my_draft_prs(
             .filter(|item| owned_by(item, github_username))
             .collect(),
         Urgency::Medium,
+        PrKind::Draft,
     )
 }
 
@@ -112,7 +112,11 @@ fn owned_by(item: &SearchItem, github_username: &str) -> bool {
         .is_none_or(|a| a.login == github_username)
 }
 
-fn items_to_prs(items: Vec<SearchItem>, urgency: Urgency) -> Result<Vec<PullRequest>> {
+fn items_to_prs(
+    items: Vec<SearchItem>,
+    urgency: Urgency,
+    kind: PrKind,
+) -> Result<Vec<PullRequest>> {
     items
         .into_iter()
         .map(|item| {
@@ -123,7 +127,7 @@ fn items_to_prs(items: Vec<SearchItem>, urgency: Urgency) -> Result<Vec<PullRequ
                 url: item.html_url,
                 age: age(&item.created_at),
                 urgency,
-                is_draft: item.draft,
+                kind,
             })
         })
         .collect()
@@ -706,7 +710,6 @@ mod tests {
             repository_url: "https://api.github.com/repos/owner/repo".into(),
             created_at: "2024-01-01T00:00:00Z".into(),
             labels: vec![],
-            draft: false,
             assignee: Some(SearchAssignee {
                 login: login.into(),
             }),
@@ -721,7 +724,6 @@ mod tests {
             repository_url: "https://api.github.com/repos/owner/repo".into(),
             created_at: "2024-01-01T00:00:00Z".into(),
             labels: vec![],
-            draft: false,
             assignee: None,
         }
     }

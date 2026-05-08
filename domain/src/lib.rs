@@ -44,6 +44,13 @@ impl std::fmt::Display for RepoSlug {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum PrKind {
+    Open,
+    Review,
+    Draft,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PullRequest {
     pub number: u64,
@@ -53,7 +60,7 @@ pub struct PullRequest {
     #[serde(with = "duration_secs")]
     pub age: chrono::Duration,
     pub urgency: Urgency,
-    pub is_draft: bool,
+    pub kind: PrKind,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

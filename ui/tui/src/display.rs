@@ -103,7 +103,14 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
 
 pub(crate) fn item_line(item: &StatusItem) -> String {
     match item {
-        StatusItem::Pr(pr) => format!("{} · {} (#{})", pr.repo, pr.title, pr.number),
+        StatusItem::Pr(pr) => {
+            let badge = match pr.kind {
+                domain::PrKind::Open => "[OPEN]",
+                domain::PrKind::Review => "[TO REVIEW]",
+                domain::PrKind::Draft => "[DRAFT]",
+            };
+            format!("{} · {} (#{}) {badge}", pr.repo, pr.title, pr.number)
+        }
         StatusItem::Issue(i) => format!("{} · {} (#{})", i.repo, i.title, i.number),
         StatusItem::Ci(c) => {
             let base = format!("{} · CI", c.repo);
@@ -320,7 +327,7 @@ mod tests {
             url: "https://github.com/owner/repo/pull/42".to_string(),
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::Medium,
-            is_draft: false,
+            kind: domain::PrKind::Review,
         })
     }
 
@@ -380,9 +387,40 @@ mod tests {
         assert_eq!(item_category(&linear()), Category::Issues);
     }
 
+    fn make_pr(kind: domain::PrKind) -> StatusItem {
+        StatusItem::Pr(domain::PullRequest {
+            number: 42,
+            title: "Add feature".to_string(),
+            repo: domain::RepoSlug::new("owner", "repo"),
+            url: "https://github.com/owner/repo/pull/42".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Medium,
+            kind,
+        })
+    }
+
     #[test]
-    fn item_line_formats_pr() {
-        assert_eq!(item_line(&pr()), "owner/repo · Add feature (#42)");
+    fn item_line_pr_open_badge() {
+        assert_eq!(
+            item_line(&make_pr(domain::PrKind::Open)),
+            "owner/repo · Add feature (#42) [OPEN]"
+        );
+    }
+
+    #[test]
+    fn item_line_pr_to_review_badge() {
+        assert_eq!(
+            item_line(&make_pr(domain::PrKind::Review)),
+            "owner/repo · Add feature (#42) [TO REVIEW]"
+        );
+    }
+
+    #[test]
+    fn item_line_pr_draft_badge() {
+        assert_eq!(
+            item_line(&make_pr(domain::PrKind::Draft)),
+            "owner/repo · Add feature (#42) [DRAFT]"
+        );
     }
 
     #[test]
