@@ -3,7 +3,7 @@ use domain::{CiFailure, Issue, LinearIssue, PullRequest, Urgency};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 
-pub const SCHEMA_VERSION: i32 = 6;
+pub const SCHEMA_VERSION: i32 = 7;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum StatusItem {
