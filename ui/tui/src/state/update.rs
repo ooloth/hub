@@ -6,8 +6,8 @@ use super::{
     Action, App, DetailView, Effect, EnterAction, InvestigateAction, Msg, RefreshState, Screen,
 };
 use crate::display::{
-    build_cats, build_unified, item_investigation, item_url, DisplayItem, Filter,
-    InvestigationKind, ListSnapshot,
+    build_unified, item_investigation, item_url, DisplayItem, Filter, InvestigationKind,
+    ListSnapshot,
 };
 
 impl App {
@@ -333,10 +333,8 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
                 Screen::UnifiedList { filter, .. } => filter.clone(),
                 Screen::Detail { parent, .. } => parent.filter.clone(),
             };
-            let cats = build_cats(report.items.clone());
             app.data.raw_items = report.items.clone();
             let items = build_unified(report.items, &filter);
-            app.data.cats = cats;
             app.ui.screen = Screen::UnifiedList {
                 items,
                 selected: 0,

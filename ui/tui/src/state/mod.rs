@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use workflows::status::StatusItem;
 
-use crate::display::{CatData, Category, DisplayItem};
+use crate::display::DisplayItem;
 
 mod types;
 mod update;
@@ -21,16 +21,9 @@ pub(crate) struct UiState {
 
 #[derive(Debug, Default)]
 pub(crate) struct DataState {
-    pub(crate) cats: Vec<CatData>,
     pub(crate) raw_items: Vec<StatusItem>,
     pub(crate) refresh_state: RefreshState,
     pub(crate) last_updated: Option<DateTime<Utc>>,
-}
-
-impl DataState {
-    pub(crate) fn cat_data(&self, cat: Category) -> Option<&CatData> {
-        self.cats.iter().find(|c| c.cat == cat)
-    }
 }
 
 #[derive(Debug, Default)]

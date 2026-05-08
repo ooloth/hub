@@ -11,7 +11,6 @@ use std::{io, path::PathBuf};
 use tokio::sync::mpsc;
 use workflows::status::{StatusReport, SCHEMA_VERSION};
 
-use crate::display::build_cats;
 use crate::input::key_to_action;
 use crate::render::render;
 use crate::state::{handle_msg, App, DataState, Effect, Msg, RefreshState, UiState};
@@ -87,7 +86,6 @@ async fn main() -> Result<()> {
 
     let mut app = App {
         data: DataState {
-            cats: build_cats(initial_items.clone()),
             raw_items: initial_items,
             refresh_state: if start_refresh {
                 RefreshState::InProgress

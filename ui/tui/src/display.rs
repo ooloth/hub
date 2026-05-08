@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use workflows::status::StatusItem;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -9,8 +8,6 @@ pub(crate) enum Category {
 }
 
 impl Category {
-    pub(crate) const ALL: [Category; 3] = [Category::Errors, Category::Prs, Category::Issues];
-
     pub(crate) fn label(self) -> &'static str {
         match self {
             Category::Prs => "PRs",
@@ -34,12 +31,6 @@ pub(crate) struct ListSnapshot {
     pub(crate) items: Vec<DisplayItem>,
     pub(crate) selected: usize,
     pub(crate) filter: Filter,
-}
-
-#[derive(Debug)]
-pub(crate) struct CatData {
-    pub(crate) cat: Category,
-    pub(crate) items: Vec<DisplayItem>,
 }
 
 pub(crate) fn item_url(item: &StatusItem) -> Option<&str> {
@@ -279,20 +270,6 @@ pub(crate) fn build_unified(items: Vec<StatusItem>, filter: &Filter) -> Vec<Disp
     let mut sorted = filtered;
     sorted.sort_by_key(item_urgency);
     aggregate(sorted)
-}
-
-pub(crate) fn build_cats(items: Vec<StatusItem>) -> Vec<CatData> {
-    let mut by_cat: HashMap<Category, Vec<StatusItem>> = HashMap::new();
-    for item in items {
-        by_cat.entry(item_category(&item)).or_default().push(item);
-    }
-    Category::ALL
-        .iter()
-        .map(|&cat| CatData {
-            cat,
-            items: aggregate(by_cat.remove(&cat).unwrap_or_default()),
-        })
-        .collect()
 }
 
 #[cfg(test)]
@@ -723,79 +700,5 @@ mod tests {
                 domain::Urgency::Low
             ]
         );
-    }
-
-    #[test]
-    fn build_cats_produces_categories_in_all_order() {
-        let cats = build_cats(vec![]);
-        let order: Vec<Category> = cats.iter().map(|c| c.cat).collect();
-        assert_eq!(order, Category::ALL.to_vec());
-    }
-
-    #[test]
-    fn build_cats_routes_items_to_correct_categories() {
-        let cats = build_cats(vec![pr(), issue(), ci()]);
-        let errors = cats.iter().find(|c| c.cat == Category::Errors).unwrap();
-        let prs = cats.iter().find(|c| c.cat == Category::Prs).unwrap();
-        let issues = cats.iter().find(|c| c.cat == Category::Issues).unwrap();
-        assert_eq!(errors.items.len(), 1);
-        assert_eq!(prs.items.len(), 1);
-        assert_eq!(issues.items.len(), 1);
-    }
-
-    #[test]
-    fn snapshot_build_cats_empty() {
-        insta::assert_debug_snapshot!(build_cats(vec![]));
-    }
-
-    #[test]
-    fn snapshot_build_cats_one_of_each_type() {
-        insta::assert_debug_snapshot!(build_cats(vec![pr(), issue(), ci(), linear()]));
-    }
-
-    #[test]
-    fn snapshot_build_cats_multiple_per_category() {
-        let pr2 = StatusItem::Pr(domain::PullRequest {
-            number: 99,
-            title: "Another PR".to_string(),
-            repo: domain::RepoSlug::new("owner", "other"),
-            url: "https://github.com/owner/other/pull/99".to_string(),
-            age: chrono::Duration::zero(),
-            urgency: domain::Urgency::High,
-        });
-        let ci2 = StatusItem::Ci(domain::CiFailure {
-            repo: domain::RepoSlug::new("owner", "other"),
-            workflow_name: "Lint".to_string(),
-            job_name: None,
-            step_name: None,
-            error: None,
-            age: chrono::Duration::zero(),
-            urgency: domain::Urgency::Low,
-            url: "https://github.com/owner/other/actions/runs/2".to_string(),
-        });
-        insta::assert_debug_snapshot!(build_cats(vec![pr(), pr2, issue(), ci(), ci2]));
-    }
-
-    #[test]
-    fn snapshot_build_cats_mixed_urgency() {
-        let ci_critical = StatusItem::Ci(domain::CiFailure {
-            repo: domain::RepoSlug::new("owner", "repo"),
-            workflow_name: "Deploy".to_string(),
-            job_name: None,
-            step_name: None,
-            error: None,
-            age: chrono::Duration::zero(),
-            urgency: domain::Urgency::Critical,
-            url: "https://github.com/owner/repo/actions/runs/3".to_string(),
-        });
-        let pr_low = StatusItem::Pr(domain::PullRequest {
-            number: 1,
-            title: "Docs".to_string(),
-            repo: domain::RepoSlug::new("owner", "repo"),
-            url: "https://github.com/owner/repo/pull/1".to_string(),
-            age: chrono::Duration::zero(),
-            urgency: domain::Urgency::Low,
-        });
-        insta::assert_debug_snapshot!(build_cats(vec![ci_critical, pr_low, issue()]));
     }
 }

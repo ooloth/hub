@@ -432,10 +432,8 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::{action_hints, position_label, status_bar_left, wrap_text};
-    use crate::display::{CatData, Category, DisplayItem, Filter, ListSnapshot};
-    use crate::state::{
-        App, DataState, DetailView, EnterAction, InvestigateAction, Screen, UiState,
-    };
+    use crate::display::{DisplayItem, Filter, ListSnapshot};
+    use crate::state::{App, DetailView, EnterAction, InvestigateAction, Screen, UiState};
     use ratatui::widgets::ListState;
     use workflows::status::StatusItem;
 
@@ -617,18 +615,5 @@ mod tests {
             wrap_text("alpha beta gamma", 10),
             vec!["alpha beta", "gamma"]
         );
-    }
-
-    // Keep DataState with cats alive for test helpers that still use it
-    // (will be cleaned in Step 5).
-    #[allow(dead_code)]
-    fn _cats_helper() -> DataState {
-        DataState {
-            cats: vec![CatData {
-                cat: Category::Prs,
-                items: vec![],
-            }],
-            ..DataState::default()
-        }
     }
 }
