@@ -16,6 +16,7 @@ struct SearchItem {
     repository_url: String,
     created_at: String,
     labels: Vec<Label>,
+    #[serde(default)]
     draft: bool,
     assignee: Option<SearchAssignee>,
 }
@@ -693,5 +694,50 @@ mod tests {
     #[test]
     fn parse_cutoff_rejects_invalid_input() {
         assert!(parse_cutoff("not-a-duration").is_err());
+    }
+
+    // ── owned_by ──────────────────────────────────────────────────────────────
+
+    fn item_with_assignee(login: &str) -> SearchItem {
+        SearchItem {
+            number: 1,
+            title: "title".into(),
+            html_url: "https://github.com/owner/repo/pull/1".into(),
+            repository_url: "https://api.github.com/repos/owner/repo".into(),
+            created_at: "2024-01-01T00:00:00Z".into(),
+            labels: vec![],
+            draft: false,
+            assignee: Some(SearchAssignee {
+                login: login.into(),
+            }),
+        }
+    }
+
+    fn item_without_assignee() -> SearchItem {
+        SearchItem {
+            number: 1,
+            title: "title".into(),
+            html_url: "https://github.com/owner/repo/pull/1".into(),
+            repository_url: "https://api.github.com/repos/owner/repo".into(),
+            created_at: "2024-01-01T00:00:00Z".into(),
+            labels: vec![],
+            draft: false,
+            assignee: None,
+        }
+    }
+
+    #[test]
+    fn owned_by_passes_unassigned_pr() {
+        assert!(owned_by(&item_without_assignee(), "alice"));
+    }
+
+    #[test]
+    fn owned_by_passes_pr_assigned_to_user() {
+        assert!(owned_by(&item_with_assignee("alice"), "alice"));
+    }
+
+    #[test]
+    fn owned_by_rejects_pr_assigned_to_someone_else() {
+        assert!(!owned_by(&item_with_assignee("bob"), "alice"));
     }
 }
