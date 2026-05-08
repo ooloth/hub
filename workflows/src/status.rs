@@ -3,7 +3,7 @@ use domain::{CiFailure, Issue, LinearIssue, PullRequest, Urgency};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 
-pub const SCHEMA_VERSION: i32 = 5;
+pub const SCHEMA_VERSION: i32 = 6;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum StatusItem {
@@ -70,6 +70,7 @@ pub struct StatusReport {
 
 pub struct StatusParams {
     pub github_token: String,
+    pub github_username: String,
     pub pr_repos: Vec<String>,
     pub issue_repos: Vec<String>,
     pub assigned_issue_repos: Vec<String>,
@@ -85,8 +86,18 @@ pub struct StatusParams {
 /// # Errors
 /// Returns an error if any API call fails.
 pub async fn run(params: StatusParams) -> Result<StatusReport> {
-    let (prs, issues, assigned_issues, ci_failures, linear_issues) = tokio::join!(
+    let (my_open, review_queue, my_drafts, issues, assigned_issues, ci_failures, linear_issues) = tokio::join!(
+        clients::github::my_open_prs(
+            &params.github_token,
+            &params.pr_repos,
+            &params.github_username,
+        ),
         clients::github::prs_awaiting_review(&params.github_token, &params.pr_repos),
+        clients::github::my_draft_prs(
+            &params.github_token,
+            &params.pr_repos,
+            &params.github_username,
+        ),
         clients::github::issues(&params.github_token, &params.issue_repos, false),
         clients::github::issues(&params.github_token, &params.assigned_issue_repos, true),
         clients::github::ci_failures(&params.github_token, &params.ci_repos),
@@ -103,7 +114,9 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
 
     let mut items: Vec<StatusItem> = Vec::new();
 
-    items.extend(prs?.into_iter().map(StatusItem::Pr));
+    items.extend(my_open?.into_iter().map(StatusItem::Pr));
+    items.extend(review_queue?.into_iter().map(StatusItem::Pr));
+    items.extend(my_drafts?.into_iter().map(StatusItem::Pr));
     items.extend(github_issues.into_iter().map(StatusItem::Issue));
     items.extend(ci_failures?.into_iter().map(StatusItem::Ci));
     items.extend(linear_issues?.into_iter().map(StatusItem::Linear));

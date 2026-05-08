@@ -130,6 +130,7 @@ async fn main() -> Result<()> {
 fn spawn_fetch(config: &config::Config, tx: mpsc::Sender<Result<StatusReport>>) {
     let params = workflows::status::StatusParams {
         github_token: config.github_token.clone(),
+        github_username: config.github_username.clone(),
         pr_repos: config.github_pr_repos(),
         issue_repos: config.github_open_issue_repos(),
         assigned_issue_repos: config.github_assigned_issue_repos(),

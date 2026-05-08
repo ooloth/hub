@@ -10,6 +10,7 @@ pub(crate) async fn run(config: &Config) -> Result<()> {
 
     let report = workflows::status::run(workflows::status::StatusParams {
         github_token: config.github_token.clone(),
+        github_username: config.github_username.clone(),
         pr_repos: config.github_pr_repos(),
         issue_repos: config.github_open_issue_repos(),
         assigned_issue_repos: config.github_assigned_issue_repos(),
