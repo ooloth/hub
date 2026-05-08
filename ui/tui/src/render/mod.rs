@@ -3,10 +3,10 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph},
+    widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
 };
 
-use crate::display::{display_item_line, display_item_urgency, DisplayItem};
+use crate::display::{display_item_line, display_item_urgency, DisplayItem, Filter};
 use crate::state::{
     compute_enter_action, compute_investigate_action, App, EnterAction, InvestigateAction,
     RefreshState, Screen,
@@ -250,42 +250,106 @@ fn status_bar_left(app: &App) -> String {
     format!("{pos}{hints}")
 }
 
-// Stub render for the unified list. Reuses render_list_view with a
-// ratatui ListState driven by `selected`. Step 3 will replace this
-// with urgency-tier dividers and the full line format.
-fn render_unified_stub(
+fn unified_title(filter: &Filter) -> String {
+    match (&filter.category, &filter.query) {
+        (None, None) => " All ".to_string(),
+        (Some(cat), None) => format!(" {} ", cat.label()),
+        (None, Some(q)) => format!(" \"{}\" ", q),
+        (Some(cat), Some(q)) => format!(" {} · \"{}\" ", cat.label(), q),
+    }
+}
+
+fn urgency_divider(label: &str, width: usize) -> ListItem<'static> {
+    let prefix = format!("── {label} ");
+    let fill = width.saturating_sub(prefix.chars().count());
+    let line = format!("{prefix}{}", "─".repeat(fill));
+    ListItem::new(Line::from(Span::styled(line, dim())))
+}
+
+fn render_unified(
     frame: &mut ratatui::Frame,
     items: &[DisplayItem],
     selected: usize,
+    filter: &Filter,
     area: Rect,
 ) {
-    let block = Block::new().borders(Borders::ALL);
+    let title = Span::styled(
+        unified_title(filter),
+        Style::default().add_modifier(Modifier::BOLD),
+    );
+    let block = Block::new()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(dim());
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let mut ls = ListState::default();
-    if !items.is_empty() {
-        ls.select(Some(selected));
-    }
-    render_list_view(
-        frame,
-        inner,
-        items,
-        &mut ls,
-        |item| {
-            let (line_text, dim_suffix) = match item {
-                DisplayItem::Group { label, items } => {
-                    (label.clone(), Some(format!(" ({})", items.len())))
-                }
-                DisplayItem::Single(_) => (display_item_line(item), None),
+    let width = inner.width as usize;
+    let text_width = width.saturating_sub(2);
+
+    // Build display rows: inject urgency dividers at tier boundaries.
+    // Track which display-row index corresponds to each item index.
+    let mut display_items: Vec<ListItem> = vec![];
+    let mut selected_display: Option<usize> = None;
+    let mut prev_urgency: Option<domain::Urgency> = None;
+
+    for (item_idx, item) in items.iter().enumerate() {
+        let urgency = display_item_urgency(item);
+        if Some(urgency) != prev_urgency {
+            let label = match urgency {
+                domain::Urgency::Critical => "Critical",
+                domain::Urgency::High => "High",
+                domain::Urgency::Medium => "Medium",
+                domain::Urgency::Low => "Low",
             };
-            (line_text, dim_suffix, display_item_urgency(item))
-        },
-        |item| match item {
-            DisplayItem::Group { .. } => Some("↩ to expand".to_string()),
-            DisplayItem::Single(s) => crate::display::item_hint(s),
-        },
-    );
+            display_items.push(urgency_divider(label, width));
+            prev_urgency = Some(urgency);
+        }
+
+        if item_idx == selected {
+            selected_display = Some(display_items.len());
+        }
+
+        let selected_hint = if item_idx == selected {
+            match item {
+                DisplayItem::Group { .. } => Some("↩ to expand".to_string()),
+                DisplayItem::Single(s) => crate::display::item_hint(s),
+            }
+        } else {
+            None
+        };
+
+        let (line_text, dim_suffix) = match item {
+            DisplayItem::Group {
+                label,
+                items: group_items,
+            } => (label.clone(), Some(format!(" ({})", group_items.len()))),
+            DisplayItem::Single(_) => (display_item_line(item), None),
+        };
+
+        let dot_style = if item_idx == selected {
+            Style::default()
+        } else {
+            urgency_style(urgency)
+        };
+
+        let item_width = text_width
+            .saturating_sub(dim_suffix.as_ref().map_or(0, |s| s.chars().count()))
+            .saturating_sub(selected_hint.as_ref().map_or(0, |h| h.chars().count() + 2));
+
+        display_items.push(build_list_item(
+            Span::styled("● ", dot_style),
+            wrap_text(&line_text, item_width),
+            dim_suffix,
+            selected_hint,
+        ));
+    }
+
+    let list = List::new(display_items).highlight_style(list_highlight());
+    let mut ls = ListState::default();
+    ls.select(selected_display);
+    frame.render_stateful_widget(list, inner, &mut ls);
 }
 
 pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
@@ -294,9 +358,11 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
 
     match &mut app.ui.screen {
         Screen::UnifiedList {
-            items, selected, ..
+            items,
+            selected,
+            filter,
         } => {
-            render_unified_stub(frame, items, *selected, content_area);
+            render_unified(frame, items, *selected, filter, content_area);
         }
         Screen::Detail { parent, view } => {
             detail::render_detail(frame, view, parent, content_area);

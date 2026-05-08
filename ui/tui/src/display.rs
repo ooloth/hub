@@ -276,7 +276,9 @@ pub(crate) fn build_unified(items: Vec<StatusItem>, filter: &Filter) -> Vec<Disp
             true
         })
         .collect();
-    aggregate(filtered)
+    let mut sorted = filtered;
+    sorted.sort_by_key(item_urgency);
+    aggregate(sorted)
 }
 
 pub(crate) fn build_cats(items: Vec<StatusItem>) -> Vec<CatData> {
@@ -706,6 +708,21 @@ mod tests {
             query: Some("foo".to_string()),
         };
         assert!(!f.is_empty());
+    }
+
+    #[test]
+    fn build_unified_sorts_by_urgency_ascending_critical_first() {
+        // issue=Low, pr=Medium, ci=High — input in reverse order
+        let result = build_unified(vec![issue(), pr(), ci()], &Filter::default());
+        let urgencies: Vec<_> = result.iter().map(display_item_urgency).collect();
+        assert_eq!(
+            urgencies,
+            vec![
+                domain::Urgency::High,
+                domain::Urgency::Medium,
+                domain::Urgency::Low
+            ]
+        );
     }
 
     #[test]
