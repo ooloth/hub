@@ -269,9 +269,14 @@ fn unified_title(filter: &Filter, query_input: Option<&str>) -> String {
     }
 }
 
-fn urgency_divider(width: usize) -> ListItem<'static> {
+fn urgency_divider(width: usize, filter_active: bool) -> ListItem<'static> {
     let line = "─".repeat(width);
-    ListItem::new(Line::from(Span::styled(line, dim())))
+    let style = if filter_active {
+        Style::default().fg(Color::Yellow)
+    } else {
+        dim()
+    };
+    ListItem::new(Line::from(Span::styled(line, style)))
 }
 
 fn render_unified(
@@ -282,17 +287,26 @@ fn render_unified(
     query_input: Option<&str>,
     area: Rect,
 ) {
-    let title = Span::styled(
-        unified_title(filter, query_input),
-        Style::default()
-            .add_modifier(Modifier::BOLD)
-            .remove_modifier(Modifier::DIM),
-    );
+    let filter_active = !filter.is_empty() || query_input.is_some();
+    let title_style = Style::default()
+        .add_modifier(Modifier::BOLD)
+        .remove_modifier(Modifier::DIM)
+        .fg(if filter_active {
+            Color::Yellow
+        } else {
+            Color::Reset
+        });
+    let title = Span::styled(unified_title(filter, query_input), title_style);
+    let border_style = if filter_active {
+        Style::default().fg(Color::Yellow)
+    } else {
+        dim()
+    };
     let block = Block::new()
         .title(title)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(dim());
+        .border_style(border_style);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -309,7 +323,7 @@ fn render_unified(
         let urgency = display_item_urgency(item);
         // Inject a divider between urgency tiers, but not before the first group.
         if prev_urgency.is_some() && Some(urgency) != prev_urgency {
-            display_items.push(urgency_divider(width));
+            display_items.push(urgency_divider(width, filter_active));
         }
         prev_urgency = Some(urgency);
 
