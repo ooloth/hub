@@ -315,11 +315,13 @@ fn render_unified(
     let mut display_items: Vec<ListItem> = vec![];
     let mut selected_display: Option<usize> = None;
     let mut prev_urgency: Option<domain::Urgency> = None;
+    let mut divider_rows: Vec<usize> = vec![];
 
     for (item_idx, item) in items.iter().enumerate() {
         let urgency = display_item_urgency(item);
         // Inject a divider between urgency tiers, but not before the first group.
         if prev_urgency.is_some() && Some(urgency) != prev_urgency {
+            divider_rows.push(display_items.len());
             display_items.push(urgency_divider(width, chrome));
         }
         prev_urgency = Some(urgency);
@@ -367,6 +369,22 @@ fn render_unified(
     let mut ls = ListState::default();
     ls.select(selected_display);
     frame.render_stateful_widget(list, inner, &mut ls);
+
+    // Overwrite border cells at divider rows with T-junction characters so
+    // the horizontal lines visually connect to the side borders.
+    let scroll = ls.offset();
+    for row in divider_rows {
+        if row < scroll {
+            continue;
+        }
+        let screen_y = inner.y + (row - scroll) as u16;
+        if screen_y >= inner.y + inner.height {
+            break;
+        }
+        let buf = frame.buffer_mut();
+        buf.set_string(area.x, screen_y, "├", chrome);
+        buf.set_string(area.x + area.width - 1, screen_y, "┤", chrome);
+    }
 }
 
 pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
