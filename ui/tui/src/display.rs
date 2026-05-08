@@ -105,9 +105,9 @@ pub(crate) fn item_line(item: &StatusItem) -> String {
     match item {
         StatusItem::Pr(pr) => {
             let badge = match pr.kind {
-                domain::PrKind::Open => "[OPEN]",
-                domain::PrKind::Review => "[TO REVIEW]",
-                domain::PrKind::Draft => "[DRAFT]",
+                domain::PrKind::Mine => "[OPEN]",
+                domain::PrKind::ToReview => "[TO REVIEW]",
+                domain::PrKind::MyDraft => "[DRAFT]",
             };
             format!("{} · {} (#{}) {badge}", pr.repo, pr.title, pr.number)
         }
@@ -327,7 +327,7 @@ mod tests {
             url: "https://github.com/owner/repo/pull/42".to_string(),
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::Medium,
-            kind: domain::PrKind::Review,
+            kind: domain::PrKind::ToReview,
         })
     }
 
@@ -402,7 +402,7 @@ mod tests {
     #[test]
     fn item_line_pr_open_badge() {
         assert_eq!(
-            item_line(&make_pr(domain::PrKind::Open)),
+            item_line(&make_pr(domain::PrKind::Mine)),
             "owner/repo · Add feature (#42) [OPEN]"
         );
     }
@@ -410,7 +410,7 @@ mod tests {
     #[test]
     fn item_line_pr_to_review_badge() {
         assert_eq!(
-            item_line(&make_pr(domain::PrKind::Review)),
+            item_line(&make_pr(domain::PrKind::ToReview)),
             "owner/repo · Add feature (#42) [TO REVIEW]"
         );
     }
@@ -418,7 +418,7 @@ mod tests {
     #[test]
     fn item_line_pr_draft_badge() {
         assert_eq!(
-            item_line(&make_pr(domain::PrKind::Draft)),
+            item_line(&make_pr(domain::PrKind::MyDraft)),
             "owner/repo · Add feature (#42) [DRAFT]"
         );
     }

@@ -469,7 +469,7 @@ mod tests {
             url: "https://github.com/owner/repo/pull/1".to_string(),
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::Low,
-            kind: domain::PrKind::Review,
+            kind: domain::PrKind::ToReview,
         })
     }
 

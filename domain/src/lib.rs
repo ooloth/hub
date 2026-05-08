@@ -46,9 +46,9 @@ impl std::fmt::Display for RepoSlug {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum PrKind {
-    Open,
-    Review,
-    Draft,
+    Mine,
+    MyDraft,
+    ToReview,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

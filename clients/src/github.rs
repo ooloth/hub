@@ -51,7 +51,7 @@ pub async fn prs_awaiting_review(token: &str, repos: &[String]) -> Result<Vec<Pu
     }
     let query = scoped_query("is:open is:pr review-requested:@me", repos);
     let response: SearchResponse = search(token, &query).await?;
-    items_to_prs(response.items, Urgency::Medium, PrKind::Review)
+    items_to_prs(response.items, Urgency::Medium, PrKind::ToReview)
 }
 
 /// Returns open non-draft PRs across the given repos authored by `github_username`,
@@ -76,7 +76,7 @@ pub async fn my_open_prs(
             .filter(|item| owned_by(item, github_username))
             .collect(),
         Urgency::High,
-        PrKind::Open,
+        PrKind::Mine,
     )
 }
 
@@ -102,7 +102,7 @@ pub async fn my_draft_prs(
             .filter(|item| owned_by(item, github_username))
             .collect(),
         Urgency::Medium,
-        PrKind::Draft,
+        PrKind::MyDraft,
     )
 }
 
