@@ -284,7 +284,9 @@ fn render_unified(
 ) {
     let title = Span::styled(
         unified_title(filter, query_input),
-        Style::default().add_modifier(Modifier::BOLD),
+        Style::default()
+            .add_modifier(Modifier::BOLD)
+            .remove_modifier(Modifier::DIM),
     );
     let block = Block::new()
         .title(title)
