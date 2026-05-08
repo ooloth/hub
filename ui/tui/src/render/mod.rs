@@ -269,10 +269,8 @@ fn unified_title(filter: &Filter, query_input: Option<&str>) -> String {
     }
 }
 
-fn urgency_divider(label: &str, width: usize) -> ListItem<'static> {
-    let prefix = format!("── {label} ");
-    let fill = width.saturating_sub(prefix.chars().count());
-    let line = format!("{prefix}{}", "─".repeat(fill));
+fn urgency_divider(width: usize) -> ListItem<'static> {
+    let line = "─".repeat(width);
     ListItem::new(Line::from(Span::styled(line, dim())))
 }
 
@@ -307,16 +305,11 @@ fn render_unified(
 
     for (item_idx, item) in items.iter().enumerate() {
         let urgency = display_item_urgency(item);
-        if Some(urgency) != prev_urgency {
-            let label = match urgency {
-                domain::Urgency::Critical => "Critical",
-                domain::Urgency::High => "High",
-                domain::Urgency::Medium => "Medium",
-                domain::Urgency::Low => "Low",
-            };
-            display_items.push(urgency_divider(label, width));
-            prev_urgency = Some(urgency);
+        // Inject a divider between urgency tiers, but not before the first group.
+        if prev_urgency.is_some() && Some(urgency) != prev_urgency {
+            display_items.push(urgency_divider(width));
         }
+        prev_urgency = Some(urgency);
 
         if item_idx == selected {
             selected_display = Some(display_items.len());
