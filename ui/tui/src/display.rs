@@ -240,6 +240,38 @@ pub(crate) fn aggregate(items: Vec<StatusItem>) -> Vec<DisplayItem> {
         .collect()
 }
 
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Filter {
+    pub(crate) category: Option<Category>,
+    pub(crate) query: Option<String>,
+}
+
+impl Filter {
+    pub(crate) fn is_empty(&self) -> bool {
+        self.category.is_none() && self.query.is_none()
+    }
+}
+
+pub(crate) fn build_unified(items: Vec<StatusItem>, filter: &Filter) -> Vec<DisplayItem> {
+    let filtered: Vec<StatusItem> = items
+        .into_iter()
+        .filter(|item| {
+            if let Some(cat) = filter.category {
+                if item_category(item) != cat {
+                    return false;
+                }
+            }
+            if let Some(q) = &filter.query {
+                if !item_line(item).to_lowercase().contains(&q.to_lowercase()) {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
+    aggregate(filtered)
+}
+
 pub(crate) fn build_cats(items: Vec<StatusItem>) -> Vec<CatData> {
     let mut by_cat: HashMap<Category, Vec<StatusItem>> = HashMap::new();
     for item in items {
@@ -556,6 +588,117 @@ mod tests {
     #[test]
     fn aggregate_empty_input_gives_empty_output() {
         assert!(aggregate(vec![]).is_empty());
+    }
+
+    #[test]
+    fn build_unified_no_filter_returns_all_items_in_order() {
+        let items = vec![ci(), pr(), issue()];
+        let result = build_unified(items, &Filter::default());
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn build_unified_empty_input_returns_empty() {
+        assert!(build_unified(vec![], &Filter::default()).is_empty());
+    }
+
+    #[test]
+    fn build_unified_category_filter_keeps_matching_items() {
+        let result = build_unified(
+            vec![ci(), pr(), issue()],
+            &Filter {
+                category: Some(Category::Prs),
+                query: None,
+            },
+        );
+        assert_eq!(result.len(), 1);
+        assert!(matches!(&result[0], DisplayItem::Single(StatusItem::Pr(_))));
+    }
+
+    #[test]
+    fn build_unified_category_filter_excludes_non_matching() {
+        let result = build_unified(
+            vec![ci(), pr(), issue()],
+            &Filter {
+                category: Some(Category::Errors),
+                query: None,
+            },
+        );
+        assert_eq!(result.len(), 1);
+        assert!(matches!(&result[0], DisplayItem::Single(StatusItem::Ci(_))));
+    }
+
+    #[test]
+    fn build_unified_query_filter_matches_case_insensitively() {
+        let result = build_unified(
+            vec![ci(), pr(), issue()],
+            &Filter {
+                category: None,
+                query: Some("ADD FEATURE".to_string()),
+            },
+        );
+        assert_eq!(result.len(), 1);
+        assert!(matches!(&result[0], DisplayItem::Single(StatusItem::Pr(_))));
+    }
+
+    #[test]
+    fn build_unified_query_filter_no_match_returns_empty() {
+        let result = build_unified(
+            vec![ci(), pr(), issue()],
+            &Filter {
+                category: None,
+                query: Some("zzznomatch".to_string()),
+            },
+        );
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn build_unified_both_filters_applied_with_and_semantics() {
+        let result = build_unified(
+            vec![ci(), pr(), issue()],
+            &Filter {
+                category: Some(Category::Prs),
+                query: Some("Add feature".to_string()),
+            },
+        );
+        assert_eq!(result.len(), 1);
+        assert!(matches!(&result[0], DisplayItem::Single(StatusItem::Pr(_))));
+    }
+
+    #[test]
+    fn build_unified_category_and_query_no_overlap_returns_empty() {
+        let result = build_unified(
+            vec![ci(), pr(), issue()],
+            &Filter {
+                category: Some(Category::Errors),
+                query: Some("Add feature".to_string()), // PR text, not an error
+            },
+        );
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn filter_is_empty_when_both_none() {
+        assert!(Filter::default().is_empty());
+    }
+
+    #[test]
+    fn filter_is_not_empty_when_category_set() {
+        let f = Filter {
+            category: Some(Category::Prs),
+            query: None,
+        };
+        assert!(!f.is_empty());
+    }
+
+    #[test]
+    fn filter_is_not_empty_when_query_set() {
+        let f = Filter {
+            category: None,
+            query: Some("foo".to_string()),
+        };
+        assert!(!f.is_empty());
     }
 
     #[test]
