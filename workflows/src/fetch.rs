@@ -158,6 +158,10 @@ pub async fn ensure_default_branch_worktree(bare: &Path) -> Result<()> {
         .with_context(|| format!("git reset failed for {branch} worktree"))?;
     if !reset.status.success() {
         let stderr = String::from_utf8_lossy(&reset.stderr);
+        // Another git process is already updating this worktree; skip.
+        if stderr.contains("index.lock") {
+            return Ok(());
+        }
         anyhow::bail!("git reset failed for {branch} worktree: {stderr}");
     }
 
