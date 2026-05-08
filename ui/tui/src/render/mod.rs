@@ -259,7 +259,7 @@ fn unified_title(filter: &Filter, query_input: Option<&str>) -> String {
             .category
             .map(|c| format!("{} · ", c.label()))
             .unwrap_or_default();
-        return format!(" {cat_prefix}/ {q}▌ ");
+        return format!(" {cat_prefix}\"{q}\" ");
     }
     match (&filter.category, &filter.query) {
         (None, None) => " All ".to_string(),
