@@ -53,6 +53,7 @@ pub struct PullRequest {
     #[serde(with = "duration_secs")]
     pub age: chrono::Duration,
     pub urgency: Urgency,
+    pub is_draft: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

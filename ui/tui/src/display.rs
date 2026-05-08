@@ -320,6 +320,7 @@ mod tests {
             url: "https://github.com/owner/repo/pull/42".to_string(),
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::Medium,
+            is_draft: false,
         })
     }
 

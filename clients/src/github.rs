@@ -62,6 +62,7 @@ pub async fn prs_awaiting_review(token: &str, repos: &[String]) -> Result<Vec<Pu
                 url: item.html_url,
                 age,
                 urgency,
+                is_draft: false,
             })
         })
         .collect()
