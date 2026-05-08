@@ -87,7 +87,8 @@ async fn main() -> Result<()> {
 
     let mut app = App {
         data: DataState {
-            cats: build_cats(initial_items),
+            cats: build_cats(initial_items.clone()),
+            raw_items: initial_items,
             refresh_state: if start_refresh {
                 RefreshState::InProgress
             } else {

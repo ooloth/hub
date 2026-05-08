@@ -2,7 +2,7 @@ use anyhow::Result;
 use ratatui::widgets::ListState;
 use workflows::status::{StatusItem, StatusReport};
 
-use crate::display::{DisplayItem, Filter, ListSnapshot};
+use crate::display::{Category, DisplayItem, Filter, ListSnapshot};
 
 #[derive(Debug, Default)]
 pub(crate) enum RefreshState {
@@ -106,6 +106,14 @@ pub(crate) enum Action {
     Enter,
     Investigate,
     Refresh,
+    // Filter actions — only take effect from UnifiedList in normal mode.
+    FilterCategory(Category),
+    ClearFilter,
+    StartQuery,
+    AppendQuery(char),
+    BackspaceQuery,
+    CommitQuery,
+    CancelQuery,
 }
 
 pub(crate) enum Effect {

@@ -1,9 +1,19 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
+use crate::display::Category;
 use crate::state::{Action, App, Screen};
 
 pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
+    // Query mode intercepts all keys (Ctrl-C still quits).
+    if app.ui.query_input.is_some() {
+        return query_mode_key(key);
+    }
+
     let can_go_back = matches!(app.ui.screen, Screen::Detail { .. });
+    let has_filter = match &app.ui.screen {
+        Screen::UnifiedList { filter, .. } => !filter.is_empty(),
+        _ => false,
+    };
 
     match (key.code, key.modifiers) {
         (KeyCode::Char('q'), _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
@@ -13,6 +23,7 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
         (KeyCode::Char('r'), _) => return Some(Action::Refresh),
         (KeyCode::Esc, _) if app.ui.show_help => return Some(Action::CloseHelp),
         (KeyCode::Esc, _) if can_go_back => return Some(Action::Back),
+        (KeyCode::Esc, _) if has_filter => return Some(Action::ClearFilter),
         _ => {}
     }
 
@@ -20,7 +31,45 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
         return None;
     }
 
-    list_keys(key)
+    match app.current_screen() {
+        Screen::UnifiedList { .. } => unified_list_keys(key),
+        Screen::Detail { .. } => list_keys(key),
+    }
+}
+
+fn query_mode_key(key: KeyEvent) -> Option<Action> {
+    if matches!(
+        (key.code, key.modifiers),
+        (KeyCode::Char('c'), KeyModifiers::CONTROL)
+    ) {
+        return Some(Action::Quit);
+    }
+    match key.code {
+        KeyCode::Esc => Some(Action::CancelQuery),
+        KeyCode::Enter => Some(Action::CommitQuery),
+        KeyCode::Backspace => Some(Action::BackspaceQuery),
+        KeyCode::Char(c) => Some(Action::AppendQuery(c)),
+        _ => None,
+    }
+}
+
+fn unified_list_keys(key: KeyEvent) -> Option<Action> {
+    match (key.code, key.modifiers) {
+        (KeyCode::Up, _) | (KeyCode::Char('k'), _) | (KeyCode::Char('h'), _) => {
+            Some(Action::MoveUp)
+        }
+        (KeyCode::Down, _) | (KeyCode::Char('j'), _) | (KeyCode::Char('l'), _) => {
+            Some(Action::MoveDown)
+        }
+        (KeyCode::Enter, _) => Some(Action::Enter),
+        (KeyCode::Char('i'), _) => Some(Action::Investigate),
+        (KeyCode::Char('p'), _) => Some(Action::FilterCategory(Category::Prs)),
+        (KeyCode::Char('e'), _) => Some(Action::FilterCategory(Category::Errors)),
+        (KeyCode::Char('o'), _) => Some(Action::FilterCategory(Category::Issues)),
+        (KeyCode::Char('a'), _) => Some(Action::ClearFilter),
+        (KeyCode::Char('/'), _) => Some(Action::StartQuery),
+        _ => None,
+    }
 }
 
 fn list_keys(key: KeyEvent) -> Option<Action> {
@@ -40,7 +89,7 @@ fn list_keys(key: KeyEvent) -> Option<Action> {
 #[cfg(test)]
 mod tests {
     use super::key_to_action;
-    use crate::display::{DisplayItem, Filter, ListSnapshot};
+    use crate::display::{Category, DisplayItem, Filter, ListSnapshot};
     use crate::state::{Action, App, DetailView, Screen, UiState};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use rstest::rstest;
@@ -75,6 +124,33 @@ mod tests {
                         list_state: ratatui::widgets::ListState::default(),
                     },
                 },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    fn filtered_app(category: Category) -> App {
+        App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    items: vec![],
+                    selected: 0,
+                    filter: Filter {
+                        category: Some(category),
+                        query: None,
+                    },
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    fn querying_app() -> App {
+        App {
+            ui: UiState {
+                query_input: Some("hub".to_string()),
                 ..UiState::default()
             },
             ..App::default()
@@ -126,7 +202,15 @@ mod tests {
     }
 
     #[test]
-    fn esc_does_nothing_from_unified_list_without_help() {
+    fn esc_clears_filter_when_filter_active() {
+        assert_eq!(
+            key_to_action(&filtered_app(Category::Prs), k(KeyCode::Esc)),
+            Some(Action::ClearFilter)
+        );
+    }
+
+    #[test]
+    fn esc_does_nothing_from_unified_list_without_filter() {
         assert_eq!(key_to_action(&App::default(), k(KeyCode::Esc)), None);
     }
 
@@ -152,6 +236,11 @@ mod tests {
     #[case(ch('l'), Some(Action::MoveDown))]
     #[case(k(KeyCode::Enter), Some(Action::Enter))]
     #[case(ch('i'), Some(Action::Investigate))]
+    #[case(ch('p'), Some(Action::FilterCategory(Category::Prs)))]
+    #[case(ch('e'), Some(Action::FilterCategory(Category::Errors)))]
+    #[case(ch('o'), Some(Action::FilterCategory(Category::Issues)))]
+    #[case(ch('a'), Some(Action::ClearFilter))]
+    #[case(ch('/'), Some(Action::StartQuery))]
     #[case(ch('x'), None)]
     fn unified_list_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
         assert_eq!(key_to_action(&App::default(), key), expected);
@@ -166,8 +255,25 @@ mod tests {
     #[case(ch('l'), Some(Action::MoveDown))]
     #[case(k(KeyCode::Enter), Some(Action::Enter))]
     #[case(ch('i'), Some(Action::Investigate))]
+    #[case(ch('p'), None)]
+    #[case(ch('e'), None)]
+    #[case(ch('o'), None)]
+    #[case(ch('a'), None)]
+    #[case(ch('/'), None)]
     #[case(ch('x'), None)]
     fn detail_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
         assert_eq!(key_to_action(&detail_app(), key), expected);
+    }
+
+    #[rstest]
+    #[case(ctrl('c'), Some(Action::Quit))]
+    #[case(k(KeyCode::Esc), Some(Action::CancelQuery))]
+    #[case(k(KeyCode::Enter), Some(Action::CommitQuery))]
+    #[case(k(KeyCode::Backspace), Some(Action::BackspaceQuery))]
+    #[case(ch('j'), Some(Action::AppendQuery('j')))]
+    #[case(ch('q'), Some(Action::AppendQuery('q')))]
+    #[case(ch('?'), Some(Action::AppendQuery('?')))]
+    fn query_mode_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
+        assert_eq!(key_to_action(&querying_app(), key), expected);
     }
 }

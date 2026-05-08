@@ -6,8 +6,8 @@ use super::{
     Action, App, DetailView, Effect, EnterAction, InvestigateAction, Msg, RefreshState, Screen,
 };
 use crate::display::{
-    build_cats, build_unified, item_investigation, item_url, DisplayItem, InvestigationKind,
-    ListSnapshot,
+    build_cats, build_unified, item_investigation, item_url, DisplayItem, Filter,
+    InvestigationKind, ListSnapshot,
 };
 
 impl App {
@@ -43,6 +43,66 @@ impl App {
                 };
                 vec![]
             }
+            Action::FilterCategory(cat) => {
+                let new_cat = match &self.ui.screen {
+                    Screen::UnifiedList { filter, .. } => {
+                        if filter.category == Some(cat) {
+                            None
+                        } else {
+                            Some(cat)
+                        }
+                    }
+                    _ => return vec![],
+                };
+                let query = match &self.ui.screen {
+                    Screen::UnifiedList { filter, .. } => filter.query.clone(),
+                    _ => None,
+                };
+                self.rebuild_unified(Filter {
+                    category: new_cat,
+                    query,
+                });
+                vec![]
+            }
+            Action::ClearFilter => {
+                self.ui.query_input = None;
+                self.rebuild_unified(Filter::default());
+                vec![]
+            }
+            Action::StartQuery => {
+                self.ui.query_input = Some(String::new());
+                vec![]
+            }
+            Action::AppendQuery(c) => {
+                if let Some(q) = &mut self.ui.query_input {
+                    q.push(c);
+                }
+                self.sync_query_to_filter();
+                vec![]
+            }
+            Action::BackspaceQuery => {
+                if let Some(q) = &mut self.ui.query_input {
+                    q.pop();
+                }
+                self.sync_query_to_filter();
+                vec![]
+            }
+            Action::CommitQuery => {
+                self.ui.query_input = None;
+                vec![]
+            }
+            Action::CancelQuery => {
+                self.ui.query_input = None;
+                let cat = match &self.ui.screen {
+                    Screen::UnifiedList { filter, .. } => filter.category,
+                    _ => return vec![],
+                };
+                self.rebuild_unified(Filter {
+                    category: cat,
+                    query: None,
+                });
+                vec![]
+            }
             Action::MoveUp | Action::MoveDown | Action::Enter | Action::Investigate => {
                 if matches!(self.ui.screen, Screen::UnifiedList { .. }) {
                     self.handle_unified_list(action)
@@ -51,6 +111,32 @@ impl App {
                 }
             }
         }
+    }
+
+    fn rebuild_unified(&mut self, new_filter: Filter) {
+        let items = build_unified(self.data.raw_items.clone(), &new_filter);
+        if let Screen::UnifiedList {
+            items: ref mut i,
+            selected: ref mut s,
+            filter: ref mut f,
+        } = self.ui.screen
+        {
+            *i = items;
+            *s = 0;
+            *f = new_filter;
+        }
+    }
+
+    fn sync_query_to_filter(&mut self) {
+        let query_text = self.ui.query_input.clone().filter(|q| !q.is_empty());
+        let cat = match &self.ui.screen {
+            Screen::UnifiedList { filter, .. } => filter.category,
+            _ => return,
+        };
+        self.rebuild_unified(Filter {
+            category: cat,
+            query: query_text,
+        });
     }
 
     fn handle_unified_list(&mut self, action: Action) -> Vec<Effect> {
@@ -68,13 +154,7 @@ impl App {
                 self.apply_enter_action(ea)
             }
             Action::Investigate => self.handle_investigate(),
-            Action::Quit
-            | Action::ToggleHelp
-            | Action::CloseHelp
-            | Action::Back
-            | Action::Refresh => {
-                unreachable!()
-            }
+            _ => unreachable!(),
         }
     }
 
@@ -93,13 +173,7 @@ impl App {
                 self.apply_enter_action(ea)
             }
             Action::Investigate => self.handle_investigate(),
-            Action::Quit
-            | Action::ToggleHelp
-            | Action::CloseHelp
-            | Action::Back
-            | Action::Refresh => {
-                unreachable!()
-            }
+            _ => unreachable!(),
         }
     }
 
@@ -260,6 +334,7 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
                 Screen::Detail { parent, .. } => parent.filter.clone(),
             };
             let cats = build_cats(report.items.clone());
+            app.data.raw_items = report.items.clone();
             let items = build_unified(report.items, &filter);
             app.data.cats = cats;
             app.ui.screen = Screen::UnifiedList {

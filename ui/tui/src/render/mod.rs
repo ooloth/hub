@@ -42,6 +42,9 @@ const KEYBINDS_LIST: &[(&str, &str)] = &[
     ("j / l", "down"),
     ("Enter", "open / drill into group"),
     ("i", "investigate"),
+    ("p / e / o", "filter PRs / Errors / Issues"),
+    ("/", "search"),
+    ("a / Esc", "clear filter"),
     ("r", "refresh"),
     ("q / Ctrl-C", "quit"),
 ];
@@ -250,7 +253,14 @@ fn status_bar_left(app: &App) -> String {
     format!("{pos}{hints}")
 }
 
-fn unified_title(filter: &Filter) -> String {
+fn unified_title(filter: &Filter, query_input: Option<&str>) -> String {
+    if let Some(q) = query_input {
+        let cat_prefix = filter
+            .category
+            .map(|c| format!("{} · ", c.label()))
+            .unwrap_or_default();
+        return format!(" {cat_prefix}/ {q}▌ ");
+    }
     match (&filter.category, &filter.query) {
         (None, None) => " All ".to_string(),
         (Some(cat), None) => format!(" {} ", cat.label()),
@@ -271,10 +281,11 @@ fn render_unified(
     items: &[DisplayItem],
     selected: usize,
     filter: &Filter,
+    query_input: Option<&str>,
     area: Rect,
 ) {
     let title = Span::styled(
-        unified_title(filter),
+        unified_title(filter, query_input),
         Style::default().add_modifier(Modifier::BOLD),
     );
     let block = Block::new()
@@ -362,7 +373,14 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
             selected,
             filter,
         } => {
-            render_unified(frame, items, *selected, filter, content_area);
+            render_unified(
+                frame,
+                items,
+                *selected,
+                filter,
+                app.ui.query_input.as_deref(),
+                content_area,
+            );
         }
         Screen::Detail { parent, view } => {
             detail::render_detail(frame, view, parent, content_area);

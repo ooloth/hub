@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use workflows::status::StatusItem;
 
 use crate::display::{CatData, Category, DisplayItem};
 
@@ -15,11 +16,13 @@ pub(crate) struct UiState {
     pub(crate) screen: Screen,
     pub(crate) show_help: bool,
     pub(crate) flash: Option<String>,
+    pub(crate) query_input: Option<String>,
 }
 
 #[derive(Debug, Default)]
 pub(crate) struct DataState {
     pub(crate) cats: Vec<CatData>,
+    pub(crate) raw_items: Vec<StatusItem>,
     pub(crate) refresh_state: RefreshState,
     pub(crate) last_updated: Option<DateTime<Utc>>,
 }
