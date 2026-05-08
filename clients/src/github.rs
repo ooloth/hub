@@ -16,11 +16,18 @@ struct SearchItem {
     repository_url: String,
     created_at: String,
     labels: Vec<Label>,
+    draft: bool,
+    assignee: Option<SearchAssignee>,
 }
 
 #[derive(Deserialize)]
 struct Label {
     name: String,
+}
+
+#[derive(Deserialize)]
+struct SearchAssignee {
+    login: String,
 }
 
 fn age(created_at: &str) -> chrono::Duration {
@@ -45,24 +52,77 @@ pub async fn prs_awaiting_review(token: &str, repos: &[String]) -> Result<Vec<Pu
     }
     let query = scoped_query("is:open is:pr review-requested:@me", repos);
     let response: SearchResponse = search(token, &query).await?;
-    response
-        .items
+    items_to_prs(response.items, Urgency::Medium)
+}
+
+/// Returns open non-draft PRs across the given repos authored by `github_username`,
+/// excluding any PR assigned to someone other than `github_username`.
+///
+/// # Errors
+/// Returns an error if the GitHub API is unreachable or returns a non-2xx response.
+pub async fn my_open_prs(
+    token: &str,
+    repos: &[String],
+    github_username: &str,
+) -> Result<Vec<PullRequest>> {
+    if repos.is_empty() {
+        return Ok(vec![]);
+    }
+    let query = scoped_query("is:open is:pr -is:draft author:@me", repos);
+    let response: SearchResponse = search(token, &query).await?;
+    items_to_prs(
+        response
+            .items
+            .into_iter()
+            .filter(|item| owned_by(item, github_username))
+            .collect(),
+        Urgency::High,
+    )
+}
+
+/// Returns open draft PRs across the given repos authored by `github_username`,
+/// excluding any PR assigned to someone other than `github_username`.
+///
+/// # Errors
+/// Returns an error if the GitHub API is unreachable or returns a non-2xx response.
+pub async fn my_draft_prs(
+    token: &str,
+    repos: &[String],
+    github_username: &str,
+) -> Result<Vec<PullRequest>> {
+    if repos.is_empty() {
+        return Ok(vec![]);
+    }
+    let query = scoped_query("is:open is:pr is:draft author:@me", repos);
+    let response: SearchResponse = search(token, &query).await?;
+    items_to_prs(
+        response
+            .items
+            .into_iter()
+            .filter(|item| owned_by(item, github_username))
+            .collect(),
+        Urgency::Medium,
+    )
+}
+
+fn owned_by(item: &SearchItem, github_username: &str) -> bool {
+    item.assignee
+        .as_ref()
+        .is_none_or(|a| a.login == github_username)
+}
+
+fn items_to_prs(items: Vec<SearchItem>, urgency: Urgency) -> Result<Vec<PullRequest>> {
+    items
         .into_iter()
         .map(|item| {
-            let age = age(&item.created_at);
-            let urgency = if age >= chrono::Duration::days(3) {
-                Urgency::High
-            } else {
-                Urgency::Medium
-            };
             Ok(PullRequest {
                 number: item.number,
                 title: item.title,
                 repo: repo_slug_from_url(&item.repository_url)?,
                 url: item.html_url,
-                age,
+                age: age(&item.created_at),
                 urgency,
-                is_draft: false,
+                is_draft: item.draft,
             })
         })
         .collect()
