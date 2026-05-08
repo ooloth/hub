@@ -66,7 +66,21 @@ impl App {
             }
             Action::ClearFilter => {
                 self.ui.query_input = None;
-                self.rebuild_unified(Filter::default());
+                let new_filter = match &self.ui.screen {
+                    Screen::UnifiedList { filter, .. } => {
+                        if filter.query.is_some() {
+                            // Peel query first, keep category.
+                            Filter {
+                                category: filter.category,
+                                query: None,
+                            }
+                        } else {
+                            Filter::default()
+                        }
+                    }
+                    _ => return vec![],
+                };
+                self.rebuild_unified(new_filter);
                 vec![]
             }
             Action::StartQuery => {
