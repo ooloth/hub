@@ -71,6 +71,9 @@ link "$DEVICE_CONFIG"                "$HUB_ROOT/hub.toml"
 # Individual file symlinks for private investigation modules.
 link "$HUB_PRIVATE/ui/tui/src/investigations/media.rs" "$HUB_ROOT/ui/tui/src/investigations/media.rs"
 
+# Individual directory symlinks for private skills.
+link "$HUB_PRIVATE/.claude/skills/media-investigate" "$HUB_ROOT/.agents/skills/media-investigate"
+
 echo ""
 echo "done. device: $DEVICE"
 echo "edit hub-private/devices/$DEVICE.toml to configure integrations for this device."
