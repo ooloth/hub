@@ -445,6 +445,9 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
 
     let left = status_bar_left(app);
 
+    // Clear before rendering so stale characters don't persist when the right
+    // side shrinks between frames (ratatui buffers aren't reset between draws).
+    frame.render_widget(Clear, bar_area);
     let right_width = right_status.chars().count() as u16;
     let [bar_left, bar_right] =
         Layout::horizontal([Constraint::Min(0), Constraint::Length(right_width)]).areas(bar_area);
