@@ -1,0 +1,5 @@
+---
+source: ui/tui/src/render/mod.rs
+expression: status_row(&buf)
+---
+                                        ⚠ source-a unreachable (updated unknown)

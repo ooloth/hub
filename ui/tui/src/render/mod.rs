@@ -473,14 +473,174 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
 
 #[cfg(test)]
 mod tests {
-    use super::{action_hints, position_label, right_status_text, status_bar_left, wrap_text};
+    use super::{
+        action_hints, position_label, render, right_status_text, status_bar_left, wrap_text,
+    };
     use crate::display::{DisplayItem, Filter, ListSnapshot};
     use crate::state::{
-        App, DetailView, EnterAction, InvestigateAction, RefreshState, Screen, UiState,
+        App, DataState, DetailView, EnterAction, InvestigateAction, RefreshState, Screen, UiState,
     };
     use chrono::Utc;
+    use ratatui::backend::TestBackend;
     use ratatui::widgets::ListState;
+    use ratatui::Terminal;
     use workflows::status::StatusItem;
+
+    // ── TestBackend helpers ───────────────────────────────────────────────────
+
+    /// Render `app` into a `width × height` buffer and return it.
+    fn draw(app: &mut App, width: u16, height: u16) -> ratatui::buffer::Buffer {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| render(frame, app)).unwrap();
+        terminal.backend().buffer().clone()
+    }
+
+    /// Render `app1`, then `app2` into the same terminal and return the final buffer.
+    /// The second draw sees whatever the first draw left in the buffer — this is
+    /// what catches stale-character bugs that only appear after state transitions.
+    fn draw_two(
+        app1: &mut App,
+        app2: &mut App,
+        width: u16,
+        height: u16,
+    ) -> ratatui::buffer::Buffer {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| render(frame, app1)).unwrap();
+        terminal.draw(|frame| render(frame, app2)).unwrap();
+        terminal.backend().buffer().clone()
+    }
+
+    /// Extract the last (status bar) row of a buffer as a plain string.
+    /// Empty cells are rendered as spaces so the snapshot width is always `buf.area.width`.
+    fn status_row(buf: &ratatui::buffer::Buffer) -> String {
+        let w = buf.area.width as usize;
+        let last_y = (buf.area.height - 1) as usize;
+        buf.content[last_y * w..(last_y + 1) * w]
+            .iter()
+            .map(|cell| {
+                if cell.symbol().is_empty() {
+                    " "
+                } else {
+                    cell.symbol()
+                }
+            })
+            .collect()
+    }
+
+    fn ci_item() -> StatusItem {
+        StatusItem::Ci(domain::CiFailure {
+            repo: domain::RepoSlug::new("ooloth", "hub"),
+            workflow_name: "CI".to_string(),
+            job_name: Some("check".to_string()),
+            step_name: Some("fmt".to_string()),
+            error: None,
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::High,
+            url: "https://github.com/ooloth/hub/actions/runs/25608685802".to_string(),
+        })
+    }
+
+    fn partial_app() -> App {
+        App {
+            data: DataState {
+                // Use None for last_updated so the timestamp is deterministic ("unknown").
+                refresh_state: RefreshState::Partial(vec!["source-a".to_string()]),
+                last_updated: None,
+                ..DataState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    fn idle_app() -> App {
+        App::default() // RefreshState::Idle, last_updated: None → right status = ""
+    }
+
+    // ── Two-frame status bar snapshot tests ──────────────────────────────────
+    //
+    // These catch stale-character bugs that only emerge after the right or left
+    // status text changes length between frames — the bug pattern in the wild.
+
+    #[test]
+    fn status_bar_right_partial_then_idle() {
+        // Frame 1: long right text ("⚠ source-a unreachable (updated unknown)")
+        // Frame 2: empty right text (Idle + no timestamp → "")
+        // If Clear is broken, frame 1's characters remain in the buffer.
+        let buf = draw_two(&mut partial_app(), &mut idle_app(), 80, 5);
+        insta::assert_snapshot!(status_row(&buf));
+    }
+
+    #[test]
+    fn status_bar_right_idle_then_partial() {
+        // Frame 1: empty right text → Frame 2: long right text.
+        // Checks that the longer string doesn't overflow its allocated area.
+        let buf = draw_two(&mut idle_app(), &mut partial_app(), 80, 5);
+        insta::assert_snapshot!(status_row(&buf));
+    }
+
+    #[test]
+    fn status_bar_left_group_then_single_item() {
+        // Frame 1: group selected → "1/2 · Press ↩ to expand (1 items)"
+        // Frame 2: single CI item selected → longer left text with ↩ URL and i hint.
+        // If Clear is broken, leftover chars from frame 1 bleed into frame 2.
+        let group = DisplayItem::Group {
+            label: "errors".to_string(),
+            items: vec![ci_item()],
+        };
+        let single = DisplayItem::Single(ci_item());
+
+        let mut app1 = unified_list_app(vec![group]);
+        let mut app2 = unified_list_app(vec![single]);
+        let buf = draw_two(&mut app1, &mut app2, 120, 5);
+        insta::assert_snapshot!(status_row(&buf));
+    }
+
+    #[test]
+    fn status_bar_left_single_item_then_empty() {
+        // Frame 1: CI item selected → long left text with ↩ in it.
+        // Frame 2: empty list → left and right are both empty.
+        // Isolates whether ↩ causes misalignment that survives a Clear.
+        let mut app1 = unified_list_app(vec![DisplayItem::Single(ci_item())]);
+        let mut app2 = unified_list_app(vec![]);
+        let buf = draw_two(&mut app1, &mut app2, 120, 5);
+        insta::assert_snapshot!(status_row(&buf));
+    }
+
+    // ── Single-frame baseline snapshots ──────────────────────────────────────
+    //
+    // Capture what the status bar looks like in key states so regressions are
+    // visible as snapshot diffs.
+
+    #[test]
+    fn status_bar_single_frame_ci_selected() {
+        // CI item selected: left shows position + ↩ URL + i hints; right is empty.
+        let mut app = unified_list_app(vec![DisplayItem::Single(ci_item())]);
+        let buf = draw(&mut app, 120, 5);
+        insta::assert_snapshot!(status_row(&buf));
+    }
+
+    #[test]
+    fn status_bar_single_frame_partial_state() {
+        // Partial refresh: left is empty (no items); right shows the warning.
+        let mut app = partial_app();
+        let buf = draw(&mut app, 80, 5);
+        insta::assert_snapshot!(status_row(&buf));
+    }
+
+    #[test]
+    fn status_bar_single_frame_in_progress() {
+        let mut app = App {
+            data: DataState {
+                refresh_state: RefreshState::InProgress,
+                ..DataState::default()
+            },
+            ..App::default()
+        };
+        let buf = draw(&mut app, 80, 5);
+        insta::assert_snapshot!(status_row(&buf));
+    }
 
     fn pr() -> StatusItem {
         StatusItem::Pr(domain::PullRequest {
