@@ -16,7 +16,7 @@ ui/
   cli/       # hub binary — bootstraps config, wires deps, calls workflows
   tui/       # hub-tui binary
 scripts/     # dev/ops scripts; not part of the binary
-docs/        # architecture, conventions, decisions
+docs/        # architecture, decisions, playbooks
 ```
 
 Import direction (never import rightward's left neighbor):
@@ -47,7 +47,9 @@ do not depend on `config/` directly.
 
 ### Rust Conventions
 
-See [docs/conventions/code-style.md](/docs/conventions/code-style.md) to understand this project's preference for Easy Mode Rust. Hard rules for agents:
+See `~/.claude/references/rust.md` to understand this project's preference for Easy Mode Rust.
+
+Hard rules for agents:
 
 - **Error handling**: `anyhow` only. No `thiserror`. `?` everywhere. `.context("msg")` for human-readable chains.
 - **Owned types**: structs hold `String`/`Vec<T>`. Functions that only read take `&str`/`&[T]`. Return owned values, not references.
@@ -100,17 +102,14 @@ tmux kill-window -t "tui-test"                  # clean up
 
 ### Conventions and architecture
 
-| Doc                                      | Covers                                                       |
-| ---------------------------------------- | ------------------------------------------------------------ |
-| `docs/conventions/code-style.md`         | Easy Mode Rust — error handling, owned types, cloning, async |
-| `docs/conventions/assertions.md`         | When to use `assert!` vs `Result`                            |
-| `docs/conventions/testing.md`            | Unit tests, rstest, insta, proptest, cargo-mutants           |
-| `docs/architecture/secrets.md`           | 1Password → op run → env var model                           |
-| `docs/architecture/private-workflows.md` | Two-repo model for private workflows                         |
-| `clients/README.md`                      | reqwest pattern for HTTP clients                             |
-| `store/README.md`                        | rusqlite pattern, db path, Connection threading notes        |
-| `ui/cli/README.md`                       | clap derive API for CLI commands                             |
-| `ui/tui/README.md`                       | TUI architecture, cache/schema version, keybindings          |
+| Doc                                      | Covers                                                |
+| ---------------------------------------- | ----------------------------------------------------- |
+| `docs/architecture/secrets.md`           | 1Password → op run → env var model                    |
+| `docs/architecture/private-workflows.md` | Two-repo model for private workflows                  |
+| `clients/README.md`                      | reqwest pattern for HTTP clients                      |
+| `store/README.md`                        | rusqlite pattern, db path, Connection threading notes |
+| `ui/cli/README.md`                       | clap derive API for CLI commands                      |
+| `ui/tui/README.md`                       | TUI architecture, cache/schema version, keybindings   |
 
 ### Playbooks
 
