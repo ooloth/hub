@@ -1,5 +1,9 @@
 # hub
 
+## Private constraints
+
+If `../hub-private/CLAUDE.md` exists, read it before writing or editing any files — it lists terms that must never appear in committed hub files.
+
 ## What This Is
 
 See [README.md](README.md) for the full feature list and value proposition.
