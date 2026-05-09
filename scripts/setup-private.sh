@@ -68,11 +68,11 @@ link "$HUB_PRIVATE/ui/tui/src"       "$HUB_ROOT/ui/tui/src/private"
 link "$DEVICE_ENV"                   "$HUB_ROOT/.env"
 link "$DEVICE_CONFIG"                "$HUB_ROOT/hub.toml"
 
-# Individual file symlinks for private investigation modules.
-link "$HUB_PRIVATE/ui/tui/src/investigations/media.rs" "$HUB_ROOT/ui/tui/src/investigations/media.rs"
-
-# Individual directory symlinks for private skills.
-link "$HUB_PRIVATE/.claude/skills/media-investigate" "$HUB_ROOT/.agents/skills/media-investigate"
+# Home-laptop-only symlinks (media server workflows and skills).
+if [[ "$DEVICE" == "home-laptop" ]]; then
+  link "$HUB_PRIVATE/ui/tui/src/investigations/media.rs" "$HUB_ROOT/ui/tui/src/investigations/media.rs"
+  link "$HUB_PRIVATE/.claude/skills/media-investigate" "$HUB_ROOT/.agents/skills/media-investigate"
+fi
 
 echo ""
 echo "done. device: $DEVICE"
