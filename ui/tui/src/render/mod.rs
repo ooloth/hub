@@ -387,6 +387,35 @@ fn render_unified(
     }
 }
 
+fn right_status_text(
+    state: &RefreshState,
+    last_updated: Option<chrono::DateTime<Utc>>,
+    now: chrono::DateTime<Utc>,
+) -> String {
+    let age_str = |t: chrono::DateTime<Utc>| {
+        let mins = (now - t).num_minutes();
+        if mins == 0 {
+            "just now".to_string()
+        } else {
+            format!("{mins}m ago")
+        }
+    };
+    match state {
+        RefreshState::InProgress => "refreshing…".to_string(),
+        RefreshState::Partial(failed_sources) => {
+            let time_str = last_updated
+                .map(age_str)
+                .unwrap_or_else(|| "unknown".to_string());
+            let sources = failed_sources.join(", ");
+            format!("⚠ {} unreachable (updated {time_str})", sources)
+        }
+        RefreshState::Failed(err) => format!("refresh failed: {err}"),
+        RefreshState::Idle => last_updated
+            .map(|t| format!("updated {}", age_str(t)))
+            .unwrap_or_default(),
+    }
+}
+
 pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let [content_area, bar_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
@@ -411,37 +440,8 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         }
     }
 
-    let right_status = match &app.data.refresh_state {
-        RefreshState::InProgress => "refreshing…".to_string(),
-        RefreshState::Partial(failed_sources) => {
-            // Show timestamp + warning about unreachable sources.
-            let time_str = if let Some(t) = app.data.last_updated {
-                let mins = (Utc::now() - t).num_minutes();
-                if mins == 0 {
-                    "just now".to_string()
-                } else {
-                    format!("{mins}m ago")
-                }
-            } else {
-                "unknown".to_string()
-            };
-            let sources = failed_sources.join(", ");
-            format!("⚠ {} unreachable (updated {time_str})", sources)
-        }
-        RefreshState::Failed(err) => format!("refresh failed: {err}"),
-        RefreshState::Idle => {
-            if let Some(t) = app.data.last_updated {
-                let mins = (Utc::now() - t).num_minutes();
-                if mins == 0 {
-                    "updated just now".to_string()
-                } else {
-                    format!("updated {mins}m ago")
-                }
-            } else {
-                String::new()
-            }
-        }
-    };
+    let right_status =
+        right_status_text(&app.data.refresh_state, app.data.last_updated, Utc::now());
 
     let left = status_bar_left(app);
 
@@ -470,9 +470,12 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
 
 #[cfg(test)]
 mod tests {
-    use super::{action_hints, position_label, status_bar_left, wrap_text};
+    use super::{action_hints, position_label, right_status_text, status_bar_left, wrap_text};
     use crate::display::{DisplayItem, Filter, ListSnapshot};
-    use crate::state::{App, DetailView, EnterAction, InvestigateAction, Screen, UiState};
+    use crate::state::{
+        App, DetailView, EnterAction, InvestigateAction, RefreshState, Screen, UiState,
+    };
+    use chrono::Utc;
     use ratatui::widgets::ListState;
     use workflows::status::StatusItem;
 
@@ -636,6 +639,95 @@ mod tests {
         assert_eq!(
             action_hints(&enter, &inv),
             " · Press ↩ to open https://example.com · Press i to investigate"
+        );
+    }
+
+    #[test]
+    fn right_status_in_progress() {
+        let now = Utc::now();
+        assert_eq!(
+            right_status_text(&RefreshState::InProgress, None, now),
+            "refreshing…"
+        );
+    }
+
+    #[test]
+    fn right_status_failed_shows_error_message() {
+        let now = Utc::now();
+        assert_eq!(
+            right_status_text(
+                &RefreshState::Failed("network error".to_string()),
+                None,
+                now
+            ),
+            "refresh failed: network error"
+        );
+    }
+
+    #[test]
+    fn right_status_idle_no_timestamp_is_empty() {
+        let now = Utc::now();
+        assert_eq!(right_status_text(&RefreshState::Idle, None, now), "");
+    }
+
+    #[test]
+    fn right_status_idle_updated_within_a_minute() {
+        let now = Utc::now();
+        let last_updated = now - chrono::Duration::seconds(30);
+        assert_eq!(
+            right_status_text(&RefreshState::Idle, Some(last_updated), now),
+            "updated just now"
+        );
+    }
+
+    #[test]
+    fn right_status_idle_updated_minutes_ago() {
+        let now = Utc::now();
+        let last_updated = now - chrono::Duration::minutes(5);
+        assert_eq!(
+            right_status_text(&RefreshState::Idle, Some(last_updated), now),
+            "updated 5m ago"
+        );
+    }
+
+    #[test]
+    fn right_status_partial_no_timestamp() {
+        let now = Utc::now();
+        assert_eq!(
+            right_status_text(
+                &RefreshState::Partial(vec!["sonarr".to_string()]),
+                None,
+                now
+            ),
+            "⚠ sonarr unreachable (updated unknown)"
+        );
+    }
+
+    #[test]
+    fn right_status_partial_updated_within_a_minute() {
+        let now = Utc::now();
+        let last_updated = now - chrono::Duration::seconds(10);
+        assert_eq!(
+            right_status_text(
+                &RefreshState::Partial(vec!["sonarr".to_string()]),
+                Some(last_updated),
+                now
+            ),
+            "⚠ sonarr unreachable (updated just now)"
+        );
+    }
+
+    #[test]
+    fn right_status_partial_multiple_sources() {
+        let now = Utc::now();
+        let last_updated = now - chrono::Duration::minutes(2);
+        assert_eq!(
+            right_status_text(
+                &RefreshState::Partial(vec!["sonarr".to_string(), "linear issues".to_string()]),
+                Some(last_updated),
+                now
+            ),
+            "⚠ sonarr, linear issues unreachable (updated 2m ago)"
         );
     }
 
