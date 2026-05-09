@@ -20,9 +20,31 @@ Scans every repo listed in hub.toml for a named issue category, surfaces ranked 
 
 | Theme | Reference file | Finds |
 |---|---|---|
-| `docs` | `references/docs.md` | Stale, drifted, inconsistent, or missing documentation |
+| `api-design` | `~/.claude/references/api-design.md` | Breaking changes, missing contracts, inconsistent naming |
+| `architecture` | `~/.claude/references/architecture.md` | Dependency cycles, leaking internals, I/O in business logic |
+| `assertions` | `~/.claude/references/assertions.md` | Missing runtime invariant checks, unasserted preconditions |
+| `cli-design` | `~/.claude/references/cli-design.md` | Missing help text, stderr/stdout confusion, bad exit codes |
+| `code-quality` | `~/.claude/references/code-quality.md` | Dead code, poor naming, oversized files or functions |
+| `concurrency` | `~/.claude/references/concurrency.md` | Unprotected shared state, unawaited async, unbounded queues |
+| `config` | `~/.claude/references/config.md` | Lazy validation, raw strings in business logic, undocumented keys |
+| `correctness` | `~/.claude/references/correctness.md` | Logic errors, unhandled edge cases, inconsistent error propagation |
+| `data-integrity` | `~/.claude/references/data-integrity.md` | Missing transactions, unsafe concurrent writes, non-reversible migrations |
+| `dependencies` | `~/.claude/references/dependencies.md` | Unjustified additions, unmaintained packages, missing lockfiles |
+| `deployment` | `~/.claude/references/deployment.md` | Unsafe rollbacks, uncoordinated breaking changes, locking migrations |
+| `design` | `~/.claude/references/design.md` | Single-use abstractions, mixed responsibilities, unfinished work |
+| `docs` | `~/.claude/references/documentation.md` | Stale, drifted, inconsistent, or missing documentation |
+| `error-handling` | `~/.claude/references/error-handling.md` | Swallowed errors, missing context, internal details leaking |
+| `observability` | `~/.claude/references/observability.md` | Silent failures, new behavior with no log output |
+| `performance` | `~/.claude/references/performance.md` | N+1 queries, unbounded memory, algorithmic inefficiency |
+| `privacy` | `~/.claude/references/privacy.md` | PII in logs, unconstrained data collection, incomplete deletion |
+| `python` | `~/.claude/references/python.md` | Quoted annotations, if/elif chains, non-exhaustive match |
+| `reliability` | `~/.claude/references/reliability.md` | Missing timeouts, retrying permanent failures, cascading failures |
+| `rust` | `~/.claude/references/rust.md` | thiserror usage, lifetime annotations, blocking in async |
+| `security` | `~/.claude/references/security.md` | Unvalidated input, injection risks, hardcoded secrets |
+| `testing` | `~/.claude/references/testing.md` | Implementation-testing, missing critical path coverage, fragile tests |
+| `type-design` | `~/.claude/references/type-design.md` | Primitive obsession, invalid representable states, untyped boundaries |
 
-Load the reference file for the requested theme before scanning. It defines what to look for, what to skip, and how to rank findings.
+Load `~/.claude/references/README.md` and the reference file for the requested theme before scanning. The reference file's `## When scanning` section defines which surfaces to examine and what false positives to skip. Its Must/Should/Consider tiers govern filing urgency.
 
 ## Config
 
@@ -98,15 +120,15 @@ Scanning: docs / hub, dotfiles / focus: playbooks
 Scanning: docs / all opted-in repos / no focus
 ```
 
-### 1. Enumerate doc surfaces
+### 1. Enumerate relevant surfaces
 
-Using the file tree, identify the surfaces defined in the theme reference file. Read each one.
+Read the `## In scope` and `## Out of scope` sections of the loaded reference file to identify which surfaces to examine and what to skip. Use the file tree to locate matching files. Read each one.
 
-### 2. Apply heuristics
+### 2. Apply invariants
 
-Apply the heuristics from the reference file. For each finding, record:
+Apply the Must/Should/Consider invariants from the reference file to the surfaces identified in step 1. For each finding, record:
 - **File**: the path of the doc that has the issue
-- **Tier**: the severity tier from the reference file
+- **Tier**: Must, Should, or Consider — from the reference file
 - **Finding**: one sentence describing the specific problem
 - **Evidence**: the exact text or reference that is wrong/missing
 
@@ -128,7 +150,7 @@ After scanning all repos, output findings grouped by repo, ordered within each g
 [gap]           No README found
 ```
 
-Always proceed immediately after presenting findings — never pause to ask which to file. File all tier-1 and tier-2 findings automatically; surface tier-3 and tier-4 findings in the report only.
+Always proceed immediately after presenting findings — never pause to ask which to file. File all Must and Should findings automatically; surface Consider findings in the report only.
 
 ### 4. Dedup
 
@@ -149,8 +171,8 @@ If an open issue exists for the same file but covers a different finding, add a 
 Before filing the first issue in a repo, create the three labels if they are missing:
 
 ```bash
-gh label create "author:agent"            --color "0075ca" --repo {owner}/{repo} --force
-gh label create "category:docs"           --color "e4e669" --repo {owner}/{repo} --force
+gh label create "author:agent"              --color "0075ca" --repo {owner}/{repo} --force
+gh label create "category:<theme>"         --color "e4e669" --repo {owner}/{repo} --force
 gh label create "status:needs-human-review" --color "d93f0b" --repo {owner}/{repo} --force
 ```
 
@@ -171,7 +193,7 @@ gh issue create \
   --repo {owner}/{repo} \
   --title "{title}" \
   --body "{body}" \
-  --label "author:agent,category:docs,status:needs-human-review"
+  --label "author:agent,category:<theme>,status:needs-human-review"
 ```
 
 ### 7. Report
@@ -189,6 +211,6 @@ Commented on existing issue:
 Skipped (duplicate):
   ooloth/hub  — drift in README.md  →  already tracked in #38
 
-Surfaced only (tier-3/4 — not auto-filed):
+Surfaced only (Consider — not auto-filed):
   ooloth/hub  — gap: no ADR for config model
 ```
