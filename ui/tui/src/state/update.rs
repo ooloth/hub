@@ -355,7 +355,12 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
                 filter,
             };
             app.data.last_updated = Some(Utc::now());
-            app.data.refresh_state = RefreshState::Idle;
+            // If any sources failed, show partial state; otherwise fully idle.
+            app.data.refresh_state = if report.errors.is_empty() {
+                RefreshState::Idle
+            } else {
+                RefreshState::Partial(report.errors)
+            };
             Ok(vec![Effect::WriteCache(json)])
         }
         Msg::FetchResult(Err(e)) => {
@@ -426,6 +431,14 @@ mod tests {
     fn report_with_ci() -> StatusReport {
         StatusReport {
             items: vec![ci_failure()],
+            errors: vec![],
+        }
+    }
+
+    fn report_with_ci_and_errors() -> StatusReport {
+        StatusReport {
+            items: vec![ci_failure()],
+            errors: vec!["sonarr".to_string(), "linear issues".to_string()],
         }
     }
 
@@ -659,6 +672,39 @@ mod tests {
     fn handle_msg_fetch_ok_returns_write_cache_effect() {
         let mut app = App::default();
         let effects = handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        assert!(matches!(effects.as_slice(), [Effect::WriteCache(_)]));
+    }
+
+    #[test]
+    fn handle_msg_fetch_ok_with_errors_sets_partial_state() {
+        let mut app = App {
+            data: DataState {
+                refresh_state: RefreshState::InProgress,
+                ..DataState::default()
+            },
+            ..App::default()
+        };
+        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci_and_errors()))).unwrap();
+        assert!(
+            matches!(&app.data.refresh_state, RefreshState::Partial(sources) if sources == &["sonarr", "linear issues"])
+        );
+    }
+
+    #[test]
+    fn handle_msg_fetch_ok_with_errors_still_populates_items() {
+        let mut app = App::default();
+        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci_and_errors()))).unwrap();
+        assert!(matches!(
+            app.current_screen(),
+            Screen::UnifiedList { items, .. } if !items.is_empty()
+        ));
+    }
+
+    #[test]
+    fn handle_msg_fetch_ok_with_errors_returns_write_cache_effect() {
+        let mut app = App::default();
+        let effects =
+            handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci_and_errors()))).unwrap();
         assert!(matches!(effects.as_slice(), [Effect::WriteCache(_)]));
     }
 

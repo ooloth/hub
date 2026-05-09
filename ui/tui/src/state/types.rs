@@ -9,6 +9,8 @@ pub(crate) enum RefreshState {
     #[default]
     Idle,
     InProgress,
+    /// Partial refresh: some sources succeeded, others failed.
+    Partial(Vec<String>),
     Failed(String),
 }
 

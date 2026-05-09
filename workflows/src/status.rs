@@ -66,6 +66,9 @@ impl StatusItem {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StatusReport {
     pub items: Vec<StatusItem>,
+    /// API sources that failed during the refresh (e.g., "sonarr", "github")
+    #[serde(default)]
+    pub errors: Vec<String>,
 }
 
 pub struct StatusParams {
@@ -109,42 +112,94 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
         },
     );
 
-    let mut github_issues = issues?;
-    github_issues.extend(assigned_issues?);
-
     let mut items: Vec<StatusItem> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
 
-    items.extend(my_open?.into_iter().map(StatusItem::Pr));
-    items.extend(review_queue?.into_iter().map(StatusItem::Pr));
-    items.extend(my_drafts?.into_iter().map(StatusItem::Pr));
-    items.extend(github_issues.into_iter().map(StatusItem::Issue));
-    items.extend(ci_failures?.into_iter().map(StatusItem::Ci));
-    items.extend(linear_issues?.into_iter().map(StatusItem::Linear));
+    // GitHub Issues — combine open and assigned issues.
+    match issues {
+        Ok(mut all_issues) => {
+            if let Ok(assigned) = assigned_issues {
+                all_issues.extend(assigned);
+            } else {
+                errors.push("github assigned issues".to_string());
+            }
+            items.extend(all_issues.into_iter().map(StatusItem::Issue));
+        }
+        Err(_) => {
+            // Both open and assigned failed; only report once.
+            errors.push("github issues".to_string());
+            // If assigned succeeded even though open failed, still add them.
+            if let Ok(assigned) = assigned_issues {
+                items.extend(assigned.into_iter().map(StatusItem::Issue));
+            }
+        }
+    }
 
+    // GitHub PRs — collect errors for each category that fails.
+    if let Ok(prs) = my_open {
+        items.extend(prs.into_iter().map(StatusItem::Pr));
+    } else {
+        errors.push("github my open prs".to_string());
+    }
+
+    if let Ok(prs) = review_queue {
+        items.extend(prs.into_iter().map(StatusItem::Pr));
+    } else {
+        errors.push("github prs awaiting review".to_string());
+    }
+
+    if let Ok(prs) = my_drafts {
+        items.extend(prs.into_iter().map(StatusItem::Pr));
+    } else {
+        errors.push("github my draft prs".to_string());
+    }
+
+    // GitHub CI.
+    if let Ok(ci) = ci_failures {
+        items.extend(ci.into_iter().map(StatusItem::Ci));
+    } else {
+        errors.push("github ci failures".to_string());
+    }
+
+    // Linear issues.
+    if let Ok(linear) = linear_issues {
+        items.extend(linear.into_iter().map(StatusItem::Linear));
+    } else {
+        errors.push("linear issues".to_string());
+    }
+
+    // Loki errors are logged but don't fail the refresh (like the original behavior).
     for env in &params.loki_envs {
         match crate::loki::run(env).await {
-            Ok(errors) => items.extend(errors.into_iter().map(StatusItem::Loki)),
+            Ok(loki_items) => items.extend(loki_items.into_iter().map(StatusItem::Loki)),
             Err(e) => eprintln!("loki ({} · {}): {e}", env.project, env.env),
         }
     }
 
+    // Private workflows (sonarr, etc.) — gracefully handle failures.
     #[cfg(feature = "private")]
     {
-        let private = crate::private::status::run(params.private_workflow_names).await?;
-        if let Some(media) = private.media {
-            items.extend(media.blocked.into_iter().map(StatusItem::MediaBlocked));
-            items.extend(
-                media
-                    .recent_missing
-                    .into_iter()
-                    .map(StatusItem::MediaMissing),
-            );
-            items.extend(media.health_items.into_iter().map(StatusItem::MediaHealth));
-            if media.backlog_count > 0 {
-                items.push(StatusItem::MediaBacklog {
-                    source: media.source.clone(),
-                    count: media.backlog_count,
-                });
+        match crate::private::status::run(params.private_workflow_names).await {
+            Ok(private) => {
+                if let Some(media) = private.media {
+                    items.extend(media.blocked.into_iter().map(StatusItem::MediaBlocked));
+                    items.extend(
+                        media
+                            .recent_missing
+                            .into_iter()
+                            .map(StatusItem::MediaMissing),
+                    );
+                    items.extend(media.health_items.into_iter().map(StatusItem::MediaHealth));
+                    if media.backlog_count > 0 {
+                        items.push(StatusItem::MediaBacklog {
+                            source: media.source.clone(),
+                            count: media.backlog_count,
+                        });
+                    }
+                }
+            }
+            Err(_) => {
+                errors.push("sonarr".to_string());
             }
         }
     }
@@ -154,5 +209,5 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
 
     items.sort_by_key(|i| (i.urgency(), Reverse(i.age())));
 
-    Ok(StatusReport { items })
+    Ok(StatusReport { items, errors })
 }

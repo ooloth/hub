@@ -413,6 +413,21 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
 
     let right_status = match &app.data.refresh_state {
         RefreshState::InProgress => "refreshing…".to_string(),
+        RefreshState::Partial(failed_sources) => {
+            // Show timestamp + warning about unreachable sources.
+            let time_str = if let Some(t) = app.data.last_updated {
+                let mins = (Utc::now() - t).num_minutes();
+                if mins == 0 {
+                    "just now".to_string()
+                } else {
+                    format!("{mins}m ago")
+                }
+            } else {
+                "unknown".to_string()
+            };
+            let sources = failed_sources.join(", ");
+            format!("⚠ {} unreachable (updated {time_str})", sources)
+        }
         RefreshState::Failed(err) => format!("refresh failed: {err}"),
         RefreshState::Idle => {
             if let Some(t) = app.data.last_updated {
