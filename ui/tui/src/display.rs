@@ -73,7 +73,7 @@ pub(crate) enum InvestigationKind {
         line: String,
     },
     #[cfg(feature = "private")]
-    SonarrBlocked {
+    MediaBlocked {
         title: String,
         error: String,
     },
@@ -93,7 +93,7 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
             line: l.line.clone(),
         }),
         #[cfg(feature = "private")]
-        StatusItem::MediaBlocked(b) => Some(InvestigationKind::SonarrBlocked {
+        StatusItem::MediaBlocked(b) => Some(InvestigationKind::MediaBlocked {
             title: b.title.clone(),
             error: b.error.clone(),
         }),
@@ -287,35 +287,35 @@ mod tests {
     #[cfg(feature = "private")]
     fn media_blocked() -> StatusItem {
         StatusItem::MediaBlocked(workflows::private::status::BlockedItem {
-            source: "Sonarr".to_string(),
+            source: "Media".to_string(),
             urgency: domain::Urgency::High,
             age: chrono::Duration::zero(),
             title: "Show — S01E01".to_string(),
             error: "Invalid video file".to_string(),
-            url: "http://sonarr/activity/queue".to_string(),
+            url: "http://media-server/queue".to_string(),
         })
     }
 
     #[cfg(feature = "private")]
     fn media_missing() -> StatusItem {
         StatusItem::MediaMissing(workflows::private::status::MissingItem {
-            source: "Sonarr".to_string(),
+            source: "Media".to_string(),
             urgency: domain::Urgency::Medium,
             age: chrono::Duration::zero(),
             title: "Show — S01E02".to_string(),
             air_date: "2024-01-01".to_string(),
-            url: "http://sonarr/wanted/missing".to_string(),
+            url: "http://media-server/wanted".to_string(),
         })
     }
 
     #[cfg(feature = "private")]
     fn media_health() -> StatusItem {
         StatusItem::MediaHealth(workflows::private::status::HealthItem {
-            source: "Sonarr".to_string(),
+            source: "Media".to_string(),
             urgency: domain::Urgency::Low,
             age: chrono::Duration::zero(),
             message: "Indexer unavailable".to_string(),
-            url: "https://wiki.servarr.com/sonarr/system#indexers".to_string(),
+            url: "https://wiki.example.com/system#indexers".to_string(),
         })
     }
 
@@ -367,6 +367,92 @@ mod tests {
         })
     }
 
+    fn loki() -> StatusItem {
+        StatusItem::Loki(domain::LokiEntry {
+            title: "MemoryError".to_string(),
+            project: "project-x".to_string(),
+            env: "prod".to_string(),
+            message: "OOM killed".to_string(),
+            line: "{}".to_string(),
+            lookback: "15m".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::High,
+            url: String::new(),
+        })
+    }
+
+    fn ci_job_step() -> StatusItem {
+        StatusItem::Ci(domain::CiFailure {
+            repo: domain::RepoSlug::new("owner", "repo"),
+            workflow_name: "CI".to_string(),
+            job_name: Some("Build".to_string()),
+            step_name: Some("cargo check".to_string()),
+            error: None,
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::High,
+            url: "https://github.com/owner/repo/actions/runs/1".to_string(),
+        })
+    }
+
+    fn ci_full() -> StatusItem {
+        StatusItem::Ci(domain::CiFailure {
+            repo: domain::RepoSlug::new("owner", "repo"),
+            workflow_name: "CI".to_string(),
+            job_name: Some("Build".to_string()),
+            step_name: Some("cargo check".to_string()),
+            error: Some("error[E0308]: mismatched types".to_string()),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::High,
+            url: "https://github.com/owner/repo/actions/runs/1".to_string(),
+        })
+    }
+
+    #[test]
+    fn snapshot_item_lines() {
+        let lines = [
+            format!("pr_mine:     {}", item_line(&make_pr(domain::PrKind::Mine))),
+            format!(
+                "pr_review:   {}",
+                item_line(&make_pr(domain::PrKind::ToReview))
+            ),
+            format!(
+                "pr_draft:    {}",
+                item_line(&make_pr(domain::PrKind::MyDraft))
+            ),
+            format!("issue:       {}", item_line(&issue())),
+            format!("ci_bare:     {}", item_line(&ci())),
+            format!("ci_job_step: {}", item_line(&ci_job_step())),
+            format!("ci_full:     {}", item_line(&ci_full())),
+            format!("linear:      {}", item_line(&linear())),
+            format!("loki:        {}", item_line(&loki())),
+            format!(
+                "group_3:     {}",
+                display_item_line(&DisplayItem::Group {
+                    label: "project-x · prod · MemoryError · OOM killed".to_string(),
+                    items: vec![loki(), loki(), loki()],
+                })
+            ),
+        ]
+        .join("\n");
+        insta::assert_snapshot!(lines);
+    }
+
+    #[cfg(feature = "private")]
+    #[test]
+    fn snapshot_item_lines_private() {
+        let lines = [
+            format!("media_blocked:  {}", item_line(&media_blocked())),
+            format!("media_missing:  {}", item_line(&media_missing())),
+            format!("media_health:   {}", item_line(&media_health())),
+            format!(
+                "media_blocked_detail: {}",
+                item_detail_line(&media_blocked())
+            ),
+        ]
+        .join("\n");
+        insta::assert_snapshot!(lines);
+    }
+
     #[test]
     fn item_category_ci_is_errors() {
         assert_eq!(item_category(&ci()), Category::Errors);
@@ -397,71 +483,6 @@ mod tests {
             urgency: domain::Urgency::Medium,
             kind,
         })
-    }
-
-    #[test]
-    fn item_line_pr_open_badge() {
-        assert_eq!(
-            item_line(&make_pr(domain::PrKind::Mine)),
-            "owner/repo · Add feature (#42) [OPEN]"
-        );
-    }
-
-    #[test]
-    fn item_line_pr_to_review_badge() {
-        assert_eq!(
-            item_line(&make_pr(domain::PrKind::ToReview)),
-            "owner/repo · Add feature (#42) [TO REVIEW]"
-        );
-    }
-
-    #[test]
-    fn item_line_pr_draft_badge() {
-        assert_eq!(
-            item_line(&make_pr(domain::PrKind::MyDraft)),
-            "owner/repo · Add feature (#42) [DRAFT]"
-        );
-    }
-
-    #[test]
-    fn item_line_formats_ci_no_job_info() {
-        assert_eq!(item_line(&ci()), "owner/repo · CI · failed");
-    }
-
-    #[test]
-    fn item_line_formats_ci_with_job_and_step() {
-        let item = StatusItem::Ci(domain::CiFailure {
-            repo: domain::RepoSlug::new("owner", "repo"),
-            workflow_name: "CI".to_string(),
-            job_name: Some("Build".to_string()),
-            step_name: Some("cargo check".to_string()),
-            error: None,
-            age: chrono::Duration::zero(),
-            urgency: domain::Urgency::High,
-            url: "https://github.com/owner/repo/actions/runs/1".to_string(),
-        });
-        assert_eq!(
-            item_line(&item),
-            "owner/repo · CI · Build / cargo check · failed"
-        );
-    }
-
-    #[test]
-    fn item_line_formats_ci_with_full_info() {
-        let item = StatusItem::Ci(domain::CiFailure {
-            repo: domain::RepoSlug::new("owner", "repo"),
-            workflow_name: "CI".to_string(),
-            job_name: Some("Build".to_string()),
-            step_name: Some("cargo check".to_string()),
-            error: Some("error[E0308]: mismatched types".to_string()),
-            age: chrono::Duration::zero(),
-            urgency: domain::Urgency::High,
-            url: "https://github.com/owner/repo/actions/runs/1".to_string(),
-        });
-        assert_eq!(
-            item_line(&item),
-            "owner/repo · CI · Build / cargo check · error[E0308]: mismatched types"
-        );
     }
 
     #[test]
@@ -506,7 +527,7 @@ mod tests {
     fn item_url_media_blocked_returns_queue_url() {
         assert_eq!(
             item_url(&media_blocked()),
-            Some("http://sonarr/activity/queue")
+            Some("http://media-server/queue")
         );
     }
 
@@ -515,7 +536,7 @@ mod tests {
     fn item_url_media_missing_returns_wanted_url() {
         assert_eq!(
             item_url(&media_missing()),
-            Some("http://sonarr/wanted/missing")
+            Some("http://media-server/wanted")
         );
     }
 
@@ -524,7 +545,7 @@ mod tests {
     fn item_url_media_health_returns_wiki_url() {
         assert_eq!(
             item_url(&media_health()),
-            Some("https://wiki.servarr.com/sonarr/system#indexers")
+            Some("https://wiki.example.com/system#indexers")
         );
     }
 
@@ -564,10 +585,10 @@ mod tests {
 
     #[cfg(feature = "private")]
     #[test]
-    fn item_investigation_media_blocked_returns_sonarr_kind() {
+    fn item_investigation_media_blocked_returns_media_kind() {
         assert!(matches!(
             item_investigation(&media_blocked()),
-            Some(InvestigationKind::SonarrBlocked { .. })
+            Some(InvestigationKind::MediaBlocked { .. })
         ));
     }
 
@@ -581,15 +602,6 @@ mod tests {
     #[test]
     fn item_investigation_media_health_returns_none() {
         assert!(item_investigation(&media_health()).is_none());
-    }
-
-    #[test]
-    fn display_item_line_group_shows_label_and_count() {
-        let group = DisplayItem::Group {
-            label: "Import blocked".to_string(),
-            items: vec![ci(), ci()],
-        };
-        assert_eq!(display_item_line(&group), "Import blocked (2)");
     }
 
     #[test]

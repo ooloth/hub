@@ -1,0 +1,14 @@
+---
+source: ui/tui/src/display.rs
+expression: lines
+---
+pr_mine:     owner/repo · Add feature (#42) [OPEN]
+pr_review:   owner/repo · Add feature (#42) [TO REVIEW]
+pr_draft:    owner/repo · Add feature (#42) [DRAFT]
+issue:       owner/repo · Fix bug (#7)
+ci_bare:     owner/repo · CI · failed
+ci_job_step: owner/repo · CI · Build / cargo check · failed
+ci_full:     owner/repo · CI · Build / cargo check · error[E0308]: mismatched types
+linear:      Linear · Do the thing (ENG-99)
+loki:        project-x · prod · MemoryError · OOM killed
+group_3:     project-x · prod · MemoryError · OOM killed (3)

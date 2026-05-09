@@ -66,9 +66,16 @@ impl StatusItem {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StatusReport {
     pub items: Vec<StatusItem>,
-    /// API sources that failed during the refresh (e.g., "sonarr", "github")
+    /// Names of API sources that failed during the refresh (e.g., "github ci").
     #[serde(default)]
     pub errors: Vec<String>,
+}
+
+/// Returned by the private workflow runner so source names come from data, not hub source code.
+#[cfg(feature = "private")]
+pub struct PrivateStatusResult {
+    pub items: Vec<StatusItem>,
+    pub failed_sources: Vec<String>,
 }
 
 pub struct StatusParams {
@@ -176,32 +183,12 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
         }
     }
 
-    // Private workflows (sonarr, etc.) — gracefully handle failures.
+    // Private workflows — gracefully handle failures; source names come from the result data.
     #[cfg(feature = "private")]
     {
-        match crate::private::status::run(params.private_workflow_names).await {
-            Ok(private) => {
-                if let Some(media) = private.media {
-                    items.extend(media.blocked.into_iter().map(StatusItem::MediaBlocked));
-                    items.extend(
-                        media
-                            .recent_missing
-                            .into_iter()
-                            .map(StatusItem::MediaMissing),
-                    );
-                    items.extend(media.health_items.into_iter().map(StatusItem::MediaHealth));
-                    if media.backlog_count > 0 {
-                        items.push(StatusItem::MediaBacklog {
-                            source: media.source.clone(),
-                            count: media.backlog_count,
-                        });
-                    }
-                }
-            }
-            Err(_) => {
-                errors.push("sonarr".to_string());
-            }
-        }
+        let private = crate::private::status::run(params.private_workflow_names).await;
+        items.extend(private.items);
+        errors.extend(private.failed_sources);
     }
 
     #[cfg(not(feature = "private"))]

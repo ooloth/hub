@@ -623,9 +623,9 @@ mod tests {
 
     #[cfg(feature = "private")]
     #[test]
-    fn action_hints_investigate_sonarr() {
+    fn action_hints_investigate_media() {
         let enter = EnterAction::None;
-        let inv = InvestigateAction::LaunchSonarrBlocked {
+        let inv = InvestigateAction::LaunchMediaBlocked {
             title: "Show — S01E01".to_string(),
             error: "Invalid video file".to_string(),
         };
@@ -697,12 +697,8 @@ mod tests {
     fn right_status_partial_no_timestamp() {
         let now = Utc::now();
         assert_eq!(
-            right_status_text(
-                &RefreshState::Partial(vec!["sonarr".to_string()]),
-                None,
-                now
-            ),
-            "⚠ sonarr unreachable (updated unknown)"
+            right_status_text(&RefreshState::Partial(vec!["media".to_string()]), None, now),
+            "⚠ media unreachable (updated unknown)"
         );
     }
 
@@ -712,11 +708,11 @@ mod tests {
         let last_updated = now - chrono::Duration::seconds(10);
         assert_eq!(
             right_status_text(
-                &RefreshState::Partial(vec!["sonarr".to_string()]),
+                &RefreshState::Partial(vec!["media".to_string()]),
                 Some(last_updated),
                 now
             ),
-            "⚠ sonarr unreachable (updated just now)"
+            "⚠ media unreachable (updated just now)"
         );
     }
 
@@ -726,11 +722,11 @@ mod tests {
         let last_updated = now - chrono::Duration::minutes(2);
         assert_eq!(
             right_status_text(
-                &RefreshState::Partial(vec!["sonarr".to_string(), "linear issues".to_string()]),
+                &RefreshState::Partial(vec!["media".to_string(), "linear issues".to_string()]),
                 Some(last_updated),
                 now
             ),
-            "⚠ sonarr, linear issues unreachable (updated 2m ago)"
+            "⚠ media, linear issues unreachable (updated 2m ago)"
         );
     }
 

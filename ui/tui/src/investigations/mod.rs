@@ -4,7 +4,7 @@ use std::path::Path;
 pub(crate) mod ci;
 pub(crate) mod loki;
 #[cfg(feature = "private")]
-pub(crate) mod sonarr;
+pub(crate) mod media;
 
 pub(crate) struct LaunchConfig {
     pub(crate) command: String,

@@ -1,8 +1,8 @@
 # Private Workflows and Skills
 
-Hub is a public repo. Some workflows and investigation skills connect to systems
-you'd rather not name publicly — they live in a separate private repo (`hub-private`)
-that gets wired into this workspace via symlinks and a Cargo feature flag.
+Hub is a public repo. Some workflows and investigation skills connect to systems you may not
+want to name publicly (e.g. confidential work stuff) — those live in a separate private repo
+(`hub-private`) that gets wired into this workspace via symlinks and a Cargo feature flag.
 
 ## The Two Repos
 
@@ -23,21 +23,30 @@ that gets wired into this workspace via symlinks and a Cargo feature flag.
 
 ## Symlinks
 
-`just setup-private <device>` creates six symlinks inside hub:
+`just setup-private <device>` creates the standard symlinks inside hub:
 
 ```
 hub/clients/src/private      →  hub-private/clients/src/
 hub/workflows/src/private    →  hub-private/workflows/src/
 hub/ui/cli/src/private       →  hub-private/ui/cli/src/
 hub/ui/tui/src/private       →  hub-private/ui/tui/src/
-hub/.env                     →  hub-private/.env
+hub/.env                     →  hub-private/devices/<device>.env
 hub/hub.toml                 →  hub-private/devices/<device>.toml
 ```
 
-Private skills follow the same principle: skill files that reference internal
-endpoints or queries live in `hub-private/.claude/skills/` and are symlinked
-individually into `hub/.claude/skills/`. See the
+It also creates individual file symlinks for private investigation modules:
+
+```
+hub/ui/tui/src/investigations/media.rs  →  hub-private/ui/tui/src/investigations/media.rs
+```
+
+Private skills follow the same individual-file pattern: skill files that
+reference internal endpoints or queries live in `hub-private/.claude/skills/`
+and are symlinked individually into `hub/.claude/skills/`. See the
 [add-a-skill playbook](../playbooks/add-a-skill.md) for the full steps.
+
+When adding a new private investigation module, add a corresponding `link`
+call to `scripts/setup-private.sh` and a gitignore entry in `.gitignore`.
 
 The first two are gitignored in hub. `.env` and `hub.toml` are also gitignored,
 so none of the symlinks are ever committed to the public repo.

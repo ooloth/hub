@@ -261,15 +261,12 @@ async fn run_loop(
                     }
                 },
                 #[cfg(feature = "private")]
-                Effect::LaunchSonarrBlocked { title, error } => match std::env::current_dir() {
+                Effect::LaunchMediaBlocked { title, error } => match std::env::current_dir() {
                     Ok(cwd) => {
-                        let mut cfg = investigations::sonarr::config(&title, &error);
-                        for var in ["SONARR_URL", "SONARR_API_KEY"] {
-                            if let Ok(val) = std::env::var(var) {
-                                cfg.env.push((var.to_string(), val));
-                            }
-                        }
-                        if let Err(err) = investigations::launch(cfg, &cwd) {
+                        if let Err(err) = investigations::launch(
+                            investigations::media::config(&title, &error),
+                            &cwd,
+                        ) {
                             app.ui.flash = Some(err.to_string());
                         }
                     }

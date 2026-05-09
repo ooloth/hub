@@ -91,7 +91,7 @@ pub(crate) enum InvestigateAction {
         line: String,
     },
     #[cfg(feature = "private")]
-    LaunchSonarrBlocked {
+    LaunchMediaBlocked {
         title: String,
         error: String,
     },
@@ -133,7 +133,7 @@ pub(crate) enum Effect {
         line: String,
     },
     #[cfg(feature = "private")]
-    LaunchSonarrBlocked {
+    LaunchMediaBlocked {
         title: String,
         error: String,
     },

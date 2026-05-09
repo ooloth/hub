@@ -68,6 +68,9 @@ link "$HUB_PRIVATE/ui/tui/src"       "$HUB_ROOT/ui/tui/src/private"
 link "$DEVICE_ENV"                   "$HUB_ROOT/.env"
 link "$DEVICE_CONFIG"                "$HUB_ROOT/hub.toml"
 
+# Individual file symlinks for private investigation modules.
+link "$HUB_PRIVATE/ui/tui/src/investigations/media.rs" "$HUB_ROOT/ui/tui/src/investigations/media.rs"
+
 echo ""
 echo "done. device: $DEVICE"
 echo "edit hub-private/devices/$DEVICE.toml to configure integrations for this device."

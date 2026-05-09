@@ -9,4 +9,5 @@ clients/src/private
 workflows/src/private
 ui/cli/src/private
 ui/tui/src/private
+ui/tui/src/investigations/media.rs
 .trekker/
