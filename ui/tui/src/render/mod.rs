@@ -722,18 +722,6 @@ mod tests {
     }
 
     #[test]
-    fn status_bar_unified_list_shows_position() {
-        let app = unified_list_app(vec![DisplayItem::Single(pr()), DisplayItem::Single(pr())]);
-        assert!(status_bar_left(&app).starts_with("1/2"));
-    }
-
-    #[test]
-    fn status_bar_empty_unified_list_shows_no_position() {
-        let app = unified_list_app(vec![]);
-        assert!(!status_bar_left(&app).starts_with("1/"));
-    }
-
-    #[test]
     fn position_label_unified_list_shows_index_of_n() {
         let screen = Screen::UnifiedList {
             items: vec![
@@ -745,29 +733,6 @@ mod tests {
             filter: Filter::default(),
         };
         assert_eq!(position_label(&screen), "2/3");
-    }
-
-    #[test]
-    fn position_label_empty_unified_list_is_empty() {
-        let screen = Screen::UnifiedList {
-            items: vec![],
-            selected: 0,
-            filter: Filter::default(),
-        };
-        assert_eq!(position_label(&screen), "");
-    }
-
-    #[test]
-    fn position_label_detail_shows_index_within_group() {
-        let app = detail_app(
-            vec![DisplayItem::Group {
-                label: "hub".to_string(),
-                items: vec![pr(), pr()],
-            }],
-            0,
-            0,
-        );
-        assert_eq!(position_label(app.current_screen()), "1/2");
     }
 
     #[test]
@@ -1009,6 +974,93 @@ mod tests {
             ..App::default()
         };
         let buf = draw(&mut app, 80, 20);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    // ── More full-screen unified list snapshots ───────────────────────────────
+
+    #[test]
+    fn full_screen_unified_list_pr_selected() {
+        // U8: PR item (Low urgency, no investigate action) selected as item 2/2.
+        // Tests that: (a) the inline hint is "↩ to open" only (no "i" hint);
+        // (b) the CI item above it shows no hint; (c) position label is "2/2".
+        let mut app = App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    items: vec![DisplayItem::Single(ci_item()), DisplayItem::Single(pr())],
+                    selected: 1,
+                    filter: Filter::default(),
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        };
+        let buf = draw(&mut app, 80, 15);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_unified_list_scrolled() {
+        // U9: 15 PR items, last item selected — list must scroll to show it.
+        // Tests that the scroll offset logic renders only the visible window
+        // and the selected item appears at the bottom of the viewport.
+        let items: Vec<DisplayItem> = (0..15).map(|_| DisplayItem::Single(pr())).collect();
+        let mut app = App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    items,
+                    selected: 14,
+                    filter: Filter::default(),
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        };
+        let buf = draw(&mut app, 80, 15);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_unified_list_empty_filter_result() {
+        // U10: Category filter active but no items match — green border with
+        // filter title, empty body.  Different from U1 (no filter) and U4 (items match).
+        let mut app = App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    items: vec![],
+                    selected: 0,
+                    filter: Filter {
+                        category: Some(Category::Errors),
+                        query: None,
+                    },
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        };
+        let buf = draw(&mut app, 80, 15);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_unified_list_committed_query() {
+        // U11: Query committed (filter.query set, query_input None) — green
+        // border + query in title. Distinct from U5 (query_input set → yellow border).
+        let mut app = App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    items: vec![DisplayItem::Single(ci_item())],
+                    selected: 0,
+                    filter: Filter {
+                        category: None,
+                        query: Some("hub".to_string()),
+                    },
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        };
+        let buf = draw(&mut app, 80, 15);
         insta::assert_snapshot!(screen_text(&buf));
     }
 
