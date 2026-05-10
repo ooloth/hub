@@ -1,0 +1,19 @@
+---
+source: ui/tui/src/render/mod.rs
+expression: screen_text(&buf)
+---
+╭ All ─────────────────────────────────────────────────────────────────────────╮
+│● ooloth/hub · CI · check / fmt · failed  ↩ to open · i to investigate        │
+├──────────────────────────────────────────────────────────────────────────────┤
+│● owner/repo · Fix (#1) [TO REVIEW]                                           │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+1/2 · Press ↩ to open https://github.com/ooloth/hub/actions/runs/25608685802 · P

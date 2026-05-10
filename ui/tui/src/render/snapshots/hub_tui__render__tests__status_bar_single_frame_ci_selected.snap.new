@@ -1,6 +1,0 @@
----
-source: ui/tui/src/render/mod.rs
-assertion_line: 608
-expression: status_row(&buf)
----
-1/1 · Press ↩ to open https://github.com/ooloth/hub/actions/runs/25608685802 · Press i to investigate

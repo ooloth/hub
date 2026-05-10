@@ -1,6 +1,0 @@
----
-source: ui/tui/src/render/mod.rs
-assertion_line: 616
-expression: status_row(&buf)
----
-                                        ⚠ source-a unreachable (updated unknown)

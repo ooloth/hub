@@ -407,7 +407,7 @@ fn right_status_text(
                 .map(age_str)
                 .unwrap_or_else(|| "unknown".to_string());
             let sources = failed_sources.join(", ");
-            format!("⚠ {} unreachable (updated {time_str})", sources)
+            format!("! {} unreachable (updated {time_str})", sources)
         }
         RefreshState::Failed(err) => format!("refresh failed: {err}"),
         RefreshState::Idle => last_updated
@@ -473,7 +473,7 @@ mod tests {
     use super::{
         action_hints, position_label, render, right_status_text, status_bar_left, wrap_text,
     };
-    use crate::display::{DisplayItem, Filter, ListSnapshot};
+    use crate::display::{Category, DisplayItem, Filter, ListSnapshot};
     use crate::state::{
         App, DataState, DetailView, EnterAction, InvestigateAction, RefreshState, Screen, UiState,
     };
@@ -507,6 +507,28 @@ mod tests {
         terminal.draw(|frame| render(frame, app1)).unwrap();
         terminal.draw(|frame| render(frame, app2)).unwrap();
         terminal.backend().buffer().clone()
+    }
+
+    /// Serialise the entire buffer as a multi-line string (one line per row).
+    /// Empty cells become spaces so each line is exactly `buf.area.width` chars wide.
+    fn screen_text(buf: &ratatui::buffer::Buffer) -> String {
+        let w = buf.area.width as usize;
+        let h = buf.area.height as usize;
+        (0..h)
+            .map(|y| {
+                buf.content[y * w..(y + 1) * w]
+                    .iter()
+                    .map(|cell| {
+                        if cell.symbol().is_empty() {
+                            " "
+                        } else {
+                            cell.symbol()
+                        }
+                    })
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     /// Extract the last (status bar) row of a buffer as a plain string.
@@ -562,9 +584,9 @@ mod tests {
 
     #[test]
     fn status_bar_right_partial_then_idle() {
-        // Frame 1: long right text ("⚠ source-a unreachable (updated unknown)")
+        // Frame 1: long right text ("! source-a unreachable (updated unknown)")
         // Frame 2: empty right text (Idle + no timestamp → "")
-        // If Clear is broken, frame 1's characters remain in the buffer.
+        // Catches stale characters if the longer text isn't fully overwritten.
         let buf = draw_two(&mut partial_app(), &mut idle_app(), 80, 5);
         insta::assert_snapshot!(status_row(&buf));
     }
@@ -581,7 +603,7 @@ mod tests {
     fn status_bar_left_group_then_single_item() {
         // Frame 1: group selected → "1/2 · Press ↩ to expand (1 items)"
         // Frame 2: single CI item selected → longer left text with ↩ URL and i hint.
-        // If Clear is broken, leftover chars from frame 1 bleed into frame 2.
+        // Catches stale characters if the longer left text isn't fully overwritten.
         let group = DisplayItem::Group {
             label: "errors".to_string(),
             items: vec![ci_item()],
@@ -598,7 +620,7 @@ mod tests {
     fn status_bar_left_single_item_then_empty() {
         // Frame 1: CI item selected → long left text with ↩ in it.
         // Frame 2: empty list → left and right are both empty.
-        // Isolates whether ↩ causes misalignment that survives a Clear.
+        // Isolates whether ↩ causes misalignment that persists into the next frame.
         let mut app1 = unified_list_app(vec![DisplayItem::Single(ci_item())]);
         let mut app2 = unified_list_app(vec![]);
         let buf = draw_two(&mut app1, &mut app2, 120, 5);
@@ -855,7 +877,7 @@ mod tests {
         let now = Utc::now();
         assert_eq!(
             right_status_text(&RefreshState::Partial(vec!["media".to_string()]), None, now),
-            "⚠ media unreachable (updated unknown)"
+            "! media unreachable (updated unknown)"
         );
     }
 
@@ -869,7 +891,7 @@ mod tests {
                 Some(last_updated),
                 now
             ),
-            "⚠ media unreachable (updated just now)"
+            "! media unreachable (updated just now)"
         );
     }
 
@@ -883,8 +905,165 @@ mod tests {
                 Some(last_updated),
                 now
             ),
-            "⚠ media, linear issues unreachable (updated 2m ago)"
+            "! media, linear issues unreachable (updated 2m ago)"
         );
+    }
+
+    // ── Full-screen unified list snapshots ───────────────────────────────────
+    //
+    // These capture the entire rendered buffer (not just the status bar row) so
+    // that regressions in list layout, borders, urgency dividers, and item
+    // rendering are visible as snapshot diffs.
+
+    #[test]
+    fn full_screen_unified_list_empty() {
+        // U1: No items — just the "All" border with an empty body and status bar.
+        let mut app = unified_list_app(vec![]);
+        let buf = draw(&mut app, 80, 15);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_unified_list_mixed_urgency() {
+        // U2: High-urgency CI item + Low-urgency PR → urgency divider between them.
+        let mut app = unified_list_app(vec![
+            DisplayItem::Single(ci_item()),
+            DisplayItem::Single(pr()),
+        ]);
+        let buf = draw(&mut app, 80, 15);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_unified_list_group_selected() {
+        // U3: A group item is selected — shows "↩ to expand" hint in the row.
+        let mut app = unified_list_app(vec![DisplayItem::Group {
+            label: "hub errors".to_string(),
+            items: vec![ci_item()],
+        }]);
+        let buf = draw(&mut app, 80, 15);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_unified_list_category_filter() {
+        // U4: Category filter active — green border + category label in the title.
+        let mut app = App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    items: vec![DisplayItem::Single(ci_item())],
+                    selected: 0,
+                    filter: Filter {
+                        category: Some(Category::Errors),
+                        query: None,
+                    },
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        };
+        let buf = draw(&mut app, 80, 15);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_unified_list_query_input() {
+        // U5: Search query being typed — yellow border + query text in the title.
+        let mut app = App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    items: vec![DisplayItem::Single(ci_item())],
+                    selected: 0,
+                    filter: Filter::default(),
+                },
+                query_input: Some("hub".to_string()),
+                ..UiState::default()
+            },
+            ..App::default()
+        };
+        let buf = draw(&mut app, 80, 15);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_unified_list_narrow_terminal() {
+        // U6: 40-column terminal — long item text must wrap onto a second line.
+        let mut app = unified_list_app(vec![DisplayItem::Single(ci_item())]);
+        let buf = draw(&mut app, 40, 10);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_unified_list_help_popup() {
+        // U7: Help popup overlaid on the list.
+        let mut app = App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    items: vec![DisplayItem::Single(ci_item())],
+                    selected: 0,
+                    filter: Filter::default(),
+                },
+                show_help: true,
+                ..UiState::default()
+            },
+            ..App::default()
+        };
+        let buf = draw(&mut app, 80, 20);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    // ── Full-screen detail view snapshots ─────────────────────────────────────
+
+    #[test]
+    fn full_screen_detail_view_first_selected() {
+        // D1: Group expanded, first item selected.
+        let items = vec![DisplayItem::Group {
+            label: "hub errors".to_string(),
+            items: vec![ci_item(), ci_item()],
+        }];
+        let mut app = detail_app(items, 0, 0);
+        let buf = draw(&mut app, 80, 15);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_detail_view_last_selected() {
+        // D2: Group expanded, last item selected (different scroll position).
+        let items = vec![DisplayItem::Group {
+            label: "hub errors".to_string(),
+            items: vec![ci_item(), ci_item()],
+        }];
+        let mut app = detail_app(items, 0, 1);
+        let buf = draw(&mut app, 80, 15);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    // ── Status bar gap snapshots ──────────────────────────────────────────────
+
+    #[test]
+    fn status_bar_single_frame_failed() {
+        // S1: Failed refresh — right side shows "refresh failed: …".
+        let mut app = App {
+            data: DataState {
+                refresh_state: RefreshState::Failed("connection refused".to_string()),
+                ..DataState::default()
+            },
+            ..App::default()
+        };
+        let buf = draw(&mut app, 80, 5);
+        insta::assert_snapshot!(status_row(&buf));
+    }
+
+    #[test]
+    fn status_bar_single_frame_detail_view() {
+        // S2: Detail view — position is within the group; enter hint shows the item URL.
+        let items = vec![DisplayItem::Group {
+            label: "hub errors".to_string(),
+            items: vec![ci_item(), ci_item()],
+        }];
+        let mut app = detail_app(items, 0, 0);
+        let buf = draw(&mut app, 120, 5);
+        insta::assert_snapshot!(status_row(&buf));
     }
 
     #[test]

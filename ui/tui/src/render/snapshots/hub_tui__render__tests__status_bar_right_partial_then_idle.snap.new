@@ -1,5 +1,0 @@
----
-source: ui/tui/src/render/mod.rs
-assertion_line: 559
-expression: status_row(&buf)
----

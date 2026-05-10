@@ -1,0 +1,19 @@
+---
+source: ui/tui/src/render/mod.rs
+expression: screen_text(&buf)
+---
+╭ hub errors ──────────────────────────────────────────────────────────────────╮
+│● ooloth/hub · CI · check / fmt · failed                                      │
+│● ooloth/hub · CI · check / fmt · failed  ↩ to open · i to investigate        │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+2/2 · Press ↩ to open https://github.com/ooloth/hub/actions/runs/25608685802 · P

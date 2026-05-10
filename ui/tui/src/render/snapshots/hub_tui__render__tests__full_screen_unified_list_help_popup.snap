@@ -1,0 +1,24 @@
+---
+source: ui/tui/src/render/mod.rs
+expression: screen_text(&buf)
+---
+╭ All ─────────────────────────────────────────────────────────────────────────╮
+│● ooloth/hub · CI · check / fmt · failed  ↩ to open · i to investigate        │
+│                                                                              │
+│                                                                              │
+│               ┌ Keybinds ───────────────────────────────────┐                │
+│               │  ?            toggle help                   │                │
+│               │  h / k        up                            │                │
+│               │  j / l        down                          │                │
+│               │  Enter        open / drill into group       │                │
+│               │  i            investigate                   │                │
+│               │  p / e / o    filter PRs / Errors / Issues  │                │
+│               │  /            search                        │                │
+│               │  a / Esc      clear filter                  │                │
+│               │  r            refresh                       │                │
+│               │  q / Ctrl-C   quit                          │                │
+│               └─────────────────────────────────────────────┘                │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+1/1 · Press ↩ to open https://github.com/ooloth/hub/actions/runs/25608685802 · P
