@@ -78,6 +78,54 @@ via `super::`:
 3. Add a render function in `render/`; extract any decision logic (what to
    show, what hint to display) into a pure function alongside it
 4. Dispatch to it in `render()` in `render/mod.rs`
+5. Add a full-screen snapshot test for the new view (see below)
+
+## Snapshot tests
+
+Render functions take `&mut Frame` and cannot be called from unit tests
+directly. Tests use ratatui's `TestBackend` to render into a real buffer
+and inspect the result as plain text.
+
+Two helpers in `render/mod.rs` extract buffer content:
+
+- `screen_text(buf)` — the full buffer as a multi-line string, one line
+  per row. Use this for full-screen snapshots that cover borders, urgency
+  dividers, item layout, and popup overlay.
+- `status_row(buf)` — the last row only. Use this for focused tests on
+  status bar content across terminal widths or frame transitions.
+
+The test suite keeps one full-screen snapshot per major screen state:
+
+| Snapshot | What it locks in |
+| --- | --- |
+| `full_screen_unified_list_empty` | bare border, no items, empty status bar |
+| `full_screen_unified_list_mixed_urgency` | urgency divider between tiers |
+| `full_screen_unified_list_group_selected` | group row with "↩ to expand" hint |
+| `full_screen_unified_list_pr_selected` | item with no investigate action (shorter hint, "2/2" position) |
+| `full_screen_unified_list_category_filter` | green border + category label in title |
+| `full_screen_unified_list_committed_query` | green border + query text in title |
+| `full_screen_unified_list_query_input` | yellow border while query is being typed |
+| `full_screen_unified_list_narrow_terminal` | 40-col terminal, text wrapping |
+| `full_screen_unified_list_scrolled` | 15 items, last selected, scroll offset visible |
+| `full_screen_unified_list_help_popup` | keybind popup overlaid on list |
+| `full_screen_detail_view_first_selected` | group expanded, first item selected |
+| `full_screen_detail_view_last_selected` | group expanded, last item selected |
+
+**Add a new snapshot whenever you introduce** a new screen variant, a new
+item type that changes how a row renders (different hint, different dot
+style), or a new layout mode. The snapshot is the acceptance test for
+the visual change.
+
+**Use a unit test instead** for pure functions (`wrap_text`,
+`right_status_text`, `action_hints`) where the interesting variation is
+parameterised logic or time-sensitive data that cannot go in a
+deterministic snapshot.
+
+**To update snapshots after an intentional change:**
+
+```bash
+INSTA_UPDATE=always cargo test -p hub-tui
+```
 
 ## Investigations
 

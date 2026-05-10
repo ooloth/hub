@@ -75,12 +75,30 @@ just tui     # run the TUI
 
 ### Verifying TUI changes
 
-For any change that affects `ui/tui` rendering, navigation, keybindings,
-selected-item behavior, subprocess launching, or tmux integration, agents must
-run a tmux-driven E2E smoke test before final response. Unit tests and
-`just check` are not sufficient for TUI interaction changes.
+TUI verification has two tiers depending on what changed.
 
-Minimum bar:
+**Tier 1 — snapshot tests (rendering and layout changes)**
+
+Full-screen `insta` snapshots cover all major screen states (see
+`ui/tui/README.md` for the full list and conventions). If a rendering
+change causes a visual regression, a snapshot diff will show exactly what
+changed. Run `just test` and review any failures.
+
+If the diff is intentional, accept it:
+
+```bash
+INSTA_UPDATE=always cargo test -p hub-tui
+```
+
+When adding a new screen state or item type, add a snapshot for it —
+don't rely on the existing snapshots to catch regressions in new code
+paths.
+
+**Tier 2 — tmux E2E (interaction and behavior changes)**
+
+For changes that affect keybindings, navigation between screens,
+subprocess launching, or tmux integration, snapshots are not sufficient.
+Run the TUI live in tmux and drive the interaction:
 
 1. Start the TUI in tmux.
 2. Drive the changed keybinding or interaction with `tmux send-keys`.
@@ -90,9 +108,6 @@ Minimum bar:
 5. Clean up any tmux panes/windows created during the test.
 6. Report exactly what was observed.
 
-If E2E validation cannot be run, explicitly state why and what weaker
-validation was run instead.
-
 ```bash
 tmux new-window -n "tui-test" "just tui; read"
 sleep 3                                          # wait for data to load
@@ -101,6 +116,9 @@ sleep 0.5
 tmux capture-pane -t "tui-test" -p              # read the screen
 tmux kill-window -t "tui-test"                  # clean up
 ```
+
+If E2E validation cannot be run, explicitly state why and what weaker
+validation was run instead.
 
 ## Docs by Area
 
