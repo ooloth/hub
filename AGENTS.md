@@ -94,7 +94,7 @@ If E2E validation cannot be run, explicitly state why and what weaker
 validation was run instead.
 
 ```bash
-tmux new-window -n "tui-test" "j tui; read"
+tmux new-window -n "tui-test" "just tui; read"
 sleep 3                                          # wait for data to load
 tmux send-keys -t "tui-test" "?" ""             # send a keystroke
 sleep 0.5
