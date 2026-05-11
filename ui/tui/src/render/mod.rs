@@ -708,6 +708,9 @@ mod tests {
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::Low,
             kind: domain::PrKind::ToReview,
+            author: "alice".to_string(),
+            review_decision: None,
+            review_count: 0,
         })
     }
 

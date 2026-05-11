@@ -51,6 +51,12 @@ pub enum PrKind {
     ToReview,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum ReviewDecision {
+    Approved,
+    ChangesRequested,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PullRequest {
     pub number: u64,
@@ -61,6 +67,9 @@ pub struct PullRequest {
     pub age: chrono::Duration,
     pub urgency: Urgency,
     pub kind: PrKind,
+    pub author: String,
+    pub review_decision: Option<ReviewDecision>,
+    pub review_count: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

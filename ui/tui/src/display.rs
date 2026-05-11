@@ -149,14 +149,33 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
 pub(crate) fn item_line(item: &StatusItem) -> LineParts {
     match item {
         StatusItem::Pr(pr) => {
-            let badge = match pr.kind {
-                domain::PrKind::Mine => "[OPEN]",
-                domain::PrKind::ToReview => "[TO REVIEW]",
-                domain::PrKind::MyDraft => "[DRAFT]",
+            let dim = if pr.kind == domain::PrKind::MyDraft {
+                format!(" #{} · {} · draft", pr.number, pr.author)
+            } else {
+                let review_str = if pr.review_count == 1 {
+                    "1 review".to_string()
+                } else {
+                    format!("{} reviews", pr.review_count)
+                };
+                match pr.review_decision {
+                    Some(domain::ReviewDecision::Approved) => {
+                        format!(
+                            " #{} · {} · approved · {}",
+                            pr.number, pr.author, review_str
+                        )
+                    }
+                    Some(domain::ReviewDecision::ChangesRequested) => {
+                        format!(
+                            " #{} · {} · changes requested · {}",
+                            pr.number, pr.author, review_str
+                        )
+                    }
+                    None => format!(" #{} · {} · {}", pr.number, pr.author, review_str),
+                }
             };
             LineParts {
-                primary: format!("{} {badge}", pr.title),
-                dim_inline: Some(format!(" (#{})", pr.number)),
+                primary: pr.title.clone(),
+                dim_inline: Some(dim),
                 source: Some(pr.repo.to_string()),
                 category: "PR",
                 age: format_age_short(pr.age),
@@ -449,6 +468,9 @@ mod tests {
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::Medium,
             kind: domain::PrKind::ToReview,
+            author: "alice".to_string(),
+            review_decision: None,
+            review_count: 0,
         })
     }
 
@@ -544,15 +566,29 @@ mod tests {
     fn snapshot_item_lines() {
         let lines = [
             format!(
-                "pr_mine:     {}",
+                "pr_no_reviews:         {}",
                 item_line(&make_pr(domain::PrKind::Mine)).flat()
             ),
             format!(
-                "pr_review:   {}",
-                item_line(&make_pr(domain::PrKind::ToReview)).flat()
+                "pr_approved:           {}",
+                item_line(&make_pr_with(
+                    domain::PrKind::Mine,
+                    Some(domain::ReviewDecision::Approved),
+                    2
+                ))
+                .flat()
             ),
             format!(
-                "pr_draft:    {}",
+                "pr_changes_requested:  {}",
+                item_line(&make_pr_with(
+                    domain::PrKind::Mine,
+                    Some(domain::ReviewDecision::ChangesRequested),
+                    1
+                ))
+                .flat()
+            ),
+            format!(
+                "pr_draft:              {}",
                 item_line(&make_pr(domain::PrKind::MyDraft)).flat()
             ),
             format!("issue:       {}", item_line(&issue()).flat()),
@@ -612,6 +648,14 @@ mod tests {
     }
 
     fn make_pr(kind: domain::PrKind) -> StatusItem {
+        make_pr_with(kind, None, 0)
+    }
+
+    fn make_pr_with(
+        kind: domain::PrKind,
+        review_decision: Option<domain::ReviewDecision>,
+        review_count: u32,
+    ) -> StatusItem {
         StatusItem::Pr(domain::PullRequest {
             number: 42,
             title: "Add feature".to_string(),
@@ -620,6 +664,9 @@ mod tests {
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::Medium,
             kind,
+            author: "ooloth".to_string(),
+            review_decision,
+            review_count,
         })
     }
 

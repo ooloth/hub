@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
-use domain::{CiFailure, Issue, PrKind, PullRequest, RepoSlug, Urgency};
+use domain::{CiFailure, Issue, PrKind, PullRequest, RepoSlug, ReviewDecision, Urgency};
 use serde::Deserialize;
+
+// ── REST search (issues) ───────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
 struct SearchResponse {
@@ -16,7 +18,6 @@ struct SearchItem {
     repository_url: String,
     created_at: String,
     labels: Vec<Label>,
-    assignee: Option<SearchAssignee>,
 }
 
 #[derive(Deserialize)]
@@ -24,8 +25,64 @@ struct Label {
     name: String,
 }
 
+// ── GraphQL (pull requests) ────────────────────────────────────────────────────
+
 #[derive(Deserialize)]
-struct SearchAssignee {
+struct GraphQlResponse {
+    data: GraphQlData,
+}
+
+#[derive(Deserialize)]
+struct GraphQlData {
+    search: GraphQlSearch,
+}
+
+#[derive(Deserialize)]
+struct GraphQlSearch {
+    nodes: Vec<PrNode>,
+}
+
+#[derive(Deserialize)]
+struct PrNode {
+    number: u64,
+    title: String,
+    url: String,
+    author: PrAuthor,
+    #[serde(rename = "createdAt")]
+    created_at: String,
+    #[serde(rename = "isDraft")]
+    is_draft: bool,
+    #[serde(rename = "reviewDecision")]
+    review_decision: Option<String>,
+    reviews: ReviewCounts,
+    repository: PrRepository,
+    assignees: PrAssignees,
+}
+
+#[derive(Deserialize)]
+struct PrAuthor {
+    login: String,
+}
+
+#[derive(Deserialize)]
+struct ReviewCounts {
+    #[serde(rename = "totalCount")]
+    total_count: u32,
+}
+
+#[derive(Deserialize)]
+struct PrRepository {
+    #[serde(rename = "nameWithOwner")]
+    name_with_owner: String,
+}
+
+#[derive(Deserialize)]
+struct PrAssignees {
+    nodes: Vec<PrAssignee>,
+}
+
+#[derive(Deserialize)]
+struct PrAssignee {
     login: String,
 }
 
@@ -49,9 +106,12 @@ pub async fn prs_awaiting_review(token: &str, repos: &[String]) -> Result<Vec<Pu
     if repos.is_empty() {
         return Ok(vec![]);
     }
-    let query = scoped_query("is:open is:pr review-requested:@me", repos);
-    let response: SearchResponse = search(token, &query).await?;
-    items_to_prs(response.items, Urgency::Medium, PrKind::ToReview)
+    nodes_to_prs(
+        graphql_prs(token, "is:open is:pr review-requested:@me", repos).await?,
+        Urgency::Medium,
+        PrKind::ToReview,
+        None,
+    )
 }
 
 /// Returns open non-draft PRs across the given repos authored by `github_username`,
@@ -67,16 +127,11 @@ pub async fn my_open_prs(
     if repos.is_empty() {
         return Ok(vec![]);
     }
-    let query = scoped_query("is:open is:pr -is:draft author:@me", repos);
-    let response: SearchResponse = search(token, &query).await?;
-    items_to_prs(
-        response
-            .items
-            .into_iter()
-            .filter(|item| owned_by(item, github_username))
-            .collect(),
+    nodes_to_prs(
+        graphql_prs(token, "is:open is:pr -is:draft author:@me", repos).await?,
         Urgency::High,
         PrKind::Mine,
+        Some(github_username),
     )
 }
 
@@ -93,44 +148,95 @@ pub async fn my_draft_prs(
     if repos.is_empty() {
         return Ok(vec![]);
     }
-    let query = scoped_query("is:open is:pr is:draft author:@me", repos);
-    let response: SearchResponse = search(token, &query).await?;
-    items_to_prs(
-        response
-            .items
-            .into_iter()
-            .filter(|item| owned_by(item, github_username))
-            .collect(),
+    nodes_to_prs(
+        graphql_prs(token, "is:open is:pr is:draft author:@me", repos).await?,
         Urgency::Medium,
         PrKind::MyDraft,
+        Some(github_username),
     )
 }
 
-fn owned_by(item: &SearchItem, github_username: &str) -> bool {
-    item.assignee
-        .as_ref()
-        .is_none_or(|a| a.login == github_username)
-}
-
-fn items_to_prs(
-    items: Vec<SearchItem>,
+fn nodes_to_prs(
+    nodes: Vec<PrNode>,
     urgency: Urgency,
     kind: PrKind,
+    owned_by: Option<&str>,
 ) -> Result<Vec<PullRequest>> {
-    items
+    nodes
         .into_iter()
-        .map(|item| {
+        .filter(|node| match owned_by {
+            Some(username) => {
+                node.assignees.nodes.iter().all(|a| a.login == username)
+                    || node.assignees.nodes.is_empty()
+            }
+            None => true,
+        })
+        .map(|node| {
+            let (owner, repo) =
+                node.repository
+                    .name_with_owner
+                    .split_once('/')
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "expected 'owner/repo', got: {}",
+                            node.repository.name_with_owner
+                        )
+                    })?;
             Ok(PullRequest {
-                number: item.number,
-                title: item.title,
-                repo: repo_slug_from_url(&item.repository_url)?,
-                url: item.html_url,
-                age: age(&item.created_at),
+                number: node.number,
+                title: node.title,
+                repo: RepoSlug::new(owner, repo),
+                url: node.url,
+                age: age(&node.created_at),
                 urgency,
-                kind,
+                kind: if node.is_draft { PrKind::MyDraft } else { kind },
+                author: node.author.login,
+                review_decision: parse_review_decision(node.review_decision.as_deref()),
+                review_count: node.reviews.total_count,
             })
         })
         .collect()
+}
+
+fn parse_review_decision(s: Option<&str>) -> Option<ReviewDecision> {
+    match s? {
+        "APPROVED" => Some(ReviewDecision::Approved),
+        "CHANGES_REQUESTED" => Some(ReviewDecision::ChangesRequested),
+        _ => None,
+    }
+}
+
+async fn graphql_prs(token: &str, base: &str, repos: &[String]) -> Result<Vec<PrNode>> {
+    let repo_filters = repos
+        .iter()
+        .map(|r| format!("repo:{r}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let q = format!("{base} {repo_filters}");
+    let query = format!(
+        r#"{{ search(query: "{q}", type: ISSUE, first: 100) {{ nodes {{ ... on PullRequest {{
+            number title url
+            author {{ login }}
+            createdAt isDraft reviewDecision
+            reviews {{ totalCount }}
+            repository {{ nameWithOwner }}
+            assignees(first: 10) {{ nodes {{ login }} }}
+        }} }} }} }}"#
+    );
+    let response: GraphQlResponse = reqwest::Client::new()
+        .post("https://api.github.com/graphql")
+        .bearer_auth(token)
+        .header("User-Agent", "hub-cli")
+        .json(&serde_json::json!({ "query": query }))
+        .send()
+        .await
+        .context("failed to reach GitHub GraphQL API")?
+        .error_for_status()
+        .context("GitHub GraphQL API returned an error")?
+        .json()
+        .await
+        .context("failed to parse GitHub GraphQL response")?;
+    Ok(response.data.search.nodes)
 }
 
 /// Returns open issues across the given repos, optionally filtered to only assigned issues.
@@ -700,46 +806,93 @@ mod tests {
         assert!(parse_cutoff("not-a-duration").is_err());
     }
 
-    // ── owned_by ──────────────────────────────────────────────────────────────
+    // ── nodes_to_prs (assignee filtering) ────────────────────────────────────
 
-    fn item_with_assignee(login: &str) -> SearchItem {
-        SearchItem {
+    fn make_node(assignee_logins: Vec<&str>) -> PrNode {
+        PrNode {
             number: 1,
             title: "title".into(),
-            html_url: "https://github.com/owner/repo/pull/1".into(),
-            repository_url: "https://api.github.com/repos/owner/repo".into(),
+            url: "https://github.com/owner/repo/pull/1".into(),
+            author: PrAuthor {
+                login: "alice".into(),
+            },
             created_at: "2024-01-01T00:00:00Z".into(),
-            labels: vec![],
-            assignee: Some(SearchAssignee {
-                login: login.into(),
-            }),
+            is_draft: false,
+            review_decision: None,
+            reviews: ReviewCounts { total_count: 0 },
+            repository: PrRepository {
+                name_with_owner: "owner/repo".into(),
+            },
+            assignees: PrAssignees {
+                nodes: assignee_logins
+                    .into_iter()
+                    .map(|l| PrAssignee { login: l.into() })
+                    .collect(),
+            },
         }
     }
 
-    fn item_without_assignee() -> SearchItem {
-        SearchItem {
-            number: 1,
-            title: "title".into(),
-            html_url: "https://github.com/owner/repo/pull/1".into(),
-            repository_url: "https://api.github.com/repos/owner/repo".into(),
-            created_at: "2024-01-01T00:00:00Z".into(),
-            labels: vec![],
-            assignee: None,
-        }
+    #[test]
+    fn nodes_to_prs_includes_unassigned_pr() {
+        let result = nodes_to_prs(
+            vec![make_node(vec![])],
+            Urgency::High,
+            PrKind::Mine,
+            Some("alice"),
+        )
+        .unwrap();
+        assert_eq!(result.len(), 1);
     }
 
     #[test]
-    fn owned_by_passes_unassigned_pr() {
-        assert!(owned_by(&item_without_assignee(), "alice"));
+    fn nodes_to_prs_includes_pr_assigned_to_user() {
+        let result = nodes_to_prs(
+            vec![make_node(vec!["alice"])],
+            Urgency::High,
+            PrKind::Mine,
+            Some("alice"),
+        )
+        .unwrap();
+        assert_eq!(result.len(), 1);
     }
 
     #[test]
-    fn owned_by_passes_pr_assigned_to_user() {
-        assert!(owned_by(&item_with_assignee("alice"), "alice"));
+    fn nodes_to_prs_excludes_pr_assigned_to_someone_else() {
+        let result = nodes_to_prs(
+            vec![make_node(vec!["bob"])],
+            Urgency::High,
+            PrKind::Mine,
+            Some("alice"),
+        )
+        .unwrap();
+        assert!(result.is_empty());
+    }
+
+    // ── parse_review_decision ─────────────────────────────────────────────────
+
+    #[test]
+    fn parse_review_decision_approved() {
+        assert_eq!(
+            parse_review_decision(Some("APPROVED")),
+            Some(ReviewDecision::Approved)
+        );
     }
 
     #[test]
-    fn owned_by_rejects_pr_assigned_to_someone_else() {
-        assert!(!owned_by(&item_with_assignee("bob"), "alice"));
+    fn parse_review_decision_changes_requested() {
+        assert_eq!(
+            parse_review_decision(Some("CHANGES_REQUESTED")),
+            Some(ReviewDecision::ChangesRequested)
+        );
+    }
+
+    #[test]
+    fn parse_review_decision_review_required_maps_to_none() {
+        assert_eq!(parse_review_decision(Some("REVIEW_REQUIRED")), None);
+    }
+
+    #[test]
+    fn parse_review_decision_none_maps_to_none() {
+        assert_eq!(parse_review_decision(None), None);
     }
 }

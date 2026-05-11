@@ -2,9 +2,10 @@
 source: ui/tui/src/display.rs
 expression: lines
 ---
-pr_mine:     Add feature [OPEN] (#42)
-pr_review:   Add feature [TO REVIEW] (#42)
-pr_draft:    Add feature [DRAFT] (#42)
+pr_no_reviews:         Add feature #42 · ooloth · 0 reviews
+pr_approved:           Add feature #42 · ooloth · approved · 2 reviews
+pr_changes_requested:  Add feature #42 · ooloth · changes requested · 1 review
+pr_draft:              Add feature #42 · ooloth · draft
 issue:       Fix bug #7
 issue_labels:Fix bug #8 · bug, wontfix
 ci_bare:     failed
