@@ -3,7 +3,7 @@ source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
 ╭ All ─────────────────────────────────────────────────────────────────────────╮
-│● check / fmt · failed (1)                               ooloth/hub · CI · now│
+│● CI · check / fmt · failed (1)                               ooloth/hub · now│
 │                                                                              │
 │                                                                              │
 │                                                                              │

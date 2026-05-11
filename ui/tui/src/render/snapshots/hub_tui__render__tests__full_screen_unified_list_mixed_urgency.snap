@@ -3,9 +3,9 @@ source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
 ╭ All ─────────────────────────────────────────────────────────────────────────╮
-│● check / fmt · failed                                   ooloth/hub · CI · now│
+│● CI · check / fmt · failed                                   ooloth/hub · now│
 ├──────────────────────────────────────────────────────────────────────────────┤
-│● Fix [TO REVIEW] (#1)                                   owner/repo · PR · now│
+│● PR · Fix [TO REVIEW] (#1)                                   owner/repo · now│
 │                                                                              │
 │                                                                              │
 │                                                                              │

@@ -174,7 +174,12 @@ fn build_unified_list_item(
     } else {
         0
     };
-    let content_budget = inner_width.saturating_sub(2).saturating_sub(chrome_total);
+    let category_prefix = format!("{} · ", parts.category);
+    let category_prefix_width = category_prefix.chars().count();
+    let content_budget = inner_width
+        .saturating_sub(2)
+        .saturating_sub(chrome_total)
+        .saturating_sub(category_prefix_width);
 
     let flat = parts.flat();
     let display_text = crate::display::truncate_to_width(&flat, content_budget);
@@ -192,7 +197,7 @@ fn build_unified_list_item(
 
     let padding = content_budget.saturating_sub(display_len);
 
-    let mut spans: Vec<Span<'static>> = vec![dot];
+    let mut spans: Vec<Span<'static>> = vec![dot, Span::styled(category_prefix, dim())];
     if !bright_part.is_empty() {
         spans.push(Span::raw(bright_part));
     }
@@ -383,8 +388,8 @@ fn render_unified(
 
         let age = format_age_short(parts.age);
         let item_chrome = match &parts.source {
-            Some(source) => format!("{source} · {} · {age}", parts.category),
-            None => format!("{} · {age}", parts.category),
+            Some(source) => format!("{source} · {age}"),
+            None => age,
         };
 
         let dot_style = if item_idx == selected {
