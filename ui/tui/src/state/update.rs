@@ -84,7 +84,13 @@ impl App {
                 vec![]
             }
             Action::StartQuery => {
-                self.ui.query_input = Some(String::new());
+                // Seed from the committed filter so the user can append or trim,
+                // rather than forcing them to retype. Esc still clears everything.
+                let existing = match &self.ui.screen {
+                    Screen::UnifiedList { filter, .. } => filter.query.clone().unwrap_or_default(),
+                    _ => String::new(),
+                };
+                self.ui.query_input = Some(existing);
                 vec![]
             }
             Action::AppendQuery(c) => {
@@ -757,5 +763,69 @@ mod tests {
                 error: "Invalid video file".to_string(),
             }
         );
+    }
+
+    // --- Query mode re-entry ---
+
+    #[test]
+    fn start_query_with_no_prior_filter_begins_empty() {
+        let mut app = App::default();
+        app.update(Action::StartQuery);
+        assert_eq!(app.ui.query_input.as_deref(), Some(""));
+    }
+
+    #[test]
+    fn start_query_after_committed_filter_seeds_input_from_filter() {
+        let mut app = App::default();
+        // Type "fo" and commit it so filter.query becomes Some("fo").
+        apply(
+            &mut app,
+            &[
+                Action::StartQuery,
+                Action::AppendQuery('f'),
+                Action::AppendQuery('o'),
+                Action::CommitQuery,
+            ],
+        );
+        // Re-entering query mode should restore the committed text, not start blank.
+        app.update(Action::StartQuery);
+        assert_eq!(app.ui.query_input.as_deref(), Some("fo"));
+    }
+
+    #[test]
+    fn appending_after_query_restart_extends_committed_text() {
+        let mut app = App::default();
+        // Commit "fo", re-enter, then append 'o' → input becomes "foo".
+        apply(
+            &mut app,
+            &[
+                Action::StartQuery,
+                Action::AppendQuery('f'),
+                Action::AppendQuery('o'),
+                Action::CommitQuery,
+                Action::StartQuery,
+                Action::AppendQuery('o'),
+            ],
+        );
+        assert_eq!(app.ui.query_input.as_deref(), Some("foo"));
+    }
+
+    #[test]
+    fn backspace_after_query_restart_trims_from_end_of_committed_text() {
+        let mut app = App::default();
+        // Commit "foo", re-enter, then Backspace → input becomes "fo".
+        apply(
+            &mut app,
+            &[
+                Action::StartQuery,
+                Action::AppendQuery('f'),
+                Action::AppendQuery('o'),
+                Action::AppendQuery('o'),
+                Action::CommitQuery,
+                Action::StartQuery,
+                Action::BackspaceQuery,
+            ],
+        );
+        assert_eq!(app.ui.query_input.as_deref(), Some("fo"));
     }
 }
