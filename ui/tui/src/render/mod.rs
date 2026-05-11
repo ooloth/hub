@@ -160,13 +160,13 @@ fn build_list_item(
 }
 
 fn build_unified_list_item(
-    dot: Span<'static>,
+    label_style: Style,
     parts: LineParts,
     chrome: String,
     inner_width: usize,
 ) -> ListItem<'static> {
     let chrome_width = chrome.chars().count();
-    // dot = 2 chars; chrome adds a 2-char gap only when non-empty
+    // chrome adds a 2-char gap only when non-empty
     let chrome_total = if chrome_width > 0 {
         2 + chrome_width
     } else {
@@ -175,7 +175,6 @@ fn build_unified_list_item(
     let category_prefix = format!("{} · ", parts.category);
     let category_prefix_width = category_prefix.chars().count();
     let content_budget = inner_width
-        .saturating_sub(2)
         .saturating_sub(chrome_total)
         .saturating_sub(category_prefix_width);
 
@@ -195,7 +194,7 @@ fn build_unified_list_item(
 
     let padding = content_budget.saturating_sub(display_len);
 
-    let mut spans: Vec<Span<'static>> = vec![dot, Span::styled(category_prefix, dim())];
+    let mut spans: Vec<Span<'static>> = vec![Span::styled(category_prefix, label_style)];
     if !bright_part.is_empty() {
         spans.push(Span::raw(bright_part));
     }
@@ -396,7 +395,7 @@ fn render_unified(
         };
 
         display_items.push(build_unified_list_item(
-            Span::styled("● ", dot_style),
+            dot_style,
             parts,
             item_chrome,
             width,
