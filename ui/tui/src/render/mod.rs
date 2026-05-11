@@ -483,11 +483,14 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
 
     let left = status_bar_left(app);
 
-    let right_width = Span::raw(right_status.as_str()).width() as u16;
+    let right_width = Span::raw(right_status.as_str()).width() as u16 + 1;
     let [bar_left, bar_right] =
         Layout::horizontal([Constraint::Min(0), Constraint::Length(right_width)]).areas(bar_area);
-    frame.render_widget(Paragraph::new(left).style(dim()), bar_left);
-    frame.render_widget(Paragraph::new(right_status).style(dim()), bar_right);
+    frame.render_widget(Paragraph::new(format!(" {left}")).style(dim()), bar_left);
+    frame.render_widget(
+        Paragraph::new(format!("{right_status} ")).style(dim()),
+        bar_right,
+    );
 
     if app.ui.show_help {
         let keybinds = match &app.ui.screen {
