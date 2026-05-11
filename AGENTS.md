@@ -118,6 +118,15 @@ tmux capture-pane -t "tui-test" -p              # read the screen
 tmux kill-window -t "tui-test"                  # clean up
 ```
 
+**tmux send-keys pitfalls**
+
+- Use named keys for special keys: `"Enter"`, `"Escape"`, `"Backspace"`,
+  `"Up"`, `"Down"`, `"Tab"`. An empty string `""` sends **nothing** — it is
+  not a shorthand for Enter.
+- When testing the filter query flow: commit the query with `"Enter"` before
+  pressing `"/"` again. If the query is not committed the TUI stays in query
+  mode and the second `"/"` is treated as `AppendQuery('/')`, not `StartQuery`.
+
 If E2E validation cannot be run, explicitly state why and what weaker
 validation was run instead.
 
