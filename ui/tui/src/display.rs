@@ -162,13 +162,20 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
                 age: format_age_short(pr.age),
             }
         }
-        StatusItem::Issue(i) => LineParts {
-            primary: i.title.clone(),
-            dim_inline: Some(format!(" (#{})", i.number)),
-            source: Some(i.repo.to_string()),
-            category: "Issue",
-            age: format_age_short(i.age),
-        },
+        StatusItem::Issue(i) => {
+            let dim = if i.labels.is_empty() {
+                format!(" #{}", i.number)
+            } else {
+                format!(" #{} · {}", i.number, i.labels.join(", "))
+            };
+            LineParts {
+                primary: i.title.clone(),
+                dim_inline: Some(dim),
+                source: Some(i.repo.to_string()),
+                category: "Issue",
+                age: format_age_short(i.age),
+            }
+        }
         StatusItem::Ci(c) => {
             let primary = match (&c.job_name, &c.step_name, &c.error) {
                 (Some(job), Some(step), Some(err)) => format!("{job} / {step} · {err}"),
@@ -457,6 +464,18 @@ mod tests {
         })
     }
 
+    fn issue_with_labels() -> StatusItem {
+        StatusItem::Issue(domain::Issue {
+            number: 8,
+            title: "Fix bug".to_string(),
+            repo: domain::RepoSlug::new("owner", "repo"),
+            url: "https://github.com/owner/repo/issues/8".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+            labels: vec!["bug".to_string(), "wontfix".to_string()],
+        })
+    }
+
     fn ci() -> StatusItem {
         StatusItem::Ci(domain::CiFailure {
             repo: domain::RepoSlug::new("owner", "repo"),
@@ -537,6 +556,7 @@ mod tests {
                 item_line(&make_pr(domain::PrKind::MyDraft)).flat()
             ),
             format!("issue:       {}", item_line(&issue()).flat()),
+            format!("issue_labels:{}", item_line(&issue_with_labels()).flat()),
             format!("ci_bare:     {}", item_line(&ci()).flat()),
             format!("ci_job_step: {}", item_line(&ci_job_step()).flat()),
             format!("ci_full:     {}", item_line(&ci_full()).flat()),
