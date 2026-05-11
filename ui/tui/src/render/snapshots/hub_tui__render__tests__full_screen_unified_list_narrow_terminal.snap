@@ -3,12 +3,12 @@ source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
 ╭ All ─────────────────────────────────╮
-│● ooloth                              │
-│  /hub ·                              │
-│  CI ·                                │
-│  check                               │
+│● check                               │
 │  / fmt                               │
 │  ·                                   │
-│  failed  ↩ to open · i to investigate│
+│  failed                              │
+│  —                                   │
+│  ooloth                              │
+│  /hub  ↩ to open · i to investigate  │
 ╰──────────────────────────────────────╯
 1/1 · Press ↩ to open https://github.com

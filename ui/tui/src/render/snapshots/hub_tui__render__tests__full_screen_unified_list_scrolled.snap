@@ -3,17 +3,17 @@ source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
 ╭ All ─────────────────────────────────────────────────────────────────────────╮
-│● owner/repo · Fix (#1) [TO REVIEW]                                           │
-│● owner/repo · Fix (#1) [TO REVIEW]                                           │
-│● owner/repo · Fix (#1) [TO REVIEW]                                           │
-│● owner/repo · Fix (#1) [TO REVIEW]                                           │
-│● owner/repo · Fix (#1) [TO REVIEW]                                           │
-│● owner/repo · Fix (#1) [TO REVIEW]                                           │
-│● owner/repo · Fix (#1) [TO REVIEW]                                           │
-│● owner/repo · Fix (#1) [TO REVIEW]                                           │
-│● owner/repo · Fix (#1) [TO REVIEW]                                           │
-│● owner/repo · Fix (#1) [TO REVIEW]                                           │
-│● owner/repo · Fix (#1) [TO REVIEW]                                           │
-│● owner/repo · Fix (#1) [TO REVIEW]  ↩ to open                                │
+│● Fix [TO REVIEW] (#1) — owner/repo                                           │
+│● Fix [TO REVIEW] (#1) — owner/repo                                           │
+│● Fix [TO REVIEW] (#1) — owner/repo                                           │
+│● Fix [TO REVIEW] (#1) — owner/repo                                           │
+│● Fix [TO REVIEW] (#1) — owner/repo                                           │
+│● Fix [TO REVIEW] (#1) — owner/repo                                           │
+│● Fix [TO REVIEW] (#1) — owner/repo                                           │
+│● Fix [TO REVIEW] (#1) — owner/repo                                           │
+│● Fix [TO REVIEW] (#1) — owner/repo                                           │
+│● Fix [TO REVIEW] (#1) — owner/repo                                           │
+│● Fix [TO REVIEW] (#1) — owner/repo                                           │
+│● Fix [TO REVIEW] (#1) — owner/repo  ↩ to open                                │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 15/15 · Press ↩ to open https://github.com/owner/repo/pull/1

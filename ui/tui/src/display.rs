@@ -33,6 +33,26 @@ pub(crate) struct ListSnapshot {
     pub(crate) filter: Filter,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct LineParts {
+    pub(crate) primary: String,
+    pub(crate) dim_inline: Option<String>,
+    pub(crate) dim_suffix: Option<String>,
+}
+
+impl LineParts {
+    pub(crate) fn flat(&self) -> String {
+        let mut s = self.primary.clone();
+        if let Some(i) = &self.dim_inline {
+            s.push_str(i);
+        }
+        if let Some(sf) = &self.dim_suffix {
+            s.push_str(sf);
+        }
+        s
+    }
+}
+
 pub(crate) fn item_url(item: &StatusItem) -> Option<&str> {
     match item {
         StatusItem::Pr(pr) => Some(&pr.url),
@@ -101,7 +121,7 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
     }
 }
 
-pub(crate) fn item_line(item: &StatusItem) -> String {
+pub(crate) fn item_line(item: &StatusItem) -> LineParts {
     match item {
         StatusItem::Pr(pr) => {
             let badge = match pr.kind {
@@ -109,44 +129,75 @@ pub(crate) fn item_line(item: &StatusItem) -> String {
                 domain::PrKind::ToReview => "[TO REVIEW]",
                 domain::PrKind::MyDraft => "[DRAFT]",
             };
-            format!("{} · {} (#{}) {badge}", pr.repo, pr.title, pr.number)
-        }
-        StatusItem::Issue(i) => format!("{} · {} (#{})", i.repo, i.title, i.number),
-        StatusItem::Ci(c) => {
-            let base = format!("{} · CI", c.repo);
-            match (&c.job_name, &c.step_name, &c.error) {
-                (Some(job), Some(step), Some(err)) => format!("{base} · {job} / {step} · {err}"),
-                (Some(job), Some(step), None) => format!("{base} · {job} / {step} · failed"),
-                (Some(job), None, _) => format!("{base} · {job} · failed"),
-                _ => format!("{base} · failed"),
+            LineParts {
+                primary: format!("{} {badge}", pr.title),
+                dim_inline: Some(format!(" (#{})", pr.number)),
+                dim_suffix: Some(format!(" — {}", pr.repo)),
             }
         }
-        StatusItem::Linear(l) => format!("Linear · {} ({})", l.title, l.identifier),
-        StatusItem::Loki(l) => {
-            format!("{} · {} · {} · {}", l.project, l.env, l.title, l.message)
+        StatusItem::Issue(i) => LineParts {
+            primary: i.title.clone(),
+            dim_inline: Some(format!(" (#{})", i.number)),
+            dim_suffix: Some(format!(" — {}", i.repo)),
+        },
+        StatusItem::Ci(c) => {
+            let primary = match (&c.job_name, &c.step_name, &c.error) {
+                (Some(job), Some(step), Some(err)) => format!("{job} / {step} · {err}"),
+                (Some(job), Some(step), None) => format!("{job} / {step} · failed"),
+                (Some(job), None, _) => format!("{job} · failed"),
+                _ => "failed".to_string(),
+            };
+            LineParts {
+                primary,
+                dim_inline: None,
+                dim_suffix: Some(format!(" — {}", c.repo)),
+            }
         }
+        StatusItem::Linear(l) => LineParts {
+            primary: l.title.clone(),
+            dim_inline: Some(format!(" ({})", l.identifier)),
+            dim_suffix: None,
+        },
+        StatusItem::Loki(l) => LineParts {
+            primary: format!("{} · {}", l.title, l.message),
+            dim_inline: None,
+            dim_suffix: Some(format!(" — {}:{}", l.project, l.env)),
+        },
         #[cfg(feature = "private")]
-        StatusItem::MediaBlocked(b) => format!("{} · Import blocked · {}", b.source, b.error),
+        StatusItem::MediaBlocked(b) => LineParts {
+            primary: format!("Import blocked · {}", b.error),
+            dim_inline: None,
+            dim_suffix: Some(format!(" — {}", b.source)),
+        },
         #[cfg(feature = "private")]
-        StatusItem::MediaMissing(m) => {
-            format!(
-                "{} · Not found · {} · aired {}",
-                m.source, m.title, m.air_date
-            )
-        }
+        StatusItem::MediaMissing(m) => LineParts {
+            primary: format!("Not found · {} · aired {}", m.title, m.air_date),
+            dim_inline: None,
+            dim_suffix: Some(format!(" — {}", m.source)),
+        },
         #[cfg(feature = "private")]
-        StatusItem::MediaHealth(h) => format!("{} · {}", h.source, h.message),
+        StatusItem::MediaHealth(h) => LineParts {
+            primary: h.message.clone(),
+            dim_inline: None,
+            dim_suffix: Some(format!(" — {}", h.source)),
+        },
         #[cfg(feature = "private")]
-        StatusItem::MediaBacklog { source, count } => {
-            format!("{source} · {count} episodes in backlog")
-        }
+        StatusItem::MediaBacklog { source, count } => LineParts {
+            primary: format!("{count} episodes in backlog"),
+            dim_inline: None,
+            dim_suffix: Some(format!(" — {source}")),
+        },
     }
 }
 
-pub(crate) fn item_detail_line(item: &StatusItem) -> String {
+pub(crate) fn item_detail_line(item: &StatusItem) -> LineParts {
     #[cfg(feature = "private")]
     if let StatusItem::MediaBlocked(b) = item {
-        return format!("{} — {}", b.title, b.error);
+        return LineParts {
+            primary: b.title.clone(),
+            dim_inline: None,
+            dim_suffix: Some(format!(" — {}", b.error)),
+        };
     }
     item_line(item)
 }
@@ -169,10 +220,14 @@ pub(crate) fn item_urgency(item: &StatusItem) -> domain::Urgency {
     }
 }
 
-pub(crate) fn display_item_line(item: &DisplayItem) -> String {
+pub(crate) fn display_item_line(item: &DisplayItem) -> LineParts {
     match item {
         DisplayItem::Single(s) => item_line(s),
-        DisplayItem::Group { label, items } => format!("{} ({})", label, items.len()),
+        DisplayItem::Group { label, items } => LineParts {
+            primary: label.clone(),
+            dim_inline: None,
+            dim_suffix: Some(format!(" ({})", items.len())),
+        },
     }
 }
 
@@ -202,13 +257,13 @@ pub(crate) fn item_category(item: &StatusItem) -> Category {
 pub(crate) fn group_key(item: &StatusItem) -> Option<String> {
     if let StatusItem::Loki(l) = item {
         return Some(format!(
-            "{} · {} · {} · {}",
-            l.project, l.env, l.title, l.message
+            "{} · {} — {}:{}",
+            l.title, l.message, l.project, l.env
         ));
     }
     #[cfg(feature = "private")]
     if let StatusItem::MediaBlocked(b) = item {
-        return Some(format!("{} · Import blocked · {}", b.source, b.error));
+        return Some(format!("Import blocked · {} — {}", b.error, b.source));
     }
     None
 }
@@ -267,7 +322,11 @@ pub(crate) fn build_unified(items: Vec<StatusItem>, filter: &Filter) -> Vec<Disp
                 }
             }
             if let Some(q) = &filter.query {
-                if !item_line(item).to_lowercase().contains(&q.to_lowercase()) {
+                if !item_line(item)
+                    .flat()
+                    .to_lowercase()
+                    .contains(&q.to_lowercase())
+                {
                     return false;
                 }
             }
@@ -410,27 +469,31 @@ mod tests {
     #[test]
     fn snapshot_item_lines() {
         let lines = [
-            format!("pr_mine:     {}", item_line(&make_pr(domain::PrKind::Mine))),
+            format!(
+                "pr_mine:     {}",
+                item_line(&make_pr(domain::PrKind::Mine)).flat()
+            ),
             format!(
                 "pr_review:   {}",
-                item_line(&make_pr(domain::PrKind::ToReview))
+                item_line(&make_pr(domain::PrKind::ToReview)).flat()
             ),
             format!(
                 "pr_draft:    {}",
-                item_line(&make_pr(domain::PrKind::MyDraft))
+                item_line(&make_pr(domain::PrKind::MyDraft)).flat()
             ),
-            format!("issue:       {}", item_line(&issue())),
-            format!("ci_bare:     {}", item_line(&ci())),
-            format!("ci_job_step: {}", item_line(&ci_job_step())),
-            format!("ci_full:     {}", item_line(&ci_full())),
-            format!("linear:      {}", item_line(&linear())),
-            format!("loki:        {}", item_line(&loki())),
+            format!("issue:       {}", item_line(&issue()).flat()),
+            format!("ci_bare:     {}", item_line(&ci()).flat()),
+            format!("ci_job_step: {}", item_line(&ci_job_step()).flat()),
+            format!("ci_full:     {}", item_line(&ci_full()).flat()),
+            format!("linear:      {}", item_line(&linear()).flat()),
+            format!("loki:        {}", item_line(&loki()).flat()),
             format!(
                 "group_3:     {}",
                 display_item_line(&DisplayItem::Group {
-                    label: "project-x · prod · MemoryError · OOM killed".to_string(),
+                    label: "MemoryError · OOM killed — project-x:prod".to_string(),
                     items: vec![loki(), loki(), loki()],
                 })
+                .flat()
             ),
         ]
         .join("\n");
@@ -441,12 +504,12 @@ mod tests {
     #[test]
     fn snapshot_item_lines_private() {
         let lines = [
-            format!("media_blocked:  {}", item_line(&media_blocked())),
-            format!("media_missing:  {}", item_line(&media_missing())),
-            format!("media_health:   {}", item_line(&media_health())),
+            format!("media_blocked:  {}", item_line(&media_blocked()).flat()),
+            format!("media_missing:  {}", item_line(&media_missing()).flat()),
+            format!("media_health:   {}", item_line(&media_health()).flat()),
             format!(
                 "media_blocked_detail: {}",
-                item_detail_line(&media_blocked())
+                item_detail_line(&media_blocked()).flat()
             ),
         ]
         .join("\n");

@@ -2,7 +2,7 @@
 source: ui/tui/src/display.rs
 expression: lines
 ---
-media_blocked:  Media · Import blocked · Invalid video file
-media_missing:  Media · Not found · Show — S01E02 · aired 2024-01-01
-media_health:   Media · Indexer unavailable
+media_blocked:  Import blocked · Invalid video file — Media
+media_missing:  Not found · Show — S01E02 · aired 2024-01-01 — Media
+media_health:   Indexer unavailable — Media
 media_blocked_detail: Show — S01E01 — Invalid video file

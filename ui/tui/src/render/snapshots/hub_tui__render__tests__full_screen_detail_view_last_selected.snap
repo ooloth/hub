@@ -3,8 +3,8 @@ source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
 ╭ hub errors ──────────────────────────────────────────────────────────────────╮
-│● ooloth/hub · CI · check / fmt · failed                                      │
-│● ooloth/hub · CI · check / fmt · failed  ↩ to open · i to investigate        │
+│● check / fmt · failed — ooloth/hub                                           │
+│● check / fmt · failed — ooloth/hub  ↩ to open · i to investigate             │
 │                                                                              │
 │                                                                              │
 │                                                                              │

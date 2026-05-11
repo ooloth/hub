@@ -344,7 +344,7 @@ fn render_unified(
                 label,
                 items: group_items,
             } => (label.clone(), Some(format!(" ({})", group_items.len()))),
-            DisplayItem::Single(_) => (display_item_line(item), None),
+            DisplayItem::Single(_) => (display_item_line(item).flat(), None),
         };
 
         let dot_style = if item_idx == selected {
