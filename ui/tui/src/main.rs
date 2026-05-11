@@ -211,6 +211,7 @@ async fn run_loop(
                     if let Some(action) = key_to_action(app, key) {
                         handle_msg(app, Msg::Action(action))?
                     } else {
+                        app.ui.pending_g = false;
                         vec![]
                     }
                 } else {

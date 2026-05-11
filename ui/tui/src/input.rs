@@ -31,6 +31,11 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
         return None;
     }
 
+    // gg: second g completes the sequence.
+    if app.ui.pending_g && key.code == KeyCode::Char('g') {
+        return Some(Action::MoveToTop);
+    }
+
     match app.current_screen() {
         Screen::UnifiedList { .. } => unified_list_keys(key),
         Screen::Detail { .. } => list_keys(key),
@@ -61,6 +66,10 @@ fn unified_list_keys(key: KeyEvent) -> Option<Action> {
         (KeyCode::Down, _) | (KeyCode::Char('j'), _) | (KeyCode::Char('l'), _) => {
             Some(Action::MoveDown)
         }
+        (KeyCode::Char('g'), _) => Some(Action::PendingG),
+        (KeyCode::Char('G'), _) => Some(Action::MoveToBottom),
+        (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Action::MovePageUp),
+        (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(Action::MovePageDown),
         (KeyCode::Enter, _) => Some(Action::Enter),
         (KeyCode::Char('i'), _) => Some(Action::Investigate),
         (KeyCode::Char('p'), _) => Some(Action::FilterCategory(Category::Prs)),
@@ -80,6 +89,10 @@ fn list_keys(key: KeyEvent) -> Option<Action> {
         (KeyCode::Down, _) | (KeyCode::Char('j'), _) | (KeyCode::Char('l'), _) => {
             Some(Action::MoveDown)
         }
+        (KeyCode::Char('g'), _) => Some(Action::PendingG),
+        (KeyCode::Char('G'), _) => Some(Action::MoveToBottom),
+        (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Action::MovePageUp),
+        (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(Action::MovePageDown),
         (KeyCode::Enter, _) => Some(Action::Enter),
         (KeyCode::Char('i'), _) => Some(Action::Investigate),
         _ => None,
@@ -234,6 +247,10 @@ mod tests {
     #[case(k(KeyCode::Down), Some(Action::MoveDown))]
     #[case(ch('j'), Some(Action::MoveDown))]
     #[case(ch('l'), Some(Action::MoveDown))]
+    #[case(ch('g'), Some(Action::PendingG))]
+    #[case(ch('G'), Some(Action::MoveToBottom))]
+    #[case(ctrl('u'), Some(Action::MovePageUp))]
+    #[case(ctrl('d'), Some(Action::MovePageDown))]
     #[case(k(KeyCode::Enter), Some(Action::Enter))]
     #[case(ch('i'), Some(Action::Investigate))]
     #[case(ch('p'), Some(Action::FilterCategory(Category::Prs)))]
@@ -246,6 +263,26 @@ mod tests {
         assert_eq!(key_to_action(&App::default(), key), expected);
     }
 
+    #[test]
+    fn gg_fires_move_to_top_when_pending_g_is_armed() {
+        let app = App {
+            ui: UiState {
+                pending_g: true,
+                ..UiState::default()
+            },
+            ..App::default()
+        };
+        assert_eq!(key_to_action(&app, ch('g')), Some(Action::MoveToTop));
+    }
+
+    #[test]
+    fn first_g_arms_pending_g_in_unified_list() {
+        assert_eq!(
+            key_to_action(&App::default(), ch('g')),
+            Some(Action::PendingG)
+        );
+    }
+
     #[rstest]
     #[case(k(KeyCode::Up), Some(Action::MoveUp))]
     #[case(ch('k'), Some(Action::MoveUp))]
@@ -253,6 +290,10 @@ mod tests {
     #[case(k(KeyCode::Down), Some(Action::MoveDown))]
     #[case(ch('j'), Some(Action::MoveDown))]
     #[case(ch('l'), Some(Action::MoveDown))]
+    #[case(ch('g'), Some(Action::PendingG))]
+    #[case(ch('G'), Some(Action::MoveToBottom))]
+    #[case(ctrl('u'), Some(Action::MovePageUp))]
+    #[case(ctrl('d'), Some(Action::MovePageDown))]
     #[case(k(KeyCode::Enter), Some(Action::Enter))]
     #[case(ch('i'), Some(Action::Investigate))]
     #[case(ch('p'), None)]

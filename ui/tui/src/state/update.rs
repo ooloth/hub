@@ -13,6 +13,7 @@ use crate::display::{
 impl App {
     pub(crate) fn update(&mut self, action: Action) -> Vec<Effect> {
         self.ui.flash = None;
+        self.ui.pending_g = false;
         match action {
             Action::Quit => vec![Effect::Quit],
             Action::ToggleHelp => {
@@ -123,7 +124,18 @@ impl App {
                 });
                 vec![]
             }
-            Action::MoveUp | Action::MoveDown | Action::Enter | Action::Investigate => {
+            Action::PendingG => {
+                self.ui.pending_g = true;
+                vec![]
+            }
+            Action::MoveUp
+            | Action::MoveDown
+            | Action::MoveToTop
+            | Action::MoveToBottom
+            | Action::MovePageUp
+            | Action::MovePageDown
+            | Action::Enter
+            | Action::Investigate => {
                 if matches!(self.ui.screen, Screen::UnifiedList { .. }) {
                     self.handle_unified_list(action)
                 } else {
@@ -169,6 +181,22 @@ impl App {
                 self.move_down();
                 vec![]
             }
+            Action::MoveToTop => {
+                self.move_to_top();
+                vec![]
+            }
+            Action::MoveToBottom => {
+                self.move_to_bottom();
+                vec![]
+            }
+            Action::MovePageUp => {
+                self.move_page_up();
+                vec![]
+            }
+            Action::MovePageDown => {
+                self.move_page_down();
+                vec![]
+            }
             Action::Enter => {
                 let ea = compute_enter_action(self);
                 self.apply_enter_action(ea)
@@ -186,6 +214,22 @@ impl App {
             }
             Action::MoveDown => {
                 self.move_down();
+                vec![]
+            }
+            Action::MoveToTop => {
+                self.move_to_top();
+                vec![]
+            }
+            Action::MoveToBottom => {
+                self.move_to_bottom();
+                vec![]
+            }
+            Action::MovePageUp => {
+                self.move_page_up();
+                vec![]
+            }
+            Action::MovePageDown => {
+                self.move_page_down();
                 vec![]
             }
             Action::Enter => {
@@ -827,5 +871,87 @@ mod tests {
             ],
         );
         assert_eq!(app.ui.query_input.as_deref(), Some("fo"));
+    }
+
+    // --- Vim navigation ---
+
+    fn selected(app: &App) -> usize {
+        match app.current_screen() {
+            Screen::UnifiedList { selected, .. } => *selected,
+            _ => panic!("expected UnifiedList"),
+        }
+    }
+
+    fn items_n(n: usize) -> Vec<DisplayItem> {
+        (0..n).map(|_| DisplayItem::Single(ci_failure())).collect()
+    }
+
+    #[test]
+    fn pending_g_sets_pending_flag() {
+        let mut app = App::default();
+        app.update(Action::PendingG);
+        assert!(app.ui.pending_g);
+    }
+
+    #[test]
+    fn any_subsequent_action_clears_pending_g() {
+        let mut app = app_with_items(items_n(5));
+        app.update(Action::PendingG);
+        app.update(Action::MoveDown);
+        assert!(!app.ui.pending_g);
+    }
+
+    #[test]
+    fn move_to_top_goes_to_first_item() {
+        let mut app = app_with_items(items_n(5));
+        apply(&mut app, &[Action::MoveDown, Action::MoveDown]);
+        assert_eq!(selected(&app), 2);
+        app.update(Action::MoveToTop);
+        assert_eq!(selected(&app), 0);
+    }
+
+    #[test]
+    fn move_to_bottom_goes_to_last_item() {
+        let mut app = app_with_items(items_n(5));
+        app.update(Action::MoveToBottom);
+        assert_eq!(selected(&app), 4);
+    }
+
+    #[test]
+    fn move_to_bottom_on_empty_list_is_noop() {
+        let mut app = app_with_items(vec![]);
+        app.update(Action::MoveToBottom);
+        assert_eq!(selected(&app), 0);
+    }
+
+    #[test]
+    fn move_page_down_advances_by_10() {
+        let mut app = app_with_items(items_n(25));
+        app.update(Action::MovePageDown);
+        assert_eq!(selected(&app), 10);
+    }
+
+    #[test]
+    fn move_page_down_clamps_at_last_item() {
+        let mut app = app_with_items(items_n(5));
+        app.update(Action::MovePageDown);
+        assert_eq!(selected(&app), 4);
+    }
+
+    #[test]
+    fn move_page_up_retreats_by_10() {
+        let mut app = app_with_items(items_n(25));
+        apply(&mut app, &[Action::MovePageDown, Action::MovePageDown]);
+        assert_eq!(selected(&app), 20);
+        app.update(Action::MovePageUp);
+        assert_eq!(selected(&app), 10);
+    }
+
+    #[test]
+    fn move_page_up_clamps_at_first_item() {
+        let mut app = app_with_items(items_n(5));
+        apply(&mut app, &[Action::MoveDown, Action::MoveDown]);
+        app.update(Action::MovePageUp);
+        assert_eq!(selected(&app), 0);
     }
 }

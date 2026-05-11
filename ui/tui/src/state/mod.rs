@@ -17,6 +17,7 @@ pub(crate) struct UiState {
     pub(crate) show_help: bool,
     pub(crate) flash: Option<String>,
     pub(crate) query_input: Option<String>,
+    pub(crate) pending_g: bool,
 }
 
 #[derive(Debug, Default)]
@@ -74,6 +75,54 @@ impl App {
                 if len > 0 && sel < len - 1 {
                     view.list_state.select(Some(sel + 1));
                 }
+            }
+        }
+    }
+
+    pub(crate) fn move_to_top(&mut self) {
+        match &mut self.ui.screen {
+            Screen::UnifiedList { selected, .. } => *selected = 0,
+            Screen::Detail { view, .. } => view.list_state.select(Some(0)),
+        }
+    }
+
+    pub(crate) fn move_to_bottom(&mut self) {
+        let len = self.active_list_len();
+        if len == 0 {
+            return;
+        }
+        match &mut self.ui.screen {
+            Screen::UnifiedList { selected, .. } => *selected = len - 1,
+            Screen::Detail { view, .. } => view.list_state.select(Some(len - 1)),
+        }
+    }
+
+    pub(crate) fn move_page_up(&mut self) {
+        const PAGE: usize = 10;
+        match &mut self.ui.screen {
+            Screen::UnifiedList { selected, .. } => {
+                *selected = selected.saturating_sub(PAGE);
+            }
+            Screen::Detail { view, .. } => {
+                let sel = view.list_state.selected().unwrap_or(0);
+                view.list_state.select(Some(sel.saturating_sub(PAGE)));
+            }
+        }
+    }
+
+    pub(crate) fn move_page_down(&mut self) {
+        const PAGE: usize = 10;
+        let len = self.active_list_len();
+        if len == 0 {
+            return;
+        }
+        match &mut self.ui.screen {
+            Screen::UnifiedList { selected, .. } => {
+                *selected = (*selected + PAGE).min(len - 1);
+            }
+            Screen::Detail { view, .. } => {
+                let sel = view.list_state.selected().unwrap_or(0);
+                view.list_state.select(Some((sel + PAGE).min(len - 1)));
             }
         }
     }
