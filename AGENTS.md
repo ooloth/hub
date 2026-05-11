@@ -97,7 +97,8 @@ paths.
 **Tier 2 — tmux E2E (interaction and behavior changes)**
 
 For changes that affect keybindings, navigation between screens,
-subprocess launching, or tmux integration, snapshots are not sufficient.
+subprocess launching, tmux integration, store schema, cache format, or
+domain types the TUI deserializes on startup, snapshots are not sufficient.
 Run the TUI live in tmux and drive the interaction:
 
 1. Start the TUI in tmux.
