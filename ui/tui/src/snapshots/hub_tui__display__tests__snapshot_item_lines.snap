@@ -2,13 +2,13 @@
 source: ui/tui/src/display.rs
 expression: lines
 ---
-pr_mine:     Add feature [OPEN] (#42) — owner/repo
-pr_review:   Add feature [TO REVIEW] (#42) — owner/repo
-pr_draft:    Add feature [DRAFT] (#42) — owner/repo
-issue:       Fix bug (#7) — owner/repo
-ci_bare:     failed — owner/repo
-ci_job_step: Build / cargo check · failed — owner/repo
-ci_full:     Build / cargo check · error[E0308]: mismatched types — owner/repo
+pr_mine:     Add feature [OPEN] (#42)
+pr_review:   Add feature [TO REVIEW] (#42)
+pr_draft:    Add feature [DRAFT] (#42)
+issue:       Fix bug (#7)
+ci_bare:     failed
+ci_job_step: Build / cargo check · failed
+ci_full:     Build / cargo check · error[E0308]: mismatched types
 linear:      Do the thing (ENG-99)
-loki:        MemoryError · OOM killed — project-x:prod
-group_3:     MemoryError · OOM killed — project-x:prod (3)
+loki:        MemoryError · OOM killed
+group_3:     MemoryError · OOM killed (3)

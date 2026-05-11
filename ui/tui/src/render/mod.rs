@@ -7,8 +7,7 @@ use ratatui::{
 };
 
 use crate::display::{
-    display_item_line, display_item_urgency, format_age_short, item_age, item_tag, DisplayItem,
-    Filter, LineParts,
+    display_item_line, display_item_urgency, format_age_short, DisplayItem, Filter, LineParts,
 };
 use crate::state::{
     compute_enter_action, compute_investigate_action, App, EnterAction, InvestigateAction,
@@ -190,7 +189,6 @@ fn build_unified_list_item(
 
     let bright_part: String = display_chars[..bright_end].iter().collect();
     let dim_inline_part: String = display_chars[bright_end..dim_inline_end].iter().collect();
-    let dim_suffix_part: String = display_chars[dim_inline_end..].iter().collect();
 
     let padding = content_budget.saturating_sub(display_len);
 
@@ -200,9 +198,6 @@ fn build_unified_list_item(
     }
     if !dim_inline_part.is_empty() {
         spans.push(Span::styled(dim_inline_part, dim()));
-    }
-    if !dim_suffix_part.is_empty() {
-        spans.push(Span::styled(dim_suffix_part, dim()));
     }
     if padding > 0 {
         spans.push(Span::raw(" ".repeat(padding)));
@@ -386,13 +381,11 @@ fn render_unified(
 
         let parts = display_item_line(item);
 
-        let first_item = match item {
-            DisplayItem::Single(s) => Some(s),
-            DisplayItem::Group { items, .. } => items.first(),
+        let age = format_age_short(parts.age);
+        let item_chrome = match &parts.source {
+            Some(source) => format!("{source} · {} · {age}", parts.category),
+            None => format!("{} · {age}", parts.category),
         };
-        let item_chrome = first_item.map_or(String::new(), |s| {
-            format!("{}  {}", item_tag(s), format_age_short(item_age(s)))
-        });
 
         let dot_style = if item_idx == selected {
             Style::default()

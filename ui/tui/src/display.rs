@@ -37,7 +37,9 @@ pub(crate) struct ListSnapshot {
 pub(crate) struct LineParts {
     pub(crate) primary: String,
     pub(crate) dim_inline: Option<String>,
-    pub(crate) dim_suffix: Option<String>,
+    pub(crate) source: Option<String>,
+    pub(crate) category: &'static str,
+    pub(crate) age: chrono::Duration,
 }
 
 impl LineParts {
@@ -45,9 +47,6 @@ impl LineParts {
         let mut s = self.primary.clone();
         if let Some(i) = &self.dim_inline {
             s.push_str(i);
-        }
-        if let Some(sf) = &self.dim_suffix {
-            s.push_str(sf);
         }
         s
     }
@@ -68,39 +67,6 @@ pub(crate) fn item_url(item: &StatusItem) -> Option<&str> {
         StatusItem::MediaHealth(h) => Some(&h.url),
         #[cfg(feature = "private")]
         StatusItem::MediaBacklog { .. } => None,
-    }
-}
-
-pub(crate) fn item_tag(item: &StatusItem) -> &'static str {
-    match item {
-        StatusItem::Pr(_) => "PR",
-        StatusItem::Issue(_) => "Issue",
-        StatusItem::Ci(_) => "CI",
-        StatusItem::Linear(_) => "Linear",
-        StatusItem::Loki(_) => "Loki",
-        #[cfg(feature = "private")]
-        StatusItem::MediaBlocked(_)
-        | StatusItem::MediaMissing(_)
-        | StatusItem::MediaHealth(_)
-        | StatusItem::MediaBacklog { .. } => "Media",
-    }
-}
-
-pub(crate) fn item_age(item: &StatusItem) -> chrono::Duration {
-    match item {
-        StatusItem::Pr(pr) => pr.age,
-        StatusItem::Issue(i) => i.age,
-        StatusItem::Ci(c) => c.age,
-        StatusItem::Linear(l) => l.age,
-        StatusItem::Loki(l) => l.age,
-        #[cfg(feature = "private")]
-        StatusItem::MediaBlocked(b) => b.age,
-        #[cfg(feature = "private")]
-        StatusItem::MediaMissing(m) => m.age,
-        #[cfg(feature = "private")]
-        StatusItem::MediaHealth(h) => h.age,
-        #[cfg(feature = "private")]
-        StatusItem::MediaBacklog { .. } => chrono::Duration::zero(),
     }
 }
 
@@ -180,13 +146,17 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             LineParts {
                 primary: format!("{} {badge}", pr.title),
                 dim_inline: Some(format!(" (#{})", pr.number)),
-                dim_suffix: Some(format!(" — {}", pr.repo)),
+                source: Some(pr.repo.to_string()),
+                category: "PR",
+                age: pr.age,
             }
         }
         StatusItem::Issue(i) => LineParts {
             primary: i.title.clone(),
             dim_inline: Some(format!(" (#{})", i.number)),
-            dim_suffix: Some(format!(" — {}", i.repo)),
+            source: Some(i.repo.to_string()),
+            category: "Issue",
+            age: i.age,
         },
         StatusItem::Ci(c) => {
             let primary = match (&c.job_name, &c.step_name, &c.error) {
@@ -198,42 +168,56 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             LineParts {
                 primary,
                 dim_inline: None,
-                dim_suffix: Some(format!(" — {}", c.repo)),
+                source: Some(c.repo.to_string()),
+                category: "CI",
+                age: c.age,
             }
         }
         StatusItem::Linear(l) => LineParts {
             primary: l.title.clone(),
             dim_inline: Some(format!(" ({})", l.identifier)),
-            dim_suffix: None,
+            source: None,
+            category: "Linear",
+            age: l.age,
         },
         StatusItem::Loki(l) => LineParts {
             primary: format!("{} · {}", l.title, l.message),
             dim_inline: None,
-            dim_suffix: Some(format!(" — {}:{}", l.project, l.env)),
+            source: Some(format!("{}:{}", l.project, l.env)),
+            category: "Loki",
+            age: l.age,
         },
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => LineParts {
             primary: format!("Import blocked · {}", b.error),
             dim_inline: None,
-            dim_suffix: Some(format!(" — {}", b.source)),
+            source: Some(b.source.clone()),
+            category: "Media",
+            age: b.age,
         },
         #[cfg(feature = "private")]
         StatusItem::MediaMissing(m) => LineParts {
             primary: format!("Not found · {} · aired {}", m.title, m.air_date),
             dim_inline: None,
-            dim_suffix: Some(format!(" — {}", m.source)),
+            source: Some(m.source.clone()),
+            category: "Media",
+            age: m.age,
         },
         #[cfg(feature = "private")]
         StatusItem::MediaHealth(h) => LineParts {
             primary: h.message.clone(),
             dim_inline: None,
-            dim_suffix: Some(format!(" — {}", h.source)),
+            source: Some(h.source.clone()),
+            category: "Media",
+            age: h.age,
         },
         #[cfg(feature = "private")]
         StatusItem::MediaBacklog { source, count } => LineParts {
             primary: format!("{count} episodes in backlog"),
             dim_inline: None,
-            dim_suffix: Some(format!(" — {source}")),
+            source: Some(source.clone()),
+            category: "Media",
+            age: chrono::Duration::zero(),
         },
     }
 }
@@ -242,9 +226,9 @@ pub(crate) fn item_detail_line(item: &StatusItem) -> LineParts {
     #[cfg(feature = "private")]
     if let StatusItem::MediaBlocked(b) = item {
         return LineParts {
-            primary: b.title.clone(),
+            primary: format!("{} — {}", b.title, b.error),
             dim_inline: None,
-            dim_suffix: Some(format!(" — {}", b.error)),
+            ..item_line(item)
         };
     }
     item_line(item)
@@ -271,11 +255,22 @@ pub(crate) fn item_urgency(item: &StatusItem) -> domain::Urgency {
 pub(crate) fn display_item_line(item: &DisplayItem) -> LineParts {
     match item {
         DisplayItem::Single(s) => item_line(s),
-        DisplayItem::Group { label, items } => LineParts {
-            primary: label.clone(),
-            dim_inline: None,
-            dim_suffix: Some(format!(" ({})", items.len())),
-        },
+        DisplayItem::Group { items, .. } => {
+            let count = items.len();
+            match items.first().map(item_line) {
+                Some(base) => LineParts {
+                    dim_inline: Some(format!(" ({count})")),
+                    ..base
+                },
+                None => LineParts {
+                    primary: String::new(),
+                    dim_inline: None,
+                    source: None,
+                    category: "",
+                    age: chrono::Duration::zero(),
+                },
+            }
+        }
     }
 }
 
@@ -864,59 +859,6 @@ mod tests {
     #[test]
     fn truncate_to_width_empty_string_unchanged() {
         assert_eq!(truncate_to_width("", 5), "");
-    }
-
-    // ── item_tag ─────────────────────────────────────────────────────────────
-
-    #[test]
-    fn item_tag_pr_is_pr() {
-        assert_eq!(item_tag(&pr()), "PR");
-    }
-
-    #[test]
-    fn item_tag_issue_is_issue() {
-        assert_eq!(item_tag(&issue()), "Issue");
-    }
-
-    #[test]
-    fn item_tag_ci_is_ci() {
-        assert_eq!(item_tag(&ci()), "CI");
-    }
-
-    #[test]
-    fn item_tag_linear_is_linear() {
-        assert_eq!(item_tag(&linear()), "Linear");
-    }
-
-    #[test]
-    fn item_tag_loki_is_loki() {
-        assert_eq!(item_tag(&loki()), "Loki");
-    }
-
-    // ── item_age ─────────────────────────────────────────────────────────────
-
-    #[test]
-    fn item_age_pr_returns_age_field() {
-        let item = StatusItem::Pr(domain::PullRequest {
-            age: chrono::Duration::hours(3),
-            ..match make_pr(domain::PrKind::Mine) {
-                StatusItem::Pr(p) => p,
-                _ => unreachable!(),
-            }
-        });
-        assert_eq!(item_age(&item), chrono::Duration::hours(3));
-    }
-
-    #[test]
-    fn item_age_issue_returns_age_field() {
-        let item = StatusItem::Issue(domain::Issue {
-            age: chrono::Duration::days(2),
-            ..match issue() {
-                StatusItem::Issue(i) => i,
-                _ => unreachable!(),
-            }
-        });
-        assert_eq!(item_age(&item), chrono::Duration::days(2));
     }
 
     // ── filter ───────────────────────────────────────────────────────────────
