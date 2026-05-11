@@ -281,16 +281,16 @@ fn position_label(screen: &Screen) -> String {
 
 fn action_hints(enter: &EnterAction, investigate: &InvestigateAction) -> String {
     let enter_hint = match enter {
-        EnterAction::OpenUrl(url) => format!(" · Press ↩ to open {url}"),
+        EnterAction::OpenUrl(_) => " · [↩] open".to_string(),
         EnterAction::OpenDetail { item_count, .. } => {
-            format!(" · Press ↩ to expand ({item_count} items)")
+            format!(" · [↩] expand ({item_count} items)")
         }
         EnterAction::None => String::new(),
     };
     let inv_hint = if matches!(investigate, InvestigateAction::None) {
         ""
     } else {
-        " · Press i to investigate"
+        " · [i] investigate"
     };
     format!("{enter_hint}{inv_hint}")
 }
@@ -780,10 +780,7 @@ mod tests {
     fn action_hints_open_url() {
         let enter = EnterAction::OpenUrl("https://example.com".to_string());
         let inv = InvestigateAction::None;
-        assert_eq!(
-            action_hints(&enter, &inv),
-            " · Press ↩ to open https://example.com"
-        );
+        assert_eq!(action_hints(&enter, &inv), " · [↩] open");
     }
 
     #[test]
@@ -793,7 +790,7 @@ mod tests {
             item_count: 3,
         };
         let inv = InvestigateAction::None;
-        assert_eq!(action_hints(&enter, &inv), " · Press ↩ to expand (3 items)");
+        assert_eq!(action_hints(&enter, &inv), " · [↩] expand (3 items)");
     }
 
     #[test]
@@ -803,7 +800,7 @@ mod tests {
             repo: "owner/repo".to_string(),
             run_url: "https://example.com".to_string(),
         };
-        assert_eq!(action_hints(&enter, &inv), " · Press i to investigate");
+        assert_eq!(action_hints(&enter, &inv), " · [i] investigate");
     }
 
     #[cfg(feature = "private")]
@@ -814,7 +811,7 @@ mod tests {
             title: "Show — S01E01".to_string(),
             error: "Invalid video file".to_string(),
         };
-        assert_eq!(action_hints(&enter, &inv), " · Press i to investigate");
+        assert_eq!(action_hints(&enter, &inv), " · [i] investigate");
     }
 
     #[test]
@@ -824,10 +821,7 @@ mod tests {
             repo: "owner/repo".to_string(),
             run_url: "https://example.com".to_string(),
         };
-        assert_eq!(
-            action_hints(&enter, &inv),
-            " · Press ↩ to open https://example.com · Press i to investigate"
-        );
+        assert_eq!(action_hints(&enter, &inv), " · [↩] open · [i] investigate");
     }
 
     #[test]
