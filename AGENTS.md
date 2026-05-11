@@ -63,6 +63,10 @@ Hard rules for agents:
 - **Secrets**: read from env vars via `std::env::var`. Never read from files. Injected at runtime by `op run --env-file=.env`.
 - **CLI**: `clap` with derive macros. Annotate structs; don't use the builder API.
 
+### Schema versioning
+
+When adding, removing, or changing any field on a `#[derive(Serialize, Deserialize)]` domain type, check `ui/tui/README.md` to determine whether `SCHEMA_VERSION` in `workflows/src/status.rs` needs a bump. Bump it before committing — the rules for when a bump is required are in that file.
+
 ## Development
 
 ```bash
