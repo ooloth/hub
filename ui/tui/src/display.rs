@@ -263,7 +263,7 @@ pub(crate) fn item_detail_line(item: &StatusItem) -> LineParts {
     #[cfg(feature = "private")]
     if let StatusItem::MediaBlocked(b) = item {
         return LineParts {
-            primary: format!("{} — {}", b.title, b.error),
+            primary: b.title.clone(),
             dim_inline: None,
             ..item_line(item)
         };
@@ -343,7 +343,7 @@ pub(crate) fn group_key(item: &StatusItem) -> Option<String> {
     }
     #[cfg(feature = "private")]
     if let StatusItem::MediaBlocked(b) = item {
-        return Some(format!("Import blocked · {} — {}", b.error, b.source));
+        return Some(format!("Import blocked · {}", b.error));
     }
     None
 }

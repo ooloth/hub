@@ -89,10 +89,10 @@ pub(super) fn render_list_view<T>(
     area: Rect,
     items: &[T],
     list_state: &mut ListState,
-    item_data: impl Fn(&T) -> (String, Option<String>, domain::Urgency),
+    item_data: impl Fn(&T) -> (Option<String>, String, Option<String>, domain::Urgency),
     hint_fn: impl Fn(&T) -> Option<String>,
 ) {
-    let text_width = area.width.saturating_sub(2) as usize;
+    let full_width = area.width as usize;
     let selected = list_state.selected();
     let selected_hint = selected.and_then(|i| items.get(i)).and_then(hint_fn);
     let list_items: Vec<ListItem> = items
@@ -100,8 +100,8 @@ pub(super) fn render_list_view<T>(
         .enumerate()
         .map(|(i, item)| {
             let is_selected = selected == Some(i);
-            let (line_text, dim_suffix, urgency) = item_data(item);
-            let dot_style = if is_selected {
+            let (label, line_text, dim_suffix, urgency) = item_data(item);
+            let label_style = if is_selected {
                 Style::default()
             } else {
                 urgency_style(urgency)
@@ -111,11 +111,17 @@ pub(super) fn render_list_view<T>(
             } else {
                 None
             };
-            let item_width = text_width
+            let label_text = label.map(|l| format!("{l} · "));
+            let label_span = label_text
+                .as_ref()
+                .map(|t| Span::styled(t.clone(), label_style));
+            let label_width = label_text.as_ref().map_or(0, |t| t.chars().count());
+            let item_width = full_width
+                .saturating_sub(label_width)
                 .saturating_sub(dim_suffix.as_ref().map_or(0, |s| s.chars().count()))
                 .saturating_sub(hint.as_ref().map_or(0, |h| h.chars().count() + 2));
             build_list_item(
-                Span::styled("● ", dot_style),
+                label_span,
                 wrap_text(&line_text, item_width),
                 dim_suffix,
                 hint,
@@ -127,11 +133,12 @@ pub(super) fn render_list_view<T>(
 }
 
 fn build_list_item(
-    dot: Span<'static>,
+    label: Option<Span<'static>>,
     wrapped: Vec<String>,
     dim_suffix: Option<String>,
     hint: Option<String>,
 ) -> ListItem<'static> {
+    let indent = label.as_ref().map_or(0, |s| s.content.chars().count());
     let suffix_span = dim_suffix.map(|s| Span::styled(s, dim()));
     let hint_span = hint.map(|h| Span::styled(format!("  {h}"), dim()));
     let mut lines: Vec<Line> = wrapped
@@ -139,14 +146,20 @@ fn build_list_item(
         .enumerate()
         .map(|(j, chunk)| {
             if j == 0 {
-                Line::from(vec![dot.clone(), Span::raw(chunk)])
+                match &label {
+                    Some(l) => Line::from(vec![l.clone(), Span::raw(chunk)]),
+                    None => Line::from(Span::raw(chunk)),
+                }
             } else {
-                Line::from(Span::raw(format!("  {chunk}")))
+                Line::from(Span::raw(format!("{}{chunk}", " ".repeat(indent))))
             }
         })
         .collect();
     if lines.is_empty() {
-        lines.push(Line::from(vec![dot, Span::raw("")]));
+        lines.push(match label {
+            Some(l) => Line::from(vec![l, Span::raw("")]),
+            None => Line::from(Span::raw("")),
+        });
     }
     if let Some(last) = lines.last_mut() {
         if let Some(s) = suffix_span {

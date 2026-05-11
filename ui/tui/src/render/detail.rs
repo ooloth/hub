@@ -44,7 +44,10 @@ pub(super) fn render_detail(
         inner,
         items,
         &mut view.list_state,
-        |item| (item_detail_line(item).flat(), None, item_urgency(item)),
+        |item| {
+            let parts = item_detail_line(item);
+            (parts.source, parts.primary, None, item_urgency(item))
+        },
         |_| None,
     );
 }
