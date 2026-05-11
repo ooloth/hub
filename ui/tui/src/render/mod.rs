@@ -299,7 +299,7 @@ fn action_hints(enter: &EnterAction, investigate: &InvestigateAction) -> String 
     let enter_hint = match enter {
         EnterAction::OpenUrl(_) => " · [↩] open".to_string(),
         EnterAction::OpenDetail { item_count, .. } => {
-            format!(" · [↩] expand ({item_count} items)")
+            format!(" · [↩] expand {item_count} items")
         }
         EnterAction::None => String::new(),
     };
@@ -658,7 +658,7 @@ mod tests {
 
     #[test]
     fn status_bar_left_group_then_single_item() {
-        // Frame 1: group selected → "1/2 · Press ↩ to expand (1 items)"
+        // Frame 1: group selected → "1/2 · Press ↩ to expand 1 items"
         // Frame 2: single CI item selected → longer left text with ↩ URL and i hint.
         // Catches stale characters if the longer left text isn't fully overwritten.
         let group = DisplayItem::Group {
@@ -809,7 +809,7 @@ mod tests {
             item_count: 3,
         };
         let inv = InvestigateAction::None;
-        assert_eq!(action_hints(&enter, &inv), " · [↩] expand (3 items)");
+        assert_eq!(action_hints(&enter, &inv), " · [↩] expand 3 items");
     }
 
     #[test]
