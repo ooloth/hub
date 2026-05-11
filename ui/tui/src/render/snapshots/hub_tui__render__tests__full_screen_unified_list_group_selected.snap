@@ -3,7 +3,7 @@ source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
 ╭ All ─────────────────────────────────────────────────────────────────────────╮
-│● hub errors (1)  ↩ to expand                                                 │
+│● hub errors (1)                                                       CI  now│
 │                                                                              │
 │                                                                              │
 │                                                                              │

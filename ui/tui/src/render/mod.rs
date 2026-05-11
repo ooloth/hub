@@ -6,7 +6,10 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
 };
 
-use crate::display::{display_item_line, display_item_urgency, DisplayItem, Filter};
+use crate::display::{
+    display_item_line, display_item_urgency, format_age_short, item_age, item_tag, DisplayItem,
+    Filter, LineParts,
+};
 use crate::state::{
     compute_enter_action, compute_investigate_action, App, EnterAction, InvestigateAction,
     RefreshState, Screen,
@@ -159,6 +162,58 @@ fn build_list_item(
     ListItem::new(Text::from(lines))
 }
 
+fn build_unified_list_item(
+    dot: Span<'static>,
+    parts: LineParts,
+    chrome: String,
+    inner_width: usize,
+) -> ListItem<'static> {
+    let chrome_width = chrome.chars().count();
+    // dot = 2 chars; chrome adds a 2-char gap only when non-empty
+    let chrome_total = if chrome_width > 0 {
+        2 + chrome_width
+    } else {
+        0
+    };
+    let content_budget = inner_width.saturating_sub(2).saturating_sub(chrome_total);
+
+    let flat = parts.flat();
+    let display_text = crate::display::truncate_to_width(&flat, content_budget);
+    let display_chars: Vec<char> = display_text.chars().collect();
+    let display_len = display_chars.len();
+
+    // Split the truncated text back into bright/dim zones by original char counts.
+    let primary_len = parts.primary.chars().count();
+    let inline_len = parts.dim_inline.as_ref().map_or(0, |s| s.chars().count());
+    let bright_end = display_len.min(primary_len);
+    let dim_inline_end = display_len.min(primary_len + inline_len);
+
+    let bright_part: String = display_chars[..bright_end].iter().collect();
+    let dim_inline_part: String = display_chars[bright_end..dim_inline_end].iter().collect();
+    let dim_suffix_part: String = display_chars[dim_inline_end..].iter().collect();
+
+    let padding = content_budget.saturating_sub(display_len);
+
+    let mut spans: Vec<Span<'static>> = vec![dot];
+    if !bright_part.is_empty() {
+        spans.push(Span::raw(bright_part));
+    }
+    if !dim_inline_part.is_empty() {
+        spans.push(Span::styled(dim_inline_part, dim()));
+    }
+    if !dim_suffix_part.is_empty() {
+        spans.push(Span::styled(dim_suffix_part, dim()));
+    }
+    if padding > 0 {
+        spans.push(Span::raw(" ".repeat(padding)));
+    }
+    if chrome_width > 0 {
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled(chrome, dim()));
+    }
+    ListItem::new(Line::from(spans))
+}
+
 fn wrap_text(text: &str, width: usize) -> Vec<String> {
     let width = width.max(1);
     let chars: Vec<char> = text.chars().collect();
@@ -308,7 +363,6 @@ fn render_unified(
     frame.render_widget(block, area);
 
     let width = inner.width as usize;
-    let text_width = width.saturating_sub(2);
 
     // Build display rows: inject urgency dividers at tier boundaries.
     // Track which display-row index corresponds to each item index.
@@ -330,22 +384,15 @@ fn render_unified(
             selected_display = Some(display_items.len());
         }
 
-        let selected_hint = if item_idx == selected {
-            match item {
-                DisplayItem::Group { .. } => Some("↩ to expand".to_string()),
-                DisplayItem::Single(s) => crate::display::item_hint(s),
-            }
-        } else {
-            None
-        };
+        let parts = display_item_line(item);
 
-        let (line_text, dim_suffix) = match item {
-            DisplayItem::Group {
-                label,
-                items: group_items,
-            } => (label.clone(), Some(format!(" ({})", group_items.len()))),
-            DisplayItem::Single(_) => (display_item_line(item).flat(), None),
+        let first_item = match item {
+            DisplayItem::Single(s) => Some(s),
+            DisplayItem::Group { items, .. } => items.first(),
         };
+        let item_chrome = first_item.map_or(String::new(), |s| {
+            format!("{}  {}", item_tag(s), format_age_short(item_age(s)))
+        });
 
         let dot_style = if item_idx == selected {
             Style::default()
@@ -353,15 +400,11 @@ fn render_unified(
             urgency_style(urgency)
         };
 
-        let item_width = text_width
-            .saturating_sub(dim_suffix.as_ref().map_or(0, |s| s.chars().count()))
-            .saturating_sub(selected_hint.as_ref().map_or(0, |h| h.chars().count() + 2));
-
-        display_items.push(build_list_item(
+        display_items.push(build_unified_list_item(
             Span::styled("● ", dot_style),
-            wrap_text(&line_text, item_width),
-            dim_suffix,
-            selected_hint,
+            parts,
+            item_chrome,
+            width,
         ));
     }
 

@@ -71,13 +71,61 @@ pub(crate) fn item_url(item: &StatusItem) -> Option<&str> {
     }
 }
 
-pub(crate) fn item_hint(item: &StatusItem) -> Option<String> {
+pub(crate) fn item_tag(item: &StatusItem) -> &'static str {
     match item {
-        StatusItem::Ci(_) | StatusItem::Loki(_) => Some("↩ to open · i to investigate".to_string()),
+        StatusItem::Pr(_) => "PR",
+        StatusItem::Issue(_) => "Issue",
+        StatusItem::Ci(_) => "CI",
+        StatusItem::Linear(_) => "Linear",
+        StatusItem::Loki(_) => "Loki",
         #[cfg(feature = "private")]
-        StatusItem::MediaBlocked(_) => Some("↩ to open · i to investigate".to_string()),
-        item => item_url(item).map(|_| "↩ to open".to_string()),
+        StatusItem::MediaBlocked(_)
+        | StatusItem::MediaMissing(_)
+        | StatusItem::MediaHealth(_)
+        | StatusItem::MediaBacklog { .. } => "Media",
     }
+}
+
+pub(crate) fn item_age(item: &StatusItem) -> chrono::Duration {
+    match item {
+        StatusItem::Pr(pr) => pr.age,
+        StatusItem::Issue(i) => i.age,
+        StatusItem::Ci(c) => c.age,
+        StatusItem::Linear(l) => l.age,
+        StatusItem::Loki(l) => l.age,
+        #[cfg(feature = "private")]
+        StatusItem::MediaBlocked(b) => b.age,
+        #[cfg(feature = "private")]
+        StatusItem::MediaMissing(m) => m.age,
+        #[cfg(feature = "private")]
+        StatusItem::MediaHealth(h) => h.age,
+        #[cfg(feature = "private")]
+        StatusItem::MediaBacklog { .. } => chrono::Duration::zero(),
+    }
+}
+
+pub(crate) fn format_age_short(d: chrono::Duration) -> String {
+    let secs = d.num_seconds();
+    if secs < 60 {
+        "now".to_string()
+    } else if secs < 3600 {
+        format!("{}m", d.num_minutes())
+    } else if secs < 86400 {
+        format!("{}h", d.num_hours())
+    } else {
+        format!("{}d", d.num_days())
+    }
+}
+
+pub(crate) fn truncate_to_width(s: &str, w: usize) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() <= w {
+        return s.to_string();
+    }
+    if w == 0 {
+        return String::new();
+    }
+    chars[..w.saturating_sub(1)].iter().collect::<String>() + "…"
 }
 
 pub(crate) enum InvestigationKind {
@@ -549,19 +597,6 @@ mod tests {
     }
 
     #[test]
-    fn item_hint_ci_includes_investigate() {
-        assert_eq!(
-            item_hint(&ci()),
-            Some("↩ to open · i to investigate".to_string())
-        );
-    }
-
-    #[test]
-    fn item_hint_pr_is_open_only() {
-        assert_eq!(item_hint(&pr()), Some("↩ to open".to_string()));
-    }
-
-    #[test]
     fn item_url_pr_returns_url() {
         assert_eq!(
             item_url(&pr()),
@@ -610,27 +645,6 @@ mod tests {
             item_url(&media_health()),
             Some("https://wiki.example.com/system#indexers")
         );
-    }
-
-    #[cfg(feature = "private")]
-    #[test]
-    fn item_hint_media_blocked_includes_investigate() {
-        assert_eq!(
-            item_hint(&media_blocked()),
-            Some("↩ to open · i to investigate".to_string())
-        );
-    }
-
-    #[cfg(feature = "private")]
-    #[test]
-    fn item_hint_media_missing_is_open_only() {
-        assert_eq!(item_hint(&media_missing()), Some("↩ to open".to_string()));
-    }
-
-    #[cfg(feature = "private")]
-    #[test]
-    fn item_hint_media_health_is_open_only() {
-        assert_eq!(item_hint(&media_health()), Some("↩ to open".to_string()));
     }
 
     #[test]
@@ -777,6 +791,135 @@ mod tests {
         );
         assert!(result.is_empty());
     }
+
+    // ── format_age_short ─────────────────────────────────────────────────────
+
+    #[test]
+    fn format_age_short_zero_is_now() {
+        assert_eq!(format_age_short(chrono::Duration::seconds(0)), "now");
+    }
+
+    #[test]
+    fn format_age_short_59_seconds_is_now() {
+        assert_eq!(format_age_short(chrono::Duration::seconds(59)), "now");
+    }
+
+    #[test]
+    fn format_age_short_60_seconds_is_1m() {
+        assert_eq!(format_age_short(chrono::Duration::seconds(60)), "1m");
+    }
+
+    #[test]
+    fn format_age_short_59_minutes_is_59m() {
+        assert_eq!(format_age_short(chrono::Duration::seconds(3599)), "59m");
+    }
+
+    #[test]
+    fn format_age_short_1_hour_is_1h() {
+        assert_eq!(format_age_short(chrono::Duration::seconds(3600)), "1h");
+    }
+
+    #[test]
+    fn format_age_short_23_hours_is_23h() {
+        assert_eq!(format_age_short(chrono::Duration::seconds(86399)), "23h");
+    }
+
+    #[test]
+    fn format_age_short_1_day_is_1d() {
+        assert_eq!(format_age_short(chrono::Duration::seconds(86400)), "1d");
+    }
+
+    #[test]
+    fn format_age_short_99_days_is_99d() {
+        assert_eq!(format_age_short(chrono::Duration::days(99)), "99d");
+    }
+
+    // ── truncate_to_width ────────────────────────────────────────────────────
+
+    #[test]
+    fn truncate_to_width_fits_exactly_unchanged() {
+        assert_eq!(truncate_to_width("hello", 5), "hello");
+    }
+
+    #[test]
+    fn truncate_to_width_fits_within_unchanged() {
+        assert_eq!(truncate_to_width("hello", 10), "hello");
+    }
+
+    #[test]
+    fn truncate_to_width_overflow_appends_ellipsis() {
+        assert_eq!(truncate_to_width("hello", 4), "hel…");
+    }
+
+    #[test]
+    fn truncate_to_width_width_one_gives_ellipsis() {
+        assert_eq!(truncate_to_width("hello", 1), "…");
+    }
+
+    #[test]
+    fn truncate_to_width_width_zero_gives_empty() {
+        assert_eq!(truncate_to_width("hello", 0), "");
+    }
+
+    #[test]
+    fn truncate_to_width_empty_string_unchanged() {
+        assert_eq!(truncate_to_width("", 5), "");
+    }
+
+    // ── item_tag ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn item_tag_pr_is_pr() {
+        assert_eq!(item_tag(&pr()), "PR");
+    }
+
+    #[test]
+    fn item_tag_issue_is_issue() {
+        assert_eq!(item_tag(&issue()), "Issue");
+    }
+
+    #[test]
+    fn item_tag_ci_is_ci() {
+        assert_eq!(item_tag(&ci()), "CI");
+    }
+
+    #[test]
+    fn item_tag_linear_is_linear() {
+        assert_eq!(item_tag(&linear()), "Linear");
+    }
+
+    #[test]
+    fn item_tag_loki_is_loki() {
+        assert_eq!(item_tag(&loki()), "Loki");
+    }
+
+    // ── item_age ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn item_age_pr_returns_age_field() {
+        let item = StatusItem::Pr(domain::PullRequest {
+            age: chrono::Duration::hours(3),
+            ..match make_pr(domain::PrKind::Mine) {
+                StatusItem::Pr(p) => p,
+                _ => unreachable!(),
+            }
+        });
+        assert_eq!(item_age(&item), chrono::Duration::hours(3));
+    }
+
+    #[test]
+    fn item_age_issue_returns_age_field() {
+        let item = StatusItem::Issue(domain::Issue {
+            age: chrono::Duration::days(2),
+            ..match issue() {
+                StatusItem::Issue(i) => i,
+                _ => unreachable!(),
+            }
+        });
+        assert_eq!(item_age(&item), chrono::Duration::days(2));
+    }
+
+    // ── filter ───────────────────────────────────────────────────────────────
 
     #[test]
     fn filter_is_empty_when_both_none() {

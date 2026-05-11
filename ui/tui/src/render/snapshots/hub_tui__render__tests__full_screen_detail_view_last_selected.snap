@@ -4,7 +4,7 @@ expression: screen_text(&buf)
 ---
 ╭ hub errors ──────────────────────────────────────────────────────────────────╮
 │● check / fmt · failed — ooloth/hub                                           │
-│● check / fmt · failed — ooloth/hub  ↩ to open · i to investigate             │
+│● check / fmt · failed — ooloth/hub                                           │
 │                                                                              │
 │                                                                              │
 │                                                                              │
