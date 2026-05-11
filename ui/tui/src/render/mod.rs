@@ -6,9 +6,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
 };
 
-use crate::display::{
-    display_item_line, display_item_urgency, format_age_short, DisplayItem, Filter, LineParts,
-};
+use crate::display::{display_item_line, display_item_urgency, DisplayItem, Filter, LineParts};
 use crate::state::{
     compute_enter_action, compute_investigate_action, App, EnterAction, InvestigateAction,
     RefreshState, Screen,
@@ -386,10 +384,9 @@ fn render_unified(
 
         let parts = display_item_line(item);
 
-        let age = format_age_short(parts.age);
         let item_chrome = match &parts.source {
-            Some(source) => format!("{source} · {age}"),
-            None => age,
+            Some(source) => format!("{source} · {}", parts.age),
+            None => parts.age.clone(),
         };
 
         let dot_style = if item_idx == selected {

@@ -39,7 +39,7 @@ pub(crate) struct LineParts {
     pub(crate) dim_inline: Option<String>,
     pub(crate) source: Option<String>,
     pub(crate) category: &'static str,
-    pub(crate) age: chrono::Duration,
+    pub(crate) age: String,
 }
 
 impl LineParts {
@@ -49,6 +49,17 @@ impl LineParts {
             s.push_str(i);
         }
         s
+    }
+
+    pub(crate) fn all_text(&self) -> String {
+        [
+            self.category,
+            &self.primary,
+            self.dim_inline.as_deref().unwrap_or(""),
+            self.source.as_deref().unwrap_or(""),
+            &self.age,
+        ]
+        .join(" ")
     }
 }
 
@@ -148,7 +159,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
                 dim_inline: Some(format!(" (#{})", pr.number)),
                 source: Some(pr.repo.to_string()),
                 category: "PR",
-                age: pr.age,
+                age: format_age_short(pr.age),
             }
         }
         StatusItem::Issue(i) => LineParts {
@@ -156,7 +167,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             dim_inline: Some(format!(" (#{})", i.number)),
             source: Some(i.repo.to_string()),
             category: "Issue",
-            age: i.age,
+            age: format_age_short(i.age),
         },
         StatusItem::Ci(c) => {
             let primary = match (&c.job_name, &c.step_name, &c.error) {
@@ -170,7 +181,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
                 dim_inline: None,
                 source: Some(c.repo.to_string()),
                 category: "CI",
-                age: c.age,
+                age: format_age_short(c.age),
             }
         }
         StatusItem::Linear(l) => LineParts {
@@ -178,14 +189,14 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             dim_inline: Some(format!(" ({})", l.identifier)),
             source: None,
             category: "Linear",
-            age: l.age,
+            age: format_age_short(l.age),
         },
         StatusItem::Loki(l) => LineParts {
             primary: format!("{} · {}", l.title, l.message),
             dim_inline: None,
             source: Some(format!("{}:{}", l.project, l.env)),
             category: "Loki",
-            age: l.age,
+            age: format_age_short(l.age),
         },
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => LineParts {
@@ -193,7 +204,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             dim_inline: None,
             source: Some(b.source.clone()),
             category: "Media",
-            age: b.age,
+            age: format_age_short(b.age),
         },
         #[cfg(feature = "private")]
         StatusItem::MediaMissing(m) => LineParts {
@@ -201,7 +212,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             dim_inline: None,
             source: Some(m.source.clone()),
             category: "Media",
-            age: m.age,
+            age: format_age_short(m.age),
         },
         #[cfg(feature = "private")]
         StatusItem::MediaHealth(h) => LineParts {
@@ -209,7 +220,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             dim_inline: None,
             source: Some(h.source.clone()),
             category: "Media",
-            age: h.age,
+            age: format_age_short(h.age),
         },
         #[cfg(feature = "private")]
         StatusItem::MediaBacklog { source, count } => LineParts {
@@ -217,7 +228,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             dim_inline: None,
             source: Some(source.clone()),
             category: "Media",
-            age: chrono::Duration::zero(),
+            age: "now".to_string(),
         },
     }
 }
@@ -267,7 +278,7 @@ pub(crate) fn display_item_line(item: &DisplayItem) -> LineParts {
                     dim_inline: None,
                     source: None,
                     category: "",
-                    age: chrono::Duration::zero(),
+                    age: String::new(),
                 },
             }
         }
@@ -366,7 +377,7 @@ pub(crate) fn build_unified(items: Vec<StatusItem>, filter: &Filter) -> Vec<Disp
             }
             if let Some(q) = &filter.query {
                 if !item_line(item)
-                    .flat()
+                    .all_text()
                     .to_lowercase()
                     .contains(&q.to_lowercase())
                 {
@@ -384,6 +395,7 @@ pub(crate) fn build_unified(items: Vec<StatusItem>, filter: &Filter) -> Vec<Disp
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use workflows::status::StatusItem;
 
     #[cfg(feature = "private")]
@@ -735,6 +747,26 @@ mod tests {
         );
         assert_eq!(result.len(), 1);
         assert!(matches!(&result[0], DisplayItem::Single(StatusItem::Ci(_))));
+    }
+
+    // issue() fields: primary="Fix bug", dim_inline=" (#7)", source="owner/repo",
+    // category="Issue", age=Duration::zero()->"now"
+    #[rstest]
+    #[case("Fix bug")] // primary
+    #[case("fix bug")] // primary, case-insensitive
+    #[case("#7")] // dim_inline
+    #[case("owner/repo")] // source — currently fails
+    #[case("Issue")] // category — currently fails
+    #[case("now")] // age — currently fails
+    fn build_unified_query_searches_all_visible_text(#[case] query: &str) {
+        let result = build_unified(
+            vec![issue()],
+            &Filter {
+                category: None,
+                query: Some(query.to_string()),
+            },
+        );
+        assert!(!result.is_empty(), "query {query:?} should match issue");
     }
 
     #[test]
