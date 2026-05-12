@@ -68,4 +68,4 @@ just build              # build all crates
 
 - [Add a project](docs/playbooks/add-a-project.md) — add a codebase to your device config
 - [Add a workflow](docs/playbooks/add-a-workflow.md) — implement a new workflow end-to-end
-- [Add a skill](docs/playbooks/add-a-skill.md) — add a Claude Code investigation skill
+- [Add a prompt](docs/playbooks/add-a-prompt.md) — add a Claude Code investigation prompt
