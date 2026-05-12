@@ -242,6 +242,19 @@ async fn run_loop(
                         Err(msg) => app.ui.flash = Some(msg),
                     }
                 }
+                Effect::LaunchIssue { repo, number } => {
+                    match resolve_investigation_cwd(config, &repo).await {
+                        Ok(cwd) => {
+                            if let Err(err) = investigations::launch(
+                                investigations::issue::config(&repo, number),
+                                &cwd,
+                            ) {
+                                app.ui.flash = Some(err.to_string());
+                            }
+                        }
+                        Err(msg) => app.ui.flash = Some(msg),
+                    }
+                }
                 Effect::LaunchLoki {
                     project,
                     env,

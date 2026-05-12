@@ -83,6 +83,10 @@ pub(crate) enum InvestigateAction {
         repo: String,
         run_url: String,
     },
+    LaunchIssue {
+        repo: String,
+        number: u64,
+    },
     LaunchLoki {
         project: String,
         env: String,
@@ -129,6 +133,10 @@ pub(crate) enum Effect {
     LaunchCi {
         repo: String,
         run_url: String,
+    },
+    LaunchIssue {
+        repo: String,
+        number: u64,
     },
     LaunchLoki {
         project: String,

@@ -110,6 +110,10 @@ pub(crate) enum InvestigationKind {
         repo: String,
         run_url: String,
     },
+    Issue {
+        repo: String,
+        number: u64,
+    },
     Loki {
         project: String,
         env: String,
@@ -129,6 +133,10 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
         StatusItem::Ci(c) => Some(InvestigationKind::Ci {
             repo: c.repo.to_string(),
             run_url: c.url.clone(),
+        }),
+        StatusItem::Issue(i) => Some(InvestigationKind::Issue {
+            repo: i.repo.to_string(),
+            number: i.number,
         }),
         StatusItem::Loki(l) => Some(InvestigationKind::Loki {
             project: l.project.clone(),
@@ -726,6 +734,14 @@ mod tests {
         assert!(matches!(
             item_investigation(&ci()),
             Some(InvestigationKind::Ci { .. })
+        ));
+    }
+
+    #[test]
+    fn item_investigation_issue_returns_kind() {
+        assert!(matches!(
+            item_investigation(&issue()),
+            Some(InvestigationKind::Issue { .. })
         ));
     }
 

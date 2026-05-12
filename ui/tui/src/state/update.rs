@@ -246,6 +246,9 @@ impl App {
             InvestigateAction::LaunchCi { repo, run_url } => {
                 vec![Effect::LaunchCi { repo, run_url }]
             }
+            InvestigateAction::LaunchIssue { repo, number } => {
+                vec![Effect::LaunchIssue { repo, number }]
+            }
             InvestigateAction::LaunchLoki {
                 project,
                 env,
@@ -357,6 +360,9 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
     match item_investigation(&item) {
         Some(InvestigationKind::Ci { repo, run_url }) => {
             InvestigateAction::LaunchCi { repo, run_url }
+        }
+        Some(InvestigationKind::Issue { repo, number }) => {
+            InvestigateAction::LaunchIssue { repo, number }
         }
         Some(InvestigationKind::Loki {
             project,
@@ -542,7 +548,7 @@ mod tests {
     }
 
     #[test]
-    fn investigate_action_ignores_unmapped_items() {
+    fn investigate_action_launches_issue_from_unified_list_selection() {
         let app = app_with_items(vec![DisplayItem::Single(StatusItem::Issue(
             domain::Issue {
                 number: 31,
@@ -552,6 +558,31 @@ mod tests {
                 age: chrono::Duration::zero(),
                 urgency: domain::Urgency::Low,
                 labels: vec![],
+            },
+        ))]);
+        assert_eq!(
+            compute_investigate_action(&app),
+            InvestigateAction::LaunchIssue {
+                repo: "ooloth/hub".to_string(),
+                number: 31,
+            }
+        );
+    }
+
+    #[test]
+    fn investigate_action_returns_none_for_unmapped_items() {
+        let app = app_with_items(vec![DisplayItem::Single(StatusItem::Pr(
+            domain::PullRequest {
+                number: 1,
+                title: "some pr".to_string(),
+                repo: domain::RepoSlug::new("ooloth", "hub"),
+                url: "https://github.com/ooloth/hub/pull/1".to_string(),
+                age: chrono::Duration::zero(),
+                urgency: domain::Urgency::Low,
+                kind: domain::PrKind::ToReview,
+                author: "alice".to_string(),
+                review_decision: None,
+                review_count: 0,
             },
         ))]);
         assert_eq!(compute_investigate_action(&app), InvestigateAction::None);
