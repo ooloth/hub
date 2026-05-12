@@ -68,10 +68,10 @@ link "$HUB_PRIVATE/ui/tui/src"       "$HUB_ROOT/ui/tui/src/private"
 link "$DEVICE_ENV"                   "$HUB_ROOT/.env"
 link "$DEVICE_CONFIG"                "$HUB_ROOT/hub.toml"
 
-# Home-laptop-only symlinks (media server workflows and skills).
+# Home-laptop-only symlinks (media server workflows and prompts).
 if [[ "$DEVICE" == "home-laptop" ]]; then
   link "$HUB_PRIVATE/ui/tui/src/investigations/media.rs" "$HUB_ROOT/ui/tui/src/investigations/media.rs"
-  link "$HUB_PRIVATE/.claude/skills/media-investigate" "$HUB_ROOT/.agents/skills/media-investigate"
+  link "$HUB_PRIVATE/.agents/prompts/media-investigate.md" "$HUB_ROOT/.agents/prompts/media-investigate.md"
 fi
 
 echo ""

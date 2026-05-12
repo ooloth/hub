@@ -7,7 +7,10 @@ pub(crate) mod loki;
 pub(crate) mod media;
 
 pub(crate) struct LaunchConfig {
-    pub(crate) command: String,
+    pub(crate) system_prompt: String,
+    pub(crate) prompt: String,
+    pub(crate) model: String,
+    pub(crate) allowed_tools: String,
     pub(crate) env: Vec<(String, String)>,
 }
 
@@ -16,12 +19,22 @@ pub(crate) fn launch(config: LaunchConfig, cwd: &Path) -> Result<()> {
         bail!("not in tmux; investigation requires a tmux session");
     }
 
+    let command = format!(
+        "claude --dangerously-skip-permissions --model {} --allowedTools '{}' --system-prompt \"$HUB_SYSTEM_PROMPT\" \"$HUB_TASK_PROMPT\"",
+        config.model,
+        config.allowed_tools,
+    );
+
     let mut cmd = std::process::Command::new("tmux");
     cmd.args(["split-window", "-h", "-c"]).arg(cwd);
+    cmd.arg("-e")
+        .arg(format!("HUB_SYSTEM_PROMPT={}", config.system_prompt));
+    cmd.arg("-e")
+        .arg(format!("HUB_TASK_PROMPT={}", config.prompt));
     for (k, v) in &config.env {
         cmd.arg("-e").arg(format!("{k}={v}"));
     }
-    cmd.arg(&config.command);
+    cmd.arg(&command);
 
     let status = cmd.status().context("failed to start tmux split-window")?;
 
