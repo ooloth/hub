@@ -40,10 +40,11 @@ It also creates individual file symlinks for private investigation modules:
 hub/ui/tui/src/investigations/media.rs  →  hub-private/ui/tui/src/investigations/media.rs
 ```
 
-Private skills follow the same individual-file pattern: skill files that
-reference internal endpoints or queries live in `hub-private/.claude/skills/`
-and are symlinked individually into `hub/.claude/skills/`. See the
-[add-a-skill playbook](../playbooks/add-a-skill.md) for the full steps.
+Private investigation prompts follow the same individual-file pattern:
+prompt files that reference internal endpoints or queries live in
+`hub-private/prompts/` and are symlinked individually into
+`hub/prompts/`. See the
+[add-a-prompt playbook](../playbooks/add-a-prompt.md) for the full steps.
 
 When adding a new private investigation module, add a corresponding `link`
 call to `scripts/setup-private.sh` and a gitignore entry in `.gitignore`.

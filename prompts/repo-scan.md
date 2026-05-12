@@ -1,12 +1,3 @@
----
-name: repo-scan
-description: Scan repos listed in hub.toml for a given issue category and file well-defined GitHub issues for findings.
-argument-hint: '[theme] [project(s)] [focus]'
-allowed-tools: [Bash]
-effort: high
-model: opus
----
-
 ## Purpose
 
 Scans every repo listed in hub.toml for a named issue category, surfaces ranked findings grouped by repo, and files GitHub issues for confirmed findings — with duplicate detection and label management handled automatically.
@@ -59,7 +50,7 @@ repo = "ooloth/hub"
 name = "repo-scan-docs"
 ```
 
-Projects without the relevant `repo-scan-<theme>` entry are skipped in automated runs. Interactive runs may override scope (see Workflow step 0).
+Projects without the relevant `repo-scan-<theme>` entry are skipped in automated runs. The task prompt may override scope (see Workflow step 0).
 
 `name` is used as the human label in output and as the local clone path (future). `repo` is the GitHub slug used for all `gh api` calls.
 
@@ -98,9 +89,9 @@ gh issue list --repo {owner}/{repo} --state open --limit 100 \
 
 ### 0. Determine scope
 
-Parse what the user wrote when invoking the skill. Interpret it in this order:
+Parse the task prompt. Interpret it in this order:
 
-**Theme** — the first token after `/repo-scan`. Must match a row in the theme lookup table.
+**Theme** — the first token of the task prompt. Must match a row in the theme lookup table.
 - If present and valid: use it
 - If missing or unrecognised: default to all themes that have opted-in repos in hub.toml; log the choice
 

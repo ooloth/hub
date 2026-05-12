@@ -1,6 +1,6 @@
 use super::LaunchConfig;
 
-const PROMPT: &str = include_str!("../../../../.agents/prompts/loki-investigate.md");
+const PROMPT: &str = include_str!("../../../../prompts/loki-investigate.md");
 
 pub(crate) fn config(
     project: &str,

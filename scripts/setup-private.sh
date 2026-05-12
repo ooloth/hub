@@ -71,7 +71,7 @@ link "$DEVICE_CONFIG"                "$HUB_ROOT/hub.toml"
 # Home-laptop-only symlinks (media server workflows and prompts).
 if [[ "$DEVICE" == "home-laptop" ]]; then
   link "$HUB_PRIVATE/ui/tui/src/investigations/media.rs" "$HUB_ROOT/ui/tui/src/investigations/media.rs"
-  link "$HUB_PRIVATE/.agents/prompts/media-investigate.md" "$HUB_ROOT/.agents/prompts/media-investigate.md"
+  link "$HUB_PRIVATE/prompts/media-investigate.md" "$HUB_ROOT/prompts/media-investigate.md"
 fi
 
 echo ""

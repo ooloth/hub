@@ -1,6 +1,6 @@
 use super::LaunchConfig;
 
-const PROMPT: &str = include_str!("../../../../.agents/prompts/issue-investigate.md");
+const PROMPT: &str = include_str!("../../../../prompts/issue-investigate.md");
 
 pub(crate) fn config(repo: &str, number: u64) -> LaunchConfig {
     LaunchConfig {

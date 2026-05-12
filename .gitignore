@@ -10,5 +10,5 @@ workflows/src/private
 ui/cli/src/private
 ui/tui/src/private
 ui/tui/src/investigations/media.rs
-.agents/prompts/media-investigate.md
+prompts/media-investigate.md
 .trekker/
