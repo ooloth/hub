@@ -153,6 +153,7 @@ validation was run instead.
 | ------------------------------------------------------- | ------------------------------------------- |
 | `docs/playbooks/add-a-workflow.md`                      | Adding a new workflow end to end            |
 | `docs/playbooks/add-a-skill.md`                         | Adding a Claude Code investigation skill    |
+| `docs/playbooks/add-an-investigation.md`                | Adding a new TUI investigation type         |
 | `docs/playbooks/add-a-project.md`                       | Adding a project to a device config         |
 | `docs/playbooks/add-a-private-workflow.md`              | Adding a workflow to hub-private            |
 | `docs/playbooks/set-up-private-workflows-repository.md` | First-time or recovery setup of hub-private |
