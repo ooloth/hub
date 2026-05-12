@@ -130,28 +130,13 @@ INSTA_UPDATE=always cargo test -p hub-tui
 ## Investigations
 
 Investigation types live in `investigations/`. Each type is a separate file;
-`mod.rs` provides the shared `launch_in_tmux_split(command, cwd)` helper.
+`mod.rs` provides the shared tmux launcher. Each file exposes a `config()`
+function that returns a `LaunchConfig` with a system prompt (loaded via
+`include_str!` from `prompts/`), a context-specific prompt string,
+and tool/model settings.
 
-```
-investigations/
-    mod.rs      — shared tmux split-window launcher
-    ci.rs       — CI failure investigation (github-ci-investigate skill)
-```
-
-Each file exposes a `launch(…context…, cwd)` function that builds a command
-string and delegates to `launch_in_tmux_split`. The command string invokes a
-Claude Code skill with the relevant context as arguments.
-
-**Adding a new investigation type** (e.g. Grafana logs):
-
-1. Add an `Effect` variant in `state/types.rs`: `LaunchGrafana { log_url: String }`
-2. Add an `InvestigateAction` variant in `state/types.rs` and handle it in
-   `compute_investigate_action()` in `state/update.rs`
-3. Create `investigations/grafana.rs` with a `launch(log_url, cwd)` function
-   and its unit test
-4. Declare `pub(crate) mod grafana;` in `investigations/mod.rs`
-5. Handle the new `Effect` variant in the `for effect in` loop in `run_loop()`
-   in `main.rs`
+See the [add-an-investigation playbook](../../docs/playbooks/add-an-investigation.md)
+for the full step-by-step.
 
 ## Cache and schema version
 
@@ -223,6 +208,14 @@ Three levels. `Enter` drills in; `Esc` backs out one level.
 The TUI enters raw mode and the alternate screen on launch, and restores both
 on exit — even if an error is returned from the event loop. The restore
 sequence runs unconditionally before propagating any error.
+
+## Playbooks
+
+| Doc                                                          | Covers                              |
+| ------------------------------------------------------------ | ----------------------------------- |
+| `docs/playbooks/add-an-investigation.md`                     | Adding a new investigation type     |
+| `docs/playbooks/add-a-private-workflow.md`                   | Adding a private workflow end to end |
+| `docs/architecture/private-workflows.md`                     | Device-specific module cfg pattern  |
 
 ## Running
 

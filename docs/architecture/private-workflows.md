@@ -46,8 +46,34 @@ prompt files that reference internal endpoints or queries live in
 `hub/prompts/`. See the
 [add-a-prompt playbook](../playbooks/add-a-prompt.md) for the full steps.
 
-When adding a new private investigation module, add a corresponding `link`
-call to `scripts/setup-private.sh` and a gitignore entry in `.gitignore`.
+When adding a new private investigation module, add corresponding entries to
+`scripts/setup-private.sh` and `.gitignore`.
+
+**Device-specific modules require a stub on every other device.** The `private`
+feature is enabled on every machine with hub-private, so `#[cfg(feature = "private")]`
+alone is not sufficient — the file must also exist on every machine where that
+feature is active, or the compiler (and `cargo fmt`) will error.
+
+The pattern in `scripts/setup-private.sh`:
+
+```bash
+if [[ "$DEVICE" == "home-laptop" ]]; then
+  link "$HUB_PRIVATE/ui/tui/src/investigations/media.rs" \
+       "$HUB_ROOT/ui/tui/src/investigations/media.rs"
+else
+  stub "$HUB_ROOT/ui/tui/src/investigations/media.rs" \
+    'use super::LaunchConfig;
+
+pub(crate) fn config(_title: &str, _error: &str) -> LaunchConfig {
+    unreachable!("media investigation not available on this device")
+}'
+fi
+```
+
+The stub implements the same API as the real module so compilation succeeds
+on all devices. The `unreachable!()` body is never reached on machines where
+the investigation is not configured. CI creates an empty stub (sufficient for
+`cargo fmt --check`; CI never compiles with `--features private`).
 
 The first two are gitignored in hub. `.env` and `hub.toml` are also gitignored,
 so none of the symlinks are ever committed to the public repo.

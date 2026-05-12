@@ -23,6 +23,7 @@ jobs:
       # rustfmt resolves mod declarations even behind #[cfg(feature = "private")],
       # so it fails if the private symlinks (from hub-private) aren't present.
       # Empty stubs satisfy the resolver; the feature gate keeps them out of compilation.
+      # Device-specific investigation modules (e.g. media.rs) follow the same pattern.
       - name: create private module stubs
         run: |
           mkdir -p clients/src/private workflows/src/private ui/cli/src/private ui/tui/src/private
@@ -30,6 +31,7 @@ jobs:
           printf '\n' > workflows/src/private/mod.rs
           printf '\n' > ui/cli/src/private/mod.rs
           printf '\n' > ui/tui/src/private/mod.rs
+          printf '\n' > ui/tui/src/investigations/media.rs
 
       - name: fmt
         run: cargo fmt --check

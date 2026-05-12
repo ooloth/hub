@@ -61,6 +61,17 @@ link() {
   fi
 }
 
+stub() {
+  local path="$1"
+  local content="$2"
+  if [[ -L "$path" || -e "$path" ]]; then
+    echo "already exists: $path"
+  else
+    printf '%s\n' "$content" > "$path"
+    echo "stubbed: $path"
+  fi
+}
+
 link "$HUB_PRIVATE/clients/src"      "$HUB_ROOT/clients/src/private"
 link "$HUB_PRIVATE/workflows/src"    "$HUB_ROOT/workflows/src/private"
 link "$HUB_PRIVATE/ui/cli/src"       "$HUB_ROOT/ui/cli/src/private"
@@ -68,10 +79,18 @@ link "$HUB_PRIVATE/ui/tui/src"       "$HUB_ROOT/ui/tui/src/private"
 link "$DEVICE_ENV"                   "$HUB_ROOT/.env"
 link "$DEVICE_CONFIG"                "$HUB_ROOT/hub.toml"
 
-# Home-laptop-only symlinks (media server workflows and prompts).
+# Device-specific investigation modules: home-laptop gets the real symlink;
+# all other devices get a stub so the file exists for compilation and cargo fmt.
 if [[ "$DEVICE" == "home-laptop" ]]; then
   link "$HUB_PRIVATE/ui/tui/src/investigations/media.rs" "$HUB_ROOT/ui/tui/src/investigations/media.rs"
   link "$HUB_PRIVATE/prompts/media-investigate.md" "$HUB_ROOT/prompts/media-investigate.md"
+else
+  stub "$HUB_ROOT/ui/tui/src/investigations/media.rs" \
+    'use super::LaunchConfig;
+
+pub(crate) fn config(_title: &str, _error: &str) -> LaunchConfig {
+    unreachable!("media investigation not available on this device")
+}'
 fi
 
 echo ""
