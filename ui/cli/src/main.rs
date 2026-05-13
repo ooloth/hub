@@ -15,6 +15,8 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     Fetch,
+    /// Implement a GitHub issue autonomously, or all status:ready-for-agent issues.
+    Implement(commands::implement::ImplementArgs),
     Status,
 }
 
@@ -24,6 +26,7 @@ async fn main() -> Result<()> {
     let config = config::Config::load()?;
     match cli.command {
         Commands::Fetch => commands::fetch::run(&config).await?,
+        Commands::Implement(args) => commands::implement::run(&args, &config).await?,
         Commands::Status => commands::status::run(&config).await?,
     }
     Ok(())

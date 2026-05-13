@@ -14,6 +14,12 @@ op +ARGS:
 status:
     op run --env-file=.env -- cargo run -p hub-cli {{_features}} -- status
 
+implement REPO ISSUE:
+    op run --env-file=.env -- cargo run -p hub-cli {{_features}} -- implement --repo {{REPO}} --issue {{ISSUE}}
+
+implement-all:
+    op run --env-file=.env -- cargo run -p hub-cli {{_features}} -- implement --all
+
 check:
     taplo fmt
     taplo check
