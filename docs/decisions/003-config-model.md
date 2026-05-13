@@ -90,8 +90,8 @@ name = "home-server-health"
 Workflow objects have `name` as the only required field. Everything beyond
 that is defined by the individual workflow implementation. The config parser
 passes the full object to the workflow; the workflow reads what it needs.
-Per-workflow schemas live in `config/schemas/workflows/` and document what each
-workflow accepts.
+Per-workflow object shapes live as `workflow_<name>` definitions in
+`config/schemas/hub.toml.schema.json` and document what each workflow accepts.
 
 ### Schema
 
