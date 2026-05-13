@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use std::{collections::HashSet, path::Path, path::PathBuf};
+use std::{path::Path, path::PathBuf};
 use tokio::process::Command;
 
 pub fn repos_dir() -> PathBuf {
@@ -35,9 +35,6 @@ pub async fn run(projects: &[(String, String)], github_token: &str) -> Result<()
     tokio::fs::create_dir_all(&dir)
         .await
         .context("failed to create ~/.hub/repos")?;
-
-    let names: HashSet<&str> = projects.iter().map(|(n, _)| n.as_str()).collect();
-    warn_orphans(&dir, &names);
 
     for (name, repo) in projects {
         fetch_project(name, repo, github_token, &dir).await?;
@@ -190,23 +187,35 @@ async fn clean_merged_worktrees(bare_dir: &str) -> Result<()> {
 
     for (wt_path, branch) in worktrees.into_iter().skip(1) {
         let Some(branch) = branch else { continue };
-        let remote_ref = format!("refs/remotes/origin/{branch}");
 
-        let check = Command::new("git")
+        // Skip branches that were never pushed: no upstream means the missing
+        // remote tracking ref is expected, not a signal that the branch was merged.
+        let has_upstream = Command::new("git")
+            .args(["-C", bare_dir, "config", &format!("branch.{branch}.remote")])
+            .output()
+            .await
+            .context("git config branch.remote check failed")?
+            .status
+            .success();
+        if !has_upstream {
+            continue;
+        }
+
+        let remote_ref = format!("refs/remotes/origin/{branch}");
+        let ref_gone = !Command::new("git")
             .args(["-C", bare_dir, "rev-parse", "--verify", &remote_ref])
             .output()
             .await
-            .context("git rev-parse failed")?;
+            .context("git rev-parse failed")?
+            .status
+            .success();
 
-        if !check.status.success() {
-            let rm = Command::new("git")
+        if ref_gone {
+            Command::new("git")
                 .args(["-C", bare_dir, "worktree", "remove", "--force", &wt_path])
                 .output()
                 .await
                 .context("git worktree remove failed")?;
-            if rm.status.success() {
-                eprintln!("hub fetch: removed merged worktree {branch}");
-            }
         }
     }
 
@@ -234,23 +243,6 @@ fn parse_worktree_list(output: &str) -> Vec<(String, Option<String>)> {
     }
 
     result
-}
-
-fn warn_orphans(repos_dir: &Path, project_names: &HashSet<&str>) {
-    let Ok(entries) = std::fs::read_dir(repos_dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        if entry.path().is_dir() {
-            if let Some(dir_name) = entry.file_name().to_str() {
-                if !project_names.contains(dir_name) {
-                    eprintln!(
-                        "warning: ~/.hub/repos/{dir_name} is not in hub.toml (orphaned clone)"
-                    );
-                }
-            }
-        }
-    }
 }
 
 #[cfg(test)]
