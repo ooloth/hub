@@ -47,8 +47,17 @@ explicit: everything in `clients/` is deterministic and testable with
 fixed inputs; everything in `agents/` involves LLM judgment and
 requires different testing strategies (snapshot tests, evals).
 
-**The `agents/` crate has not been built yet.** Background automation
-will be added when a concrete use case warrants it.
+**The `agents/` crate has not been built yet.** The first concrete
+execution workflow — `implement-issue` — currently orchestrates
+worktree setup, validation, implementation, and PR opening via the CLI
+without the `agents/` crate. Background LLM calls (urgency scoring,
+issue drafting, error grouping) will be added to `agents/` as
+individual use cases mature.
+
+Execution workflows will grow in scope over time: handling larger
+multi-step tasks, automated code review passes, and cross-repo changes.
+The `implement-issue` pattern — claim, validate, implement, test,
+PR — is the template subsequent workflows will extend.
 
 ### Interactive investigation → `prompts/`
 

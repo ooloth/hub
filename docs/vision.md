@@ -17,6 +17,12 @@ what to do → act (or delegate to an agent) → learn from outcomes.
 This loop applies to every domain. The workflows are just different
 sources feeding the same loop.
 
+Hub is the aggregator — it pulls every project in via `hub.toml` rather
+than being installed into each project. This inversion matters: urgency
+can only be compared across domains from a central vantage point, and
+execution workflows can be defined once for all opted-in repos without
+copy-pasting orchestration scripts across the codebase.
+
 Other tools already surface individual signals. Hub adds three things
 they don't:
 
@@ -170,15 +176,20 @@ with `hub.toml` context pre-loaded. Claude iterates — querying logs, fetching 
 checking API state — until it produces a diagnosis. You're in the loop; Claude is the
 analyst. The investigation is multi-turn and human-supervised.
 
-**Tier 3 — Propose.** For well-understood problem categories, hub runs unattended and drafts
-the work: a GitHub issue with structured context, and where the fix is clear, a draft PR.
-You wake up to a proposed solution, not just a notification. Approval is always required
-before anything merges — hub proposes, you decide.
+**Tier 3 — Execute.** For well-understood problem categories, hub runs unattended: it detects
+the signal, writes the GitHub issue, implements the fix on a branch, and opens a draft PR for
+review. You wake up to proposed work ready to merge, not just a notification. Approval is always
+required before anything merges — hub executes, you review and decide.
+
+The first execution workflow is `implement-issue`: given a `status:ready-for-agent` issue, hub
+creates a worktree, validates the issue's claims, implements the fix, writes missing tests, and
+opens a draft PR. This is the pattern that subsequent workflows will follow and extend — handling
+larger tasks, multi-step implementations, automated code review passes, and cross-repo changes.
 
 The graduation path: a new workflow surfaces signals (Tier 1) first. Once the signal pattern
-is stable and the investigation logic is understood, it can be scripted into a proposal (Tier 3).
-Not every workflow needs to reach Tier 3 — some signals genuinely require human judgment
-every time.
+is stable and the investigation logic is understood, it can be scripted into a Tier 3 execution
+workflow. Not every workflow needs to reach Tier 3 — some signals genuinely require human
+judgment every time.
 
 A signal pattern is stable when its urgency classification rules haven't needed adjustment after
 several weeks of live use — the workflow emits items at the expected rate, and the urgency tiers
@@ -186,9 +197,9 @@ feel right without tweaking. Investigation logic is understood when the diagnosi
 repeatable: the same query sequence, the same hypothesis chain, the same conclusion format, every
 time. If each investigation still requires novel judgment, the pattern isn't ready to script.
 
-Trust in proposal quality is earned incrementally. An automated PR that's wrong wastes more
+Trust in execution quality is earned incrementally. An automated PR that's wrong wastes more
 time than no automation at all. Tier 3 is reserved for categories where the pattern is reliable
-enough to stake the cost of a bad proposal on.
+enough to stake the cost of a bad result on.
 
 ## UI evolution
 
