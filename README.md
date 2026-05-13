@@ -25,8 +25,8 @@ prioritized view with agentic capabilities built in:
 - **Launch pad, not chat** — hub surfaces signals and launches Claude Code skills or
   autonomous agents preloaded with the right context; it leverages Claude Code rather than
   reinventing its interface; see [Decision 007](docs/decisions/007-tui-over-web-app.md)
-- **Extensible** — adding a new workflow = adding files to `clients/` and `workflows/`; no
-  registration step
+- **Extensible** — adding a new workflow follows a short, documented playbook spanning
+  `clients/`, `workflows/`, and `config/`; see [add a workflow](docs/playbooks/add-a-workflow.md)
 - **Local-only** — no server, no cloud sync; each device has its own SQLite database and
   runs independently
 - **Rust** — two binaries: `hub` (CLI) and `hub-tui` (Ratatui dashboard); not a web app
