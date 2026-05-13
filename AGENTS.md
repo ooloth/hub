@@ -11,7 +11,7 @@ See [README.md](README.md) for the full feature list and value proposition.
 ## Project Structure
 
 ```
-clients/     # external API wrappers — one subdir per service
+clients/     # external API wrappers — one file (or subdirectory) per external service
 config/      # reads env vars into typed domain structs
 domain/      # types + pure logic; no I/O; no imports from other hub crates
 store/       # local SQLite reads/writes
