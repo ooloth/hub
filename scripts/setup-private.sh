@@ -4,14 +4,22 @@ set -euo pipefail
 # Wire hub-private into this repo via symlinks.
 # Run once per device after cloning hub-private alongside hub.
 #
-# Usage: bash scripts/setup-private.sh <device-name> [path-to-hub-private]
+# Usage: bash scripts/setup-private.sh <device-name> [path-to-hub-private] [worktree-root]
 # Or:    just setup-private <device-name>
 #
 # <device-name> must match files in hub-private/devices/<device-name>.{toml,env}
+# <worktree-root> when set, uses that path as HUB_ROOT and skips .env/hub.toml
+#   linking (used by `hub implement` to wire private modules into fresh worktrees)
 
 DEVICE="${1:-}"
 HUB_PRIVATE="${2:-../hub-private}"
-HUB_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+WORKTREE="${3:-}"
+
+if [[ -n "$WORKTREE" ]]; then
+  HUB_ROOT="$(cd "$WORKTREE" && pwd)"
+else
+  HUB_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+fi
 
 if [[ -z "$DEVICE" ]]; then
   echo "error: device name required"
@@ -76,8 +84,10 @@ link "$HUB_PRIVATE/clients/src"      "$HUB_ROOT/clients/src/private"
 link "$HUB_PRIVATE/workflows/src"    "$HUB_ROOT/workflows/src/private"
 link "$HUB_PRIVATE/ui/cli/src"       "$HUB_ROOT/ui/cli/src/private"
 link "$HUB_PRIVATE/ui/tui/src"       "$HUB_ROOT/ui/tui/src/private"
-link "$DEVICE_ENV"                   "$HUB_ROOT/.env"
-link "$DEVICE_CONFIG"                "$HUB_ROOT/hub.toml"
+if [[ -z "$WORKTREE" ]]; then
+  link "$DEVICE_ENV"                 "$HUB_ROOT/.env"
+  link "$DEVICE_CONFIG"              "$HUB_ROOT/hub.toml"
+fi
 
 # Device-specific investigation modules: home-laptop gets the real symlink;
 # all other devices get a stub so the file exists for compilation and cargo fmt.
@@ -93,7 +103,9 @@ pub(crate) fn config(_title: &str, _error: &str) -> LaunchConfig {
 }'
 fi
 
-echo ""
-echo "done. device: $DEVICE"
-echo "edit hub-private/devices/$DEVICE.toml to configure integrations for this device."
-echo "run 'just check' to verify compilation."
+if [[ -z "$WORKTREE" ]]; then
+  echo ""
+  echo "done. device: $DEVICE"
+  echo "edit hub-private/devices/$DEVICE.toml to configure integrations for this device."
+  echo "run 'just check' to verify compilation."
+fi

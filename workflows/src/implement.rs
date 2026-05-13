@@ -53,6 +53,41 @@ async fn ready_issues(repo: &str) -> Result<Vec<u64>> {
     parse_issue_numbers(&String::from_utf8_lossy(&out.stdout))
 }
 
+/// Wires hub-private symlinks into `worktree` by calling setup-private.sh with
+/// the worktree as root. Skips silently if hub.toml is not a symlink (no private
+/// setup on this machine). Logs a warning on script failure but does not abort.
+async fn setup_private_in_worktree(worktree: &std::path::Path) {
+    let Ok(link_target) = std::fs::read_link("hub.toml") else {
+        return;
+    };
+    let Ok(cwd) = std::env::current_dir() else {
+        return;
+    };
+    let abs = cwd.join(link_target);
+    let Some(device) = abs.file_stem().and_then(|s| s.to_str()).map(str::to_owned) else {
+        return;
+    };
+    let Some(hub_private) = abs.parent().and_then(|p| p.parent()) else {
+        return;
+    };
+    let script = worktree.join("scripts/setup-private.sh");
+    let out = Command::new("bash")
+        .args([
+            script.to_string_lossy().as_ref(),
+            device.as_str(),
+            hub_private.to_string_lossy().as_ref(),
+            worktree.to_string_lossy().as_ref(),
+        ])
+        .output()
+        .await;
+    if let Ok(out) = out {
+        if !out.status.success() {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            eprintln!("warning: setup-private.sh failed in worktree: {stderr}");
+        }
+    }
+}
+
 /// Implements a single GitHub issue by setting up a worktree and invoking
 /// `claude -p` with the implement-issue prompt. Tears down the worktree on
 /// clean exit; leaves it in place on process failure for inspection.
@@ -110,6 +145,8 @@ pub async fn run_one(name: &str, repo: &str, issue: u64) -> Result<()> {
         let stderr = String::from_utf8_lossy(&cred.stderr);
         anyhow::bail!("git config credential.helper failed for {branch}: {stderr}");
     }
+
+    setup_private_in_worktree(&worktree).await;
 
     let task = format!(
         "Implement GitHub issue #{issue} in repo {repo}. Worktree: {worktree_str}. Branch: {branch}."
