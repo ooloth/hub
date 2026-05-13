@@ -14,6 +14,114 @@ fn transcripts_dir() -> PathBuf {
     PathBuf::from(home).join(".hub").join("transcripts")
 }
 
+/// Formats a single stream-json event line into a human-readable transcript
+/// fragment. Returns `None` for event types that don't contribute readable
+/// content (e.g. rate_limit_event, stream_event deltas, system status pings).
+fn format_stream_event(json: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(json).ok()?;
+    match v["type"].as_str()? {
+        "system" if v["subtype"].as_str() == Some("init") => {
+            let model = v["model"].as_str().unwrap_or("?");
+            let session = v["session_id"].as_str().unwrap_or("?");
+            Some(format!(
+                "## Session\nModel: {model}\nSession: {session}\n\n"
+            ))
+        }
+        "assistant" => {
+            let content = v["message"]["content"].as_array()?;
+            let mut out = String::new();
+            for block in content {
+                match block["type"].as_str() {
+                    Some("thinking") => {
+                        let t = block["thinking"].as_str().unwrap_or("");
+                        if !t.is_empty() {
+                            out.push_str("<thinking>\n");
+                            out.push_str(t);
+                            out.push_str("\n</thinking>\n\n");
+                        }
+                    }
+                    Some("text") => {
+                        let t = block["text"].as_str().unwrap_or("");
+                        if !t.is_empty() {
+                            out.push_str(t);
+                            out.push_str("\n\n");
+                        }
+                    }
+                    Some("tool_use") => {
+                        let name = block["name"].as_str().unwrap_or("?");
+                        let input =
+                            serde_json::to_string_pretty(&block["input"]).unwrap_or_default();
+                        out.push_str(&format!("**Tool:** {name}\n```json\n{input}\n```\n\n"));
+                    }
+                    _ => {}
+                }
+            }
+            if out.is_empty() {
+                None
+            } else {
+                Some(out)
+            }
+        }
+        "user" => {
+            let content = v["message"]["content"].as_array()?;
+            let mut out = String::new();
+            for block in content {
+                if block["type"].as_str() != Some("tool_result") {
+                    continue;
+                }
+                let is_error = block["is_error"].as_bool().unwrap_or(false);
+                let label = if is_error {
+                    "**Error:**"
+                } else {
+                    "**Result:**"
+                };
+                // content can be a string or an array of content blocks
+                let text = if let Some(s) = block["content"].as_str() {
+                    s.to_owned()
+                } else if let Some(arr) = block["content"].as_array() {
+                    arr.iter()
+                        .filter_map(|b| b["text"].as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                } else {
+                    continue;
+                };
+                const MAX: usize = 4096;
+                let display = if text.len() > MAX {
+                    format!(
+                        "{}\n\n[...{} chars truncated]",
+                        &text[..MAX],
+                        text.len() - MAX
+                    )
+                } else {
+                    text
+                };
+                out.push_str(&format!("{label}\n```\n{display}\n```\n\n"));
+            }
+            if out.is_empty() {
+                None
+            } else {
+                Some(out)
+            }
+        }
+        "result" => {
+            let duration_s = v["duration_ms"].as_u64().unwrap_or(0) / 1000;
+            let cost = v["total_cost_usd"].as_f64().unwrap_or(0.0);
+            let turns = v["num_turns"].as_u64().unwrap_or(0);
+            let status = if v["is_error"].as_bool().unwrap_or(false) {
+                "error"
+            } else {
+                "success"
+            };
+            Some(format!(
+                "---\n\n## Run complete\nStatus: {status}\nTurns: {turns}\nDuration: \
+                 {duration_s}s\nCost: ${cost:.4}\n"
+            ))
+        }
+        _ => None,
+    }
+}
+
 fn parse_issue_numbers(output: &str) -> Result<Vec<u64>> {
     output
         .lines()
@@ -173,6 +281,8 @@ pub async fn run_one(name: &str, repo: &str, issue: u64) -> Result<()> {
             "-p",
             "--dangerously-skip-permissions",
             "--verbose",
+            "--output-format",
+            "stream-json",
             "--allowedTools",
             "Bash,Read,Edit,Write,Skill",
             "--model",
@@ -199,9 +309,10 @@ pub async fn run_one(name: &str, repo: &str, issue: u64) -> Result<()> {
             line = stdout.next_line(), if !stdout_done => {
                 match line.context("error reading claude stdout")? {
                     Some(l) => {
-                        println!("{l}");
-                        transcript.write_all(l.as_bytes()).await?;
-                        transcript.write_all(b"\n").await?;
+                        if let Some(formatted) = format_stream_event(&l) {
+                            print!("{formatted}");
+                            transcript.write_all(formatted.as_bytes()).await?;
+                        }
                     }
                     None => stdout_done = true,
                 }
