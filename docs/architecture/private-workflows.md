@@ -1,6 +1,6 @@
-# Private Workflows and Skills
+# Private Workflows and Prompts
 
-Hub is a public repo. Some workflows and investigation skills connect to systems you may not
+Hub is a public repo. Some workflows and investigation prompts connect to systems you may not
 want to name publicly (e.g. confidential work stuff) — those live in a separate private repo
 (`hub-private`) that gets wired into this workspace via symlinks and a Cargo feature flag.
 
@@ -14,7 +14,7 @@ want to name publicly (e.g. confidential work stuff) — those live in a separat
     workflows/src/   ← private workflows + PrivateStatusData types
     ui/cli/src/      ← private CLI rendering logic
     ui/tui/src/      ← private TUI rendering logic
-    .claude/skills/  ← private investigation skills
+    prompts/         ← private investigation prompts
     devices/         ← per-device configuration
       home-laptop.toml
       work-laptop.toml
