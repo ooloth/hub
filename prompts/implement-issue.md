@@ -102,7 +102,15 @@ not guess.
 
 Make all changes inside `<worktree>`. Follow the repo's existing conventions (formatting, naming, error handling, style). Do not touch files unrelated to the issue.
 
-### 8. Fix until green
+### 8. Write missing tests
+
+Before running checks, ask: what new decisions or behaviors did this
+change introduce — branches, filters, transformations, mappings? For
+each one: if the logic were wrong, would any existing test catch it? If
+not, and if the behavior can be exercised without standing up the full
+system, write a test for it.
+
+### 9. Fix until green
 
 Run the repo's check and test commands:
 
@@ -110,20 +118,33 @@ Run the repo's check and test commands:
 cd <worktree> && just check && just test
 ```
 
-Your changes introduced any failures that appear now — the baseline passed in step 3. Read the errors, fix them in `<worktree>`, and re-run. Repeat until green. Do not bail here: this is your responsibility to resolve.
+Your changes introduced any failures that appear now — the baseline
+passed in step 3. Read the errors, fix them in `<worktree>`, and re-run.
+Repeat until green. Do not bail here: this is your responsibility to
+resolve.
 
-If after multiple fix attempts the failures are intractable (e.g. the issue itself has a flaw that makes a correct implementation impossible), comment on the issue explaining the problem, relabel to `status:needs-human-review`, and stop.
+If after multiple fix attempts the failures are intractable (e.g. the
+issue itself has a flaw that makes a correct implementation impossible),
+comment on the issue explaining the problem, relabel to
+`status:needs-human-review`, and stop.
 
-### 9. Commit and push
+### 10. Verify manually
+
+Ask: how can I run this and confirm it actually works? Run the CLI, hit
+the endpoint, trigger the event, eyeball the output — whatever applies
+to what changed. Do not rely on tests alone. If end-to-end execution is
+impossible in this environment, say why explicitly.
+
+### 11. Commit and push
 
 Invoke `/commit` to stage, commit, and push your changes.
 
-### 10. Open draft PR
+### 12. Open draft PR
 
 Invoke `/write-pr-description` to draft and open the PR. The PR must be
 a draft and the body must include `Closes #<issue>`.
 
-### 11. Comment on the issue
+### 13. Comment on the issue
 
 ```bash
 gh issue comment <issue> --repo <repo> \
