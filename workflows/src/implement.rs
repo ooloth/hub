@@ -1,9 +1,18 @@
+use std::path::PathBuf;
+use std::process::Stdio;
+
 use anyhow::{Context, Result};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
 use crate::fetch::repos_dir;
 
 const PROMPT: &str = include_str!("../../prompts/implement-issue.md");
+
+fn transcripts_dir() -> PathBuf {
+    let home = std::env::var("HOME").expect("HOME not set");
+    PathBuf::from(home).join(".hub").join("transcripts")
+}
 
 fn parse_issue_numbers(output: &str) -> Result<Vec<u64>> {
     output
@@ -47,6 +56,8 @@ async fn ready_issues(repo: &str) -> Result<Vec<u64>> {
 /// Implements a single GitHub issue by setting up a worktree and invoking
 /// `claude -p` with the implement-issue prompt. Tears down the worktree on
 /// clean exit; leaves it in place on process failure for inspection.
+/// The full agent transcript (stdout + stderr) is written to
+/// `~/.hub/transcripts/<timestamp>-<name>-<issue>.md`.
 pub async fn run_one(name: &str, repo: &str, issue: u64) -> Result<()> {
     let bare = repos_dir().join(name);
     let branch = format!("issue-{issue}");
@@ -87,12 +98,28 @@ pub async fn run_one(name: &str, repo: &str, issue: u64) -> Result<()> {
     let task = format!(
         "Implement GitHub issue #{issue} in repo {repo}. Worktree: {worktree_str}. Branch: {branch}."
     );
+
+    let ts = chrono::Local::now().format("%Y-%m-%dT%H-%M-%S");
+    let transcript_dir = transcripts_dir();
+    tokio::fs::create_dir_all(&transcript_dir)
+        .await
+        .context("failed to create transcripts dir")?;
+    let transcript_path = transcript_dir.join(format!("{ts}-{name}-{issue}.md"));
+    let mut transcript = tokio::fs::File::create(&transcript_path)
+        .await
+        .context("failed to create transcript file")?;
+
+    let header =
+        format!("# hub implement: {repo}#{issue}\nBranch: {branch}\nStarted: {ts}\n\n---\n\n");
+    transcript.write_all(header.as_bytes()).await?;
+
     eprintln!("hub implement: starting {repo}#{issue}");
 
-    let status = Command::new("claude")
+    let mut child = Command::new("claude")
         .args([
             "-p",
             "--dangerously-skip-permissions",
+            "--verbose",
             "--allowedTools",
             "Bash,Read,Edit,Write,Skill",
             "--model",
@@ -101,9 +128,48 @@ pub async fn run_one(name: &str, repo: &str, issue: u64) -> Result<()> {
             PROMPT,
             &task,
         ])
-        .status()
-        .await
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .context("failed to spawn claude")?;
+
+    let mut stdout = BufReader::new(child.stdout.take().expect("stdout piped")).lines();
+    let mut stderr = BufReader::new(child.stderr.take().expect("stderr piped")).lines();
+
+    let mut stdout_done = false;
+    let mut stderr_done = false;
+
+    while !stdout_done || !stderr_done {
+        tokio::select! {
+            line = stdout.next_line(), if !stdout_done => {
+                match line.context("error reading claude stdout")? {
+                    Some(l) => {
+                        println!("{l}");
+                        transcript.write_all(l.as_bytes()).await?;
+                        transcript.write_all(b"\n").await?;
+                    }
+                    None => stdout_done = true,
+                }
+            }
+            line = stderr.next_line(), if !stderr_done => {
+                match line.context("error reading claude stderr")? {
+                    Some(l) => {
+                        eprintln!("{l}");
+                        transcript.write_all(l.as_bytes()).await?;
+                        transcript.write_all(b"\n").await?;
+                    }
+                    None => stderr_done = true,
+                }
+            }
+        }
+    }
+
+    transcript
+        .flush()
+        .await
+        .context("failed to flush transcript")?;
+
+    let status = child.wait().await.context("claude exited abnormally")?;
 
     let rm = Command::new("git")
         .args([
@@ -121,6 +187,11 @@ pub async fn run_one(name: &str, repo: &str, issue: u64) -> Result<()> {
         let stderr = String::from_utf8_lossy(&rm.stderr);
         eprintln!("warning: git worktree remove failed for {branch}: {stderr}");
     }
+
+    eprintln!(
+        "hub implement: transcript saved to {}",
+        transcript_path.display()
+    );
 
     if !status.success() {
         anyhow::bail!("claude exited non-zero for {repo}#{issue}");
