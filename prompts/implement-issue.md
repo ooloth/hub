@@ -28,7 +28,25 @@ gh issue view <issue> --repo <repo> \
 
 Read the title, body, and all comments in full.
 
-### 2. Claim
+### 2. Verify the worktree is clean
+
+```bash
+git -C <worktree> status --porcelain
+```
+
+If the output is non-empty, the worktree has uncommitted changes — something went wrong in a previous run. Stop without modifying any labels.
+
+### 3. Establish a baseline
+
+Run the repo's check and test commands before making any changes:
+
+```bash
+cd <worktree> && just check && just test
+```
+
+If they fail, the repo was already broken before you touched it. Stop without modifying any labels — this is not a problem you introduced and not yours to fix.
+
+### 4. Claim
 
 Relabel immediately to prevent a second agent from claiming the same issue:
 
@@ -43,7 +61,7 @@ gh issue edit <issue> --repo <repo> \
   --add-label "status:agent-working"
 ```
 
-### 3. Validate the issue's claims
+### 5. Validate the issue's claims
 
 Using `Read`, `rg`, and `fd` inside `<worktree>`, explore the areas the issue describes:
 
@@ -69,39 +87,27 @@ gh issue edit <issue> --repo <repo> \
   --add-label "status:needs-human-review"
 ```
 
-### 4. Plan
+### 6. Plan
 
 Read the relevant files and understand the module structure. Identify exactly which files need to change and why. If the fix requires a design decision not already resolved by the issue body and comments, comment on the issue with the open question, relabel to `status:needs-human-review`, and stop — do not guess.
 
-### 5. Implement
+### 7. Implement
 
 Make all changes inside `<worktree>`. Follow the repo's existing conventions (formatting, naming, error handling, style). Do not touch files unrelated to the issue.
 
-### 6. Check and test
+### 8. Fix until green
 
-Read the repo's justfile, `CONTRIBUTING.md`, `CLAUDE.md` or `README.md` to find the right commands:
-
-```bash
-cat <worktree>/justfile
-```
-
-Then run them. For hub repos:
+Run the repo's check and test commands:
 
 ```bash
 cd <worktree> && just check && just test
 ```
 
-**If checks or tests fail** — comment with the failure output, relabel, and stop:
+Your changes introduced any failures that appear now — the baseline passed in step 3. Read the errors, fix them in `<worktree>`, and re-run. Repeat until green. Do not bail here: this is your responsibility to resolve.
 
-```bash
-gh issue comment <issue> --repo <repo> --body "..."
+If after multiple fix attempts the failures are intractable (e.g. the issue itself has a flaw that makes a correct implementation impossible), comment on the issue explaining the problem, relabel to `status:needs-human-review`, and stop.
 
-gh issue edit <issue> --repo <repo> \
-  --remove-label "status:agent-working" \
-  --add-label "status:needs-human-review"
-```
-
-### 7. Commit and push
+### 9. Commit and push
 
 ```bash
 git -C <worktree> add -A
@@ -109,7 +115,7 @@ git -C <worktree> commit -m "<concise imperative description>"
 git -C <worktree> push origin <branch>
 ```
 
-### 8. Open draft PR
+### 10. Open draft PR
 
 ```bash
 gh pr create \
@@ -123,7 +129,7 @@ gh pr create \
 <one paragraph: what changed and why>"
 ```
 
-### 9. Comment on the issue
+### 11. Comment on the issue
 
 ```bash
 gh issue comment <issue> --repo <repo> \
