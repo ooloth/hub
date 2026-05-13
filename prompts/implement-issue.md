@@ -89,7 +89,14 @@ gh issue edit <issue> --repo <repo> \
 
 ### 6. Plan
 
-Read the relevant files and understand the module structure. Identify exactly which files need to change and why. If the fix requires a design decision not already resolved by the issue body and comments, comment on the issue with the open question, relabel to `status:needs-human-review`, and stop — do not guess.
+Read the relevant files and understand the module structure. Invoke
+`/uphold-invariants` to load the code quality invariants that apply to
+the affected areas — these constrain what changes are acceptable and
+should inform every decision you make. Identify exactly which files need
+to change and how. If the fix requires a design decision not already
+resolved by the issue body and comments, comment on the issue with the
+open question, relabel to `status:needs-human-review`, and stop — do
+not guess.
 
 ### 7. Implement
 
