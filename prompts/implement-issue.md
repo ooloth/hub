@@ -109,25 +109,12 @@ If after multiple fix attempts the failures are intractable (e.g. the issue itse
 
 ### 9. Commit and push
 
-```bash
-git -C <worktree> add -A
-git -C <worktree> commit -m "<concise imperative description>"
-git -C <worktree> push origin <branch>
-```
+Invoke `/commit` to stage, commit, and push your changes.
 
 ### 10. Open draft PR
 
-```bash
-gh pr create \
-  --repo <repo> \
-  --draft \
-  --title "<issue title>" \
-  --body "Closes #<issue>
-
-## What
-
-<one paragraph: what changed and why>"
-```
+Invoke `/write-pr-description` to draft and open the PR. The PR must be
+a draft and the body must include `Closes #<issue>`.
 
 ### 11. Comment on the issue
 
