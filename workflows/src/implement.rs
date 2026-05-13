@@ -181,6 +181,7 @@ pub async fn run_one(name: &str, repo: &str, issue: u64) -> Result<()> {
             PROMPT,
             &task,
         ])
+        .current_dir(&worktree)
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
