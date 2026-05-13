@@ -221,6 +221,25 @@ tmux pane, with hub.toml already providing the endpoint, query, and project
 name, is the complete agent integration story. Hub is the launcher; Claude
 Code is the investigator.
 
+As Tier 3 execution workflows mature, the TUI becomes the control plane
+for autonomous work. A jobs panel shows running agents alongside ranked
+signals — each job displaying its repo, issue, current phase
+(validating → implementing → pushing), and elapsed time. From the same
+list you already use for triage:
+
+- **Dispatch** — press a key on any ranked signal to send it to the
+  agent queue; hub writes the issue if needed, labels it ready-for-agent,
+  and the job appears immediately in the jobs panel
+- **Inspect** — press a key on a running job to tail its live transcript
+  in a tmux split; watch what the agent is doing without interrupting it
+- **Abort** — press a key to kill the agent and relabel the issue
+  needs-human-review
+- **Review** — completed jobs show their outcome (PR number, stopped
+  reason, or failure) and a keypress opens the PR or issue
+
+The same screen that surfaces what needs attention becomes the place you
+dispatch, monitor, and review autonomous work — without leaving hub.
+
 See [Decision 007](decisions/007-tui-over-web-app.md) for why TUI was
 chosen over a web app and what would legitimately change that decision.
 
