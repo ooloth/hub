@@ -94,6 +94,7 @@
         { "$ref": "#/definitions/workflow_github_ci" },
         { "$ref": "#/definitions/workflow_github_issues" },
         { "$ref": "#/definitions/workflow_github_prs" },
+        { "$ref": "#/definitions/workflow_implement_issue" },
         { "$ref": "#/definitions/workflow_loki_logs" },
         { "$ref": "#/definitions/workflow_repo_scan_docs" },
         { "$ref": "#/definitions/workflow_user_activity_gcp" },
@@ -186,6 +187,15 @@
         }
       }
     },
+    "workflow_implement_issue": {
+      "type": "object",
+      "description": "Opts this repo into autonomous issue implementation. When hub implement --all runs, issues labeled status:ready-for-agent in this repo are picked up and implemented by a Claude agent. Reads repo and name from parent project.",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "const": "implement-issue" }
+      }
+    },
     "workflow_repo_scan_docs": {
       "type": "object",
       "description": "Scans the repo for documentation quality issues (stale, drifted, inconsistent, or missing docs). Reads repo from parent project. Invoked via /repo-scan docs.",
@@ -241,6 +251,7 @@
               "github-ci",
               "github-issues",
               "github-prs",
+              "implement-issue",
               "loki-logs",
               "repo-scan-docs",
               "user-activity-gcp",

@@ -25,6 +25,9 @@ name = "github-ci"
 [[project.workflow]]
 name = "repo-scan-docs"
 
+[[project.workflow]]
+name = "implement-issue"
+
 # ── Projects with deployments ─────────────────────────────────────────────────
 # Use [[project.environment]] when the project runs somewhere.
 # Each environment carries the platform context its workflows need.

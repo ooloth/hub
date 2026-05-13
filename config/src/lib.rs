@@ -130,6 +130,19 @@ impl Config {
             .collect()
     }
 
+    /// Returns `(name, repo)` pairs for all projects opted into the `implement-issue` workflow.
+    pub fn implement_repos(&self) -> Vec<(String, String)> {
+        self.projects
+            .iter()
+            .filter(|p| {
+                p.workflow
+                    .iter()
+                    .any(|w| matches!(w, toml::WorkflowConfig::ImplementIssue))
+            })
+            .map(|p| (p.name.clone(), p.repo.clone()))
+            .collect()
+    }
+
     pub fn github_assigned_issue_repos(&self) -> Vec<String> {
         self.projects
             .iter()
@@ -147,5 +160,70 @@ impl Config {
                 })
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn project(name: &str, repo: &str, workflows: Vec<toml::WorkflowConfig>) -> toml::Project {
+        toml::Project {
+            name: name.into(),
+            repo: repo.into(),
+            workflow: workflows,
+            environment: vec![],
+        }
+    }
+
+    fn config(projects: Vec<toml::Project>) -> Config {
+        Config {
+            github_token: "tok".into(),
+            github_username: "user".into(),
+            linear_token: None,
+            loki_token: None,
+            projects,
+            monitor: None,
+        }
+    }
+
+    #[test]
+    fn implement_repos_returns_opted_in_projects() {
+        let cfg = config(vec![
+            project(
+                "hub",
+                "ooloth/hub",
+                vec![toml::WorkflowConfig::ImplementIssue],
+            ),
+            project(
+                "other",
+                "ooloth/other",
+                vec![toml::WorkflowConfig::ImplementIssue],
+            ),
+        ]);
+        assert_eq!(
+            cfg.implement_repos(),
+            vec![
+                ("hub".to_string(), "ooloth/hub".to_string()),
+                ("other".to_string(), "ooloth/other".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn implement_repos_excludes_projects_without_workflow() {
+        let cfg = config(vec![project(
+            "hub",
+            "ooloth/hub",
+            vec![toml::WorkflowConfig::GithubPrs {
+                exclude_authors: vec![],
+            }],
+        )]);
+        assert!(cfg.implement_repos().is_empty());
+    }
+
+    #[test]
+    fn implement_repos_empty_when_no_projects() {
+        assert!(config(vec![]).implement_repos().is_empty());
     }
 }
