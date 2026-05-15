@@ -294,6 +294,10 @@ impl App {
                     selected: *selected,
                     filter: filter.clone(),
                 };
+                assert!(
+                    matches!(items.get(group_index), Some(DisplayItem::Group { .. })),
+                    "group_index must point to a Group variant"
+                );
                 let mut ds = ListState::default();
                 if item_count > 0 {
                     ds.select(Some(0));
