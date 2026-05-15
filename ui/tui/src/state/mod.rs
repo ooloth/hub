@@ -54,6 +54,10 @@ impl App {
                 *selected = selected.saturating_sub(1);
             }
             Screen::Detail { view, .. } => {
+                assert!(
+                    view.list_state.selected().is_some(),
+                    "list_state must be selected in Detail screen"
+                );
                 let sel = view.list_state.selected().unwrap_or(0);
                 if sel > 0 {
                     view.list_state.select(Some(sel - 1));
@@ -71,6 +75,10 @@ impl App {
                 }
             }
             Screen::Detail { view, .. } => {
+                assert!(
+                    view.list_state.selected().is_some(),
+                    "list_state must be selected in Detail screen"
+                );
                 let sel = view.list_state.selected().unwrap_or(0);
                 if len > 0 && sel < len - 1 {
                     view.list_state.select(Some(sel + 1));
@@ -104,6 +112,10 @@ impl App {
                 *selected = selected.saturating_sub(PAGE);
             }
             Screen::Detail { view, .. } => {
+                assert!(
+                    view.list_state.selected().is_some(),
+                    "list_state must be selected in Detail screen"
+                );
                 let sel = view.list_state.selected().unwrap_or(0);
                 view.list_state.select(Some(sel.saturating_sub(PAGE)));
             }
@@ -121,6 +133,10 @@ impl App {
                 *selected = (*selected + PAGE).min(len - 1);
             }
             Screen::Detail { view, .. } => {
+                assert!(
+                    view.list_state.selected().is_some(),
+                    "list_state must be selected in Detail screen"
+                );
                 let sel = view.list_state.selected().unwrap_or(0);
                 view.list_state.select(Some((sel + PAGE).min(len - 1)));
             }
