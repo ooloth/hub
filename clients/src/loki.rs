@@ -3,6 +3,24 @@ use chrono::Utc;
 use serde::Deserialize;
 use std::collections::HashMap;
 
+/// Errors specific to parsing Loki API responses.
+#[derive(Debug)]
+pub enum LokiError {
+    InvalidTimestamp(String),
+}
+
+impl std::fmt::Display for LokiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LokiError::InvalidTimestamp(ts) => {
+                write!(f, "unparseable Loki timestamp: {ts}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for LokiError {}
+
 #[derive(Deserialize)]
 struct QueryRangeResponse {
     data: QueryRangeData,
@@ -72,20 +90,25 @@ pub async fn entries(
         .await
         .context("failed to parse Loki response")?;
 
-    Ok(entries_from_response(response))
+    Ok(entries_from_response(response)?)
 }
 
-fn entries_from_response(response: QueryRangeResponse) -> Vec<LogEntry> {
+fn entries_from_response(response: QueryRangeResponse) -> Result<Vec<LogEntry>, LokiError> {
     response
         .data
         .result
         .into_iter()
         .flat_map(|stream| {
             let labels = stream.stream;
-            stream.values.into_iter().map(move |(ts, line)| LogEntry {
-                timestamp_ns: ts.parse().unwrap_or(0),
-                line,
-                labels: labels.clone(),
+            stream.values.into_iter().map(move |(ts, line)| {
+                let timestamp_ns = ts
+                    .parse()
+                    .map_err(|_| LokiError::InvalidTimestamp(ts.to_owned()))?;
+                Ok(LogEntry {
+                    timestamp_ns,
+                    line,
+                    labels: labels.clone(),
+                })
             })
         })
         .collect()
@@ -120,7 +143,7 @@ mod tests {
             &[("app", "myapp"), ("env", "prod")],
             &[("1000000000", "error: something failed")],
         );
-        let entries = entries_from_response(make_response(vec![stream]));
+        let entries = entries_from_response(make_response(vec![stream])).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].timestamp_ns, 1_000_000_000);
         assert_eq!(entries[0].line, "error: something failed");
@@ -130,14 +153,14 @@ mod tests {
 
     #[test]
     fn returns_empty_for_no_streams() {
-        assert!(entries_from_response(make_response(vec![])).is_empty());
+        assert!(entries_from_response(make_response(vec![])).unwrap().is_empty());
     }
 
     #[test]
     fn each_entry_carries_its_streams_labels() {
         let stream_a = make_stream(&[("app", "a")], &[("1", "line from a")]);
         let stream_b = make_stream(&[("app", "b")], &[("2", "line from b")]);
-        let entries = entries_from_response(make_response(vec![stream_a, stream_b]));
+        let entries = entries_from_response(make_response(vec![stream_a, stream_b])).unwrap();
         assert_eq!(entries.len(), 2);
         let a = entries.iter().find(|e| e.line == "line from a").unwrap();
         let b = entries.iter().find(|e| e.line == "line from b").unwrap();
@@ -148,7 +171,7 @@ mod tests {
     #[test]
     fn multiple_entries_in_one_stream_all_share_labels() {
         let stream = make_stream(&[("app", "myapp")], &[("1", "first"), ("2", "second")]);
-        let entries = entries_from_response(make_response(vec![stream]));
+        let entries = entries_from_response(make_response(vec![stream])).unwrap();
         assert_eq!(entries.len(), 2);
         assert!(entries
             .iter()
@@ -158,9 +181,19 @@ mod tests {
     #[test]
     fn stream_with_no_labels_yields_empty_label_map() {
         let stream = make_stream(&[], &[("1", "unlabeled line")]);
-        let entries = entries_from_response(make_response(vec![stream]));
+        let entries = entries_from_response(make_response(vec![stream])).unwrap();
         assert_eq!(entries.len(), 1);
         assert!(entries[0].labels.is_empty());
+    }
+
+    #[test]
+    fn invalid_timestamp_returns_error() {
+        let stream = make_stream(&[("app", "myapp")], &[("not-a-number", "some log line")]);
+        let result = entries_from_response(make_response(vec![stream]));
+        assert!(matches!(
+            result,
+            Err(LokiError::InvalidTimestamp(ref ts)) if ts == "not-a-number"
+        ));
     }
 
     #[test]
