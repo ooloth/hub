@@ -34,6 +34,8 @@ pub struct RepoSlug(String);
 
 impl RepoSlug {
     pub fn new(owner: &str, repo: &str) -> Self {
+        assert!(!owner.is_empty(), "owner must not be empty");
+        assert!(!repo.is_empty(), "repo must not be empty");
         Self(format!("{owner}/{repo}"))
     }
 }
@@ -144,4 +146,27 @@ pub struct LokiEntry {
     pub age: chrono::Duration,
     pub urgency: Urgency,
     pub url: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn repo_slug_new_formats_owner_and_repo() {
+        let slug = RepoSlug::new("ooloth", "hub");
+        assert_eq!(slug.to_string(), "ooloth/hub");
+    }
+
+    #[test]
+    #[should_panic(expected = "owner must not be empty")]
+    fn repo_slug_new_panics_on_empty_owner() {
+        RepoSlug::new("", "hub");
+    }
+
+    #[test]
+    #[should_panic(expected = "repo must not be empty")]
+    fn repo_slug_new_panics_on_empty_repo() {
+        RepoSlug::new("ooloth", "");
+    }
 }
