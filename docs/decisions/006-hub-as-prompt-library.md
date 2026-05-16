@@ -42,7 +42,6 @@ This is a third category of agent capability, distinct from:
 
 | Category | Location | Mode | Who runs it |
 |---|---|---|---|
-| Background automation | `agents/` crate (planned, not yet built) | Single API call, structured output | Hub workflows, unattended |
 | Hub investigation prompts | `prompts/` in hub's repo | Multi-turn, iterative | TUI keypress |
 | General craft skills | `~/.claude/skills/` globally | Multi-turn, general-purpose | Human, any project |
 

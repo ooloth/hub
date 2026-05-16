@@ -15,32 +15,26 @@ in `ui/tui/src/investigations/`). Context comes from the selected item.
 
 They are **not**:
 
-- `agents/` crate functions (those are single-call background
-  automation, unattended)
 - Global craft skills (those live in `~/.claude/skills/`, are
   general-purpose, and are not hub-aware)
 
-See [Decision 006](../decisions/006-hub-as-skill-library.md) for the
+See [Decision 006](../decisions/006-hub-as-prompt-library.md) for the
 original model and rationale.
 
 ## 1. Identify what context the prompt needs
 
-List what the prompt requires to run:
-
-- **From the task string** (scheduled runs): theme, project names, focus,
-  or other free-form parameters parsed from the task prompt
-- **From the TUI item** (TUI investigations): the fields on the selected
-  item (repo slug, issue number, error message, etc.) — these are
-  formatted into the task string by the Rust investigation module
+List what the prompt requires to run. All context comes from the TUI
+item (repo slug, issue number, error message, etc.) — these fields are
+formatted into the task string by the Rust investigation module.
 
 Keep context minimal — only what Claude genuinely needs to avoid asking.
 
 ## 2. Register new config fields (if needed)
 
-If the prompt reads a new `[[project.workflow]]` name from hub.toml
-(e.g. `repo-scan-docs`), follow steps 5–7 of
-[Add a Workflow](add-a-workflow.md): Rust enum variant, JSON schema
-definition, and hub.toml.example entry. All three are required.
+If the prompt reads a new `[[project.workflow]]` name from hub.toml,
+follow steps 5–7 of [Add a Workflow](add-a-workflow.md): Rust enum
+variant, JSON schema definition, and hub.toml.example entry. All three
+are required.
 
 ## 3. Write the prompt file
 

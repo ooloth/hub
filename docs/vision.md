@@ -151,16 +151,13 @@ claude /github-ci-investigate   # fetches failed step logs and surfaces root cau
 
 hub status                      # "prod: 12 errors in last hour (3× baseline)"
 claude /loki-investigate        # iterates until diagnosed; hub.toml provides context (planned)
-
-claude /repo-scan docs          # scans all hub.toml repos for doc quality issues;
-                                # surfaces findings and files GitHub issues for confirmed ones
 ```
 
 Hub's repo is also the right home for these skills — not each project's
 repo. A skill added to hub is immediately available for every project
 configured in `hub.toml`, without copy-pasting it across repos.
 
-See [Decision 006](decisions/006-hub-as-skill-library.md) for the full model.
+See [Decision 006](decisions/006-hub-as-prompt-library.md) for the full model.
 
 ## The three tiers
 

@@ -40,11 +40,10 @@ which Loki endpoint serves a project's production logs, which LogQL
 query selects the right app, what the project is called. A prompt that
 reads this context requires zero user setup to invoke correctly.
 
-Prompts are launched two ways: via TUI keypress (the prompt is embedded
-at compile time via `include_str!` and passed as `--system-prompt` to a
-tmux split) or via scheduled `claude -p` run. This avoids slash-command
-discovery, which requires the skills directory to be present in the
-working tree of whatever project is being investigated.
+Prompts are launched via TUI keypress (embedded at compile time via
+`include_str!` and passed as `--system-prompt` to a tmux split). This
+avoids slash-command discovery, which requires the skills directory to
+be present in the working tree of whatever project is being investigated.
 
 See [Decision 006](006-hub-as-prompt-library.md) for the full model.
 
