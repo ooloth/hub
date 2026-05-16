@@ -73,10 +73,6 @@ pub enum WorkflowConfig {
         lookback: Option<String>,
         error_threshold: Option<u32>,
     },
-    #[serde(rename = "repo-scan-docs")]
-    RepoScanDocs,
-    #[serde(rename = "implement-issue")]
-    ImplementIssue,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -125,8 +121,6 @@ mod tests {
     #[case("github-prs", WorkflowConfig::GithubPrs { exclude_authors: vec![] })]
     #[case("user-activity-gcp", WorkflowConfig::UserActivityGcp { include_users: vec![], exclude_users: vec![] })]
     #[case("warnings-gcp", WorkflowConfig::WarningsGcp { exclude_users: vec![] })]
-    #[case("repo-scan-docs", WorkflowConfig::RepoScanDocs)]
-    #[case("implement-issue", WorkflowConfig::ImplementIssue)]
     fn all_workflow_types_parse_with_name_only(
         #[case] name: &str,
         #[case] expected: WorkflowConfig,

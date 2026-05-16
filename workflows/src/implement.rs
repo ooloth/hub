@@ -122,45 +122,6 @@ fn format_stream_event(json: &str) -> Option<String> {
     }
 }
 
-fn parse_issue_numbers(output: &str) -> Result<Vec<u64>> {
-    output
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| {
-            l.trim()
-                .parse::<u64>()
-                .with_context(|| format!("invalid issue number: {l}"))
-        })
-        .collect()
-}
-
-/// Returns all issue numbers labeled `status:ready-for-agent` in `repo`.
-async fn ready_issues(repo: &str) -> Result<Vec<u64>> {
-    let out = Command::new("gh")
-        .args([
-            "issue",
-            "list",
-            "--repo",
-            repo,
-            "--label",
-            "status:ready-for-agent",
-            "--json",
-            "number",
-            "--jq",
-            ".[].number",
-        ])
-        .output()
-        .await
-        .with_context(|| format!("gh issue list failed for {repo}"))?;
-
-    if !out.status.success() {
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        anyhow::bail!("gh issue list failed for {repo}: {stderr}");
-    }
-
-    parse_issue_numbers(&String::from_utf8_lossy(&out.stdout))
-}
-
 /// Wires hub-private symlinks into `worktree` by calling setup-private.sh with
 /// the worktree as root. Skips silently if hub.toml is not a symlink (no private
 /// setup on this machine). Logs a warning on script failure but does not abort.
@@ -365,46 +326,4 @@ pub async fn run_one(name: &str, repo: &str, issue: u64) -> Result<()> {
 
     eprintln!("hub implement: done {repo}#{issue}");
     Ok(())
-}
-
-/// Finds all `status:ready-for-agent` issues in opted-in repos and runs
-/// `run_one` for each, serially.
-pub async fn run_all(repos: &[(String, String)]) -> Result<()> {
-    for (name, repo) in repos {
-        let issues = ready_issues(repo).await?;
-        for issue in issues {
-            run_one(name, repo, issue).await?;
-        }
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_issue_numbers_parses_single() {
-        assert_eq!(parse_issue_numbers("42\n").unwrap(), vec![42]);
-    }
-
-    #[test]
-    fn parse_issue_numbers_parses_multiple() {
-        assert_eq!(parse_issue_numbers("1\n2\n3\n").unwrap(), vec![1, 2, 3]);
-    }
-
-    #[test]
-    fn parse_issue_numbers_ignores_blank_lines() {
-        assert_eq!(parse_issue_numbers("\n42\n\n7\n").unwrap(), vec![42, 7]);
-    }
-
-    #[test]
-    fn parse_issue_numbers_returns_empty_for_empty_output() {
-        assert!(parse_issue_numbers("").unwrap().is_empty());
-    }
-
-    #[test]
-    fn parse_issue_numbers_errors_on_non_numeric_line() {
-        assert!(parse_issue_numbers("not-a-number\n").is_err());
-    }
 }
