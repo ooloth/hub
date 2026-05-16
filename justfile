@@ -29,6 +29,9 @@ check:
 build:
     cargo build {{_features}}
 
+install:
+    cargo install --path ui/tui {{_features}}
+
 cli:
     op run --env-file=.env -- cargo run -p hub-cli {{_features}}
 
