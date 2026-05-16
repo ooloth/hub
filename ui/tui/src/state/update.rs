@@ -249,6 +249,19 @@ impl App {
             InvestigateAction::LaunchIssue { repo, number } => {
                 vec![Effect::LaunchIssue { repo, number }]
             }
+            InvestigateAction::LaunchPr {
+                repo,
+                number,
+                kind,
+                author,
+                review_decision,
+            } => vec![Effect::LaunchPr {
+                repo,
+                number,
+                kind,
+                author,
+                review_decision,
+            }],
             InvestigateAction::LaunchLoki {
                 project,
                 env,
@@ -368,6 +381,19 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
         Some(InvestigationKind::Issue { repo, number }) => {
             InvestigateAction::LaunchIssue { repo, number }
         }
+        Some(InvestigationKind::Pr {
+            repo,
+            number,
+            kind,
+            author,
+            review_decision,
+        }) => InvestigateAction::LaunchPr {
+            repo,
+            number,
+            kind,
+            author,
+            review_decision,
+        },
         Some(InvestigationKind::Loki {
             project,
             env,
@@ -574,13 +600,13 @@ mod tests {
     }
 
     #[test]
-    fn investigate_action_returns_none_for_unmapped_items() {
+    fn investigate_action_launches_review_code_for_pr_to_review() {
         let app = app_with_items(vec![DisplayItem::Single(StatusItem::Pr(
             domain::PullRequest {
-                number: 1,
-                title: "some pr".to_string(),
+                number: 7,
+                title: "add feature".to_string(),
                 repo: domain::RepoSlug::new("ooloth", "hub"),
-                url: "https://github.com/ooloth/hub/pull/1".to_string(),
+                url: "https://github.com/ooloth/hub/pull/7".to_string(),
                 age: chrono::Duration::zero(),
                 urgency: domain::Urgency::Low,
                 kind: domain::PrKind::ToReview,
@@ -589,7 +615,72 @@ mod tests {
                 review_count: 0,
             },
         ))]);
-        assert_eq!(compute_investigate_action(&app), InvestigateAction::None);
+        assert_eq!(
+            compute_investigate_action(&app),
+            InvestigateAction::LaunchPr {
+                repo: "ooloth/hub".to_string(),
+                number: 7,
+                kind: domain::PrKind::ToReview,
+                author: "alice".to_string(),
+                review_decision: None,
+            }
+        );
+    }
+
+    #[test]
+    fn investigate_action_launches_review_converge_for_own_pr_without_changes_requested() {
+        let app = app_with_items(vec![DisplayItem::Single(StatusItem::Pr(
+            domain::PullRequest {
+                number: 8,
+                title: "my feature".to_string(),
+                repo: domain::RepoSlug::new("ooloth", "hub"),
+                url: "https://github.com/ooloth/hub/pull/8".to_string(),
+                age: chrono::Duration::zero(),
+                urgency: domain::Urgency::Low,
+                kind: domain::PrKind::Mine,
+                author: "ooloth".to_string(),
+                review_decision: Some(domain::ReviewDecision::Approved),
+                review_count: 1,
+            },
+        ))]);
+        assert_eq!(
+            compute_investigate_action(&app),
+            InvestigateAction::LaunchPr {
+                repo: "ooloth/hub".to_string(),
+                number: 8,
+                kind: domain::PrKind::Mine,
+                author: "ooloth".to_string(),
+                review_decision: Some(domain::ReviewDecision::Approved),
+            }
+        );
+    }
+
+    #[test]
+    fn investigate_action_launches_review_pr_comments_for_own_pr_with_changes_requested() {
+        let app = app_with_items(vec![DisplayItem::Single(StatusItem::Pr(
+            domain::PullRequest {
+                number: 9,
+                title: "my draft".to_string(),
+                repo: domain::RepoSlug::new("ooloth", "hub"),
+                url: "https://github.com/ooloth/hub/pull/9".to_string(),
+                age: chrono::Duration::zero(),
+                urgency: domain::Urgency::Low,
+                kind: domain::PrKind::MyDraft,
+                author: "ooloth".to_string(),
+                review_decision: Some(domain::ReviewDecision::ChangesRequested),
+                review_count: 2,
+            },
+        ))]);
+        assert_eq!(
+            compute_investigate_action(&app),
+            InvestigateAction::LaunchPr {
+                repo: "ooloth/hub".to_string(),
+                number: 9,
+                kind: domain::PrKind::MyDraft,
+                author: "ooloth".to_string(),
+                review_decision: Some(domain::ReviewDecision::ChangesRequested),
+            }
+        );
     }
 
     #[test]

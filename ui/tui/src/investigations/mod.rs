@@ -4,6 +4,7 @@ use std::path::Path;
 pub(crate) mod ci;
 pub(crate) mod issue;
 pub(crate) mod loki;
+pub(crate) mod pr;
 // Device-specific: home-laptop only via hub-private symlink; setup-private creates
 // a stub on other devices so the file always exists when private is enabled.
 #[cfg(feature = "private")]

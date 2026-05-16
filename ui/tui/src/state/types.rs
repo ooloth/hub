@@ -1,4 +1,5 @@
 use anyhow::Result;
+use domain::{PrKind, ReviewDecision};
 use ratatui::widgets::ListState;
 use workflows::status::{StatusItem, StatusReport};
 
@@ -94,6 +95,13 @@ pub(crate) enum InvestigateAction {
         message: String,
         line: String,
     },
+    LaunchPr {
+        repo: String,
+        number: u64,
+        kind: PrKind,
+        author: String,
+        review_decision: Option<ReviewDecision>,
+    },
     #[cfg(feature = "private")]
     LaunchMediaBlocked {
         title: String,
@@ -144,6 +152,13 @@ pub(crate) enum Effect {
         title: String,
         message: String,
         line: String,
+    },
+    LaunchPr {
+        repo: String,
+        number: u64,
+        kind: PrKind,
+        author: String,
+        review_decision: Option<ReviewDecision>,
     },
     #[cfg(feature = "private")]
     LaunchMediaBlocked {

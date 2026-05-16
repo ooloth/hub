@@ -172,6 +172,30 @@ async fn resolve_investigation_cwd(config: &config::Config, repo: &str) -> Resul
         .ok_or_else(|| "Worktree creation succeeded but path not found".to_string())
 }
 
+async fn resolve_pr_worktree(
+    config: &config::Config,
+    repo: &str,
+    number: u64,
+) -> Result<PathBuf, String> {
+    let name = config
+        .projects
+        .iter()
+        .find(|p| p.repo == repo)
+        .map(|p| p.name.as_str())
+        .ok_or_else(|| format!("No project found for {repo}"))?;
+
+    let repos = workflows::fetch::repos_dir();
+    let bare = repos.join(name);
+
+    if !bare.exists() {
+        return Err("Not fetched yet; run hub fetch".to_string());
+    }
+
+    workflows::fetch::ensure_pr_worktree(&bare, number)
+        .await
+        .map_err(|e| format!("Failed to create PR worktree: {e}"))
+}
+
 fn spawn_git_fetch(config: &config::Config) {
     let github_token = config.github_token.clone();
     let projects: Vec<(String, String)> = config
@@ -255,6 +279,29 @@ async fn run_loop(
                         Err(msg) => app.ui.flash = Some(msg),
                     }
                 }
+                Effect::LaunchPr {
+                    repo,
+                    number,
+                    kind,
+                    author,
+                    review_decision,
+                } => match resolve_pr_worktree(config, &repo, number).await {
+                    Ok(cwd) => {
+                        if let Err(err) = investigations::launch(
+                            investigations::pr::config(
+                                number,
+                                &repo,
+                                kind,
+                                &author,
+                                review_decision,
+                            ),
+                            &cwd,
+                        ) {
+                            app.ui.flash = Some(err.to_string());
+                        }
+                    }
+                    Err(msg) => app.ui.flash = Some(msg),
+                },
                 Effect::LaunchLoki {
                     project,
                     env,

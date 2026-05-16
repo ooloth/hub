@@ -101,7 +101,7 @@ The test suite keeps one full-screen snapshot per major screen state:
 | `full_screen_unified_list_empty` | bare border, no items, empty status bar |
 | `full_screen_unified_list_mixed_urgency` | urgency divider between tiers |
 | `full_screen_unified_list_group_selected` | group row with "↩ to expand" hint |
-| `full_screen_unified_list_pr_selected` | item with no investigate action (shorter hint, "2/2" position) |
+| `full_screen_unified_list_pr_selected` | PR item selected with open + investigate hints, "2/2" position |
 | `full_screen_unified_list_category_filter` | green border + category label in title |
 | `full_screen_unified_list_committed_query` | green border + query text in title |
 | `full_screen_unified_list_query_input` | yellow border while query is being typed |
@@ -137,6 +137,18 @@ and tool/model settings.
 
 See the [add-an-investigation playbook](../../docs/playbooks/add-an-investigation.md)
 for the full step-by-step.
+
+### PR investigation routing
+
+Pressing `i` on a PR auto-selects the skill based on the PR's kind and review state,
+then launches an interactive Claude Code session in a per-PR git worktree
+(`~/.hub/repos/<project>/pr-<number>/`):
+
+| PR kind        | Review state       | Skill                        | Intent                                          |
+| -------------- | ------------------ | ---------------------------- | ----------------------------------------------- |
+| ToReview       | any                | `/review-code`               | Reviewer — identify issues, no local changes    |
+| Mine / MyDraft | ChangesRequested   | `/review-pr-comments-converge` | Author — address reviewer feedback locally    |
+| Mine / MyDraft | other              | `/review-converge`           | Author — improve your own PR locally            |
 
 ## Cache and schema version
 
@@ -184,7 +196,7 @@ Three levels. `Enter` drills in; `Esc` backs out one level.
 | k          | up                              |
 | l          | down                            |
 | Enter      | open / drill into group         |
-| i          | investigate CI failure (CI only) |
+| i          | investigate (auto-routes by item type) |
 | Esc        | back to home                    |
 | ?          | toggle help                     |
 | q / Ctrl-C | quit                            |
@@ -198,7 +210,7 @@ Three levels. `Enter` drills in; `Esc` backs out one level.
 | k          | up                              |
 | l          | down                            |
 | Enter      | open URL                        |
-| i          | investigate CI failure (CI only) |
+| i          | investigate (auto-routes by item type) |
 | Esc        | back to category                |
 | ?          | toggle help                     |
 | q / Ctrl-C | quit                            |

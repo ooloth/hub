@@ -121,6 +121,13 @@ pub(crate) enum InvestigationKind {
         message: String,
         line: String,
     },
+    Pr {
+        repo: String,
+        number: u64,
+        kind: domain::PrKind,
+        author: String,
+        review_decision: Option<domain::ReviewDecision>,
+    },
     #[cfg(feature = "private")]
     MediaBlocked {
         title: String,
@@ -137,6 +144,13 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
         StatusItem::Issue(i) => Some(InvestigationKind::Issue {
             repo: i.repo.to_string(),
             number: i.number,
+        }),
+        StatusItem::Pr(pr) => Some(InvestigationKind::Pr {
+            repo: pr.repo.to_string(),
+            number: pr.number,
+            kind: pr.kind,
+            author: pr.author.clone(),
+            review_decision: pr.review_decision,
         }),
         StatusItem::Loki(l) => Some(InvestigationKind::Loki {
             project: l.project.clone(),
@@ -746,8 +760,11 @@ mod tests {
     }
 
     #[test]
-    fn item_investigation_pr_returns_none() {
-        assert!(item_investigation(&pr()).is_none());
+    fn item_investigation_pr_returns_pr_kind() {
+        assert!(matches!(
+            item_investigation(&pr()),
+            Some(InvestigationKind::Pr { .. })
+        ));
     }
 
     #[cfg(feature = "private")]
