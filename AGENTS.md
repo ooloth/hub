@@ -132,7 +132,9 @@ tmux kill-window -t "tui-test"                  # clean up
   mode and the second `"/"` is treated as `AppendQuery('/')`, not `StartQuery`.
 
 If E2E validation cannot be run, explicitly state why and what weaker
-validation was run instead.
+validation was run instead. Before concluding it cannot be run, verify
+by inspection: read the config, check the relevant directories, confirm
+what is actually available. Never assume a prerequisite is missing.
 
 ## Docs by Area
 
