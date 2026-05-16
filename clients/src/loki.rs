@@ -3,24 +3,6 @@ use chrono::Utc;
 use serde::Deserialize;
 use std::collections::HashMap;
 
-/// Errors specific to parsing Loki API responses.
-#[derive(Debug)]
-pub enum LokiError {
-    InvalidTimestamp(String),
-}
-
-impl std::fmt::Display for LokiError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LokiError::InvalidTimestamp(ts) => {
-                write!(f, "unparseable Loki timestamp: {ts}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for LokiError {}
-
 #[derive(Deserialize)]
 struct QueryRangeResponse {
     data: QueryRangeData,
@@ -49,7 +31,8 @@ pub struct LogEntry {
 ///
 /// # Errors
 /// Returns an error if the Loki API is unreachable, returns a non-2xx response,
-/// or if `lookback` is not a valid duration string (e.g. "1h", "30m").
+/// if `lookback` is not a valid duration string (e.g. "1h", "30m"), or if the
+/// response contains unparseable timestamps.
 pub async fn entries(
     endpoint: &str,
     token: Option<&str>,
@@ -90,10 +73,10 @@ pub async fn entries(
         .await
         .context("failed to parse Loki response")?;
 
-    Ok(entries_from_response(response)?)
+    entries_from_response(response)
 }
 
-fn entries_from_response(response: QueryRangeResponse) -> Result<Vec<LogEntry>, LokiError> {
+fn entries_from_response(response: QueryRangeResponse) -> anyhow::Result<Vec<LogEntry>> {
     response
         .data
         .result
@@ -103,7 +86,7 @@ fn entries_from_response(response: QueryRangeResponse) -> Result<Vec<LogEntry>, 
             stream.values.into_iter().map(move |(ts, line)| {
                 let timestamp_ns = ts
                     .parse()
-                    .map_err(|_| LokiError::InvalidTimestamp(ts.to_owned()))?;
+                    .with_context(|| format!("unparseable Loki timestamp: {ts}"))?;
                 Ok(LogEntry {
                     timestamp_ns,
                     line,
@@ -189,11 +172,29 @@ mod tests {
     #[test]
     fn invalid_timestamp_returns_error() {
         let stream = make_stream(&[("app", "myapp")], &[("not-a-number", "some log line")]);
-        let result = entries_from_response(make_response(vec![stream]));
-        assert!(matches!(
-            result,
-            Err(LokiError::InvalidTimestamp(ref ts)) if ts == "not-a-number"
-        ));
+        let err = entries_from_response(make_response(vec![stream])).unwrap_err();
+        assert!(err.to_string().contains("not-a-number"));
+    }
+
+    #[test]
+    fn empty_timestamp_returns_error() {
+        let stream = make_stream(&[("app", "myapp")], &[("", "some log line")]);
+        let err = entries_from_response(make_response(vec![stream])).unwrap_err();
+        assert!(err.to_string().contains("unparseable Loki timestamp"));
+    }
+
+    #[test]
+    fn overflow_timestamp_returns_error() {
+        let stream = make_stream(&[("app", "myapp")], &[("99999999999999999999999", "log line")]);
+        let err = entries_from_response(make_response(vec![stream])).unwrap_err();
+        assert!(err.to_string().contains("99999999999999999999999"));
+    }
+
+    #[test]
+    fn negative_timestamps_are_valid() {
+        let stream = make_stream(&[("app", "myapp")], &[("-1000", "pre-epoch line")]);
+        let entries = entries_from_response(make_response(vec![stream])).unwrap();
+        assert_eq!(entries[0].timestamp_ns, -1000);
     }
 
     #[test]
