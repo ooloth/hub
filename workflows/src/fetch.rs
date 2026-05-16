@@ -123,6 +123,50 @@ async fn fetch_project(name: &str, repo: &str, github_token: &str, repos_dir: &P
     Ok(())
 }
 
+/// Creates a linked worktree for a PR at `<bare>/pr-<number>/` and returns its path.
+///
+/// Fetches `pull/<number>/head` from origin into a local branch named `pr-<number>`,
+/// then adds a worktree pointing to it. Idempotent: if the worktree already exists,
+/// returns its path immediately without re-fetching.
+pub async fn ensure_pr_worktree(bare: &Path, number: u64) -> Result<PathBuf> {
+    let bare_str = bare.to_string_lossy().into_owned();
+    let branch = format!("pr-{number}");
+    let worktree = bare.join(&branch);
+    let worktree_str = worktree.to_string_lossy().into_owned();
+
+    if worktree.is_dir() {
+        return Ok(worktree);
+    }
+
+    let fetch = Command::new("git")
+        .args([
+            "-C",
+            &bare_str,
+            "fetch",
+            "origin",
+            &format!("pull/{number}/head:{branch}"),
+        ])
+        .output()
+        .await
+        .context("git fetch PR ref failed")?;
+    if !fetch.status.success() {
+        let stderr = String::from_utf8_lossy(&fetch.stderr);
+        anyhow::bail!("git fetch PR ref failed for #{number}: {stderr}");
+    }
+
+    let add = Command::new("git")
+        .args(["-C", &bare_str, "worktree", "add", &worktree_str, &branch])
+        .output()
+        .await
+        .context("git worktree add failed for PR")?;
+    if !add.status.success() {
+        let stderr = String::from_utf8_lossy(&add.stderr);
+        anyhow::bail!("git worktree add failed for PR #{number}: {stderr}");
+    }
+
+    Ok(worktree)
+}
+
 pub async fn ensure_default_branch_worktree(bare: &Path) -> Result<()> {
     let bare_str = bare.to_string_lossy().into_owned();
     let branch = read_default_branch(bare)
