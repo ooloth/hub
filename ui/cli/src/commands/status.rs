@@ -26,6 +26,13 @@ pub(crate) async fn run(config: &Config) -> Result<()> {
         render_line(item);
     }
 
+    if !report.errors.is_empty() {
+        println!("\nunreachable ({})", report.errors.len());
+        for source in &report.errors {
+            println!("  {source}");
+        }
+    }
+
     Ok(())
 }
 
