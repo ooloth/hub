@@ -175,11 +175,10 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
         errors.push("linear issues".to_string());
     }
 
-    // Loki errors are logged but don't fail the refresh (like the original behavior).
     for env in &params.loki_envs {
         match crate::loki::run(env).await {
             Ok(loki_items) => items.extend(loki_items.into_iter().map(StatusItem::Loki)),
-            Err(e) => eprintln!("loki ({} · {}): {e}", env.project, env.env),
+            Err(_) => errors.push(format!("loki ({} · {})", env.project, env.env)),
         }
     }
 
