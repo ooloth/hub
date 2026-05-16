@@ -54,6 +54,10 @@ impl App {
                 *selected = selected.saturating_sub(1);
             }
             Screen::Detail { view, .. } => {
+                assert!(
+                    view.list_state.selected().is_some(),
+                    "list_state must be selected in Detail screen"
+                );
                 let sel = view.list_state.selected().unwrap_or(0);
                 if sel > 0 {
                     view.list_state.select(Some(sel - 1));
@@ -71,6 +75,10 @@ impl App {
                 }
             }
             Screen::Detail { view, .. } => {
+                assert!(
+                    view.list_state.selected().is_some(),
+                    "list_state must be selected in Detail screen"
+                );
                 let sel = view.list_state.selected().unwrap_or(0);
                 if len > 0 && sel < len - 1 {
                     view.list_state.select(Some(sel + 1));
@@ -104,6 +112,10 @@ impl App {
                 *selected = selected.saturating_sub(PAGE);
             }
             Screen::Detail { view, .. } => {
+                assert!(
+                    view.list_state.selected().is_some(),
+                    "list_state must be selected in Detail screen"
+                );
                 let sel = view.list_state.selected().unwrap_or(0);
                 view.list_state.select(Some(sel.saturating_sub(PAGE)));
             }
@@ -121,9 +133,105 @@ impl App {
                 *selected = (*selected + PAGE).min(len - 1);
             }
             Screen::Detail { view, .. } => {
+                assert!(
+                    view.list_state.selected().is_some(),
+                    "list_state must be selected in Detail screen"
+                );
                 let sel = view.list_state.selected().unwrap_or(0);
                 view.list_state.select(Some((sel + PAGE).min(len - 1)));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{App, DetailView, Screen, UiState};
+    use crate::display::{DisplayItem, Filter, ListSnapshot};
+    use rstest::rstest;
+    use workflows::status::StatusItem;
+
+    fn stub_item() -> StatusItem {
+        StatusItem::Ci(domain::CiFailure {
+            repo: domain::RepoSlug::new("ooloth", "hub"),
+            workflow_name: "CI".to_string(),
+            job_name: None,
+            step_name: None,
+            error: None,
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::High,
+            url: "https://example.com".to_string(),
+        })
+    }
+
+    fn detail_app(item_count: usize, selected: usize) -> App {
+        let items: Vec<StatusItem> = (0..item_count).map(|_| stub_item()).collect();
+        App {
+            ui: UiState {
+                screen: Screen::Detail {
+                    parent: ListSnapshot {
+                        items: vec![DisplayItem::Group {
+                            label: "group".to_string(),
+                            items,
+                        }],
+                        selected: 0,
+                        filter: Filter::default(),
+                    },
+                    view: DetailView {
+                        group_index: 0,
+                        list_state: {
+                            let mut ls = ratatui::widgets::ListState::default();
+                            ls.select(Some(selected));
+                            ls
+                        },
+                    },
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    fn detail_selected(app: &App) -> usize {
+        match &app.ui.screen {
+            Screen::Detail { view, .. } => view.list_state.selected().unwrap(),
+            _ => panic!("not in detail screen"),
+        }
+    }
+
+    #[rstest]
+    #[case(3, 1, 0)]
+    #[case(3, 0, 0)]
+    fn detail_move_up(#[case] n: usize, #[case] start: usize, #[case] end: usize) {
+        let mut app = detail_app(n, start);
+        app.move_up();
+        assert_eq!(detail_selected(&app), end);
+    }
+
+    #[rstest]
+    #[case(3, 1, 2)]
+    #[case(3, 2, 2)]
+    fn detail_move_down(#[case] n: usize, #[case] start: usize, #[case] end: usize) {
+        let mut app = detail_app(n, start);
+        app.move_down();
+        assert_eq!(detail_selected(&app), end);
+    }
+
+    #[rstest]
+    #[case(20, 15, 5)]
+    #[case(20, 5, 0)]
+    fn detail_move_page_up(#[case] n: usize, #[case] start: usize, #[case] end: usize) {
+        let mut app = detail_app(n, start);
+        app.move_page_up();
+        assert_eq!(detail_selected(&app), end);
+    }
+
+    #[rstest]
+    #[case(25, 5, 15)]
+    #[case(25, 18, 24)]
+    fn detail_move_page_down(#[case] n: usize, #[case] start: usize, #[case] end: usize) {
+        let mut app = detail_app(n, start);
+        app.move_page_down();
+        assert_eq!(detail_selected(&app), end);
     }
 }
