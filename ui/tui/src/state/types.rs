@@ -101,6 +101,8 @@ pub(crate) enum InvestigateAction {
         kind: PrKind,
         author: String,
         review_decision: Option<ReviewDecision>,
+        head_branch: String,
+        base_branch: String,
     },
     #[cfg(feature = "private")]
     LaunchMediaBlocked {
@@ -159,6 +161,8 @@ pub(crate) enum Effect {
         kind: PrKind,
         author: String,
         review_decision: Option<ReviewDecision>,
+        head_branch: String,
+        base_branch: String,
     },
     #[cfg(feature = "private")]
     LaunchMediaBlocked {

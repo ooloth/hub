@@ -174,6 +174,7 @@ async fn resolve_pr_worktree(
     config: &config::Config,
     repo: &str,
     number: u64,
+    head_branch: &str,
 ) -> Result<PathBuf, String> {
     let name = config
         .projects
@@ -189,9 +190,33 @@ async fn resolve_pr_worktree(
         return Err("Not fetched yet; run hub fetch".to_string());
     }
 
-    workflows::fetch::ensure_pr_worktree(&bare, number)
+    workflows::fetch::ensure_pr_worktree(&bare, number, head_branch)
         .await
         .map_err(|e| format!("Failed to create PR worktree: {e}"))
+}
+
+async fn changed_files(cwd: &std::path::Path, base_branch: &str) -> Vec<String> {
+    let Ok(out) = tokio::process::Command::new("git")
+        .args([
+            "-C",
+            &cwd.to_string_lossy(),
+            "diff",
+            &format!("{base_branch}..HEAD"),
+            "--name-only",
+        ])
+        .output()
+        .await
+    else {
+        return vec![];
+    };
+    if !out.status.success() {
+        return vec![];
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(str::to_owned)
+        .collect()
 }
 
 fn spawn_git_fetch(config: &config::Config) {
@@ -283,8 +308,11 @@ async fn run_loop(
                     kind,
                     author,
                     review_decision,
-                } => match resolve_pr_worktree(config, &repo, number).await {
+                    head_branch,
+                    base_branch,
+                } => match resolve_pr_worktree(config, &repo, number, &head_branch).await {
                     Ok(cwd) => {
+                        let changed_files = changed_files(&cwd, &base_branch).await;
                         if let Err(err) = investigations::launch(
                             investigations::pr::config(
                                 number,
@@ -292,6 +320,9 @@ async fn run_loop(
                                 kind,
                                 &author,
                                 review_decision,
+                                &head_branch,
+                                &base_branch,
+                                &changed_files,
                             ),
                             &cwd,
                         ) {

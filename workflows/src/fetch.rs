@@ -129,8 +129,9 @@ async fn fetch_project(name: &str, repo: &str, github_token: &str, repos_dir: &P
 /// state of the base branch (e.g. origin/main). On re-entry this fetch is
 /// best-effort — a network failure does not block access to an existing worktree.
 /// On first creation the fetch is required; it is followed by a PR-specific fetch
-/// (`pull/<number>/head`) and a `git worktree add`.
-pub async fn ensure_pr_worktree(bare: &Path, number: u64) -> Result<PathBuf> {
+/// (`pull/<number>/head`), a `git worktree add`, and setting the upstream tracking
+/// branch so `git push` targets the real PR branch, not a phantom `origin/pr-<number>`.
+pub async fn ensure_pr_worktree(bare: &Path, number: u64, head_branch: &str) -> Result<PathBuf> {
     let bare_str = bare.to_string_lossy().into_owned();
     let branch = format!("pr-{number}");
     let worktree = bare.join(&branch);
@@ -180,6 +181,20 @@ pub async fn ensure_pr_worktree(bare: &Path, number: u64) -> Result<PathBuf> {
         let stderr = String::from_utf8_lossy(&add.stderr);
         anyhow::bail!("git worktree add failed for PR #{number}: {stderr}");
     }
+
+    // Set upstream so `git push` targets the real PR branch, not origin/pr-<number>.
+    let upstream = format!("origin/{head_branch}");
+    let _ = Command::new("git")
+        .args([
+            "-C",
+            &bare_str,
+            "branch",
+            "--set-upstream-to",
+            &upstream,
+            &branch,
+        ])
+        .output()
+        .await;
 
     Ok(worktree)
 }
@@ -410,7 +425,7 @@ mod tests {
             "setup: bare should be stale before the call"
         );
 
-        ensure_pr_worktree(&bare, 42).await.unwrap();
+        ensure_pr_worktree(&bare, 42, "feat/test").await.unwrap();
 
         let after = git_rev_parse(&bare, "refs/remotes/origin/main").await;
         assert_eq!(

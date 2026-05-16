@@ -127,6 +127,8 @@ pub(crate) enum InvestigationKind {
         kind: domain::PrKind,
         author: String,
         review_decision: Option<domain::ReviewDecision>,
+        head_branch: String,
+        base_branch: String,
     },
     #[cfg(feature = "private")]
     MediaBlocked {
@@ -151,6 +153,8 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
             kind: pr.kind,
             author: pr.author.clone(),
             review_decision: pr.review_decision,
+            head_branch: pr.head_branch.clone(),
+            base_branch: pr.base_branch.clone(),
         }),
         StatusItem::Loki(l) => Some(InvestigationKind::Loki {
             project: l.project.clone(),
@@ -493,6 +497,8 @@ mod tests {
             author: "alice".to_string(),
             review_decision: None,
             review_count: 0,
+            head_branch: "feat/add-feature".to_string(),
+            base_branch: "main".to_string(),
         })
     }
 
@@ -689,6 +695,8 @@ mod tests {
             author: "ooloth".to_string(),
             review_decision,
             review_count,
+            head_branch: "feat/add-feature".to_string(),
+            base_branch: "main".to_string(),
         })
     }
 

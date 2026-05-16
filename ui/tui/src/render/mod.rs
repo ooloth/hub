@@ -730,6 +730,8 @@ mod tests {
             author: "alice".to_string(),
             review_decision: None,
             review_count: 0,
+            head_branch: "feat/fix".to_string(),
+            base_branch: "main".to_string(),
         })
     }
 

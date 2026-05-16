@@ -57,6 +57,10 @@ struct PrNode {
     reviews: ReviewCounts,
     repository: PrRepository,
     assignees: PrAssignees,
+    #[serde(rename = "headRefName")]
+    head_ref_name: String,
+    #[serde(rename = "baseRefName")]
+    base_ref_name: String,
 }
 
 #[derive(Deserialize)]
@@ -193,6 +197,8 @@ fn nodes_to_prs(
                 author: node.author.login,
                 review_decision: parse_review_decision(node.review_decision.as_deref()),
                 review_count: node.reviews.total_count,
+                head_branch: node.head_ref_name,
+                base_branch: node.base_ref_name,
             })
         })
         .collect()
@@ -218,6 +224,7 @@ async fn graphql_prs(token: &str, base: &str, repos: &[String]) -> Result<Vec<Pr
             number title url
             author {{ login }}
             createdAt isDraft reviewDecision
+            headRefName baseRefName
             reviews {{ totalCount }}
             repository {{ nameWithOwner }}
             assignees(first: 10) {{ nodes {{ login }} }}
@@ -829,6 +836,8 @@ mod tests {
                     .map(|l| PrAssignee { login: l.into() })
                     .collect(),
             },
+            head_ref_name: "feat/test".into(),
+            base_ref_name: "main".into(),
         }
     }
 

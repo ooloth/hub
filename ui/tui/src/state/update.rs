@@ -255,12 +255,16 @@ impl App {
                 kind,
                 author,
                 review_decision,
+                head_branch,
+                base_branch,
             } => vec![Effect::LaunchPr {
                 repo,
                 number,
                 kind,
                 author,
                 review_decision,
+                head_branch,
+                base_branch,
             }],
             InvestigateAction::LaunchLoki {
                 project,
@@ -387,12 +391,16 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
             kind,
             author,
             review_decision,
+            head_branch,
+            base_branch,
         }) => InvestigateAction::LaunchPr {
             repo,
             number,
             kind,
             author,
             review_decision,
+            head_branch,
+            base_branch,
         },
         Some(InvestigationKind::Loki {
             project,
@@ -613,6 +621,8 @@ mod tests {
                 author: "alice".to_string(),
                 review_decision: None,
                 review_count: 0,
+                head_branch: "feat/thing".to_string(),
+                base_branch: "main".to_string(),
             },
         ))]);
         assert_eq!(
@@ -623,6 +633,8 @@ mod tests {
                 kind: domain::PrKind::ToReview,
                 author: "alice".to_string(),
                 review_decision: None,
+                head_branch: "feat/thing".to_string(),
+                base_branch: "main".to_string(),
             }
         );
     }
@@ -641,6 +653,8 @@ mod tests {
                 author: "ooloth".to_string(),
                 review_decision: Some(domain::ReviewDecision::Approved),
                 review_count: 1,
+                head_branch: "feat/mine".to_string(),
+                base_branch: "main".to_string(),
             },
         ))]);
         assert_eq!(
@@ -651,6 +665,8 @@ mod tests {
                 kind: domain::PrKind::Mine,
                 author: "ooloth".to_string(),
                 review_decision: Some(domain::ReviewDecision::Approved),
+                head_branch: "feat/mine".to_string(),
+                base_branch: "main".to_string(),
             }
         );
     }
@@ -669,6 +685,8 @@ mod tests {
                 author: "ooloth".to_string(),
                 review_decision: Some(domain::ReviewDecision::ChangesRequested),
                 review_count: 2,
+                head_branch: "feat/draft".to_string(),
+                base_branch: "main".to_string(),
             },
         ))]);
         assert_eq!(
@@ -679,6 +697,8 @@ mod tests {
                 kind: domain::PrKind::MyDraft,
                 author: "ooloth".to_string(),
                 review_decision: Some(domain::ReviewDecision::ChangesRequested),
+                head_branch: "feat/draft".to_string(),
+                base_branch: "main".to_string(),
             }
         );
     }

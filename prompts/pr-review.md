@@ -15,13 +15,16 @@ The hub TUI selects the skill automatically based on the PR's kind and review st
 
 ## Context provided
 
-The initial message tells you:
-- PR number and repo
+The initial message (passed as skill arguments on one line) tells you:
+- PR number, repo, head branch name, and base branch
+- Changed files list
 - PR author (for ToReview PRs) or confirmation this is your own PR
-- Which skill was selected and the intent
+
+Use this context directly — no need to re-derive branch name, base ref, or file
+list via discovery commands.
 
 ## Prerequisites
 
 - `gh` CLI authenticated (`gh auth status`)
 - The PR branch is already checked out in the current worktree
-- Run `git log --oneline -5` to confirm you are on the right commit
+- Upstream tracking is set to `origin/<head_branch>` so `git push` works without extra flags
