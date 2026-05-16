@@ -22,42 +22,10 @@ not be conflated:
 
 ## Decision
 
-### Background automation → `agents/` crate (planned, not yet built)
-
-The intended home for background automation is an `agents/` crate
-alongside `clients/`. The Anthropic API would be treated as another
-external service — `agents/` would be its adapter, the same way
-`clients/github/` adapts the GitHub API.
-
-```
-workflows/ → clients/github    # fetch (deterministic)
-           → agents/classify   # understand (judgment-based)
-           → clients/github    # act (deterministic)
-```
-
-Individual functions in `agents/` would each wrap a prompt and return
-structured output. Examples:
-
-- `agents::classify::score_urgency(items) -> Vec<ScoredItem>`
-- `agents::errors::group_traces(traces) -> Vec<ErrorGroup>`
-- `agents::issues::draft_body(observation) -> String`
-
-Keeping `agents/` separate from `clients/` makes the non-determinism
-explicit: everything in `clients/` is deterministic and testable with
-fixed inputs; everything in `agents/` involves LLM judgment and
-requires different testing strategies (snapshot tests, evals).
-
-**The `agents/` crate has not been built yet.** The first concrete
-execution workflow — `implement-issue` — currently orchestrates
-worktree setup, validation, implementation, and PR opening via the CLI
-without the `agents/` crate. Background LLM calls (urgency scoring,
-issue drafting, error grouping) will be added to `agents/` as
-individual use cases mature.
-
-Execution workflows will grow in scope over time: handling larger
-multi-step tasks, automated code review passes, and cross-repo changes.
-The `implement-issue` pattern — claim, validate, implement, test,
-PR — is the template subsequent workflows will extend.
+> **Note:** The `agents/` crate section of this decision is superseded
+> by [Decision 009](009-no-scheduled-runs.md). The `agents/` crate will
+> not be built. All LLM interaction is handled via interactive prompts
+> launched from the TUI.
 
 ### Interactive investigation → `prompts/`
 
@@ -82,17 +50,9 @@ See [Decision 006](006-hub-as-prompt-library.md) for the full model.
 
 ## Consequences
 
-- When built, functions in `agents/` will be called by workflows, run
-  unattended, and must handle degraded mode gracefully (fall back to
-  rule-based logic if the LLM call fails).
-- `agents/` will import `domain/` for input/output types, same as
-  `clients/`. It will not import `clients/` or `store/`.
-- Investigation prompts in `prompts/` are launched by the TUI or by a
-  scheduler — not typed by the user as slash commands. They are
-  conversations, not function calls.
+- Investigation prompts in `prompts/` are launched by the TUI — not
+  typed by the user as slash commands. They are conversations, not
+  function calls.
 - Craft skills (drafting, reviewing, analyzing — useful interactively
   across any project) live globally in `~/.claude/skills/` and are
   honed independently of hub. They are not hub-aware.
-- A prompt that proves durable and valuable as an interactive
-  investigation is a candidate for later promotion to `agents/`
-  automation — but that promotion is a deliberate step, not assumed.

@@ -43,6 +43,3 @@ daemon is the right answer at that point.
   second live fetch is acceptable and avoids any cache-staleness
   complexity in the CLI path.
 - There is no background refresh when the TUI is not open.
-- If a future use case requires refresh without an open TUI (scheduled
-  alerts, headless server operation), revisit this decision and introduce
-  a daemon then. The SQLite schema is already the right shape for it.

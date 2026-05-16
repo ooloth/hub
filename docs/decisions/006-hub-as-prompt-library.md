@@ -34,17 +34,16 @@ These prompts:
 - Live alongside hub's Rust code, versioned with it, but are distinct
   from the `agents/` crate
 
-Prompts are launched via `claude --system-prompt "$(cat prompts/<name>.md)" "<task>"` —
-either from the TUI (embedded at compile time via `include_str!`) or from
-a scheduled `claude -p` run. This avoids slash-command discovery, which
-requires the skills directory to be present in the working tree.
+Prompts are launched via `claude --system-prompt "$(cat prompts/<name>.md)" "<task>"` from
+the TUI (embedded at compile time via `include_str!`). This avoids slash-command discovery,
+which requires the skills directory to be present in the working tree.
 
 This is a third category of agent capability, distinct from:
 
 | Category | Location | Mode | Who runs it |
 |---|---|---|---|
 | Background automation | `agents/` crate (planned, not yet built) | Single API call, structured output | Hub workflows, unattended |
-| Hub investigation prompts | `prompts/` in hub's repo | Multi-turn, iterative | TUI keypress or scheduled run |
+| Hub investigation prompts | `prompts/` in hub's repo | Multi-turn, iterative | TUI keypress |
 | General craft skills | `~/.claude/skills/` globally | Multi-turn, general-purpose | Human, any project |
 
 ## Consequences
@@ -53,15 +52,14 @@ This is a third category of agent capability, distinct from:
   maintained alongside `clients/` and `workflows/`.
 - Prompts are added via the `add-a-prompt` playbook, not the
   `add-a-workflow` playbook.
-- Prompts receive hub.toml config via the task string (scheduled runs)
-  or via the TUI item context (TUI investigations).
+- Prompts receive hub.toml config via the TUI item context.
 - The same prompt works for any project configured in `hub.toml` — no
   per-project duplication.
 - Hub's investigation capability does not require the `agents/` crate
   and does not block on it. Prompts can be added before `agents/` exists.
-- A prompt that proves durable and valuable — something that runs daily
-  unattended — is a candidate for later promotion to `agents/`
-  automation. That promotion is a deliberate step, not assumed.
+- A prompt that proves durable and valuable is a candidate for later
+  promotion to a TUI execution action. That promotion is a deliberate
+  step, not assumed.
 - This is one of hub's core hypotheses: that centralizing project
   config in `hub.toml` makes agentic investigation faster to launch
   and more contextually accurate than navigating to each project repo

@@ -16,9 +16,9 @@ prioritized view with agentic capabilities built in:
 - **Pre-loaded investigation** — a keypress on any signal opens the right Claude Code skill
   with `hub.toml` context already loaded (endpoint, query, project name); investigation
   starts immediately, not after setup
-- **Automated proposals** — for well-understood problem categories, hub drafts the work (a
-  GitHub issue, and where the solution is clear, a draft PR) for my review; the goal is
-  waking up to proposed solutions, not just notifications
+- **Keypress execution** — for issues labelled `status:ready-for-agent`, a keypress in the
+  TUI launches an agent in a git worktree; hub handles setup so the focus is on reviewing
+  the result, not orchestrating the run
 - **Single config source of truth** — `hub.toml` is git-ignored and per-device; onboarding
   a new project to existing workflows is one file edit, no code changes; work and personal
   contexts stay naturally separate

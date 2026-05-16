@@ -9,15 +9,9 @@ deterministically and emit ranked items; prompts run as Claude agents and
 produce diagnoses, recommendations, or filed issues.
 
 Hub investigation prompts live in `prompts/` as plain markdown
-with no frontmatter. They are launched one of two ways:
-
-- **TUI investigations** — embedded at compile time via `include_str!` in
-  `ui/tui/src/investigations/`, launched as a tmux split when the user
-  presses `i` on a TUI item. Context (repo, error message, issue number,
-  etc.) comes from the selected item.
-- **Scheduled runs** — invoked headless via
-  `claude -p --dangerously-skip-permissions --system-prompt "$(cat prompts/<name>.md)" "<task>"`.
-  Context comes from the task string. Runs unattended; must never block.
+with no frontmatter. They are launched as tmux splits when the user
+presses a key on a TUI item (embedded at compile time via `include_str!`
+in `ui/tui/src/investigations/`). Context comes from the selected item.
 
 They are **not**:
 
@@ -28,27 +22,6 @@ They are **not**:
 
 See [Decision 006](../decisions/006-hub-as-skill-library.md) for the
 original model and rationale.
-
-## Automation compatibility
-
-All prompts in this project must work without user input. A prompt may
-run interactively alongside a human or fully unattended — it cannot know
-which at runtime, and blocking on a prompt will hang an automated run
-indefinitely.
-
-**Rules:**
-
-- Never ask the user a question or wait for a response
-- If the invocation is ambiguous, make a best-effort interpretation
-  and log what was chosen; do not stop to confirm
-- If required information is missing (e.g. no theme given), apply a
-  sensible default (e.g. all opted-in themes) and log it
-- If something is unrecognised, skip it with a logged warning and
-  continue; do not abort the run
-
-The scope echo pattern — printing a one-line summary of the interpreted
-scope before doing any work — is encouraged as a transparency mechanism,
-but it must not block: print it and proceed.
 
 ## 1. Identify what context the prompt needs
 
@@ -110,36 +83,6 @@ If the prompt reads new hub.toml fields, add an example entry to
 `hub.toml.example` showing those fields under the appropriate section.
 
 ## 6. Test the prompt
-
-**Scheduled invocation:**
-
-```bash
-claude -p --dangerously-skip-permissions \
-  --system-prompt "$(cat prompts/<name>.md)" \
-  "<task string>"
-```
-
-This is the same invocation used by automated runs — no interactive
-session, output to stdout, no prompts. If it works here, it will work
-unattended.
-
-The `--dangerously-skip-permissions` flag is required if your personal
-settings enable plan mode — without it the prompt will pause for
-approval and hang.
-
-To stream output in real time:
-
-```bash
-claude -p --dangerously-skip-permissions \
-  --system-prompt "$(cat prompts/<name>.md)" \
-  "<task string>" \
-  --output-format stream-json \
-  --include-partial-messages \
-  --verbose | \
-  jq -rj 'select(.type == "stream_event" and .event.delta.type? == "text_delta") | .event.delta.text'
-```
-
-**TUI invocation:**
 
 Follow the Tier 2 tmux E2E instructions in `ui/tui/README.md` to drive
 the keypress and verify the split launches correctly.

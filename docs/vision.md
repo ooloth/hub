@@ -33,13 +33,13 @@ they don't:
    endpoint, the LogQL query, the project name; a keypress launches the
    right Claude Code skill with zero setup; the investigation starts
    immediately
-3. **Automated proposals** — for well-understood problem categories,
-   hub drafts the work (a GitHub issue, a draft PR) for review; the
-   goal is waking up to proposed solutions, not just alerts
+3. **Keypress execution** — for issues labelled `status:ready-for-agent`,
+   a keypress in the TUI launches an agent in a git worktree; hub handles
+   setup so the focus is on reviewing the result, not orchestrating the run
 
 The measure of success is not "shows all the things". It's "shows the
 right things, in the right order, so I can triage and act without
-hunting — and for the routine stuff, wake up to a proposed fix."
+hunting — and for the ready stuff, a keypress gets it moving."
 
 Agents are a first-class tool. Where rules are sufficient, use rules.
 Where judgment or scale makes agents more appropriate, use agents. The
@@ -87,11 +87,11 @@ layer is just slower than each individual source. Grafana can monitor
 production errors. Scripts can check disk usage. Browser tabs can
 aggregate dashboards. The monitoring itself is not the invention.
 
-Hub avoids this by adding the three things source tools don't: cross-
-domain urgency ranking (a Loki error and a blocked download compared in
-one list), pre-loaded investigation context (one keypress to diagnose,
-not five minutes of setup), and automated proposals (wake up to a draft
-PR, not just a notification).
+Hub avoids this by adding the things source tools don't: cross-domain
+urgency ranking (a Loki error and a blocked download compared in one
+list), pre-loaded investigation context (one keypress to diagnose, not
+five minutes of setup), and keypress execution (a ready issue goes to an
+agent without leaving hub).
 
 The bar for a new workflow: does it contribute to cross-domain triage,
 speed up investigation, or enable automated proposals? A workflow that
@@ -136,8 +136,7 @@ Investigation skills are Claude Code skills that live in hub's
 `.claude/skills/` directory. They are multi-turn conversations — Claude
 uses CLI tools (`logcli`, `gh`, etc.) to query data iteratively,
 forming hypotheses and validating them, until it can produce a
-diagnosis. This is distinct from the `agents/` crate (planned, not yet built), which
-will handle single-call, unattended background automation.
+diagnosis.
 
 Hub's role in this layer is **context provider**. Hub knows (from
 `hub.toml`) the Loki endpoint for a project's production environment,
@@ -176,30 +175,15 @@ with `hub.toml` context pre-loaded. Claude iterates — querying logs, fetching 
 checking API state — until it produces a diagnosis. You're in the loop; Claude is the
 analyst. The investigation is multi-turn and human-supervised.
 
-**Tier 3 — Execute.** For well-understood problem categories, hub runs unattended: it detects
-the signal, writes the GitHub issue, implements the fix on a branch, and opens a draft PR for
-review. You wake up to proposed work ready to merge, not just a notification. Approval is always
-required before anything merges — hub executes, you review and decide.
+**Tier 3 — Execute.** For issues labelled `status:ready-for-agent`, a keypress in the TUI
+launches an agent in a git worktree. Hub handles setup (worktree, credentials, private wiring)
+so the agent starts immediately with the right context. You watch it work in a tmux split;
+approval is always required before anything merges.
 
-The first execution workflow is `implement-issue`: given a `status:ready-for-agent` issue, hub
-creates a worktree, validates the issue's claims, implements the fix, writes missing tests, and
-opens a draft PR. This is the pattern that subsequent workflows will follow and extend — handling
-larger tasks, multi-step implementations, automated code review passes, and cross-repo changes.
-
-The graduation path: a new workflow surfaces signals (Tier 1) first. Once the signal pattern
-is stable and the investigation logic is understood, it can be scripted into a Tier 3 execution
-workflow. Not every workflow needs to reach Tier 3 — some signals genuinely require human
-judgment every time.
-
-A signal pattern is stable when its urgency classification rules haven't needed adjustment after
-several weeks of live use — the workflow emits items at the expected rate, and the urgency tiers
-feel right without tweaking. Investigation logic is understood when the diagnosis steps are
-repeatable: the same query sequence, the same hypothesis chain, the same conclusion format, every
-time. If each investigation still requires novel judgment, the pattern isn't ready to script.
-
-Trust in execution quality is earned incrementally. An automated PR that's wrong wastes more
-time than no automation at all. Tier 3 is reserved for categories where the pattern is reliable
-enough to stake the cost of a bad result on.
+Not every signal reaches Tier 3 — some require human judgment every time. The graduation path
+is: surface the signal (Tier 1), then investigate until the diagnosis steps are repeatable
+(Tier 2), then — if the fix itself is mechanical enough to delegate — add an execution action
+(Tier 3).
 
 ## UI evolution
 
@@ -221,24 +205,9 @@ tmux pane, with hub.toml already providing the endpoint, query, and project
 name, is the complete agent integration story. Hub is the launcher; Claude
 Code is the investigator.
 
-As Tier 3 execution workflows mature, the TUI becomes the control plane
-for autonomous work. A jobs panel shows running agents alongside ranked
-signals — each job displaying its repo, issue, current phase
-(validating → implementing → pushing), and elapsed time. From the same
-list you already use for triage:
-
-- **Dispatch** — press a key on any ranked signal to send it to the
-  agent queue; hub writes the issue if needed, labels it ready-for-agent,
-  and the job appears immediately in the jobs panel
-- **Inspect** — press a key on a running job to tail its live transcript
-  in a tmux split; watch what the agent is doing without interrupting it
-- **Abort** — press a key to kill the agent and relabel the issue
-  needs-human-review
-- **Review** — completed jobs show their outcome (PR number, stopped
-  reason, or failure) and a keypress opens the PR or issue
-
-The same screen that surfaces what needs attention becomes the place you
-dispatch, monitor, and review autonomous work — without leaving hub.
+The TUI is the place to dispatch, watch, and review execution work
+without leaving hub. A keypress on a ready issue sends the agent to work
+in a tmux split; a keypress on a completed job opens the PR for review.
 
 See [Decision 007](decisions/007-tui-over-web-app.md) for why TUI was
 chosen over a web app and what would legitimately change that decision.
