@@ -160,16 +160,14 @@ async fn resolve_investigation_cwd(config: &config::Config, repo: &str) -> Resul
         return Err("Not fetched yet; run hub fetch".to_string());
     }
 
-    if let Some(wt) = workflows::fetch::default_branch_worktree(&repos, name) {
-        return Ok(wt);
-    }
-
-    workflows::fetch::ensure_default_branch_worktree(&bare)
+    // Always fetch and sync — ensures the agent sees current code regardless of
+    // when the background refresh last ran.
+    workflows::fetch::sync_default_branch_worktree(&bare)
         .await
-        .map_err(|e| format!("Failed to create worktree: {e}"))?;
+        .map_err(|e| format!("Failed to sync worktree: {e}"))?;
 
     workflows::fetch::default_branch_worktree(&repos, name)
-        .ok_or_else(|| "Worktree creation succeeded but path not found".to_string())
+        .ok_or_else(|| "Worktree sync succeeded but path not found".to_string())
 }
 
 async fn resolve_pr_worktree(

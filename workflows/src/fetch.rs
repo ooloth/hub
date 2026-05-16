@@ -125,17 +125,34 @@ async fn fetch_project(name: &str, repo: &str, github_token: &str, repos_dir: &P
 
 /// Creates a linked worktree for a PR at `<bare>/pr-<number>/` and returns its path.
 ///
-/// Fetches `pull/<number>/head` from origin into a local branch named `pr-<number>`,
-/// then adds a worktree pointing to it. Idempotent: if the worktree already exists,
-/// returns its path immediately without re-fetching.
+/// Always fetches all remote tracking refs first so the agent sees the current
+/// state of the base branch (e.g. origin/main). On re-entry this fetch is
+/// best-effort — a network failure does not block access to an existing worktree.
+/// On first creation the fetch is required; it is followed by a PR-specific fetch
+/// (`pull/<number>/head`) and a `git worktree add`.
 pub async fn ensure_pr_worktree(bare: &Path, number: u64) -> Result<PathBuf> {
     let bare_str = bare.to_string_lossy().into_owned();
     let branch = format!("pr-{number}");
     let worktree = bare.join(&branch);
     let worktree_str = worktree.to_string_lossy().into_owned();
 
-    if worktree.is_dir() {
+    let worktree_exists = worktree.is_dir();
+
+    // Update all remote tracking refs. Non-fatal on re-entry so a network hiccup
+    // does not block access to an already-created worktree.
+    let fetch_all_ok = Command::new("git")
+        .args(["-C", &bare_str, "fetch", "origin"])
+        .output()
+        .await
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if worktree_exists {
         return Ok(worktree);
+    }
+
+    if !fetch_all_ok {
+        anyhow::bail!("git fetch origin failed; cannot create PR #{number} worktree");
     }
 
     let fetch = Command::new("git")
@@ -165,6 +182,29 @@ pub async fn ensure_pr_worktree(bare: &Path, number: u64) -> Result<PathBuf> {
     }
 
     Ok(worktree)
+}
+
+/// Fetches the latest remote refs and syncs the default-branch worktree to them.
+///
+/// Unlike `ensure_default_branch_worktree` (which skips the fetch), this always
+/// runs `git fetch origin` first so the subsequent reset lands on the actual
+/// latest commit. Use this at investigation launch time; use
+/// `ensure_default_branch_worktree` from the background fetch path where the
+/// fetch has already happened.
+pub async fn sync_default_branch_worktree(bare: &Path) -> Result<()> {
+    let bare_str = bare.to_string_lossy().into_owned();
+
+    let fetch = Command::new("git")
+        .args(["-C", &bare_str, "fetch", "origin"])
+        .output()
+        .await
+        .context("git fetch origin failed")?;
+    if !fetch.status.success() {
+        let stderr = String::from_utf8_lossy(&fetch.stderr);
+        anyhow::bail!("git fetch origin failed: {stderr}");
+    }
+
+    ensure_default_branch_worktree(bare).await
 }
 
 pub async fn ensure_default_branch_worktree(bare: &Path) -> Result<()> {
@@ -292,6 +332,118 @@ fn parse_worktree_list(output: &str) -> Vec<(String, Option<String>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- integration test helpers ---
+
+    async fn run_git(args: &[&str]) {
+        let out = tokio::process::Command::new("git")
+            .args(args)
+            .output()
+            .await
+            .expect("git not found");
+        assert!(
+            out.status.success(),
+            "git {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    async fn git_rev_parse(dir: &Path, refname: &str) -> String {
+        let out = tokio::process::Command::new("git")
+            .args(["-C", &dir.to_string_lossy(), "rev-parse", refname])
+            .output()
+            .await
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    /// Creates an origin repo with one commit and a properly-configured bare
+    /// clone that mirrors the production setup (refs/remotes/origin/* refspec).
+    async fn setup_origin_and_bare(tmp: &Path) -> (PathBuf, PathBuf) {
+        let origin = tmp.join("origin");
+        let bare = tmp.join("bare");
+        let origin_str = origin.to_string_lossy().into_owned();
+        let bare_str = bare.to_string_lossy().into_owned();
+
+        run_git(&["-c", "init.defaultBranch=main", "init", &origin_str]).await;
+        run_git(&["-C", &origin_str, "config", "user.email", "t@t.com"]).await;
+        run_git(&["-C", &origin_str, "config", "user.name", "Test"]).await;
+        run_git(&["-C", &origin_str, "commit", "--allow-empty", "-m", "init"]).await;
+
+        run_git(&["clone", "--bare", &origin_str, &bare_str]).await;
+        run_git(&[
+            "-C",
+            &bare_str,
+            "config",
+            "remote.origin.fetch",
+            "+refs/heads/*:refs/remotes/origin/*",
+        ])
+        .await;
+        run_git(&["-C", &bare_str, "fetch", "origin"]).await;
+
+        (origin, bare)
+    }
+
+    /// Pushes an empty commit to origin and returns its SHA.
+    async fn push_commit(origin: &Path, message: &str) -> String {
+        let origin_str = origin.to_string_lossy().into_owned();
+        run_git(&["-C", &origin_str, "commit", "--allow-empty", "-m", message]).await;
+        git_rev_parse(origin, "HEAD").await
+    }
+
+    // --- failing tests (pass after changes) ---
+
+    #[tokio::test]
+    async fn ensure_pr_worktree_reentry_fetches_remote_tracking_refs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (origin, bare) = setup_origin_and_bare(tmp.path()).await;
+
+        // Simulate a previous investigation: pr-42/ dir already exists.
+        std::fs::create_dir(bare.join("pr-42")).unwrap();
+
+        // Push a new commit to origin — bare doesn't know about it yet.
+        let new_sha = push_commit(&origin, "second").await;
+        let before = git_rev_parse(&bare, "refs/remotes/origin/main").await;
+        assert_ne!(
+            before, new_sha,
+            "setup: bare should be stale before the call"
+        );
+
+        ensure_pr_worktree(&bare, 42).await.unwrap();
+
+        let after = git_rev_parse(&bare, "refs/remotes/origin/main").await;
+        assert_eq!(
+            after, new_sha,
+            "ensure_pr_worktree must fetch origin on re-entry"
+        );
+    }
+
+    #[tokio::test]
+    async fn sync_default_branch_worktree_fetches_then_resets_to_latest_commit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (origin, bare) = setup_origin_and_bare(tmp.path()).await;
+
+        // Create the default-branch worktree at the initial commit.
+        ensure_default_branch_worktree(&bare).await.unwrap();
+        let worktree = bare.join("main");
+        assert!(worktree.is_dir());
+
+        // Push a new commit to origin.
+        let new_sha = push_commit(&origin, "second").await;
+
+        // Before sync: worktree HEAD and remote tracking ref are both stale.
+        let wt_before = git_rev_parse(&worktree, "HEAD").await;
+        assert_ne!(wt_before, new_sha, "setup: worktree should be stale");
+
+        sync_default_branch_worktree(&bare).await.unwrap();
+
+        // After sync: both the remote tracking ref and the worktree HEAD are current.
+        let remote_after = git_rev_parse(&bare, "refs/remotes/origin/main").await;
+        assert_eq!(remote_after, new_sha, "remote tracking ref must be updated");
+        let wt_after = git_rev_parse(&worktree, "HEAD").await;
+        assert_eq!(wt_after, new_sha, "worktree HEAD must be reset to latest");
+    }
 
     #[test]
     fn read_default_branch_extracts_branch_name() {
