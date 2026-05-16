@@ -1,7 +1,27 @@
 [bans]
 multiple-versions = "deny"
-# Transitive conflicts from reqwest's TLS and getrandom's WASM targets — not controllable without upstream changes.
-skip = [{ name = "core-foundation" }, { name = "wit-bindgen" }]
+# Transitive conflicts across rusqlite, ratatui, reqwest, and their dependency trees.
+# These are cross-major-version splits not controllable without upstream changes.
+skip = [
+  { name = "core-foundation" },
+  { name = "crossterm" },
+  { name = "getrandom" },
+  { name = "hashbrown" },
+  { name = "linux-raw-sys" },
+  { name = "rustix" },
+  { name = "thiserror" },
+  { name = "thiserror-impl" },
+  { name = "windows-sys" },
+  { name = "windows-targets" },
+  { name = "windows_aarch64_gnullvm" },
+  { name = "windows_aarch64_msvc" },
+  { name = "windows_i686_gnu" },
+  { name = "windows_i686_msvc" },
+  { name = "windows_x86_64_gnu" },
+  { name = "windows_x86_64_gnullvm" },
+  { name = "windows_x86_64_msvc" },
+  { name = "wit-bindgen" },
+]
 
 [advisories]
 version = 2
