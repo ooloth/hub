@@ -136,7 +136,9 @@ mod tests {
 
     #[test]
     fn returns_empty_for_no_streams() {
-        assert!(entries_from_response(make_response(vec![])).unwrap().is_empty());
+        assert!(entries_from_response(make_response(vec![]))
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -185,7 +187,10 @@ mod tests {
 
     #[test]
     fn overflow_timestamp_returns_error() {
-        let stream = make_stream(&[("app", "myapp")], &[("99999999999999999999999", "log line")]);
+        let stream = make_stream(
+            &[("app", "myapp")],
+            &[("99999999999999999999999", "log line")],
+        );
         let err = entries_from_response(make_response(vec![stream])).unwrap_err();
         assert!(err.to_string().contains("99999999999999999999999"));
     }
