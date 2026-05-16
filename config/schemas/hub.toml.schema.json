@@ -231,9 +231,7 @@
               "github-ci",
               "github-issues",
               "github-prs",
-              "implement-issue",
               "loki-logs",
-              "repo-scan-docs",
               "user-activity-gcp",
               "warnings-gcp"
             ]
