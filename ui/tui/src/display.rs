@@ -35,8 +35,8 @@ pub(crate) struct ListSnapshot {
 
 #[derive(Clone, Debug)]
 pub(crate) struct LineParts {
-    pub(crate) primary: String,
-    pub(crate) dim_inline: Option<String>,
+    pub(crate) primary: Vec<String>,
+    pub(crate) dim_inline: Vec<String>,
     pub(crate) source: Option<String>,
     pub(crate) category: &'static str,
     pub(crate) age: String,
@@ -44,22 +44,18 @@ pub(crate) struct LineParts {
 
 impl LineParts {
     pub(crate) fn flat(&self) -> String {
-        let mut s = self.primary.clone();
-        if let Some(i) = &self.dim_inline {
-            s.push_str(i);
-        }
-        s
+        self.primary.join(" · ") + &self.dim_inline.join(" · ")
     }
 
     pub(crate) fn all_text(&self) -> String {
-        [
-            self.category,
-            &self.primary,
-            self.dim_inline.as_deref().unwrap_or(""),
-            self.source.as_deref().unwrap_or(""),
-            &self.age,
-        ]
-        .join(" ")
+        let mut parts: Vec<&str> = vec![self.category];
+        parts.extend(self.primary.iter().map(String::as_str));
+        parts.extend(self.dim_inline.iter().map(String::as_str));
+        if let Some(s) = &self.source {
+            parts.push(s);
+        }
+        parts.push(&self.age);
+        parts.join(" ")
     }
 }
 
@@ -175,47 +171,53 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
 pub(crate) fn item_line(item: &StatusItem) -> LineParts {
     match item {
         StatusItem::Pr(pr) => {
-            let dim = if pr.kind == domain::PrKind::MyDraft {
-                format!(" #{} · {} · draft", pr.number, pr.author)
-            } else {
-                let review_str = if pr.review_count == 1 {
+            let review_str = || {
+                if pr.review_count == 1 {
                     "1 review".to_string()
                 } else {
                     format!("{} reviews", pr.review_count)
-                };
+                }
+            };
+            let dim_inline = if pr.kind == domain::PrKind::MyDraft {
+                vec![
+                    format!(" #{}", pr.number),
+                    pr.author.clone(),
+                    "draft".to_string(),
+                ]
+            } else {
                 match pr.review_decision {
-                    Some(domain::ReviewDecision::Approved) => {
-                        format!(
-                            " #{} · {} · approved · {}",
-                            pr.number, pr.author, review_str
-                        )
-                    }
-                    Some(domain::ReviewDecision::ChangesRequested) => {
-                        format!(
-                            " #{} · {} · changes requested · {}",
-                            pr.number, pr.author, review_str
-                        )
-                    }
-                    None => format!(" #{} · {} · {}", pr.number, pr.author, review_str),
+                    Some(domain::ReviewDecision::Approved) => vec![
+                        format!(" #{}", pr.number),
+                        pr.author.clone(),
+                        "approved".to_string(),
+                        review_str(),
+                    ],
+                    Some(domain::ReviewDecision::ChangesRequested) => vec![
+                        format!(" #{}", pr.number),
+                        pr.author.clone(),
+                        "changes requested".to_string(),
+                        review_str(),
+                    ],
+                    None => vec![format!(" #{}", pr.number), pr.author.clone(), review_str()],
                 }
             };
             LineParts {
-                primary: pr.title.clone(),
-                dim_inline: Some(dim),
+                primary: vec![pr.title.clone()],
+                dim_inline,
                 source: Some(pr.repo.to_string()),
                 category: "PR",
                 age: format_age_short(pr.age),
             }
         }
         StatusItem::Issue(i) => {
-            let dim = if i.labels.is_empty() {
-                format!(" #{}", i.number)
+            let dim_inline = if i.labels.is_empty() {
+                vec![format!(" #{}", i.number)]
             } else {
-                format!(" #{} · {}", i.number, i.labels.join(", "))
+                vec![format!(" #{}", i.number), i.labels.join(", ")]
             };
             LineParts {
-                primary: i.title.clone(),
-                dim_inline: Some(dim),
+                primary: vec![i.title.clone()],
+                dim_inline,
                 source: Some(i.repo.to_string()),
                 category: "Issue",
                 age: format_age_short(i.age),
@@ -223,61 +225,69 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
         }
         StatusItem::Ci(c) => {
             let primary = match (&c.job_name, &c.step_name, &c.error) {
-                (Some(job), Some(step), Some(err)) => format!("{job} / {step} · {err}"),
-                (Some(job), Some(step), None) => format!("{job} / {step} · failed"),
-                (Some(job), None, _) => format!("{job} · failed"),
-                _ => "failed".to_string(),
+                (Some(job), Some(step), Some(err)) => {
+                    vec![format!("{job} / {step}"), err.clone()]
+                }
+                (Some(job), Some(step), None) => {
+                    vec![format!("{job} / {step}"), "failed".to_string()]
+                }
+                (Some(job), None, _) => vec![job.clone(), "failed".to_string()],
+                _ => vec!["failed".to_string()],
             };
             LineParts {
                 primary,
-                dim_inline: None,
+                dim_inline: vec![],
                 source: Some(c.repo.to_string()),
                 category: "CI",
                 age: format_age_short(c.age),
             }
         }
         StatusItem::Linear(l) => LineParts {
-            primary: l.title.clone(),
-            dim_inline: Some(format!(" ({})", l.identifier)),
+            primary: vec![l.title.clone()],
+            dim_inline: vec![format!(" ({})", l.identifier)],
             source: None,
             category: "Linear",
             age: format_age_short(l.age),
         },
         StatusItem::Loki(l) => LineParts {
-            primary: format!("{} · {}", l.title, l.message),
-            dim_inline: None,
+            primary: vec![l.title.clone(), l.message.clone()],
+            dim_inline: vec![],
             source: Some(format!("{}:{}", l.project, l.env)),
             category: "Loki",
             age: format_age_short(l.age),
         },
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => LineParts {
-            primary: format!("Import blocked · {}", b.error),
-            dim_inline: None,
+            primary: vec!["Import blocked".to_string(), b.error.clone()],
+            dim_inline: vec![],
             source: Some(b.source.clone()),
             category: "Media",
             age: format_age_short(b.age),
         },
         #[cfg(feature = "private")]
         StatusItem::MediaMissing(m) => LineParts {
-            primary: format!("Not found · {} · aired {}", m.title, m.air_date),
-            dim_inline: None,
+            primary: vec![
+                "Not found".to_string(),
+                m.title.clone(),
+                format!("aired {}", m.air_date),
+            ],
+            dim_inline: vec![],
             source: Some(m.source.clone()),
             category: "Media",
             age: format_age_short(m.age),
         },
         #[cfg(feature = "private")]
         StatusItem::MediaHealth(h) => LineParts {
-            primary: h.message.clone(),
-            dim_inline: None,
+            primary: vec![h.message.clone()],
+            dim_inline: vec![],
             source: Some(h.source.clone()),
             category: "Media",
             age: format_age_short(h.age),
         },
         #[cfg(feature = "private")]
         StatusItem::MediaBacklog { source, count } => LineParts {
-            primary: format!("{count} episodes in backlog"),
-            dim_inline: None,
+            primary: vec![format!("{count} episodes in backlog")],
+            dim_inline: vec![],
             source: Some(source.clone()),
             category: "Media",
             age: "now".to_string(),
@@ -289,8 +299,8 @@ pub(crate) fn item_detail_line(item: &StatusItem) -> LineParts {
     #[cfg(feature = "private")]
     if let StatusItem::MediaBlocked(b) = item {
         return LineParts {
-            primary: b.title.clone(),
-            dim_inline: None,
+            primary: vec![b.title.clone()],
+            dim_inline: vec![],
             ..item_line(item)
         };
     }
@@ -322,12 +332,12 @@ pub(crate) fn display_item_line(item: &DisplayItem) -> LineParts {
             let count = items.len();
             match items.first().map(item_line) {
                 Some(base) => LineParts {
-                    dim_inline: Some(format!(" ({count})")),
+                    dim_inline: vec![format!(" ({count})")],
                     ..base
                 },
                 None => LineParts {
-                    primary: String::new(),
-                    dim_inline: None,
+                    primary: vec![],
+                    dim_inline: vec![],
                     source: None,
                     category: "",
                     age: String::new(),

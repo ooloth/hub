@@ -27,12 +27,63 @@ pub(super) fn list_highlight() -> Style {
         .add_modifier(Modifier::BOLD)
 }
 
-pub(crate) fn urgency_style(u: domain::Urgency) -> Style {
+pub(crate) fn urgency_color(u: domain::Urgency) -> Color {
     match u {
-        domain::Urgency::Critical => Style::default().fg(Color::Red),
-        domain::Urgency::High => Style::default().fg(Color::Yellow),
-        domain::Urgency::Medium => Style::default().fg(Color::Cyan),
-        domain::Urgency::Low => Style::default().fg(Color::Blue),
+        domain::Urgency::Critical => Color::Red,
+        domain::Urgency::High => Color::Yellow,
+        domain::Urgency::Medium => Color::Cyan,
+        domain::Urgency::Low => Color::Blue,
+    }
+}
+
+pub(crate) fn urgency_style(u: domain::Urgency) -> Style {
+    Style::default().fg(urgency_color(u))
+}
+
+fn bullet_span(color: Color) -> Span<'static> {
+    Span::styled(" · ", Style::default().fg(color))
+}
+
+fn segment_chars(segments: &[String]) -> usize {
+    segments.iter().map(|s| s.chars().count()).sum::<usize>() + segments.len().saturating_sub(1) * 3
+}
+
+fn push_segments(
+    spans: &mut Vec<Span<'static>>,
+    segments: &[String],
+    chars: &[char],
+    style: Style,
+    bullet_color: Color,
+) {
+    if chars.is_empty() {
+        return;
+    }
+    let mut pos = 0;
+    for (i, seg) in segments.iter().enumerate() {
+        if pos >= chars.len() {
+            break;
+        }
+        if i > 0 {
+            let sep_end = (pos + 3).min(chars.len());
+            if sep_end - pos == 3 {
+                spans.push(bullet_span(bullet_color));
+            } else {
+                let partial: String = chars[pos..sep_end].iter().collect();
+                if !partial.is_empty() {
+                    spans.push(Span::styled(partial, style));
+                }
+            }
+            pos = sep_end;
+        }
+        if pos >= chars.len() {
+            break;
+        }
+        let take = seg.chars().count().min(chars.len() - pos);
+        if take > 0 {
+            let text: String = chars[pos..pos + take].iter().collect();
+            spans.push(Span::styled(text, style));
+            pos += take;
+        }
     }
 }
 
@@ -93,7 +144,7 @@ pub(super) fn render_list_view<T>(
     area: Rect,
     items: &[T],
     list_state: &mut ListState,
-    item_data: impl Fn(&T) -> (Option<String>, String, Option<String>, domain::Urgency),
+    item_data: impl Fn(&T) -> (Option<String>, Vec<String>, Option<String>, domain::Urgency),
     hint_fn: impl Fn(&T) -> Option<String>,
 ) {
     let full_width = area.width as usize;
@@ -104,31 +155,35 @@ pub(super) fn render_list_view<T>(
         .enumerate()
         .map(|(i, item)| {
             let is_selected = selected == Some(i);
-            let (label, line_text, dim_suffix, urgency) = item_data(item);
-            let label_style = if is_selected {
+            let (label, primary_segs, dim_suffix, urgency) = item_data(item);
+            let text_style = if is_selected {
                 Style::default()
             } else {
                 urgency_style(urgency)
             };
+            let bullet_color = urgency_color(urgency);
             let hint = if is_selected {
                 selected_hint.clone()
             } else {
                 None
             };
-            let label_text = label.map(|l| format!("{l} · "));
-            let label_span = label_text
-                .as_ref()
-                .map(|t| Span::styled(t.clone(), label_style));
-            let label_width = label_text.as_ref().map_or(0, |t| t.chars().count());
+            let labels: Vec<Span<'static>> = match label {
+                Some(l) => vec![Span::styled(l, text_style), bullet_span(bullet_color)],
+                None => vec![],
+            };
+            let label_width: usize = labels.iter().map(|s| s.content.chars().count()).sum();
+            let flat_primary = primary_segs.join(" · ");
             let item_width = full_width
                 .saturating_sub(label_width)
                 .saturating_sub(dim_suffix.as_ref().map_or(0, |s| s.chars().count()))
                 .saturating_sub(hint.as_ref().map_or(0, |h| h.chars().count() + 2));
             build_list_item(
-                label_span,
-                wrap_text(&line_text, item_width),
+                labels,
+                primary_segs,
+                wrap_text(&flat_primary, item_width),
                 dim_suffix,
                 hint,
+                bullet_color,
             )
         })
         .collect();
@@ -137,12 +192,14 @@ pub(super) fn render_list_view<T>(
 }
 
 fn build_list_item(
-    label: Option<Span<'static>>,
+    labels: Vec<Span<'static>>,
+    primary_segs: Vec<String>,
     wrapped: Vec<String>,
     dim_suffix: Option<String>,
     hint: Option<String>,
+    bullet_color: Color,
 ) -> ListItem<'static> {
-    let indent = label.as_ref().map_or(0, |s| s.content.chars().count());
+    let indent: usize = labels.iter().map(|s| s.content.chars().count()).sum();
     let suffix_span = dim_suffix.map(|s| Span::styled(s, dim()));
     let hint_span = hint.map(|h| Span::styled(format!("  {h}"), dim()));
     let mut lines: Vec<Line> = wrapped
@@ -150,19 +207,28 @@ fn build_list_item(
         .enumerate()
         .map(|(j, chunk)| {
             if j == 0 {
-                match &label {
-                    Some(l) => Line::from(vec![l.clone(), Span::raw(chunk)]),
-                    None => Line::from(Span::raw(chunk)),
-                }
+                let mut spans = labels.clone();
+                let chunk_chars: Vec<char> = chunk.chars().collect();
+                push_segments(
+                    &mut spans,
+                    &primary_segs,
+                    &chunk_chars,
+                    Style::default(),
+                    bullet_color,
+                );
+                Line::from(spans)
             } else {
                 Line::from(Span::raw(format!("{}{chunk}", " ".repeat(indent))))
             }
         })
         .collect();
     if lines.is_empty() {
-        lines.push(match label {
-            Some(l) => Line::from(vec![l, Span::raw("")]),
-            None => Line::from(Span::raw("")),
+        lines.push(if labels.is_empty() {
+            Line::from(Span::raw(""))
+        } else {
+            let mut spans = labels;
+            spans.push(Span::raw(""));
+            Line::from(spans)
         });
     }
     if let Some(last) = lines.last_mut() {
@@ -177,20 +243,19 @@ fn build_list_item(
 }
 
 fn build_unified_list_item(
-    label_style: Style,
+    text_style: Style,
+    bullet_color: Color,
     parts: LineParts,
-    chrome: String,
     inner_width: usize,
 ) -> ListItem<'static> {
-    let chrome_width = chrome.chars().count();
-    // chrome adds a 2-char gap only when non-empty
+    let chrome_width =
+        parts.source.as_ref().map_or(0, |s| s.chars().count() + 3) + parts.age.chars().count();
     let chrome_total = if chrome_width > 0 {
         2 + chrome_width
     } else {
         0
     };
-    let category_prefix = format!("{} · ", parts.category);
-    let category_prefix_width = category_prefix.chars().count();
+    let category_prefix_width = parts.category.chars().count() + 3; // category + " · "
     let content_budget = inner_width
         .saturating_sub(chrome_total)
         .saturating_sub(category_prefix_width);
@@ -200,30 +265,41 @@ fn build_unified_list_item(
     let display_chars: Vec<char> = display_text.chars().collect();
     let display_len = display_chars.len();
 
-    // Split the truncated text back into bright/dim zones by original char counts.
-    let primary_len = parts.primary.chars().count();
-    let inline_len = parts.dim_inline.as_ref().map_or(0, |s| s.chars().count());
+    let primary_len = segment_chars(&parts.primary);
+    let inline_len = segment_chars(&parts.dim_inline);
     let bright_end = display_len.min(primary_len);
     let dim_inline_end = display_len.min(primary_len + inline_len);
 
-    let bright_part: String = display_chars[..bright_end].iter().collect();
-    let dim_inline_part: String = display_chars[bright_end..dim_inline_end].iter().collect();
-
     let padding = content_budget.saturating_sub(display_len);
 
-    let mut spans: Vec<Span<'static>> = vec![Span::styled(category_prefix, label_style)];
-    if !bright_part.is_empty() {
-        spans.push(Span::raw(bright_part));
-    }
-    if !dim_inline_part.is_empty() {
-        spans.push(Span::styled(dim_inline_part, dim()));
-    }
+    let mut spans: Vec<Span<'static>> = vec![
+        Span::styled(parts.category, text_style),
+        bullet_span(bullet_color),
+    ];
+    push_segments(
+        &mut spans,
+        &parts.primary,
+        &display_chars[..bright_end],
+        Style::default(),
+        bullet_color,
+    );
+    push_segments(
+        &mut spans,
+        &parts.dim_inline,
+        &display_chars[bright_end..dim_inline_end],
+        dim(),
+        bullet_color,
+    );
     if padding > 0 {
         spans.push(Span::raw(" ".repeat(padding)));
     }
     if chrome_width > 0 {
         spans.push(Span::raw("  "));
-        spans.push(Span::styled(chrome, dim()));
+        if let Some(source) = parts.source {
+            spans.push(Span::styled(source, dim()));
+            spans.push(bullet_span(bullet_color));
+        }
+        spans.push(Span::styled(parts.age, dim()));
     }
     ListItem::new(Line::from(spans))
 }
@@ -400,21 +476,17 @@ fn render_unified(
 
         let parts = display_item_line(item);
 
-        let item_chrome = match &parts.source {
-            Some(source) => format!("{source} · {}", parts.age),
-            None => parts.age.clone(),
-        };
-
-        let dot_style = if item_idx == selected {
+        let text_style = if item_idx == selected {
             Style::default()
         } else {
             urgency_style(urgency)
         };
+        let bullet_color = urgency_color(urgency);
 
         display_items.push(build_unified_list_item(
-            dot_style,
+            text_style,
+            bullet_color,
             parts,
-            item_chrome,
             width,
         ));
     }
@@ -528,7 +600,8 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::{
-        action_hints, position_label, render, right_status_text, status_bar_left, wrap_text,
+        action_hints, position_label, render, right_status_text, status_bar_left, urgency_color,
+        urgency_style, wrap_text,
     };
     use crate::display::{Category, DisplayItem, Filter, ListSnapshot};
     use crate::state::{
@@ -536,9 +609,31 @@ mod tests {
     };
     use chrono::Utc;
     use ratatui::backend::TestBackend;
+    use ratatui::style::Color;
     use ratatui::widgets::ListState;
     use ratatui::Terminal;
+    use rstest::rstest;
     use workflows::status::StatusItem;
+
+    // ── urgency_color / urgency_style ────────────────────────────────────────
+
+    #[rstest]
+    #[case(domain::Urgency::Critical, Color::Red)]
+    #[case(domain::Urgency::High, Color::Yellow)]
+    #[case(domain::Urgency::Medium, Color::Cyan)]
+    #[case(domain::Urgency::Low, Color::Blue)]
+    fn urgency_color_maps_each_variant(#[case] urgency: domain::Urgency, #[case] expected: Color) {
+        assert_eq!(urgency_color(urgency), expected);
+    }
+
+    #[rstest]
+    #[case(domain::Urgency::Critical)]
+    #[case(domain::Urgency::High)]
+    #[case(domain::Urgency::Medium)]
+    #[case(domain::Urgency::Low)]
+    fn urgency_style_fg_matches_urgency_color(#[case] urgency: domain::Urgency) {
+        assert_eq!(urgency_style(urgency).fg, Some(urgency_color(urgency)));
+    }
 
     // ── TestBackend helpers ───────────────────────────────────────────────────
 
