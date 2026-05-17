@@ -485,8 +485,8 @@ fn parse_cutoff(lookback: &str) -> Result<chrono::DateTime<Utc>> {
     Ok(Utc::now() - delta)
 }
 
-/// Keeps only the latest run per workflow file path that failed on the default branch
-/// within the lookback window.
+/// Keeps only workflows whose latest completed run on the default branch (within the
+/// lookback window) has a failing conclusion. A subsequent success clears the failure.
 fn filter_runs(
     runs: Vec<WorkflowRun>,
     default_branch: &str,
@@ -497,10 +497,7 @@ fn filter_runs(
     let mut latest: HashMap<String, WorkflowRun> = HashMap::new();
 
     for run in runs {
-        let Some(ref conclusion) = run.conclusion else {
-            continue;
-        };
-        if !FAILING_CONCLUSIONS.contains(&conclusion.as_str()) {
+        if run.conclusion.is_none() {
             continue;
         }
         if run.head_branch != default_branch {
@@ -522,7 +519,14 @@ fn filter_runs(
             .or_insert(run);
     }
 
-    latest.into_values().collect()
+    latest
+        .into_values()
+        .filter(|run| {
+            run.conclusion
+                .as_deref()
+                .is_some_and(|c| FAILING_CONCLUSIONS.contains(&c))
+        })
+        .collect()
 }
 
 async fn get_repo_info(token: &str, repo: &str) -> Result<RepoInfo> {
@@ -799,6 +803,28 @@ mod tests {
             let result = filter_runs(runs, "main", past_cutoff());
             assert_eq!(result.len(), 1, "expected {conclusion} to be kept");
         }
+    }
+
+    #[test]
+    fn success_after_failure_clears_the_failure() {
+        let runs = vec![
+            make_run(
+                ".github/workflows/ci.yml",
+                "CI",
+                "main",
+                Some("failure"),
+                "2099-01-01T00:00:00Z",
+            ),
+            make_run(
+                ".github/workflows/ci.yml",
+                "CI",
+                "main",
+                Some("success"),
+                "2099-01-02T00:00:00Z",
+            ),
+        ];
+        let result = filter_runs(runs, "main", past_cutoff());
+        assert!(result.is_empty());
     }
 
     #[test]
