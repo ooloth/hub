@@ -12,9 +12,11 @@ resolver = "2"
 
 [workspace.lints.clippy]
 cast_sign_loss = "warn"
+cognitive_complexity = "warn"
 missing_errors_doc = "warn"
 missing_panics_doc = "warn"
 panic = "warn"
+too_many_lines = "warn"
 unwrap_used = "warn"
 
 [workspace.lints.rust]

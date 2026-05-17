@@ -18,7 +18,7 @@ check:
     taplo fmt
     taplo check
     cargo fmt
-    cargo clippy --fix --allow-dirty --allow-staged {{_features}}
+    cargo clippy --fix --allow-dirty --allow-staged {{_features}} -- -D warnings
 
 build:
     cargo build {{_features}}
