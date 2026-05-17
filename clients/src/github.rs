@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
-use domain::{CiFailure, Issue, PrKind, PullRequest, RepoSlug, ReviewDecision, Urgency};
+use domain::{
+    CiFailure, GithubPrsRepo, Issue, PrKind, PullRequest, RepoSlug, ReviewDecision, Urgency,
+};
 use serde::Deserialize;
 
 // ── REST issues (per-repo) ─────────────────────────────────────────────────────
@@ -115,7 +117,7 @@ fn age(created_at: &str) -> chrono::Duration {
 ///
 /// # Errors
 /// Returns an error if the GitHub API is unreachable or returns a non-2xx response.
-pub async fn prs_awaiting_review(token: &str, repos: &[String]) -> Result<Vec<PullRequest>> {
+pub async fn prs_awaiting_review(token: &str, repos: &[GithubPrsRepo]) -> Result<Vec<PullRequest>> {
     if repos.is_empty() {
         return Ok(vec![]);
     }
@@ -124,6 +126,7 @@ pub async fn prs_awaiting_review(token: &str, repos: &[String]) -> Result<Vec<Pu
         Urgency::Medium,
         PrKind::ToReview,
         None,
+        repos,
     )
 }
 
@@ -134,7 +137,7 @@ pub async fn prs_awaiting_review(token: &str, repos: &[String]) -> Result<Vec<Pu
 /// Returns an error if the GitHub API is unreachable or returns a non-2xx response.
 pub async fn my_open_prs(
     token: &str,
-    repos: &[String],
+    repos: &[GithubPrsRepo],
     github_username: &str,
 ) -> Result<Vec<PullRequest>> {
     if repos.is_empty() {
@@ -145,6 +148,7 @@ pub async fn my_open_prs(
         Urgency::High,
         PrKind::Mine,
         Some(github_username),
+        repos,
     )
 }
 
@@ -155,7 +159,7 @@ pub async fn my_open_prs(
 /// Returns an error if the GitHub API is unreachable or returns a non-2xx response.
 pub async fn my_draft_prs(
     token: &str,
-    repos: &[String],
+    repos: &[GithubPrsRepo],
     github_username: &str,
 ) -> Result<Vec<PullRequest>> {
     if repos.is_empty() {
@@ -166,6 +170,7 @@ pub async fn my_draft_prs(
         Urgency::Medium,
         PrKind::MyDraft,
         Some(github_username),
+        repos,
     )
 }
 
@@ -174,6 +179,7 @@ fn nodes_to_prs(
     urgency: Urgency,
     kind: PrKind,
     owned_by: Option<&str>,
+    repos: &[GithubPrsRepo],
 ) -> Result<Vec<PullRequest>> {
     nodes
         .into_iter()
@@ -183,6 +189,14 @@ fn nodes_to_prs(
                     || node.assignees.nodes.is_empty()
             }
             None => true,
+        })
+        .filter(|node| {
+            let excluded = repos
+                .iter()
+                .find(|r| r.repo == node.repository.name_with_owner)
+                .map(|r| r.exclude_authors.iter().any(|a| a == &node.author.login))
+                .unwrap_or(false);
+            !excluded
         })
         .map(|node| {
             let (owner, repo) =
@@ -221,10 +235,10 @@ fn parse_review_decision(s: Option<&str>) -> Option<ReviewDecision> {
     }
 }
 
-async fn graphql_prs(token: &str, base: &str, repos: &[String]) -> Result<Vec<PrNode>> {
+async fn graphql_prs(token: &str, base: &str, repos: &[GithubPrsRepo]) -> Result<Vec<PrNode>> {
     let repo_filters = repos
         .iter()
-        .map(|r| format!("repo:{r}"))
+        .map(|r| format!("repo:{}", r.repo))
         .collect::<Vec<_>>()
         .join(" ");
     let q = format!("{base} {repo_filters}");
@@ -941,22 +955,26 @@ mod tests {
         assert!(parse_cutoff("not-a-duration").is_err());
     }
 
-    // ── nodes_to_prs (assignee filtering) ────────────────────────────────────
+    // ── nodes_to_prs (assignee and author filtering) ─────────────────────────
 
     fn make_node(assignee_logins: Vec<&str>) -> PrNode {
+        make_node_with_author(assignee_logins, "alice", "owner/repo")
+    }
+
+    fn make_node_with_author(assignee_logins: Vec<&str>, author: &str, repo: &str) -> PrNode {
         PrNode {
             number: 1,
             title: "title".into(),
             url: "https://github.com/owner/repo/pull/1".into(),
             author: PrAuthor {
-                login: "alice".into(),
+                login: author.into(),
             },
             created_at: "2024-01-01T00:00:00Z".into(),
             is_draft: false,
             review_decision: None,
             reviews: ReviewCounts { total_count: 0 },
             repository: PrRepository {
-                name_with_owner: "owner/repo".into(),
+                name_with_owner: repo.into(),
             },
             assignees: PrAssignees {
                 nodes: assignee_logins
@@ -969,6 +987,13 @@ mod tests {
         }
     }
 
+    fn pr_repo(repo: &str, exclude_authors: Vec<&str>) -> GithubPrsRepo {
+        GithubPrsRepo {
+            repo: repo.into(),
+            exclude_authors: exclude_authors.into_iter().map(String::from).collect(),
+        }
+    }
+
     #[test]
     fn nodes_to_prs_includes_unassigned_pr() {
         let result = nodes_to_prs(
@@ -976,6 +1001,7 @@ mod tests {
             Urgency::High,
             PrKind::Mine,
             Some("alice"),
+            &[],
         )
         .unwrap();
         assert_eq!(result.len(), 1);
@@ -988,6 +1014,7 @@ mod tests {
             Urgency::High,
             PrKind::Mine,
             Some("alice"),
+            &[],
         )
         .unwrap();
         assert_eq!(result.len(), 1);
@@ -1000,9 +1027,72 @@ mod tests {
             Urgency::High,
             PrKind::Mine,
             Some("alice"),
+            &[],
         )
         .unwrap();
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn nodes_to_prs_excludes_pr_from_repo_excluded_author() {
+        let node = make_node_with_author(vec![], "dependabot-preview[bot]", "owner/a");
+        let result = nodes_to_prs(
+            vec![node],
+            Urgency::Medium,
+            PrKind::ToReview,
+            None,
+            &[pr_repo("owner/a", vec!["dependabot-preview[bot]"])],
+        )
+        .unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn nodes_to_prs_keeps_pr_when_author_excluded_only_in_different_repo() {
+        let node = make_node_with_author(vec![], "dependabot", "owner/b");
+        let result = nodes_to_prs(
+            vec![node],
+            Urgency::Medium,
+            PrKind::ToReview,
+            None,
+            &[
+                pr_repo("owner/a", vec!["dependabot"]),
+                pr_repo("owner/b", vec![]),
+            ],
+        )
+        .unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn nodes_to_prs_keeps_pr_from_non_excluded_author_when_exclude_list_present() {
+        let node = make_node_with_author(vec![], "alice", "owner/a");
+        let result = nodes_to_prs(
+            vec![node],
+            Urgency::Medium,
+            PrKind::ToReview,
+            None,
+            &[pr_repo("owner/a", vec!["dependabot"])],
+        )
+        .unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn nodes_to_prs_with_empty_exclude_lists_passes_all_prs() {
+        let nodes = vec![
+            make_node_with_author(vec![], "alice", "owner/a"),
+            make_node_with_author(vec![], "bob", "owner/a"),
+        ];
+        let result = nodes_to_prs(
+            nodes,
+            Urgency::Medium,
+            PrKind::ToReview,
+            None,
+            &[pr_repo("owner/a", vec![])],
+        )
+        .unwrap();
+        assert_eq!(result.len(), 2);
     }
 
     // ── parse_review_decision ─────────────────────────────────────────────────

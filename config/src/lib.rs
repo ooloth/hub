@@ -28,15 +28,21 @@ impl Config {
         })
     }
 
-    pub fn github_pr_repos(&self) -> Vec<String> {
+    pub fn github_pr_repos(&self) -> Vec<domain::GithubPrsRepo> {
         self.projects
             .iter()
-            .filter(|p| {
-                p.workflow
-                    .iter()
-                    .any(|w| matches!(w, toml::WorkflowConfig::GithubPrs { .. }))
+            .filter_map(|p| {
+                p.workflow.iter().find_map(|w| {
+                    if let toml::WorkflowConfig::GithubPrs { exclude_authors } = w {
+                        Some(domain::GithubPrsRepo {
+                            repo: p.repo.clone(),
+                            exclude_authors: exclude_authors.clone(),
+                        })
+                    } else {
+                        None
+                    }
+                })
             })
-            .map(|p| p.repo.clone())
             .collect()
     }
 
@@ -224,7 +230,33 @@ mod tests {
                 }],
             ),
         ]);
-        assert_eq!(cfg.github_pr_repos(), vec!["ooloth/hub", "ooloth/other"]);
+        let repos = cfg.github_pr_repos();
+        assert_eq!(repos.len(), 2);
+        assert_eq!(repos[0].repo, "ooloth/hub");
+        assert_eq!(repos[1].repo, "ooloth/other");
+    }
+
+    #[test]
+    fn github_pr_repos_preserves_exclude_authors_per_repo() {
+        let cfg = config(vec![
+            project(
+                "gatsby",
+                "ooloth/gatsbytutorials.com",
+                vec![toml::WorkflowConfig::GithubPrs {
+                    exclude_authors: vec!["dependabot-preview[bot]".into()],
+                }],
+            ),
+            project(
+                "hub",
+                "ooloth/hub",
+                vec![toml::WorkflowConfig::GithubPrs {
+                    exclude_authors: vec![],
+                }],
+            ),
+        ]);
+        let repos = cfg.github_pr_repos();
+        assert_eq!(repos[0].exclude_authors, vec!["dependabot-preview[bot]"]);
+        assert_eq!(repos[1].exclude_authors, Vec::<String>::new());
     }
 
     #[test]

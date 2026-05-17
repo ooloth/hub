@@ -121,6 +121,13 @@ pub struct LokiQuery {
     pub threshold: u32,
 }
 
+/// A GitHub repository configured for the github-prs workflow, with the PR authors to exclude.
+#[derive(Clone, Debug)]
+pub struct GithubPrsRepo {
+    pub repo: String,
+    pub exclude_authors: Vec<String>,
+}
+
 /// All Loki queries configured for one deployment environment.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LokiEnv {

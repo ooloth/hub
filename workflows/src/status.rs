@@ -81,7 +81,7 @@ pub struct PrivateStatusResult {
 pub struct StatusParams {
     pub github_token: String,
     pub github_username: String,
-    pub pr_repos: Vec<String>,
+    pub pr_repos: Vec<domain::GithubPrsRepo>,
     pub issue_repos: Vec<String>,
     pub ci_repos: Vec<(String, String)>,
     pub linear_token: Option<String>,
