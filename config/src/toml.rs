@@ -43,12 +43,7 @@ pub enum WorkflowConfig {
         exclude_authors: Vec<String>,
     },
     #[serde(rename = "github-issues")]
-    GithubIssues {
-        #[serde(default)]
-        exclude_labels: Vec<String>,
-        #[serde(default)]
-        assigned_only: bool,
-    },
+    GithubIssues {},
     #[serde(rename = "user-activity-gcp")]
     UserActivityGcp {
         #[serde(default)]
@@ -117,7 +112,7 @@ mod tests {
     #[rstest]
     #[case("errors-gcp", WorkflowConfig::ErrorsGcp { exclude_users: vec![] })]
     #[case("github-ci", WorkflowConfig::GithubCi { lookback: None })]
-    #[case("github-issues", WorkflowConfig::GithubIssues { exclude_labels: vec![], assigned_only: false })]
+    #[case("github-issues", WorkflowConfig::GithubIssues {})]
     #[case("github-prs", WorkflowConfig::GithubPrs { exclude_authors: vec![] })]
     #[case("user-activity-gcp", WorkflowConfig::UserActivityGcp { include_users: vec![], exclude_users: vec![] })]
     #[case("warnings-gcp", WorkflowConfig::WarningsGcp { exclude_users: vec![] })]
@@ -179,29 +174,6 @@ mod tests {
             result.project[0].workflow,
             vec![WorkflowConfig::GithubPrs {
                 exclude_authors: vec!["dependabot".into(), "renovate".into()],
-            }]
-        );
-    }
-
-    #[test]
-    fn github_issues_with_exclude_labels() {
-        let result = parse(
-            r#"
-            [[project]]
-            name = "hub"
-            repo = "ooloth/hub"
-
-            [[project.workflow]]
-            name = "github-issues"
-            exclude_labels = ["wontfix", "duplicate"]
-        "#,
-        )
-        .unwrap();
-        assert_eq!(
-            result.project[0].workflow,
-            vec![WorkflowConfig::GithubIssues {
-                exclude_labels: vec!["wontfix".into(), "duplicate".into()],
-                assigned_only: false,
             }]
         );
     }

@@ -13,10 +13,7 @@ HubToml {
                         "dependabot",
                     ],
                 },
-                GithubIssues {
-                    exclude_labels: [],
-                    assigned_only: false,
-                },
+                GithubIssues,
             ],
             environment: [
                 Environment {

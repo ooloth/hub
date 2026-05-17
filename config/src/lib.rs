@@ -40,21 +40,14 @@ impl Config {
             .collect()
     }
 
-    pub fn github_open_issue_repos(&self) -> Vec<String> {
+    pub fn github_issue_repos(&self) -> Vec<String> {
         self.projects
             .iter()
             .filter_map(|p| {
-                p.workflow.iter().find_map(|w| {
-                    if let toml::WorkflowConfig::GithubIssues {
-                        assigned_only: false,
-                        ..
-                    } = w
-                    {
-                        Some(p.repo.clone())
-                    } else {
-                        None
-                    }
-                })
+                p.workflow
+                    .iter()
+                    .find(|w| matches!(w, toml::WorkflowConfig::GithubIssues {}))
+                    .map(|_| p.repo.clone())
             })
             .collect()
     }
@@ -125,25 +118,6 @@ impl Config {
                         grafana_url: env.grafana_url.clone(),
                         queries,
                     })
-                })
-            })
-            .collect()
-    }
-
-    pub fn github_assigned_issue_repos(&self) -> Vec<String> {
-        self.projects
-            .iter()
-            .filter_map(|p| {
-                p.workflow.iter().find_map(|w| {
-                    if let toml::WorkflowConfig::GithubIssues {
-                        assigned_only: true,
-                        ..
-                    } = w
-                    {
-                        Some(p.repo.clone())
-                    } else {
-                        None
-                    }
                 })
             })
             .collect()
@@ -263,60 +237,26 @@ mod tests {
         assert!(cfg.github_pr_repos().is_empty());
     }
 
-    // github_open_issue_repos
+    // github_issue_repos
 
     #[test]
-    fn github_open_issue_repos_returns_repos_with_assigned_only_false() {
+    fn github_issue_repos_returns_repos_with_github_issues_workflow() {
         let cfg = config(vec![project(
             "hub",
             "ooloth/hub",
-            vec![toml::WorkflowConfig::GithubIssues {
-                exclude_labels: vec![],
-                assigned_only: false,
-            }],
+            vec![toml::WorkflowConfig::GithubIssues {}],
         )]);
-        assert_eq!(cfg.github_open_issue_repos(), vec!["ooloth/hub"]);
+        assert_eq!(cfg.github_issue_repos(), vec!["ooloth/hub"]);
     }
 
     #[test]
-    fn github_open_issue_repos_excludes_assigned_only_repos() {
+    fn github_issue_repos_excludes_projects_without_github_issues_workflow() {
         let cfg = config(vec![project(
             "hub",
             "ooloth/hub",
-            vec![toml::WorkflowConfig::GithubIssues {
-                exclude_labels: vec![],
-                assigned_only: true,
-            }],
+            vec![toml::WorkflowConfig::GithubCi { lookback: None }],
         )]);
-        assert!(cfg.github_open_issue_repos().is_empty());
-    }
-
-    // github_assigned_issue_repos
-
-    #[test]
-    fn github_assigned_issue_repos_returns_repos_with_assigned_only_true() {
-        let cfg = config(vec![project(
-            "hub",
-            "ooloth/hub",
-            vec![toml::WorkflowConfig::GithubIssues {
-                exclude_labels: vec![],
-                assigned_only: true,
-            }],
-        )]);
-        assert_eq!(cfg.github_assigned_issue_repos(), vec!["ooloth/hub"]);
-    }
-
-    #[test]
-    fn github_assigned_issue_repos_excludes_open_issue_repos() {
-        let cfg = config(vec![project(
-            "hub",
-            "ooloth/hub",
-            vec![toml::WorkflowConfig::GithubIssues {
-                exclude_labels: vec![],
-                assigned_only: false,
-            }],
-        )]);
-        assert!(cfg.github_assigned_issue_repos().is_empty());
+        assert!(cfg.github_issue_repos().is_empty());
     }
 
     // github_ci_repos

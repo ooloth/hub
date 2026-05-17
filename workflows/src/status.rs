@@ -83,7 +83,6 @@ pub struct StatusParams {
     pub github_username: String,
     pub pr_repos: Vec<String>,
     pub issue_repos: Vec<String>,
-    pub assigned_issue_repos: Vec<String>,
     pub ci_repos: Vec<(String, String)>,
     pub linear_token: Option<String>,
     pub private_workflow_names: Vec<String>,
@@ -96,7 +95,7 @@ pub struct StatusParams {
 /// # Errors
 /// Returns an error if any API call fails.
 pub async fn run(params: StatusParams) -> Result<StatusReport> {
-    let (my_open, review_queue, my_drafts, issues, assigned_issues, ci_failures, linear_issues) = tokio::join!(
+    let (my_open, review_queue, my_drafts, issues, ci_failures, linear_issues) = tokio::join!(
         clients::github::my_open_prs(
             &params.github_token,
             &params.pr_repos,
@@ -108,8 +107,11 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
             &params.pr_repos,
             &params.github_username,
         ),
-        clients::github::issues(&params.github_token, &params.issue_repos, false),
-        clients::github::issues(&params.github_token, &params.assigned_issue_repos, true),
+        clients::github::issues(
+            &params.github_token,
+            &params.issue_repos,
+            &params.github_username,
+        ),
         clients::github::ci_failures(&params.github_token, &params.ci_repos),
         async {
             match params.linear_token.as_deref() {
@@ -122,24 +124,10 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
     let mut items: Vec<StatusItem> = Vec::new();
     let mut errors: Vec<String> = Vec::new();
 
-    // GitHub Issues — combine open and assigned issues.
+    // GitHub Issues.
     match issues {
-        Ok(mut all_issues) => {
-            if let Ok(assigned) = assigned_issues {
-                all_issues.extend(assigned);
-            } else {
-                errors.push("github assigned issues".to_string());
-            }
-            items.extend(all_issues.into_iter().map(StatusItem::Issue));
-        }
-        Err(_) => {
-            // Both open and assigned failed; only report once.
-            errors.push("github issues".to_string());
-            // If assigned succeeded even though open failed, still add them.
-            if let Ok(assigned) = assigned_issues {
-                items.extend(assigned.into_iter().map(StatusItem::Issue));
-            }
-        }
+        Ok(all_issues) => items.extend(all_issues.into_iter().map(StatusItem::Issue)),
+        Err(_) => errors.push("github issues".to_string()),
     }
 
     // GitHub PRs — collect errors for each category that fails.
