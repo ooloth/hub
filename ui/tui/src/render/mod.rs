@@ -31,8 +31,8 @@ pub(crate) fn urgency_style(u: domain::Urgency) -> Style {
     match u {
         domain::Urgency::Critical => Style::default().fg(Color::Red),
         domain::Urgency::High => Style::default().fg(Color::Yellow),
-        domain::Urgency::Medium => Style::default(),
-        domain::Urgency::Low => dim(),
+        domain::Urgency::Medium => Style::default().fg(Color::Cyan),
+        domain::Urgency::Low => Style::default().fg(Color::Blue),
     }
 }
 
