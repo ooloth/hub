@@ -68,7 +68,8 @@ via `super::`:
 | `SELECTION_BG`     | `Color::Rgb(41, 45, 62)`     | list selection background       |
 | `dim()`            | `Modifier::DIM`              | secondary and unfocused text    |
 | `list_highlight()` | `SELECTION_BG` + `BOLD`      | stateful list widget highlight  |
-| `urgency_style(u)` | red / yellow / default / dim | urgency-coloured bullet dots    |
+| `urgency_color(u)` | red / yellow / cyan / blue   | urgency hue for text and bullets |
+| `urgency_style(u)` | `fg(urgency_color(u))`       | urgency-coloured text spans     |
 
 **Adding a new view:**
 
