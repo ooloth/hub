@@ -51,7 +51,7 @@ do not depend on `config/` directly.
 
 ### Rust Conventions
 
-See `~/.claude/references/rust.md` to understand this project's preference for Easy Mode Rust.
+See `~/.claude/references/rust.md` and `~/.claude/references/type-design.md`.
 
 Hard rules for agents:
 
@@ -62,6 +62,11 @@ Hard rules for agents:
 - **Async**: `#[tokio::main]`, `features = ["full"]`. Use `tokio::join!` for parallel work. Use `tokio::fs`/`tokio::time` not std equivalents inside async.
 - **Secrets**: read from env vars via `std::env::var`. Never read from files. Injected at runtime by `op run --env-file=.env`.
 - **CLI**: `clap` with derive macros. Annotate structs; don't use the builder API.
+- **Newtypes over primitives**: IDs, status values, and domain-meaningful strings are
+  wrapped in newtypes defined in `domain/`, not passed as bare `u64` or `String`.
+  `RepoSlug` (already in `domain/`) is the model: one construction path, validation
+  baked in, impossible to substitute for an unrelated string. New domain concepts
+  follow the same pattern — the type is proof of validity, not a comment.
 
 ### Schema versioning
 
