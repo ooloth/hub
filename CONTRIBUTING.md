@@ -51,7 +51,7 @@ for the full model, how to add new devices, and how to add new private workflows
 ## Running
 
 ```bash
-just check              # verify workspace compiles
+just check              # fmt + lint (autofixes where possible)
 just status             # run with secrets injected
 ```
 
