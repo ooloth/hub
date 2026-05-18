@@ -156,11 +156,6 @@ pub(super) fn render_list_view<T>(
         .map(|(i, item)| {
             let is_selected = selected == Some(i);
             let (label, primary_segs, dim_suffix, urgency) = item_data(item);
-            let text_style = if is_selected {
-                Style::default()
-            } else {
-                urgency_style(urgency)
-            };
             let bullet_color = urgency_color(urgency);
             let hint = if is_selected {
                 selected_hint.clone()
@@ -168,7 +163,10 @@ pub(super) fn render_list_view<T>(
                 None
             };
             let labels: Vec<Span<'static>> = match label {
-                Some(l) => vec![Span::styled(l, text_style), bullet_span(bullet_color)],
+                Some(l) => vec![
+                    Span::styled(l, urgency_style(urgency)),
+                    bullet_span(bullet_color),
+                ],
                 None => vec![],
             };
             let label_width: usize = labels.iter().map(|s| s.content.chars().count()).sum();
@@ -476,11 +474,7 @@ fn render_unified(
 
         let parts = display_item_line(item);
 
-        let text_style = if item_idx == selected {
-            Style::default()
-        } else {
-            urgency_style(urgency)
-        };
+        let text_style = urgency_style(urgency);
         let bullet_color = urgency_color(urgency);
 
         display_items.push(build_unified_list_item(
