@@ -29,8 +29,10 @@ pub(crate) fn launch(config: LaunchConfig, cwd: &Path) -> Result<()> {
         config.allowed_tools,
     );
 
+    let pane = std::env::var("TMUX_PANE").unwrap_or_default();
+
     let mut cmd = std::process::Command::new("tmux");
-    cmd.args(["split-window", "-h", "-c"]).arg(cwd);
+    cmd.args(["split-window", "-h", "-t", &pane, "-c"]).arg(cwd);
     cmd.arg("-e")
         .arg(format!("HUB_SYSTEM_PROMPT={}", config.system_prompt));
     cmd.arg("-e")
