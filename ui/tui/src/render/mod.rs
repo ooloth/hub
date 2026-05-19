@@ -6,7 +6,9 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
 };
 
-use crate::display::{display_item_line, display_item_urgency, DisplayItem, Filter, LineParts};
+use crate::display::{
+    display_item_line, display_item_urgency, format_age_short, DisplayItem, Filter, LineParts,
+};
 use crate::state::{
     compute_enter_action, compute_investigate_action, App, EnterAction, InvestigateAction,
     RefreshState, Screen,
@@ -438,30 +440,7 @@ fn render_issue_detail(
     scroll: &mut u16,
     area: Rect,
 ) {
-    let labels_str = if issue.labels.is_empty() {
-        String::new()
-    } else {
-        format!("  {}", issue.labels.join("  "))
-    };
-
-    // Reserve one row for the labels line if present.
-    let header_height = if labels_str.is_empty() { 0 } else { 1 };
-    let [labels_area, body_area] =
-        Layout::vertical([Constraint::Length(header_height), Constraint::Min(0)]).areas(area);
-
     let inner_width = area.width.saturating_sub(2) as usize; // subtract block borders
-
-    // Clamp scroll to actual content height.
-    let total_lines = issue_body_line_count(issue.body.as_deref(), inner_width);
-    let viewport_height = body_area.height.saturating_sub(2) as usize; // subtract block borders
-    let max_scroll = total_lines.saturating_sub(viewport_height) as u16;
-    *scroll = (*scroll).min(max_scroll);
-
-    let block = Block::default()
-        .title(format!(" {} ", issue.title))
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(FOCUS_COLOR));
 
     let body_text = issue
         .body
@@ -469,16 +448,34 @@ fn render_issue_detail(
         .filter(|s| !s.is_empty())
         .unwrap_or("(no description)");
 
-    let paragraph = Paragraph::new(body_text)
+    // Clamp scroll to actual content height.
+    let total_lines = issue_body_line_count(issue.body.as_deref(), inner_width);
+    let viewport_height = area.height.saturating_sub(2) as usize; // subtract block borders
+    let max_scroll = total_lines.saturating_sub(viewport_height) as u16;
+    *scroll = (*scroll).min(max_scroll);
+
+    // Footer: repo · #number · age [· label …]
+    let age = format_age_short(issue.age);
+    let mut footer = format!(" {} · #{} · {}", issue.repo, issue.number, age);
+    for label in &issue.labels {
+        footer.push_str(" · ");
+        footer.push_str(label);
+    }
+    footer.push(' ');
+
+    let block = Block::default()
+        .title(format!(" {} ", issue.title))
+        .title_bottom(Line::from(footer).style(dim()))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(FOCUS_COLOR));
+
+    let paragraph = Paragraph::new(tui_markdown::from_str(body_text))
         .block(block)
         .wrap(ratatui::widgets::Wrap { trim: false })
         .scroll((*scroll, 0));
 
-    frame.render_widget(paragraph, body_area);
-
-    if !labels_str.is_empty() {
-        frame.render_widget(Paragraph::new(labels_str).style(dim()), labels_area);
-    }
+    frame.render_widget(paragraph, area);
 }
 
 fn unified_title(filter: &Filter, query_input: Option<&str>) -> String {
