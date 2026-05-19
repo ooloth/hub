@@ -19,6 +19,7 @@ use crate::state::{handle_msg, App, DataState, Effect, Msg, RefreshState, Screen
 mod display;
 mod input;
 mod investigations;
+mod markdown;
 mod render;
 mod state;
 

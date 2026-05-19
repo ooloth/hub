@@ -480,7 +480,7 @@ fn render_issue_detail(
         block = block.title_bottom(bt);
     }
 
-    let mut body = tui_markdown::from_str(raw_body);
+    let mut body = crate::markdown::from_str(raw_body);
     body.lines.insert(0, ratatui::text::Line::from(""));
     body.lines.push(ratatui::text::Line::from(""));
 
