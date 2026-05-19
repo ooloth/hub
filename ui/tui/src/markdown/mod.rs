@@ -1,6 +1,6 @@
 // Vendored from tui-markdown 0.3.7 (MIT/Apache-2.0), modified:
 //   - SYNTAX_SET uses two-face's extended syntax set (adds TypeScript, TOML, etc.)
-//   - Theme uses vendored Catppuccin Mocha .tmTheme instead of base16-ocean.dark
+//   - Theme uses two-face's built-in CatppuccinMocha instead of base16-ocean.dark
 //   - tracing instrumentation removed
 //   - pub(crate) visibility throughout
 
@@ -16,10 +16,10 @@ use ratatui::style::{Style, Stylize};
 use ratatui::text::{Line, Span, Text};
 use syntect::{
     easy::HighlightLines,
-    highlighting::ThemeSet,
     parsing::SyntaxSet,
     util::{as_24_bit_terminal_escaped, LinesWithEndings},
 };
+use two_face::theme::EmbeddedThemeName;
 
 pub(crate) use crate::markdown::options::Options;
 pub(crate) use crate::markdown::style_sheet::StyleSheet;
@@ -27,13 +27,12 @@ pub(crate) use crate::markdown::style_sheet::StyleSheet;
 mod options;
 mod style_sheet;
 
-const MOCHA_BYTES: &str = include_str!("../../assets/catppuccin-mocha.tmTheme");
-
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(two_face::syntax::extra_newlines);
 
 static MOCHA_THEME: LazyLock<syntect::highlighting::Theme> = LazyLock::new(|| {
-    let mut cursor = std::io::Cursor::new(MOCHA_BYTES.as_bytes());
-    ThemeSet::load_from_reader(&mut cursor).expect("vendored Catppuccin Mocha theme must parse")
+    two_face::theme::extra()
+        .get(EmbeddedThemeName::CatppuccinMocha)
+        .clone()
 });
 
 pub(crate) fn from_str(input: &str) -> Text<'_> {

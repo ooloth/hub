@@ -11,9 +11,8 @@ Two lines in `mod.rs` differ from upstream:
    syntect's default ~75 Sublime Text 2 languages to 150+ modern languages, adding
    TypeScript, TOML, and others that were missing.
 
-2. **`MOCHA_THEME`** — loads the vendored Catppuccin Mocha `.tmTheme` (in
-   `assets/catppuccin-mocha.tmTheme`, sourced from the official
-   [catppuccin/bat][catppuccin-bat] repo) instead of `base16-ocean.dark`.
+2. **`MOCHA_THEME`** — uses `two_face::theme::extra().get(EmbeddedThemeName::CatppuccinMocha)`
+   instead of `base16-ocean.dark`.
 
 `style_sheet.rs` adds `CatppuccinStyleSheet`, which the module's `from_str` uses
 as its default. It styles headings and inline code in Mocha mauve to match
@@ -29,5 +28,4 @@ avoid the `tracing` dependency.
 re-apply the two patches above.
 
 [tui-markdown]: https://github.com/joshka/tui-markdown
-[catppuccin-bat]: https://github.com/catppuccin/bat
 [releases]: https://github.com/joshka/tui-markdown/releases
