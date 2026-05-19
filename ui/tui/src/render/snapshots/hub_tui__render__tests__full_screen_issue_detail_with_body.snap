@@ -21,4 +21,4 @@ expression: screen_text(&buf)
 │## Actual                                                                     │
 │                                                                              │
 ╰ status:needs-human-review · area:render ─────────────────────────────────────╯
-  [a] approve · [o] open · [Esc] back
+  [a] approve · [↩] open · [Esc] back

@@ -112,7 +112,6 @@ fn issue_reader_keys(key: KeyEvent) -> Option<Action> {
         (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Action::MovePageUp),
         (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(Action::MovePageDown),
         (KeyCode::Enter, _) => Some(Action::Enter),
-        (KeyCode::Char('o'), _) => Some(Action::OpenUrl),
         (KeyCode::Char('a'), _) => Some(Action::ApproveForAgent),
         (KeyCode::Char('i'), _) => Some(Action::Investigate),
         _ => None,
@@ -376,9 +375,9 @@ mod tests {
     #[case(ctrl('u'), Some(Action::MovePageUp))]
     #[case(ctrl('d'), Some(Action::MovePageDown))]
     #[case(k(KeyCode::Enter), Some(Action::Enter))]
-    #[case(ch('o'), Some(Action::OpenUrl))]
     #[case(ch('a'), Some(Action::ApproveForAgent))]
     #[case(ch('i'), Some(Action::Investigate))]
+    #[case(ch('o'), None)]
     #[case(ch('p'), None)]
     #[case(ch('e'), None)]
     #[case(ch('/'), None)]

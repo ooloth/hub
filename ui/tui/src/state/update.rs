@@ -139,7 +139,6 @@ impl App {
             | Action::MovePageUp
             | Action::MovePageDown
             | Action::Enter
-            | Action::OpenUrl
             | Action::ApproveForAgent
             | Action::Investigate => match &self.ui.screen {
                 Screen::UnifiedList { .. } => self.handle_unified_list(action),
@@ -284,7 +283,7 @@ impl App {
                 }
                 vec![]
             }
-            Action::Enter | Action::OpenUrl => self
+            Action::Enter => self
                 .selected_url()
                 .map(|u| vec![Effect::OpenUrl(u.to_string())])
                 .unwrap_or_default(),
@@ -1365,17 +1364,6 @@ mod tests {
         assert_eq!(number, 42);
         assert!(labels.contains(&"status:ready-for-agent".to_string()));
         assert!(!labels.contains(&"status:needs-human-review".to_string()));
-    }
-
-    #[test]
-    fn open_url_in_issue_detail_emits_open_url() {
-        let mut app = app_in_issue_detail();
-        let effects = app.update(Action::OpenUrl);
-        assert_eq!(effects.len(), 1);
-        let Effect::OpenUrl(url) = effects.into_iter().next().unwrap() else {
-            panic!("expected OpenUrl");
-        };
-        assert!(url.contains("issues/42"));
     }
 
     #[test]

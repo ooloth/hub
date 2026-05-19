@@ -121,7 +121,7 @@ const KEYBINDS_ISSUE_READER: &[(&str, &str)] = &[
     ("gg / G", "go to top / bottom"),
     ("Ctrl-u / Ctrl-d", "page up / down"),
     ("a", "approve for agent"),
-    ("o / Enter", "open in browser"),
+    ("Enter", "open in browser"),
     ("i", "investigate"),
     ("r", "refresh"),
     ("Esc", "back to list"),
@@ -423,7 +423,7 @@ fn status_bar_left(app: &App) -> String {
         return flash.clone();
     }
     if matches!(app.ui.screen, Screen::IssueDetail { .. }) {
-        return " [a] approve · [o] open · [Esc] back".to_string();
+        return " [a] approve · [↩] open · [Esc] back".to_string();
     }
     let enter_action = compute_enter_action(app);
     let investigate_action = compute_investigate_action(app);

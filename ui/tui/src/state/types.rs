@@ -135,7 +135,6 @@ pub(crate) enum Action {
     Enter,
     Investigate,
     Refresh,
-    OpenUrl,
     ApproveForAgent,
     // Filter actions — only take effect from UnifiedList in normal mode.
     FilterCategory(Category),
