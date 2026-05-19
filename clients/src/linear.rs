@@ -55,7 +55,9 @@ pub async fn issues(token: &str) -> Result<Vec<LinearIssue>> {
     let resp = reqwest::Client::new()
         .post("https://api.linear.app/graphql")
         .header("Authorization", token)
-        .json(&Request { query: query.to_string() })
+        .json(&Request {
+            query: query.to_string(),
+        })
         .send()
         .await
         .context("failed to reach Linear API")?;
