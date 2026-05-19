@@ -9,8 +9,8 @@ pub(crate) trait StyleSheet: Clone + Send + Sync + 'static {
     fn metadata_block(&self) -> Style;
 }
 
-const MAUVE: Color = Color::Rgb(203, 166, 247);
 const TEAL: Color = Color::Rgb(148, 226, 213);
+const LAVENDER: Color = Color::Rgb(180, 190, 254);
 
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct CatppuccinStyleSheet;
@@ -26,7 +26,7 @@ impl StyleSheet for CatppuccinStyleSheet {
     }
 
     fn code(&self) -> Style {
-        Style::new().fg(MAUVE)
+        Style::new().fg(LAVENDER)
     }
 
     fn link(&self) -> Style {
