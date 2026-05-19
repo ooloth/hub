@@ -14,7 +14,7 @@ use crate::state::{
 
 mod detail;
 
-pub(super) const FOCUS_COLOR: Color = Color::Rgb(180, 190, 254); // Catppuccin Mocha Lavender
+pub(super) const FOCUS_COLOR: Color = Color::Rgb(203, 166, 247); // Catppuccin Mocha Mauve
 pub(super) const SELECTION_BG: Color = Color::Rgb(41, 45, 62);
 
 pub(super) fn dim() -> Style {
@@ -413,7 +413,7 @@ fn unified_title(filter: &Filter, query_input: Option<&str>) -> String {
 }
 
 /// Returns the style for filter-related chrome (border, dividers).
-/// Yellow while a query is being typed; lavender once any filter is committed; dim otherwise.
+/// Yellow while a query is being typed; mauve once any filter is committed; dim otherwise.
 fn filter_chrome_style(filter: &Filter, query_input: Option<&str>) -> Style {
     if query_input.is_some() {
         Style::default().fg(Color::Yellow)
