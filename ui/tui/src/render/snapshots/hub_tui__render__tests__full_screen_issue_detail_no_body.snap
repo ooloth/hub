@@ -1,0 +1,19 @@
+---
+source: ui/tui/src/render/mod.rs
+expression: screen_text(&buf)
+---
+╭ No description issue ────────────────────────────────────────────────────────╮
+│(no description)                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+  [a] approve · [o] open · [Esc] back

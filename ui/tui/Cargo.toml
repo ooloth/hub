@@ -13,6 +13,7 @@
 [dependencies]
   anyhow = "1"
   chrono = "0.4"
+  clients = { path = "../../clients" }
   config = { path = "../../config" }
   crossterm = { version = "0.28", features = ["event-stream"] }
   domain = { path = "../../domain" }

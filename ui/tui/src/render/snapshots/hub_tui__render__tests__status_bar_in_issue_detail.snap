@@ -1,0 +1,5 @@
+---
+source: ui/tui/src/render/mod.rs
+expression: status_row(&buf)
+---
+  [a] approve · [o] open · [Esc] back

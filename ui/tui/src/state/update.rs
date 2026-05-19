@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use ratatui::widgets::ListState;
 
+use domain::agent_ready_labels;
+
 use super::{
     Action, App, DetailView, Effect, EnterAction, InvestigateAction, Msg, RefreshState, Screen,
 };
@@ -34,11 +36,13 @@ impl App {
             }
             Action::Back => {
                 self.ui.screen = match std::mem::take(&mut self.ui.screen) {
-                    Screen::Detail { parent, .. } => Screen::UnifiedList {
-                        items: parent.items,
-                        selected: parent.selected,
-                        filter: parent.filter,
-                    },
+                    Screen::Detail { parent, .. } | Screen::IssueDetail { parent, .. } => {
+                        Screen::UnifiedList {
+                            items: parent.items,
+                            selected: parent.selected,
+                            filter: parent.filter,
+                        }
+                    }
                     // Already at top level — no-op.
                     other => other,
                 };
@@ -135,13 +139,13 @@ impl App {
             | Action::MovePageUp
             | Action::MovePageDown
             | Action::Enter
-            | Action::Investigate => {
-                if matches!(self.ui.screen, Screen::UnifiedList { .. }) {
-                    self.handle_unified_list(action)
-                } else {
-                    self.handle_detail(action)
-                }
-            }
+            | Action::OpenUrl
+            | Action::ApproveForAgent
+            | Action::Investigate => match &self.ui.screen {
+                Screen::UnifiedList { .. } => self.handle_unified_list(action),
+                Screen::IssueDetail { .. } => self.handle_issue_reader(action),
+                Screen::Detail { .. } => self.handle_detail(action),
+            },
         }
     }
 
@@ -241,6 +245,65 @@ impl App {
         }
     }
 
+    fn handle_issue_reader(&mut self, action: Action) -> Vec<Effect> {
+        match action {
+            Action::MoveUp => {
+                if let Screen::IssueDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = scroll.saturating_sub(1);
+                }
+                vec![]
+            }
+            Action::MoveDown => {
+                if let Screen::IssueDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = scroll.saturating_add(1);
+                }
+                vec![]
+            }
+            Action::MoveToTop => {
+                if let Screen::IssueDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = 0;
+                }
+                vec![]
+            }
+            Action::MoveToBottom => {
+                // max scroll is clamped in render; set to a large value and let render clamp it
+                if let Screen::IssueDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = u16::MAX;
+                }
+                vec![]
+            }
+            Action::MovePageUp => {
+                if let Screen::IssueDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = scroll.saturating_sub(10);
+                }
+                vec![]
+            }
+            Action::MovePageDown => {
+                if let Screen::IssueDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = scroll.saturating_add(10);
+                }
+                vec![]
+            }
+            Action::Enter | Action::OpenUrl => self
+                .selected_url()
+                .map(|u| vec![Effect::OpenUrl(u.to_string())])
+                .unwrap_or_default(),
+            Action::ApproveForAgent => {
+                let Screen::IssueDetail { issue, .. } = &self.ui.screen else {
+                    return vec![];
+                };
+                let labels = agent_ready_labels(&issue.labels);
+                vec![Effect::SetIssueLabels {
+                    repo: issue.repo.to_string(),
+                    number: issue.number,
+                    labels,
+                }]
+            }
+            Action::Investigate => self.handle_investigate(),
+            _ => unreachable!(),
+        }
+    }
+
     fn handle_investigate(&mut self) -> Vec<Effect> {
         match compute_investigate_action(self) {
             InvestigateAction::LaunchCi { repo, run_url } => {
@@ -328,6 +391,27 @@ impl App {
                 };
                 vec![]
             }
+            EnterAction::OpenIssueDetail(issue) => {
+                let Screen::UnifiedList {
+                    items,
+                    selected,
+                    filter,
+                } = &self.ui.screen
+                else {
+                    return vec![];
+                };
+                let snapshot = ListSnapshot {
+                    items: items.clone(),
+                    selected: *selected,
+                    filter: filter.clone(),
+                };
+                self.ui.screen = Screen::IssueDetail {
+                    parent: snapshot,
+                    issue,
+                    scroll: 0,
+                };
+                vec![]
+            }
         }
     }
 
@@ -346,11 +430,13 @@ impl App {
                     _ => None,
                 }
             }
+            Screen::IssueDetail { issue, .. } => Some(&issue.url),
         }
     }
 }
 
 pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
+    use workflows::status::StatusItem;
     match app.current_screen() {
         Screen::UnifiedList {
             items, selected, ..
@@ -361,6 +447,9 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
                 group_index: *selected,
                 item_count: group_items.len(),
             },
+            Some(DisplayItem::Single(StatusItem::Issue(issue))) => {
+                EnterAction::OpenIssueDetail(issue.clone())
+            }
             Some(DisplayItem::Single(_)) => app
                 .selected_url()
                 .map(|u| EnterAction::OpenUrl(u.to_string()))
@@ -368,6 +457,10 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
             None => EnterAction::None,
         },
         Screen::Detail { .. } => app
+            .selected_url()
+            .map(|u| EnterAction::OpenUrl(u.to_string()))
+            .unwrap_or(EnterAction::None),
+        Screen::IssueDetail { .. } => app
             .selected_url()
             .map(|u| EnterAction::OpenUrl(u.to_string()))
             .unwrap_or(EnterAction::None),
@@ -439,7 +532,9 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
                 serde_json::to_string(&report).context("failed to serialize status report")?;
             let filter = match &app.ui.screen {
                 Screen::UnifiedList { filter, .. } => filter.clone(),
-                Screen::Detail { parent, .. } => parent.filter.clone(),
+                Screen::Detail { parent, .. } | Screen::IssueDetail { parent, .. } => {
+                    parent.filter.clone()
+                }
             };
             app.data.raw_items = report.items.clone();
             let items = build_unified(report.items, &filter);
@@ -467,8 +562,8 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
 #[cfg(test)]
 mod tests {
     use super::{
-        compute_investigate_action, handle_msg, Action, App, Effect, InvestigateAction, Msg,
-        RefreshState, Screen,
+        compute_enter_action, compute_investigate_action, handle_msg, Action, App, Effect,
+        EnterAction, InvestigateAction, Msg, RefreshState, Screen,
     };
     use crate::display::{DisplayItem, Filter, ListSnapshot};
     use crate::state::{DataState, DetailView, UiState};
@@ -596,6 +691,7 @@ mod tests {
                 age: chrono::Duration::zero(),
                 urgency: domain::Urgency::Low,
                 labels: vec![],
+                body: None,
             },
         ))]);
         assert_eq!(
@@ -1099,5 +1195,217 @@ mod tests {
         apply(&mut app, &[Action::MoveDown, Action::MoveDown]);
         app.update(Action::MovePageUp);
         assert_eq!(selected(&app), 0);
+    }
+
+    // --- IssueDetail: Enter on issue opens reader ---
+
+    fn stub_issue() -> StatusItem {
+        StatusItem::Issue(domain::Issue {
+            number: 42,
+            title: "Test issue".to_string(),
+            repo: domain::RepoSlug::new("ooloth", "hub"),
+            url: "https://github.com/ooloth/hub/issues/42".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+            labels: vec!["status:needs-human-review".to_string()],
+            body: Some("Issue body text.".to_string()),
+        })
+    }
+
+    fn app_in_issue_detail() -> App {
+        let parent = ListSnapshot {
+            items: vec![DisplayItem::Single(stub_issue())],
+            selected: 0,
+            filter: Filter::default(),
+        };
+        let issue = match stub_issue() {
+            StatusItem::Issue(i) => i,
+            _ => unreachable!(),
+        };
+        App {
+            ui: UiState {
+                screen: Screen::IssueDetail {
+                    parent,
+                    issue,
+                    scroll: 0,
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    fn issue_detail_scroll(app: &App) -> u16 {
+        match app.current_screen() {
+            Screen::IssueDetail { scroll, .. } => *scroll,
+            _ => panic!("expected IssueDetail"),
+        }
+    }
+
+    #[test]
+    fn enter_on_issue_in_unified_list_opens_issue_detail() {
+        let mut app = app_with_items(vec![DisplayItem::Single(stub_issue())]);
+        app.update(Action::Enter);
+        assert!(matches!(app.current_screen(), Screen::IssueDetail { .. }));
+    }
+
+    #[test]
+    fn enter_on_ci_in_unified_list_opens_url() {
+        let mut app = app_with_items(vec![DisplayItem::Single(ci_failure())]);
+        let effects = app.update(Action::Enter);
+        assert!(matches!(effects.as_slice(), [Effect::OpenUrl(_)]));
+        assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
+    }
+
+    #[test]
+    fn back_from_issue_detail_returns_to_unified_list() {
+        let mut app = app_with_items(vec![DisplayItem::Single(stub_issue())]);
+        apply(&mut app, &[Action::Enter, Action::Back]);
+        assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
+    }
+
+    #[test]
+    fn back_from_issue_detail_restores_selection() {
+        let mut app = app_with_items(vec![
+            DisplayItem::Single(ci_failure()),
+            DisplayItem::Single(stub_issue()),
+        ]);
+        apply(&mut app, &[Action::MoveDown, Action::Enter, Action::Back]);
+        let Screen::UnifiedList { selected, .. } = app.current_screen() else {
+            panic!("expected UnifiedList");
+        };
+        assert_eq!(*selected, 1);
+    }
+
+    // --- IssueDetail: scroll ---
+
+    #[test]
+    fn issue_detail_move_down_increments_scroll() {
+        let mut app = app_in_issue_detail();
+        app.update(Action::MoveDown);
+        assert_eq!(issue_detail_scroll(&app), 1);
+    }
+
+    #[test]
+    fn issue_detail_move_up_at_zero_is_noop() {
+        let mut app = app_in_issue_detail();
+        app.update(Action::MoveUp);
+        assert_eq!(issue_detail_scroll(&app), 0);
+    }
+
+    #[test]
+    fn issue_detail_move_up_decrements_scroll() {
+        let mut app = app_in_issue_detail();
+        apply(
+            &mut app,
+            &[Action::MoveDown, Action::MoveDown, Action::MoveUp],
+        );
+        assert_eq!(issue_detail_scroll(&app), 1);
+    }
+
+    #[test]
+    fn issue_detail_move_to_top_resets_scroll_to_zero() {
+        let mut app = app_in_issue_detail();
+        apply(
+            &mut app,
+            &[Action::MoveDown, Action::MoveDown, Action::MoveToTop],
+        );
+        assert_eq!(issue_detail_scroll(&app), 0);
+    }
+
+    #[test]
+    fn issue_detail_move_to_bottom_sets_max_scroll() {
+        let mut app = app_in_issue_detail();
+        app.update(Action::MoveToBottom);
+        assert_eq!(issue_detail_scroll(&app), u16::MAX);
+    }
+
+    #[test]
+    fn issue_detail_page_down_adds_10() {
+        let mut app = app_in_issue_detail();
+        app.update(Action::MovePageDown);
+        assert_eq!(issue_detail_scroll(&app), 10);
+    }
+
+    #[test]
+    fn issue_detail_page_up_subtracts_10() {
+        let mut app = app_in_issue_detail();
+        apply(&mut app, &[Action::MovePageDown, Action::MovePageDown]);
+        assert_eq!(issue_detail_scroll(&app), 20);
+        app.update(Action::MovePageUp);
+        assert_eq!(issue_detail_scroll(&app), 10);
+    }
+
+    #[test]
+    fn issue_detail_page_up_clamps_at_zero() {
+        let mut app = app_in_issue_detail();
+        apply(
+            &mut app,
+            &[Action::MovePageDown, Action::MovePageUp, Action::MovePageUp],
+        );
+        assert_eq!(issue_detail_scroll(&app), 0);
+    }
+
+    // --- IssueDetail: effects ---
+
+    #[test]
+    fn approve_for_agent_emits_set_issue_labels() {
+        let mut app = app_in_issue_detail();
+        let effects = app.update(Action::ApproveForAgent);
+        assert_eq!(effects.len(), 1);
+        let Effect::SetIssueLabels {
+            repo,
+            number,
+            labels,
+        } = effects.into_iter().next().unwrap()
+        else {
+            panic!("expected SetIssueLabels");
+        };
+        assert_eq!(repo, "ooloth/hub");
+        assert_eq!(number, 42);
+        assert!(labels.contains(&"status:ready-for-agent".to_string()));
+        assert!(!labels.contains(&"status:needs-human-review".to_string()));
+    }
+
+    #[test]
+    fn open_url_in_issue_detail_emits_open_url() {
+        let mut app = app_in_issue_detail();
+        let effects = app.update(Action::OpenUrl);
+        assert_eq!(effects.len(), 1);
+        let Effect::OpenUrl(url) = effects.into_iter().next().unwrap() else {
+            panic!("expected OpenUrl");
+        };
+        assert!(url.contains("issues/42"));
+    }
+
+    #[test]
+    fn enter_in_issue_detail_emits_open_url() {
+        let mut app = app_in_issue_detail();
+        let effects = app.update(Action::Enter);
+        assert_eq!(effects.len(), 1);
+        let Effect::OpenUrl(url) = effects.into_iter().next().unwrap() else {
+            panic!("expected OpenUrl");
+        };
+        assert!(url.contains("issues/42"));
+    }
+
+    // --- compute_enter_action ---
+
+    #[test]
+    fn compute_enter_action_on_issue_returns_open_issue_detail() {
+        let app = app_with_items(vec![DisplayItem::Single(stub_issue())]);
+        assert!(matches!(
+            compute_enter_action(&app),
+            EnterAction::OpenIssueDetail(_)
+        ));
+    }
+
+    #[test]
+    fn compute_enter_action_in_issue_detail_returns_open_url() {
+        let app = app_in_issue_detail();
+        assert!(matches!(
+            compute_enter_action(&app),
+            EnterAction::OpenUrl(_)
+        ));
     }
 }

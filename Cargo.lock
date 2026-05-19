@@ -570,6 +570,7 @@ name = "domain"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "rstest 0.25.0",
  "serde",
 ]
 
@@ -997,6 +998,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "clients",
  "config",
  "crossterm 0.28.1",
  "domain",

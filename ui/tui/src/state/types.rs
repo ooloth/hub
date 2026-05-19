@@ -1,5 +1,5 @@
 use anyhow::Result;
-use domain::{PrKind, ReviewDecision};
+use domain::{Issue, PrKind, ReviewDecision};
 use ratatui::widgets::ListState;
 use workflows::status::{StatusItem, StatusReport};
 
@@ -25,6 +25,7 @@ pub(crate) struct DetailView {
 // UnifiedList is the default (top-level) screen. Detail carries a
 // ListSnapshot as its return address — pressing Back restores the
 // list to the exact items/selection/filter state before drill-in.
+// IssueDetail shows the full body of a single issue with a scroll offset.
 #[derive(Debug)]
 pub(crate) enum Screen {
     UnifiedList {
@@ -35,6 +36,11 @@ pub(crate) enum Screen {
     Detail {
         parent: ListSnapshot,
         view: DetailView,
+    },
+    IssueDetail {
+        parent: ListSnapshot,
+        issue: Issue,
+        scroll: u16,
     },
 }
 
@@ -64,6 +70,7 @@ impl Screen {
                     _ => None,
                 }
             }
+            Screen::IssueDetail { issue, .. } => Some(StatusItem::Issue(issue.clone())),
         }
     }
 }
@@ -75,6 +82,7 @@ pub(crate) enum EnterAction {
         group_index: usize,
         item_count: usize,
     },
+    OpenIssueDetail(Issue),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -127,6 +135,8 @@ pub(crate) enum Action {
     Enter,
     Investigate,
     Refresh,
+    OpenUrl,
+    ApproveForAgent,
     // Filter actions — only take effect from UnifiedList in normal mode.
     FilterCategory(Category),
     ClearFilter,
@@ -140,6 +150,11 @@ pub(crate) enum Action {
 pub(crate) enum Effect {
     Quit,
     OpenUrl(String),
+    SetIssueLabels {
+        repo: String,
+        number: u64,
+        labels: Vec<String>,
+    },
     LaunchCi {
         repo: String,
         run_url: String,

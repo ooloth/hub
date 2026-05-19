@@ -363,6 +363,55 @@ async fn run_loop(
                         app.ui.flash = Some(format!("Cannot determine working directory: {e}"));
                     }
                 },
+                Effect::SetIssueLabels {
+                    repo,
+                    number,
+                    labels,
+                } => {
+                    match clients::github::set_issue_labels(
+                        &config.github_token,
+                        &repo,
+                        number,
+                        &labels,
+                    )
+                    .await
+                    {
+                        Ok(()) => {
+                            // Update labels in the reader, the parent list snapshot,
+                            // and raw_items so the next rebuild reflects the change.
+                            if let crate::state::Screen::IssueDetail {
+                                ref mut issue,
+                                ref mut parent,
+                                ..
+                            } = app.ui.screen
+                            {
+                                issue.labels = labels.clone();
+                                for item in parent.items.iter_mut() {
+                                    if let crate::display::DisplayItem::Single(
+                                        workflows::status::StatusItem::Issue(ref mut i),
+                                    ) = item
+                                    {
+                                        if i.repo.to_string() == repo && i.number == number {
+                                            i.labels = labels.clone();
+                                        }
+                                    }
+                                }
+                            }
+                            for item in app.data.raw_items.iter_mut() {
+                                if let workflows::status::StatusItem::Issue(ref mut i) = item {
+                                    if i.repo.to_string() == repo && i.number == number {
+                                        i.labels = labels.clone();
+                                    }
+                                }
+                            }
+                            app.ui.flash = Some(format!("Marked #{number} ready for agent"));
+                        }
+                        Err(e) => {
+                            app.ui.flash =
+                                Some(format!("Could not mark #{number} ready for agent: {e}"));
+                        }
+                    }
+                }
                 Effect::StartRefresh => {
                     spawn_fetch(config, tx.clone());
                     spawn_git_fetch(config);

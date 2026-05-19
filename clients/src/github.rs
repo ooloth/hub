@@ -2,12 +2,9 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use domain::{
     CiFailure, GithubPrsRepo, Issue, PrKind, PullRequest, RepoSlug, ReviewDecision, Urgency,
+    NEEDS_HUMAN_REVIEW_LABEL,
 };
 use serde::Deserialize;
-
-// ── REST issues (per-repo) ─────────────────────────────────────────────────────
-
-const NEEDS_HUMAN_REVIEW_LABEL: &str = "status:needs-human-review";
 
 #[derive(Deserialize)]
 struct ApiIssue {
@@ -21,6 +18,7 @@ struct ApiIssue {
     assignees: Vec<ApiAssignee>,
     #[serde(default)]
     pull_request: Option<PullRequestMarker>,
+    body: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -361,6 +359,7 @@ fn to_domain_issue(item: ApiIssue, repo: RepoSlug, username: &str) -> Option<Iss
         age: age(&item.created_at),
         urgency: classify_urgency(&assignees, &labels, username),
         labels,
+        body: item.body,
     })
 }
 
@@ -376,6 +375,32 @@ fn classify_urgency(assignees: &[String], labels: &[String], username: &str) -> 
 
 fn has_next_page(returned: usize, per_page: usize) -> bool {
     returned == per_page
+}
+
+/// Replaces all labels on an issue with the given set.
+///
+/// # Errors
+/// Returns an error if the GitHub API is unreachable or returns a non-2xx response.
+pub async fn set_issue_labels(
+    token: &str,
+    repo: &str,
+    number: u64,
+    labels: &[String],
+) -> Result<()> {
+    reqwest::Client::new()
+        .put(format!(
+            "https://api.github.com/repos/{repo}/issues/{number}/labels"
+        ))
+        .bearer_auth(token)
+        .header("User-Agent", "hub-cli")
+        .header("Accept", "application/vnd.github.v3+json")
+        .json(&serde_json::json!({ "labels": labels }))
+        .send()
+        .await
+        .with_context(|| format!("failed to reach GitHub API for {repo}#{number}"))?
+        .error_for_status()
+        .with_context(|| format!("GitHub API error setting labels on {repo}#{number}"))?;
+    Ok(())
 }
 
 // ── CI status ─────────────────────────────────────────────────────────────────
@@ -713,6 +738,7 @@ mod tests {
                 login: "alice".to_string(),
             }],
             pull_request,
+            body: Some("This is the issue body.".to_string()),
         }
     }
 
@@ -732,6 +758,15 @@ mod tests {
         assert_eq!(issue.url, "https://github.com/owner/repo/issues/7");
         assert_eq!(issue.labels, vec!["bug"]);
         assert_eq!(issue.urgency, Urgency::Medium); // assigned to alice
+        assert_eq!(issue.body, Some("This is the issue body.".to_string()));
+    }
+
+    #[test]
+    fn to_domain_issue_body_none_when_absent() {
+        let mut item = make_api_issue(None);
+        item.body = None;
+        let issue = to_domain_issue(item, RepoSlug::new("owner", "repo"), "alice").unwrap();
+        assert_eq!(issue.body, None);
     }
 
     #[test]

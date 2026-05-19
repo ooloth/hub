@@ -115,6 +115,19 @@ const KEYBINDS_DETAIL: &[(&str, &str)] = &[
     ("q / Ctrl-C", "quit"),
 ];
 
+const KEYBINDS_ISSUE_READER: &[(&str, &str)] = &[
+    ("?", "toggle help"),
+    ("k / j", "scroll up / down"),
+    ("gg / G", "go to top / bottom"),
+    ("Ctrl-u / Ctrl-d", "page up / down"),
+    ("a", "approve for agent"),
+    ("o / Enter", "open in browser"),
+    ("i", "investigate"),
+    ("r", "refresh"),
+    ("Esc", "back to list"),
+    ("q / Ctrl-C", "quit"),
+];
+
 fn format_keybinds(keybinds: &[(&str, &str)]) -> String {
     let key_w = keybinds
         .iter()
@@ -366,6 +379,7 @@ fn position_label(screen: &Screen) -> String {
                 .map(|i| format!("{}/{count}", i + 1))
                 .unwrap_or_default()
         }
+        Screen::IssueDetail { .. } => String::new(),
     }
 }
 
@@ -375,6 +389,7 @@ fn action_hints(enter: &EnterAction, investigate: &InvestigateAction) -> String 
         EnterAction::OpenDetail { item_count, .. } => {
             format!(" · [↩] expand {item_count} items")
         }
+        EnterAction::OpenIssueDetail(_) => " · [↩] read".to_string(),
         EnterAction::None => String::new(),
     };
     let inv_hint = if matches!(investigate, InvestigateAction::None) {
@@ -385,15 +400,85 @@ fn action_hints(enter: &EnterAction, investigate: &InvestigateAction) -> String 
     format!("{enter_hint}{inv_hint}")
 }
 
+/// Returns the number of wrapped lines the body text produces at the given width.
+/// Used to clamp scroll in the issue reader.
+pub(crate) fn issue_body_line_count(body: Option<&str>, width: usize) -> usize {
+    let text = body.unwrap_or("");
+    if text.is_empty() {
+        return 1; // placeholder "(no description)" is one line
+    }
+    text.lines()
+        .map(|line| {
+            if line.is_empty() {
+                1
+            } else {
+                wrap_text(line, width).len()
+            }
+        })
+        .sum()
+}
+
 fn status_bar_left(app: &App) -> String {
     if let Some(flash) = &app.ui.flash {
         return flash.clone();
+    }
+    if matches!(app.ui.screen, Screen::IssueDetail { .. }) {
+        return " [a] approve · [o] open · [Esc] back".to_string();
     }
     let enter_action = compute_enter_action(app);
     let investigate_action = compute_investigate_action(app);
     let pos = position_label(app.current_screen());
     let hints = action_hints(&enter_action, &investigate_action);
     format!("{pos}{hints}")
+}
+
+fn render_issue_detail(
+    frame: &mut ratatui::Frame,
+    issue: &domain::Issue,
+    scroll: &mut u16,
+    area: Rect,
+) {
+    let labels_str = if issue.labels.is_empty() {
+        String::new()
+    } else {
+        format!("  {}", issue.labels.join("  "))
+    };
+
+    // Reserve one row for the labels line if present.
+    let header_height = if labels_str.is_empty() { 0 } else { 1 };
+    let [labels_area, body_area] =
+        Layout::vertical([Constraint::Length(header_height), Constraint::Min(0)]).areas(area);
+
+    let inner_width = area.width.saturating_sub(2) as usize; // subtract block borders
+
+    // Clamp scroll to actual content height.
+    let total_lines = issue_body_line_count(issue.body.as_deref(), inner_width);
+    let viewport_height = body_area.height.saturating_sub(2) as usize; // subtract block borders
+    let max_scroll = total_lines.saturating_sub(viewport_height) as u16;
+    *scroll = (*scroll).min(max_scroll);
+
+    let block = Block::default()
+        .title(format!(" {} ", issue.title))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(FOCUS_COLOR));
+
+    let body_text = issue
+        .body
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("(no description)");
+
+    let paragraph = Paragraph::new(body_text)
+        .block(block)
+        .wrap(ratatui::widgets::Wrap { trim: false })
+        .scroll((*scroll, 0));
+
+    frame.render_widget(paragraph, body_area);
+
+    if !labels_str.is_empty() {
+        frame.render_widget(Paragraph::new(labels_str).style(dim()), labels_area);
+    }
 }
 
 fn unified_title(filter: &Filter, query_input: Option<&str>) -> String {
@@ -558,6 +643,9 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         Screen::Detail { parent, view } => {
             detail::render_detail(frame, view, parent, content_area);
         }
+        Screen::IssueDetail { issue, scroll, .. } => {
+            render_issue_detail(frame, issue, scroll, content_area);
+        }
     }
 
     let right_status =
@@ -578,6 +666,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         let keybinds = match &app.ui.screen {
             Screen::UnifiedList { .. } => KEYBINDS_LIST,
             Screen::Detail { .. } => KEYBINDS_DETAIL,
+            Screen::IssueDetail { .. } => KEYBINDS_ISSUE_READER,
         };
         let text = format_keybinds(keybinds);
         let lines = keybinds.len() as u16;
@@ -1207,6 +1296,93 @@ mod tests {
         };
         let buf = draw(&mut app, 80, 15);
         insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    fn issue_detail_app(issue: domain::Issue, scroll: u16) -> App {
+        App {
+            ui: UiState {
+                screen: Screen::IssueDetail {
+                    parent: ListSnapshot {
+                        items: vec![],
+                        selected: 0,
+                        filter: Filter::default(),
+                    },
+                    issue,
+                    scroll,
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    fn stub_issue_with_body() -> domain::Issue {
+        domain::Issue {
+            number: 42,
+            title: "Invariant violation in render pipeline".to_string(),
+            repo: domain::RepoSlug::new("ooloth", "hub"),
+            url: "https://github.com/ooloth/hub/issues/42".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+            labels: vec![
+                "status:needs-human-review".to_string(),
+                "area:render".to_string(),
+            ],
+            body: Some(
+                "## Summary\n\nThe render pipeline does not handle edge cases correctly.\n\n\
+                 ## Steps to reproduce\n\n1. Open the TUI\n2. Navigate to the issue list\n\
+                 3. Press Enter on an issue\n\n## Expected\n\nThe issue body is displayed.\n\n\
+                 ## Actual\n\nThe screen is blank."
+                    .to_string(),
+            ),
+        }
+    }
+
+    fn stub_issue_no_body() -> domain::Issue {
+        domain::Issue {
+            number: 7,
+            title: "No description issue".to_string(),
+            repo: domain::RepoSlug::new("ooloth", "hub"),
+            url: "https://github.com/ooloth/hub/issues/7".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+            labels: vec![],
+            body: None,
+        }
+    }
+
+    // ── Full-screen IssueDetail snapshots ─────────────────────────────────────
+
+    #[test]
+    fn full_screen_issue_detail_with_body() {
+        // I1: Issue with body and labels at scroll=0.
+        let mut app = issue_detail_app(stub_issue_with_body(), 0);
+        let buf = draw(&mut app, 80, 20);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_issue_detail_no_body() {
+        // I2: Issue with no body and no labels — shows "(no description)" placeholder.
+        let mut app = issue_detail_app(stub_issue_no_body(), 0);
+        let buf = draw(&mut app, 80, 15);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_issue_detail_scrolled() {
+        // I3: Same issue as I1 but scroll=3 — body content shifts up.
+        let mut app = issue_detail_app(stub_issue_with_body(), 3);
+        let buf = draw(&mut app, 80, 20);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn status_bar_in_issue_detail() {
+        // I4: Status bar in IssueDetail shows "[a] approve · [o] open · [Esc] back".
+        let mut app = issue_detail_app(stub_issue_with_body(), 0);
+        let buf = draw(&mut app, 120, 5);
+        insta::assert_snapshot!(status_row(&buf));
     }
 
     // ── Full-screen detail view snapshots ─────────────────────────────────────

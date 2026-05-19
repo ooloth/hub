@@ -76,6 +76,24 @@ pub struct PullRequest {
     pub base_branch: String,
 }
 
+pub const NEEDS_HUMAN_REVIEW_LABEL: &str = "status:needs-human-review";
+pub const READY_FOR_AGENT_LABEL: &str = "status:ready-for-agent";
+
+/// Returns the label set that marks an issue as ready for an agent:
+/// removes `NEEDS_HUMAN_REVIEW_LABEL` (if present) and adds `READY_FOR_AGENT_LABEL`
+/// (if not already present). All other labels are preserved in order. Idempotent.
+pub fn agent_ready_labels(labels: &[String]) -> Vec<String> {
+    let mut result: Vec<String> = labels
+        .iter()
+        .filter(|l| l.as_str() != NEEDS_HUMAN_REVIEW_LABEL)
+        .cloned()
+        .collect();
+    if !result.iter().any(|l| l.as_str() == READY_FOR_AGENT_LABEL) {
+        result.push(READY_FOR_AGENT_LABEL.to_string());
+    }
+    result
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Issue {
     pub number: u64,
@@ -86,6 +104,8 @@ pub struct Issue {
     pub age: chrono::Duration,
     pub urgency: Urgency,
     pub labels: Vec<String>,
+    #[serde(default)]
+    pub body: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -160,6 +180,68 @@ pub struct LokiEntry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── agent_ready_labels ────────────────────────────────────────────────────
+
+    fn s(v: &str) -> String {
+        v.to_string()
+    }
+
+    #[rstest::rstest]
+    // needs-human-review removed, ready-for-agent added
+    #[case(vec![s(NEEDS_HUMAN_REVIEW_LABEL)], vec![s(READY_FOR_AGENT_LABEL)])]
+    // already has ready-for-agent and needs-human-review → only needs-human-review removed
+    #[case(
+        vec![s(NEEDS_HUMAN_REVIEW_LABEL), s(READY_FOR_AGENT_LABEL)],
+        vec![s(READY_FOR_AGENT_LABEL)]
+    )]
+    // already fully ready → unchanged (idempotent)
+    #[case(vec![s(READY_FOR_AGENT_LABEL)], vec![s(READY_FOR_AGENT_LABEL)])]
+    // no relevant labels → ready-for-agent added, others preserved
+    #[case(vec![s("bug"), s("wontfix")], vec![s("bug"), s("wontfix"), s(READY_FOR_AGENT_LABEL)])]
+    // empty → only ready-for-agent
+    #[case(vec![], vec![s(READY_FOR_AGENT_LABEL)])]
+    // unrelated label + needs-human-review → unrelated preserved, needs-human-review removed
+    #[case(
+        vec![s("bug"), s(NEEDS_HUMAN_REVIEW_LABEL)],
+        vec![s("bug"), s(READY_FOR_AGENT_LABEL)]
+    )]
+    fn agent_ready_labels_cases(#[case] input: Vec<String>, #[case] expected: Vec<String>) {
+        assert_eq!(agent_ready_labels(&input), expected);
+    }
+
+    #[test]
+    fn agent_ready_labels_idempotent() {
+        let input = vec![s(NEEDS_HUMAN_REVIEW_LABEL), s("bug")];
+        let once = agent_ready_labels(&input);
+        let twice = agent_ready_labels(&once);
+        assert_eq!(once, twice);
+    }
+
+    #[test]
+    fn agent_ready_labels_never_contains_needs_human_review() {
+        // property: result never contains NEEDS_HUMAN_REVIEW_LABEL, regardless of input
+        let inputs: &[&[&str]] = &[
+            &[NEEDS_HUMAN_REVIEW_LABEL],
+            &[NEEDS_HUMAN_REVIEW_LABEL, READY_FOR_AGENT_LABEL],
+            &["bug", NEEDS_HUMAN_REVIEW_LABEL, "wontfix"],
+            &[],
+        ];
+        for labels in inputs {
+            let input: Vec<String> = labels.iter().map(|s| s.to_string()).collect();
+            let result = agent_ready_labels(&input);
+            assert!(
+                !result.iter().any(|l| l == NEEDS_HUMAN_REVIEW_LABEL),
+                "result contained NEEDS_HUMAN_REVIEW_LABEL for input {labels:?}"
+            );
+            assert!(
+                result.iter().any(|l| l == READY_FOR_AGENT_LABEL),
+                "result missing READY_FOR_AGENT_LABEL for input {labels:?}"
+            );
+        }
+    }
+
+    // ── repo_slug ─────────────────────────────────────────────────────────────
 
     #[test]
     fn repo_slug_new_formats_owner_and_repo() {

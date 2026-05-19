@@ -9,7 +9,10 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
         return query_mode_key(key);
     }
 
-    let can_go_back = matches!(app.ui.screen, Screen::Detail { .. });
+    let can_go_back = matches!(
+        app.ui.screen,
+        Screen::Detail { .. } | Screen::IssueDetail { .. }
+    );
     let has_filter = match &app.ui.screen {
         Screen::UnifiedList { filter, .. } => !filter.is_empty(),
         _ => false,
@@ -39,6 +42,7 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
     match app.current_screen() {
         Screen::UnifiedList { .. } => unified_list_keys(key),
         Screen::Detail { .. } => list_keys(key),
+        Screen::IssueDetail { .. } => issue_reader_keys(key),
     }
 }
 
@@ -94,6 +98,22 @@ fn list_keys(key: KeyEvent) -> Option<Action> {
         (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Action::MovePageUp),
         (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(Action::MovePageDown),
         (KeyCode::Enter, _) => Some(Action::Enter),
+        (KeyCode::Char('i'), _) => Some(Action::Investigate),
+        _ => None,
+    }
+}
+
+fn issue_reader_keys(key: KeyEvent) -> Option<Action> {
+    match (key.code, key.modifiers) {
+        (KeyCode::Up, _) | (KeyCode::Char('k'), _) => Some(Action::MoveUp),
+        (KeyCode::Down, _) | (KeyCode::Char('j'), _) => Some(Action::MoveDown),
+        (KeyCode::Char('g'), _) => Some(Action::PendingG),
+        (KeyCode::Char('G'), _) => Some(Action::MoveToBottom),
+        (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Action::MovePageUp),
+        (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(Action::MovePageDown),
+        (KeyCode::Enter, _) => Some(Action::Enter),
+        (KeyCode::Char('o'), _) => Some(Action::OpenUrl),
+        (KeyCode::Char('a'), _) => Some(Action::ApproveForAgent),
         (KeyCode::Char('i'), _) => Some(Action::Investigate),
         _ => None,
     }
@@ -164,6 +184,34 @@ mod tests {
         App {
             ui: UiState {
                 query_input: Some("hub".to_string()),
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    fn issue_detail_app() -> App {
+        let parent = ListSnapshot {
+            items: vec![],
+            selected: 0,
+            filter: Filter::default(),
+        };
+        App {
+            ui: UiState {
+                screen: Screen::IssueDetail {
+                    parent,
+                    issue: domain::Issue {
+                        number: 1,
+                        title: "test".to_string(),
+                        repo: domain::RepoSlug::new("ooloth", "hub"),
+                        url: "https://github.com/ooloth/hub/issues/1".to_string(),
+                        age: chrono::Duration::zero(),
+                        urgency: domain::Urgency::Low,
+                        labels: vec![],
+                        body: None,
+                    },
+                    scroll: 0,
+                },
                 ..UiState::default()
             },
             ..App::default()
@@ -316,5 +364,50 @@ mod tests {
     #[case(ch('?'), Some(Action::AppendQuery('?')))]
     fn query_mode_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
         assert_eq!(key_to_action(&querying_app(), key), expected);
+    }
+
+    #[rstest]
+    #[case(k(KeyCode::Up), Some(Action::MoveUp))]
+    #[case(ch('k'), Some(Action::MoveUp))]
+    #[case(k(KeyCode::Down), Some(Action::MoveDown))]
+    #[case(ch('j'), Some(Action::MoveDown))]
+    #[case(ch('g'), Some(Action::PendingG))]
+    #[case(ch('G'), Some(Action::MoveToBottom))]
+    #[case(ctrl('u'), Some(Action::MovePageUp))]
+    #[case(ctrl('d'), Some(Action::MovePageDown))]
+    #[case(k(KeyCode::Enter), Some(Action::Enter))]
+    #[case(ch('o'), Some(Action::OpenUrl))]
+    #[case(ch('a'), Some(Action::ApproveForAgent))]
+    #[case(ch('i'), Some(Action::Investigate))]
+    #[case(ch('p'), None)]
+    #[case(ch('e'), None)]
+    #[case(ch('/'), None)]
+    #[case(ch('x'), None)]
+    fn issue_detail_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
+        assert_eq!(key_to_action(&issue_detail_app(), key), expected);
+    }
+
+    #[test]
+    fn esc_goes_back_from_issue_detail() {
+        assert_eq!(
+            key_to_action(&issue_detail_app(), k(KeyCode::Esc)),
+            Some(Action::Back)
+        );
+    }
+
+    #[test]
+    fn universal_keys_fire_in_issue_detail() {
+        assert_eq!(
+            key_to_action(&issue_detail_app(), ch('q')),
+            Some(Action::Quit)
+        );
+        assert_eq!(
+            key_to_action(&issue_detail_app(), ch('r')),
+            Some(Action::Refresh)
+        );
+        assert_eq!(
+            key_to_action(&issue_detail_app(), ch('?')),
+            Some(Action::ToggleHelp)
+        );
     }
 }

@@ -521,6 +521,7 @@ mod tests {
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::Low,
             labels: vec![],
+            body: None,
         })
     }
 
@@ -533,6 +534,7 @@ mod tests {
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::Low,
             labels: vec!["bug".to_string(), "wontfix".to_string()],
+            body: Some("Issue body text.".to_string()),
         })
     }
 
