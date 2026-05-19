@@ -1,20 +1,20 @@
 [package]
-name = "hub-cli"
-version = "0.1.0"
-edition = "2021"
+  edition = "2021"
+  name = "hub-cli"
+  version = "0.1.0"
 
 [features]
-private = ["workflows/private"]
+  private = ["workflows/private"]
 
 [[bin]]
-name = "hub"
-path = "src/main.rs"
+  name = "hub"
+  path = "src/main.rs"
 
 [dependencies]
-anyhow = "1"
-chrono = "0.4"
-clap = { version = "4", features = ["derive"] }
-config = { path = "../../config" }
-domain = { path = "../../domain" }
-tokio = { version = "1", features = ["full"] }
-workflows = { path = "../../workflows" }
+  anyhow = "1"
+  chrono = "0.4"
+  clap = { version = "4", features = ["derive"] }
+  config = { path = "../../config" }
+  domain = { path = "../../domain" }
+  tokio = { version = "1", features = ["full"] }
+  workflows = { path = "../../workflows" }

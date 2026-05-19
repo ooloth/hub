@@ -1,15 +1,15 @@
 [package]
-name = "config"
-version = "0.1.0"
-edition = "2021"
+  edition = "2021"
+  name = "config"
+  version = "0.1.0"
 
 [dependencies]
-anyhow = "1"
-domain = { path = "../domain" }
-serde = { version = "1", features = ["derive"] }
-toml = "0.8"
+  anyhow = "1"
+  domain = { path = "../domain" }
+  serde = { version = "1", features = ["derive"] }
+  toml = "0.8"
 
 [dev-dependencies]
-insta = "1"
-proptest = "1"
-rstest = "0.25"
+  insta = "1"
+  proptest = "1"
+  rstest = "0.25"

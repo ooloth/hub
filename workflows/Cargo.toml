@@ -1,20 +1,20 @@
 [package]
-name = "workflows"
-version = "0.1.0"
-edition = "2021"
+  edition = "2021"
+  name = "workflows"
+  version = "0.1.0"
 
 [features]
-private = ["clients/private"]
+  private = ["clients/private"]
 
 [dependencies]
-anyhow = "1"
-chrono = "0.4"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-clients = { path = "../clients" }
-domain = { path = "../domain" }
-store = { path = "../store" }
-tokio = { version = "1", features = ["full"] }
+  anyhow = "1"
+  chrono = "0.4"
+  clients = { path = "../clients" }
+  domain = { path = "../domain" }
+  serde = { version = "1", features = ["derive"] }
+  serde_json = "1"
+  store = { path = "../store" }
+  tokio = { version = "1", features = ["full"] }
 
 [dev-dependencies]
-tempfile = "3"
+  tempfile = "3"

@@ -1,29 +1,29 @@
 [workspace]
-members = [
-  "domain",
-  "config",
-  "clients",
-  "store",
-  "workflows",
-  "ui/cli",
-  "ui/tui",
-]
-resolver = "2"
+  members = [
+    "clients",
+    "config",
+    "domain",
+    "store",
+    "ui/cli",
+    "ui/tui",
+    "workflows",
+  ]
+  resolver = "2"
 
-[workspace.lints.clippy]
-cast_sign_loss = "warn"
-cognitive_complexity = "warn"
-missing_errors_doc = "warn"
-missing_panics_doc = "warn"
-panic = "warn"
-too_many_lines = "warn"
-unwrap_used = "warn"
+  [workspace.lints.clippy]
+    cast_sign_loss = "warn"
+    cognitive_complexity = "warn"
+    missing_errors_doc = "warn"
+    missing_panics_doc = "warn"
+    panic = "warn"
+    too_many_lines = "warn"
+    unwrap_used = "warn"
 
-[workspace.lints.rust]
-missing_debug_implementations = "deny"
-unreachable_pub = "warn"
-unsafe_code = "forbid"
-unused_results = "deny"
+  [workspace.lints.rust]
+    missing_debug_implementations = "deny"
+    unreachable_pub = "warn"
+    unsafe_code = "forbid"
+    unused_results = "deny"
 
-[workspace.lints.rustdoc]
-broken_intra_doc_links = "deny"
+  [workspace.lints.rustdoc]
+    broken_intra_doc_links = "deny"
