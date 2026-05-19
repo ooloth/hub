@@ -452,28 +452,32 @@ fn render_issue_detail(
     let max_scroll = total_lines.saturating_sub(viewport_height) as u16;
     *scroll = (*scroll).min(max_scroll);
 
-    // Top title: #number · title (left) + repo (right)
-    let left_title = format!(" {} ", issue.title);
-    let right_title = format!(" {} · #{} ", issue.repo, issue.number);
+    let bold = Style::default().add_modifier(Modifier::BOLD);
 
-    // Bottom title: labels (plain, not dim)
+    // Top title: title (left) + repo · #number (right)
+    let left_title = Line::from(format!(" {} ", issue.title)).style(bold);
+    let right_title = Line::from(format!(" {} · #{} ", issue.repo, issue.number))
+        .style(bold)
+        .right_aligned();
+
+    // Bottom title: labels
     let bottom_title = if issue.labels.is_empty() {
-        String::new()
+        None
     } else {
         let mut s = String::from(" ");
         s.push_str(&issue.labels.join(" · "));
         s.push(' ');
-        s
+        Some(Line::from(s).style(bold))
     };
 
     let mut block = Block::default()
         .title(left_title)
-        .title(Line::from(right_title).right_aligned())
+        .title(right_title)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(FOCUS_COLOR));
-    if !bottom_title.is_empty() {
-        block = block.title_bottom(Line::from(bottom_title));
+    if let Some(bt) = bottom_title {
+        block = block.title_bottom(bt);
     }
 
     let mut body = tui_markdown::from_str(raw_body);
