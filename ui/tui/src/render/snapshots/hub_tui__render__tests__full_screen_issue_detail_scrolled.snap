@@ -2,8 +2,7 @@
 source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
-╭ Invariant violation in render pipeline ──────────────────────────────────────╮
-│## Summary                                                                    │
+╭ Invariant violation in render pipeline ──────────────────── ooloth/hub · #42 ╮
 │                                                                              │
 │The render pipeline does not handle edge cases correctly.                     │
 │                                                                              │
@@ -20,5 +19,6 @@ expression: screen_text(&buf)
 │## Actual                                                                     │
 │                                                                              │
 │The screen is blank.                                                          │
-╰ ooloth/hub · #42 · now · status:needs-human-review · area:render ────────────╯
+│                                                                              │
+╰ status:needs-human-review · area:render ─────────────────────────────────────╯
   [a] approve · [o] open · [Esc] back

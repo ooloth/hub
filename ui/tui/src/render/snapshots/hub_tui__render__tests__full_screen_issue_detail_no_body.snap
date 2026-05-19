@@ -2,7 +2,8 @@
 source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
-╭ No description issue ────────────────────────────────────────────────────────╮
+╭ No description issue ─────────────────────────────────────── ooloth/hub · #7 ╮
+│                                                                              │
 │(no description)                                                              │
 │                                                                              │
 │                                                                              │
@@ -14,6 +15,5 @@ expression: screen_text(&buf)
 │                                                                              │
 │                                                                              │
 │                                                                              │
-│                                                                              │
-╰ ooloth/hub · #7 · now ───────────────────────────────────────────────────────╯
+╰──────────────────────────────────────────────────────────────────────────────╯
   [a] approve · [o] open · [Esc] back

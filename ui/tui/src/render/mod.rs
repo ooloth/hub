@@ -6,9 +6,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
 };
 
-use crate::display::{
-    display_item_line, display_item_urgency, format_age_short, DisplayItem, Filter, LineParts,
-};
+use crate::display::{display_item_line, display_item_urgency, DisplayItem, Filter, LineParts};
 use crate::state::{
     compute_enter_action, compute_investigate_action, App, EnterAction, InvestigateAction,
     RefreshState, Screen,
@@ -442,35 +440,47 @@ fn render_issue_detail(
 ) {
     let inner_width = area.width.saturating_sub(2) as usize; // subtract block borders
 
-    let body_text = issue
+    let raw_body = issue
         .body
         .as_deref()
         .filter(|s| !s.is_empty())
         .unwrap_or("(no description)");
 
     // Clamp scroll to actual content height.
-    let total_lines = issue_body_line_count(issue.body.as_deref(), inner_width);
+    let total_lines = issue_body_line_count(issue.body.as_deref(), inner_width) + 2;
     let viewport_height = area.height.saturating_sub(2) as usize; // subtract block borders
     let max_scroll = total_lines.saturating_sub(viewport_height) as u16;
     *scroll = (*scroll).min(max_scroll);
 
-    // Footer: repo · #number · age [· label …]
-    let age = format_age_short(issue.age);
-    let mut footer = format!(" {} · #{} · {}", issue.repo, issue.number, age);
-    for label in &issue.labels {
-        footer.push_str(" · ");
-        footer.push_str(label);
-    }
-    footer.push(' ');
+    // Top title: #number · title (left) + repo (right)
+    let left_title = format!(" {} ", issue.title);
+    let right_title = format!(" {} · #{} ", issue.repo, issue.number);
 
-    let block = Block::default()
-        .title(format!(" {} ", issue.title))
-        .title_bottom(Line::from(footer).style(dim()))
+    // Bottom title: labels (plain, not dim)
+    let bottom_title = if issue.labels.is_empty() {
+        String::new()
+    } else {
+        let mut s = String::from(" ");
+        s.push_str(&issue.labels.join(" · "));
+        s.push(' ');
+        s
+    };
+
+    let mut block = Block::default()
+        .title(left_title)
+        .title(Line::from(right_title).right_aligned())
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(FOCUS_COLOR));
+    if !bottom_title.is_empty() {
+        block = block.title_bottom(Line::from(bottom_title));
+    }
 
-    let paragraph = Paragraph::new(tui_markdown::from_str(body_text))
+    let mut body = tui_markdown::from_str(raw_body);
+    body.lines.insert(0, ratatui::text::Line::from(""));
+    body.lines.push(ratatui::text::Line::from(""));
+
+    let paragraph = Paragraph::new(body)
         .block(block)
         .wrap(ratatui::widgets::Wrap { trim: false })
         .scroll((*scroll, 0));
