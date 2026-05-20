@@ -864,6 +864,8 @@ mod tests {
                 base_branch: "main".to_string(),
                 body: None,
                 ci_status: None,
+                changed_files: vec![],
+                total_changed_files: 0,
             },
         ))]);
         assert_eq!(
@@ -898,6 +900,8 @@ mod tests {
                 base_branch: "main".to_string(),
                 body: None,
                 ci_status: None,
+                changed_files: vec![],
+                total_changed_files: 0,
             },
         ))]);
         assert_eq!(
@@ -932,6 +936,8 @@ mod tests {
                 base_branch: "main".to_string(),
                 body: None,
                 ci_status: None,
+                changed_files: vec![],
+                total_changed_files: 0,
             },
         ))]);
         assert_eq!(

@@ -525,6 +525,74 @@ fn render_issue_detail(
     frame.render_widget(paragraph, area);
 }
 
+fn pr_diff_lines(pr: &domain::PullRequest, sep_width: usize) -> Vec<Line<'static>> {
+    if pr.changed_files.is_empty() {
+        return vec![];
+    }
+
+    let sep = Style::default().add_modifier(Modifier::DIM);
+    let bold = Style::default().add_modifier(Modifier::BOLD);
+    let mut out: Vec<Line<'static>> = vec![];
+
+    for file in &pr.changed_files {
+        let additions = file.additions;
+        let deletions = file.deletions;
+        let path = file.path.clone();
+
+        let left = format!(" {path} ");
+        let fill_len = sep_width
+            .saturating_sub(
+                left.chars().count() + format!(" +{additions} -{deletions} ").chars().count(),
+            )
+            .saturating_sub(4);
+        let fill = "─".repeat(fill_len);
+        let header = Line::from(vec![
+            Span::styled(format!("──{left}"), sep),
+            Span::styled(fill, sep),
+            Span::styled("──".to_string(), sep),
+            Span::styled(format!(" +{additions}"), Style::default().fg(Color::Green)),
+            Span::styled(format!(" -{deletions} "), Style::default().fg(Color::Red)),
+        ])
+        .style(bold);
+        out.push(header);
+
+        match &file.patch {
+            None => {
+                out.push(Line::styled(" (binary) ".to_string(), sep));
+            }
+            Some(patch) => {
+                for raw in patch.lines() {
+                    let line = raw.to_string();
+                    if line.starts_with("@@") {
+                        out.push(Line::from(""));
+                        out.push(Line::styled(line, Style::default().fg(Color::Cyan)));
+                    } else if line.starts_with('+') {
+                        out.push(Line::styled(line, Style::default().fg(Color::Green)));
+                    } else if line.starts_with('-') {
+                        out.push(Line::styled(line, Style::default().fg(Color::Red)));
+                    } else {
+                        out.push(Line::from(line));
+                    }
+                }
+            }
+        }
+        out.push(Line::from(""));
+    }
+
+    let shown = pr.changed_files.len() as u32;
+    let total = pr.total_changed_files;
+    if total > shown {
+        let hidden = total - shown;
+        out.push(Line::styled(
+            format!(" … and {hidden} more files not shown "),
+            sep,
+        ));
+    }
+
+    out.push(Line::from(""));
+    out
+}
+
 fn render_pr_detail(
     frame: &mut ratatui::Frame,
     pr: &domain::PullRequest,
@@ -532,17 +600,6 @@ fn render_pr_detail(
     area: Rect,
 ) {
     let inner_width = area.width.saturating_sub(2) as usize;
-
-    let raw_body = pr
-        .body
-        .as_deref()
-        .filter(|s| !s.is_empty())
-        .unwrap_or("(no description)");
-
-    let total_lines = issue_body_line_count(pr.body.as_deref(), inner_width) + 2;
-    let viewport_height = area.height.saturating_sub(2) as usize;
-    let max_scroll = total_lines.saturating_sub(viewport_height) as u16;
-    *scroll = (*scroll).min(max_scroll);
 
     let bold = Style::default().add_modifier(Modifier::BOLD);
 
@@ -593,11 +650,25 @@ fn render_pr_detail(
         block = block.title_bottom(bl);
     }
 
-    let mut body = crate::markdown::from_str(raw_body);
-    body.lines.insert(0, ratatui::text::Line::from(""));
-    body.lines.push(ratatui::text::Line::from(""));
+    let raw_body = pr
+        .body
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("(no description)");
 
-    let paragraph = Paragraph::new(body)
+    let mut content = crate::markdown::from_str(raw_body);
+    content.lines.insert(0, Line::from(""));
+    content.lines.push(Line::from(""));
+
+    let mut diff = pr_diff_lines(pr, inner_width);
+    content.lines.append(&mut diff);
+
+    let total_lines = content.lines.len();
+    let viewport_height = area.height.saturating_sub(2) as usize;
+    let max_scroll = total_lines.saturating_sub(viewport_height) as u16;
+    *scroll = (*scroll).min(max_scroll);
+
+    let paragraph = Paragraph::new(content)
         .block(block)
         .wrap(ratatui::widgets::Wrap { trim: false })
         .scroll((*scroll, 0));
@@ -1071,6 +1142,8 @@ mod tests {
             base_branch: "main".to_string(),
             body: None,
             ci_status: None,
+            changed_files: vec![],
+            total_changed_files: 0,
         })
     }
 
@@ -1610,6 +1683,8 @@ mod tests {
                     .to_string(),
             ),
             ci_status: None,
+            changed_files: vec![],
+            total_changed_files: 0,
         }
     }
 
@@ -1629,6 +1704,8 @@ mod tests {
             base_branch: "main".to_string(),
             body: None,
             ci_status: None,
+            changed_files: vec![],
+            total_changed_files: 0,
         }
     }
 
@@ -1710,6 +1787,57 @@ mod tests {
         pr.review_count = 1;
         let mut app = pr_detail_app(pr, 0);
         let buf = draw(&mut app, 80, 10);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    // ── PrDetail diff snapshots ───────────────────────────────────────────────
+
+    fn stub_pr_with_diff() -> domain::PullRequest {
+        let mut pr = stub_pr_with_body();
+        pr.total_changed_files = 2;
+        pr.changed_files = vec![
+            domain::ChangedFile {
+                path: "src/main.rs".to_string(),
+                additions: 3,
+                deletions: 1,
+                patch: Some(
+                    "@@ -10,7 +10,9 @@\n context\n-old line\n+new line\n+another new\n+third new"
+                        .to_string(),
+                ),
+            },
+            domain::ChangedFile {
+                path: "assets/logo.png".to_string(),
+                additions: 0,
+                deletions: 0,
+                patch: None,
+            },
+        ];
+        pr
+    }
+
+    #[test]
+    fn full_screen_pr_detail_with_diff() {
+        // D1: PR body followed by diff section with one text file and one binary.
+        let mut app = pr_detail_app(stub_pr_with_diff(), 0);
+        let buf = draw(&mut app, 80, 30);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_diff_truncated() {
+        // D2: total_changed_files > changed_files.len() — shows truncation footer.
+        let mut pr = stub_pr_with_diff();
+        pr.total_changed_files = 150;
+        let mut app = pr_detail_app(pr, 0);
+        let buf = draw(&mut app, 80, 30);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_diff_scrolled() {
+        // D3: scrolled into the diff section.
+        let mut app = pr_detail_app(stub_pr_with_diff(), 10);
+        let buf = draw(&mut app, 80, 20);
         insta::assert_snapshot!(screen_text(&buf));
     }
 

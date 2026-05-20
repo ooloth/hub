@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
 use domain::{
-    CiFailure, CiStatus, GithubPrsRepo, Issue, PrKind, PullRequest, RepoSlug, ReviewDecision,
-    Urgency, NEEDS_HUMAN_REVIEW_LABEL,
+    ChangedFile, CiFailure, CiStatus, GithubPrsRepo, Issue, PrKind, PullRequest, RepoSlug,
+    ReviewDecision, Urgency, NEEDS_HUMAN_REVIEW_LABEL,
 };
 use serde::Deserialize;
 
@@ -79,6 +79,8 @@ struct PrNode {
     base_ref_name: String,
     #[serde(default)]
     commits: CommitConnection,
+    #[serde(default)]
+    files: FileConnection,
 }
 
 #[derive(Deserialize)]
@@ -129,6 +131,27 @@ struct StatusCheckRollup {
     state: String,
 }
 
+#[derive(Deserialize, Default)]
+struct FileConnection {
+    #[serde(rename = "totalCount")]
+    total_count: u32,
+    nodes: Vec<FileNode>,
+}
+
+#[derive(Deserialize)]
+struct FileNode {
+    path: String,
+    additions: u32,
+    deletions: u32,
+}
+
+#[derive(Deserialize)]
+struct PrFileEntry {
+    filename: String,
+    #[serde(default)]
+    patch: Option<String>,
+}
+
 fn age(created_at: &str) -> chrono::Duration {
     let Ok(created) = chrono::DateTime::parse_from_rfc3339(created_at) else {
         return chrono::Duration::zero();
@@ -149,13 +172,15 @@ pub async fn prs_awaiting_review(token: &str, repos: &[GithubPrsRepo]) -> Result
     if repos.is_empty() {
         return Ok(vec![]);
     }
-    nodes_to_prs(
+    let mut prs = nodes_to_prs(
         graphql_prs(token, "is:open is:pr review-requested:@me", repos).await?,
         Urgency::Medium,
         PrKind::ToReview,
         None,
         repos,
-    )
+    )?;
+    enrich_with_file_patches(token, &mut prs).await;
+    Ok(prs)
 }
 
 /// Returns open non-draft PRs across the given repos authored by `github_username`,
@@ -171,13 +196,15 @@ pub async fn my_open_prs(
     if repos.is_empty() {
         return Ok(vec![]);
     }
-    nodes_to_prs(
+    let mut prs = nodes_to_prs(
         graphql_prs(token, "is:open is:pr -is:draft author:@me", repos).await?,
         Urgency::High,
         PrKind::Mine,
         Some(github_username),
         repos,
-    )
+    )?;
+    enrich_with_file_patches(token, &mut prs).await;
+    Ok(prs)
 }
 
 /// Returns open draft PRs across the given repos authored by `github_username`,
@@ -193,13 +220,15 @@ pub async fn my_draft_prs(
     if repos.is_empty() {
         return Ok(vec![]);
     }
-    nodes_to_prs(
+    let mut prs = nodes_to_prs(
         graphql_prs(token, "is:open is:pr is:draft author:@me", repos).await?,
         Urgency::Medium,
         PrKind::MyDraft,
         Some(github_username),
         repos,
-    )
+    )?;
+    enrich_with_file_patches(token, &mut prs).await;
+    Ok(prs)
 }
 
 fn nodes_to_prs(
@@ -249,6 +278,18 @@ fn nodes_to_prs(
                     .first()
                     .and_then(|c| c.commit.status_check_rollup.as_ref())
                     .and_then(|r| parse_ci_state(&r.state)),
+                total_changed_files: node.files.total_count,
+                changed_files: node
+                    .files
+                    .nodes
+                    .into_iter()
+                    .map(|f| ChangedFile {
+                        path: f.path,
+                        additions: f.additions,
+                        deletions: f.deletions,
+                        patch: None,
+                    })
+                    .collect(),
                 age: age(&node.created_at),
                 urgency,
                 kind: if node.is_draft { PrKind::MyDraft } else { kind },
@@ -260,6 +301,58 @@ fn nodes_to_prs(
             })
         })
         .collect()
+}
+
+async fn fetch_file_patches(
+    token: &str,
+    repo: &str,
+    number: u64,
+) -> std::collections::HashMap<String, Option<String>> {
+    let result: Result<Vec<PrFileEntry>> = async {
+        let entries: Vec<PrFileEntry> = reqwest::Client::new()
+            .get(format!(
+                "https://api.github.com/repos/{repo}/pulls/{number}/files"
+            ))
+            .query(&[("per_page", "100")])
+            .bearer_auth(token)
+            .header("User-Agent", "hub-cli")
+            .header("Accept", "application/vnd.github.v3+json")
+            .send()
+            .await
+            .context("failed to reach GitHub API for PR files")?
+            .error_for_status()
+            .context("GitHub API error fetching PR files")?
+            .json()
+            .await
+            .context("failed to parse PR files response")?;
+        Ok(entries)
+    }
+    .await;
+    result
+        .unwrap_or_default()
+        .into_iter()
+        .map(|e| (e.filename, e.patch))
+        .collect()
+}
+
+async fn enrich_with_file_patches(token: &str, prs: &mut [PullRequest]) {
+    let futures: Vec<_> = prs
+        .iter()
+        .map(|pr| {
+            let token = token.to_string();
+            let repo = pr.repo.to_string();
+            let number = pr.number;
+            async move { fetch_file_patches(&token, &repo, number).await }
+        })
+        .collect();
+    let all_patches = futures::future::join_all(futures).await;
+    for (pr, patches) in prs.iter_mut().zip(all_patches) {
+        for file in pr.changed_files.iter_mut() {
+            if let Some(patch) = patches.get(&file.path) {
+                file.patch = patch.clone();
+            }
+        }
+    }
 }
 
 fn parse_ci_state(state: &str) -> Option<CiStatus> {
@@ -297,6 +390,7 @@ async fn graphql_prs(token: &str, base: &str, repos: &[GithubPrsRepo]) -> Result
             repository {{ nameWithOwner }}
             assignees(first: 10) {{ nodes {{ login }} }}
             commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
+            files(first: 100) {{ totalCount nodes {{ path additions deletions }} }}
         }} }} }} }}"#
     );
     let response: GraphQlResponse = reqwest::Client::new()
@@ -1151,6 +1245,7 @@ mod tests {
             head_ref_name: "feat/test".into(),
             base_ref_name: "main".into(),
             commits: CommitConnection::default(),
+            files: FileConnection::default(),
         }
     }
 

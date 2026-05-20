@@ -68,6 +68,14 @@ pub enum CiStatus {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ChangedFile {
+    pub path: String,
+    pub additions: u32,
+    pub deletions: u32,
+    pub patch: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PullRequest {
     pub number: u64,
     pub title: String,
@@ -86,6 +94,10 @@ pub struct PullRequest {
     pub body: Option<String>,
     #[serde(default)]
     pub ci_status: Option<CiStatus>,
+    #[serde(default)]
+    pub changed_files: Vec<ChangedFile>,
+    #[serde(default)]
+    pub total_changed_files: u32,
 }
 
 pub const NEEDS_HUMAN_REVIEW_LABEL: &str = "status:needs-human-review";
