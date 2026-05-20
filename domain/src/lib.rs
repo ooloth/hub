@@ -78,6 +78,7 @@ pub struct PullRequest {
 
 pub const NEEDS_HUMAN_REVIEW_LABEL: &str = "status:needs-human-review";
 pub const READY_FOR_AGENT_LABEL: &str = "status:ready-for-agent";
+pub const WONTFIX_LABEL: &str = "wontfix";
 
 /// Returns the label set that marks an issue as ready for an agent:
 /// removes `NEEDS_HUMAN_REVIEW_LABEL` (if present) and adds `READY_FOR_AGENT_LABEL`
@@ -90,6 +91,21 @@ pub fn agent_ready_labels(labels: &[String]) -> Vec<String> {
         .collect();
     if !result.iter().any(|l| l.as_str() == READY_FOR_AGENT_LABEL) {
         result.push(READY_FOR_AGENT_LABEL.to_string());
+    }
+    result
+}
+
+/// Returns the label set that dismisses an issue as won't fix:
+/// removes `NEEDS_HUMAN_REVIEW_LABEL` (if present) and adds `WONTFIX_LABEL`
+/// (if not already present). All other labels are preserved in order. Idempotent.
+pub fn dismissed_labels(labels: &[String]) -> Vec<String> {
+    let mut result: Vec<String> = labels
+        .iter()
+        .filter(|l| l.as_str() != NEEDS_HUMAN_REVIEW_LABEL)
+        .cloned()
+        .collect();
+    if !result.iter().any(|l| l.as_str() == WONTFIX_LABEL) {
+        result.push(WONTFIX_LABEL.to_string());
     }
     result
 }
@@ -237,6 +253,61 @@ mod tests {
             assert!(
                 result.iter().any(|l| l == READY_FOR_AGENT_LABEL),
                 "result missing READY_FOR_AGENT_LABEL for input {labels:?}"
+            );
+        }
+    }
+
+    // ── dismissed_labels ──────────────────────────────────────────────────────
+
+    #[rstest::rstest]
+    // needs-human-review removed, wontfix added
+    #[case(vec![s(NEEDS_HUMAN_REVIEW_LABEL)], vec![s(WONTFIX_LABEL)])]
+    // already has wontfix and needs-human-review → only needs-human-review removed
+    #[case(
+        vec![s(NEEDS_HUMAN_REVIEW_LABEL), s(WONTFIX_LABEL)],
+        vec![s(WONTFIX_LABEL)]
+    )]
+    // already dismissed → unchanged (idempotent)
+    #[case(vec![s(WONTFIX_LABEL)], vec![s(WONTFIX_LABEL)])]
+    // no relevant labels → wontfix added, others preserved
+    #[case(vec![s("bug")], vec![s("bug"), s(WONTFIX_LABEL)])]
+    // empty → only wontfix
+    #[case(vec![], vec![s(WONTFIX_LABEL)])]
+    // unrelated label + needs-human-review → unrelated preserved, needs-human-review removed
+    #[case(
+        vec![s("bug"), s(NEEDS_HUMAN_REVIEW_LABEL)],
+        vec![s("bug"), s(WONTFIX_LABEL)]
+    )]
+    fn dismissed_labels_cases(#[case] input: Vec<String>, #[case] expected: Vec<String>) {
+        assert_eq!(dismissed_labels(&input), expected);
+    }
+
+    #[test]
+    fn dismissed_labels_idempotent() {
+        let input = vec![s(NEEDS_HUMAN_REVIEW_LABEL), s("bug")];
+        let once = dismissed_labels(&input);
+        let twice = dismissed_labels(&once);
+        assert_eq!(once, twice);
+    }
+
+    #[test]
+    fn dismissed_labels_never_contains_needs_human_review() {
+        let inputs: &[&[&str]] = &[
+            &[NEEDS_HUMAN_REVIEW_LABEL],
+            &[NEEDS_HUMAN_REVIEW_LABEL, WONTFIX_LABEL],
+            &["bug", NEEDS_HUMAN_REVIEW_LABEL],
+            &[],
+        ];
+        for labels in inputs {
+            let input: Vec<String> = labels.iter().map(|s| s.to_string()).collect();
+            let result = dismissed_labels(&input);
+            assert!(
+                !result.iter().any(|l| l == NEEDS_HUMAN_REVIEW_LABEL),
+                "result contained NEEDS_HUMAN_REVIEW_LABEL for input {labels:?}"
+            );
+            assert!(
+                result.iter().any(|l| l == WONTFIX_LABEL),
+                "result missing WONTFIX_LABEL for input {labels:?}"
             );
         }
     }
