@@ -746,8 +746,23 @@ fn render_pr_detail(
     content.lines.insert(0, Line::from(""));
     content.lines.push(Line::from(""));
 
-    for comment in &pr.pr_comments {
-        content.lines.extend(comment_lines(comment));
+    if !pr.pr_comments.is_empty() {
+        let label = " top-level comments ";
+        let fill_len = inner_width.saturating_sub(label.chars().count() + 4);
+        let fill = "─".repeat(fill_len);
+        let lav = Style::default().fg(LAVENDER);
+        content.lines.push(
+            Line::from(vec![
+                Span::styled(format!("──{label}"), lav),
+                Span::styled(fill, lav),
+                Span::styled("──".to_string(), lav),
+            ])
+            .style(Style::default().add_modifier(Modifier::BOLD)),
+        );
+        content.lines.push(Line::from(""));
+        for comment in &pr.pr_comments {
+            content.lines.extend(comment_lines(comment));
+        }
     }
 
     let mut diff = pr_diff_lines(pr, inner_width);

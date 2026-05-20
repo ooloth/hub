@@ -12,6 +12,8 @@ expression: screen_text(&buf)
 │                                                                              │
 │Readability from terminal without leaving the TUI.                            │
 │                                                                              │
+│── top-level comments ────────────────────────────────────────────────────────│
+│                                                                              │
 │  @reviewer · 1d                                                              │
 │  Looks good overall, a few nits below.                                       │
 │                                                                              │
@@ -29,8 +31,6 @@ expression: screen_text(&buf)
 │                                                                              │
 │── assets/logo.png ──────────────────────────────────────────────────── +0 -0 │
 │ (binary)                                                                     │
-│                                                                              │
-│                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
