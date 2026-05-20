@@ -403,6 +403,68 @@ pub async fn set_issue_labels(
     Ok(())
 }
 
+/// Dismisses an issue as won't fix: replaces its labels, optionally posts a
+/// reason comment, then closes the issue with `state_reason: not_planned`.
+///
+/// Steps run sequentially; if any step fails the error identifies which one.
+pub async fn dismiss_issue(
+    token: &str,
+    repo: &str,
+    number: u64,
+    reason: &str,
+    labels: &[String],
+) -> Result<()> {
+    let client = reqwest::Client::new();
+
+    client
+        .put(format!(
+            "https://api.github.com/repos/{repo}/issues/{number}/labels"
+        ))
+        .bearer_auth(token)
+        .header("User-Agent", "hub-cli")
+        .header("Accept", "application/vnd.github.v3+json")
+        .json(&serde_json::json!({ "labels": labels }))
+        .send()
+        .await
+        .with_context(|| format!("failed to reach GitHub API setting labels on {repo}#{number}"))?
+        .error_for_status()
+        .with_context(|| format!("GitHub API error setting labels on {repo}#{number}"))?;
+
+    if !reason.is_empty() {
+        client
+            .post(format!(
+                "https://api.github.com/repos/{repo}/issues/{number}/comments"
+            ))
+            .bearer_auth(token)
+            .header("User-Agent", "hub-cli")
+            .header("Accept", "application/vnd.github.v3+json")
+            .json(&serde_json::json!({ "body": reason }))
+            .send()
+            .await
+            .with_context(|| {
+                format!("failed to reach GitHub API posting comment on {repo}#{number}")
+            })?
+            .error_for_status()
+            .with_context(|| format!("GitHub API error posting comment on {repo}#{number}"))?;
+    }
+
+    client
+        .patch(format!(
+            "https://api.github.com/repos/{repo}/issues/{number}"
+        ))
+        .bearer_auth(token)
+        .header("User-Agent", "hub-cli")
+        .header("Accept", "application/vnd.github.v3+json")
+        .json(&serde_json::json!({ "state": "closed", "state_reason": "not_planned" }))
+        .send()
+        .await
+        .with_context(|| format!("failed to reach GitHub API closing {repo}#{number}"))?
+        .error_for_status()
+        .with_context(|| format!("GitHub API error closing {repo}#{number}"))?;
+
+    Ok(())
+}
+
 // ── CI status ─────────────────────────────────────────────────────────────────
 
 #[derive(Deserialize)]
