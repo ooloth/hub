@@ -38,7 +38,7 @@ pub(crate) struct LineParts {
     pub(crate) primary: Vec<String>,
     pub(crate) dim_inline: Vec<String>,
     pub(crate) source: Option<String>,
-    pub(crate) category: &'static str,
+    pub(crate) category: String,
     pub(crate) age: String,
 }
 
@@ -48,7 +48,7 @@ impl LineParts {
     }
 
     pub(crate) fn all_text(&self) -> String {
-        let mut parts: Vec<&str> = vec![self.category];
+        let mut parts: Vec<&str> = vec![&self.category];
         parts.extend(self.primary.iter().map(String::as_str));
         parts.extend(self.dim_inline.iter().map(String::as_str));
         if let Some(s) = &self.source {
@@ -192,7 +192,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
                 primary: vec![pr.title.clone()],
                 dim_inline,
                 source: Some(pr.repo.to_string()),
-                category: "PR",
+                category: "PR".to_string(),
                 age: format_age_short(pr.age),
             }
         }
@@ -206,7 +206,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
                 primary: vec![i.title.clone()],
                 dim_inline,
                 source: Some(i.repo.to_string()),
-                category: "Issue",
+                category: "Issue".to_string(),
                 age: format_age_short(i.age),
             }
         }
@@ -225,7 +225,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
                 primary,
                 dim_inline: vec![],
                 source: Some(c.repo.to_string()),
-                category: "CI",
+                category: "CI".to_string(),
                 age: format_age_short(c.age),
             }
         }
@@ -233,14 +233,14 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             primary: vec![l.title.clone()],
             dim_inline: vec![format!(" ({})", l.identifier)],
             source: None,
-            category: "Linear",
+            category: "Linear".to_string(),
             age: format_age_short(l.age),
         },
         StatusItem::Loki(l) => LineParts {
             primary: vec![l.title.clone(), l.message.clone()],
             dim_inline: vec![],
             source: Some(format!("{}:{}", l.project, l.env)),
-            category: "Loki",
+            category: "Loki".to_string(),
             age: format_age_short(l.age),
         },
         #[cfg(feature = "private")]
@@ -248,7 +248,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             primary: vec!["Import blocked".to_string(), b.error.clone()],
             dim_inline: vec![],
             source: Some(b.source.clone()),
-            category: "Media",
+            category: "Media".to_string(),
             age: format_age_short(b.age),
         },
         #[cfg(feature = "private")]
@@ -260,7 +260,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             ],
             dim_inline: vec![],
             source: Some(m.source.clone()),
-            category: "Media",
+            category: "Media".to_string(),
             age: format_age_short(m.age),
         },
         #[cfg(feature = "private")]
@@ -268,7 +268,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             primary: vec![h.message.clone()],
             dim_inline: vec![],
             source: Some(h.source.clone()),
-            category: "Media",
+            category: "Media".to_string(),
             age: format_age_short(h.age),
         },
         #[cfg(feature = "private")]
@@ -276,7 +276,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             primary: vec![format!("{count} episodes in backlog")],
             dim_inline: vec![],
             source: Some(source.clone()),
-            category: "Media",
+            category: "Media".to_string(),
             age: "now".to_string(),
         },
     }
@@ -326,7 +326,7 @@ pub(crate) fn display_item_line(item: &DisplayItem) -> LineParts {
                     primary: vec![],
                     dim_inline: vec![],
                     source: None,
-                    category: "",
+                    category: String::new(),
                     age: String::new(),
                 },
             }
