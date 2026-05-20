@@ -70,7 +70,7 @@ struct PrNode {
     is_draft: bool,
     #[serde(rename = "reviewDecision")]
     review_decision: Option<String>,
-    reviews: ReviewCounts,
+    reviews: ReviewConnection,
     repository: PrRepository,
     assignees: PrAssignees,
     #[serde(rename = "headRefName")]
@@ -93,10 +93,14 @@ struct PrAuthor {
     login: String,
 }
 
+#[derive(Deserialize, Default)]
+struct ReviewConnection {
+    nodes: Vec<ReviewStateNode>,
+}
+
 #[derive(Deserialize)]
-struct ReviewCounts {
-    #[serde(rename = "totalCount")]
-    total_count: u32,
+struct ReviewStateNode {
+    state: String,
 }
 
 #[derive(Deserialize)]
@@ -318,6 +322,19 @@ fn nodes_to_prs(
                             node.repository.name_with_owner
                         )
                     })?;
+            let approval_count = node
+                .reviews
+                .nodes
+                .iter()
+                .filter(|r| r.state == "APPROVED")
+                .count() as u32;
+            let thread_comment_count: usize = node
+                .review_threads
+                .nodes
+                .iter()
+                .map(|t| t.comments.nodes.len())
+                .sum();
+            let comment_count = (thread_comment_count + node.comments.nodes.len()) as u32;
             Ok(PullRequest {
                 number: node.number,
                 title: node.title,
@@ -377,7 +394,8 @@ fn nodes_to_prs(
                 kind: if node.is_draft { PrKind::MyDraft } else { kind },
                 author: node.author.login,
                 review_decision: parse_review_decision(node.review_decision.as_deref()),
-                review_count: node.reviews.total_count,
+                approval_count,
+                comment_count,
                 head_branch: node.head_ref_name,
                 base_branch: node.base_ref_name,
             })
@@ -468,7 +486,7 @@ async fn graphql_prs(token: &str, base: &str, repos: &[GithubPrsRepo]) -> Result
             author {{ login }}
             createdAt isDraft reviewDecision
             headRefName baseRefName
-            reviews {{ totalCount }}
+            reviews(first: 50) {{ nodes {{ state }} }}
             repository {{ nameWithOwner }}
             assignees(first: 10) {{ nodes {{ login }} }}
             commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
@@ -1318,7 +1336,7 @@ mod tests {
             created_at: "2024-01-01T00:00:00Z".into(),
             is_draft: false,
             review_decision: None,
-            reviews: ReviewCounts { total_count: 0 },
+            reviews: ReviewConnection::default(),
             repository: PrRepository {
                 name_with_owner: repo.into(),
             },

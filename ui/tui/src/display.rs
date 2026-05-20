@@ -171,12 +171,13 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
 pub(crate) fn item_line(item: &StatusItem) -> LineParts {
     match item {
         StatusItem::Pr(pr) => {
-            let review_str = || {
-                if pr.review_count == 1 {
-                    "1 review".to_string()
-                } else {
-                    format!("{} reviews", pr.review_count)
-                }
+            let review_status = match pr.review_decision {
+                Some(domain::ReviewDecision::ChangesRequested) => "changes requested".to_string(),
+                Some(domain::ReviewDecision::Approved) => match pr.approval_count {
+                    1 => "1 approval".to_string(),
+                    n => format!("{n} approvals"),
+                },
+                None => "no reviews".to_string(),
             };
             let dim_inline = if pr.kind == domain::PrKind::MyDraft {
                 vec![
@@ -185,21 +186,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
                     "draft".to_string(),
                 ]
             } else {
-                match pr.review_decision {
-                    Some(domain::ReviewDecision::Approved) => vec![
-                        format!(" #{}", pr.number),
-                        pr.author.clone(),
-                        "approved".to_string(),
-                        review_str(),
-                    ],
-                    Some(domain::ReviewDecision::ChangesRequested) => vec![
-                        format!(" #{}", pr.number),
-                        pr.author.clone(),
-                        "changes requested".to_string(),
-                        review_str(),
-                    ],
-                    None => vec![format!(" #{}", pr.number), pr.author.clone(), review_str()],
-                }
+                vec![format!(" #{}", pr.number), pr.author.clone(), review_status]
             };
             LineParts {
                 primary: vec![pr.title.clone()],
@@ -506,7 +493,8 @@ mod tests {
             kind: domain::PrKind::ToReview,
             author: "alice".to_string(),
             review_decision: None,
-            review_count: 0,
+            approval_count: 0,
+            comment_count: 0,
             head_branch: "feat/add-feature".to_string(),
             base_branch: "main".to_string(),
             body: None,
@@ -702,7 +690,7 @@ mod tests {
     fn make_pr_with(
         kind: domain::PrKind,
         review_decision: Option<domain::ReviewDecision>,
-        review_count: u32,
+        approval_count: u32,
     ) -> StatusItem {
         StatusItem::Pr(domain::PullRequest {
             number: 42,
@@ -714,7 +702,8 @@ mod tests {
             kind,
             author: "ooloth".to_string(),
             review_decision,
-            review_count,
+            approval_count,
+            comment_count: 0,
             head_branch: "feat/add-feature".to_string(),
             base_branch: "main".to_string(),
             body: None,

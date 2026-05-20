@@ -102,7 +102,10 @@ pub struct PullRequest {
     pub kind: PrKind,
     pub author: String,
     pub review_decision: Option<ReviewDecision>,
-    pub review_count: u32,
+    #[serde(default)]
+    pub approval_count: u32,
+    #[serde(default)]
+    pub comment_count: u32,
     pub head_branch: String,
     pub base_branch: String,
     #[serde(default)]

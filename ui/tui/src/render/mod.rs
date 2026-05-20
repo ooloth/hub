@@ -666,6 +666,25 @@ fn render_pr_detail(
         .style(bold)
         .right_aligned();
 
+    let review_status_span = match pr.review_decision {
+        Some(domain::ReviewDecision::ChangesRequested) => Some(Span::styled(
+            "Changes requested",
+            Style::default().fg(Color::Red),
+        )),
+        Some(domain::ReviewDecision::Approved) => {
+            let label = match pr.approval_count {
+                1 => "1 approval".to_string(),
+                n => format!("{n} approvals"),
+            };
+            Some(Span::styled(label, Style::default().fg(Color::Green)))
+        }
+        None => Some(Span::styled("No reviews", bold)),
+    };
+    let comment_span = match pr.comment_count {
+        0 => None,
+        1 => Some(Span::styled("1 comment", bold)),
+        n => Some(Span::styled(format!("{n} comments"), bold)),
+    };
     let ci_span = match pr.ci_status {
         Some(domain::CiStatus::Success) => {
             Some(Span::styled("✓", Style::default().fg(Color::Green)))
@@ -677,20 +696,33 @@ fn render_pr_detail(
         Some(domain::CiStatus::Neutral) => Some(Span::styled("~", dim())),
         None => None,
     };
-    let review_text = match pr.review_count {
-        0 => None,
-        1 => Some("1 review".to_string()),
-        n => Some(format!("{n} reviews")),
-    };
-    let bottom_left: Option<Line> = match (ci_span, review_text) {
-        (None, None) => None,
-        (Some(ci), None) => Some(Line::from(vec![Span::raw(" "), ci, Span::raw(" ")])),
-        (None, Some(reviews)) => Some(Line::from(format!(" {reviews} ")).style(bold)),
-        (Some(ci), Some(reviews)) => Some(Line::from(vec![
-            Span::styled(format!(" {reviews} · "), bold),
-            ci,
-            Span::raw(" "),
-        ])),
+
+    // Build bottom-left as: [review status ·] [X comments ·] [CI]
+    let mut left_spans: Vec<Span> = vec![Span::raw(" ")];
+    let mut has_content = false;
+    if let Some(s) = review_status_span {
+        left_spans.push(s);
+        has_content = true;
+    }
+    if let Some(c) = comment_span {
+        if has_content {
+            left_spans.push(Span::styled(" · ".to_string(), bold));
+        }
+        left_spans.push(c);
+        has_content = true;
+    }
+    if let Some(ci) = ci_span {
+        if has_content {
+            left_spans.push(Span::styled(" · ".to_string(), bold));
+        }
+        left_spans.push(ci);
+        has_content = true;
+    }
+    let bottom_left: Option<Line> = if has_content {
+        left_spans.push(Span::raw(" "));
+        Some(Line::from(left_spans))
+    } else {
+        None
     };
 
     let mut block = Block::default()
@@ -1195,7 +1227,8 @@ mod tests {
             kind: domain::PrKind::ToReview,
             author: "alice".to_string(),
             review_decision: None,
-            review_count: 0,
+            approval_count: 0,
+            comment_count: 0,
             head_branch: "feat/fix".to_string(),
             base_branch: "main".to_string(),
             body: None,
@@ -1734,7 +1767,8 @@ mod tests {
             kind: domain::PrKind::Mine,
             author: "ooloth".to_string(),
             review_decision: None,
-            review_count: 2,
+            approval_count: 0,
+            comment_count: 2,
             head_branch: "feat/pr-detail".to_string(),
             base_branch: "main".to_string(),
             body: Some(
@@ -1761,7 +1795,8 @@ mod tests {
             kind: domain::PrKind::Mine,
             author: "ooloth".to_string(),
             review_decision: None,
-            review_count: 0,
+            approval_count: 0,
+            comment_count: 0,
             head_branch: "fix/readme-typo".to_string(),
             base_branch: "main".to_string(),
             body: None,
@@ -1845,10 +1880,32 @@ mod tests {
 
     #[test]
     fn full_screen_pr_detail_ci_pending() {
-        // P7: CI pending badge + 1 review.
+        // P7: CI pending badge + 1 approval.
         let mut pr = stub_pr_with_body();
         pr.ci_status = Some(domain::CiStatus::Pending);
-        pr.review_count = 1;
+        pr.approval_count = 1;
+        pr.review_decision = Some(domain::ReviewDecision::Approved);
+        let mut app = pr_detail_app(pr, 0);
+        let buf = draw(&mut app, 80, 10);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_approved() {
+        // P8: approved decision shown in bottom-left.
+        let mut pr = stub_pr_no_body();
+        pr.review_decision = Some(domain::ReviewDecision::Approved);
+        pr.approval_count = 1;
+        let mut app = pr_detail_app(pr, 0);
+        let buf = draw(&mut app, 80, 10);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_changes_requested() {
+        // P9: changes-requested decision shown in bottom-left.
+        let mut pr = stub_pr_no_body();
+        pr.review_decision = Some(domain::ReviewDecision::ChangesRequested);
         let mut app = pr_detail_app(pr, 0);
         let buf = draw(&mut app, 80, 10);
         insta::assert_snapshot!(screen_text(&buf));

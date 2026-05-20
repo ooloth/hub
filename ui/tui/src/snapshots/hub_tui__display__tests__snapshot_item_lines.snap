@@ -2,9 +2,9 @@
 source: ui/tui/src/display.rs
 expression: lines
 ---
-pr_no_reviews:         Add feature #42 · ooloth · 0 reviews
-pr_approved:           Add feature #42 · ooloth · approved · 2 reviews
-pr_changes_requested:  Add feature #42 · ooloth · changes requested · 1 review
+pr_no_reviews:         Add feature #42 · ooloth · no reviews
+pr_approved:           Add feature #42 · ooloth · 2 approvals
+pr_changes_requested:  Add feature #42 · ooloth · changes requested
 pr_draft:              Add feature #42 · ooloth · draft
 issue:       Fix bug #7
 issue_labels:Fix bug #8 · bug, wontfix
