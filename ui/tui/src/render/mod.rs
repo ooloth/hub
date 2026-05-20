@@ -6,7 +6,9 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
 };
 
-use crate::display::{display_item_line, display_item_urgency, DisplayItem, Filter, LineParts};
+use crate::display::{
+    display_item_line, display_item_urgency, format_age_short, DisplayItem, Filter, LineParts,
+};
 use crate::state::{
     compute_enter_action, compute_investigate_action, App, EnterAction, InvestigateAction,
     RefreshState, Screen,
@@ -464,8 +466,8 @@ fn render_issue_detail(
         .style(bold)
         .right_aligned();
 
-    // Bottom title: labels
-    let bottom_title = if issue.labels.is_empty() {
+    // Bottom-left title: labels
+    let bottom_left = if issue.labels.is_empty() {
         None
     } else {
         let mut s = String::from(" ");
@@ -474,13 +476,23 @@ fn render_issue_detail(
         Some(Line::from(s).style(bold))
     };
 
+    // Bottom-right title: author + age
+    let bottom_right = Line::from(format!(
+        " @{} · {} ",
+        issue.author,
+        format_age_short(issue.age),
+    ))
+    .style(bold)
+    .right_aligned();
+
     let mut block = Block::default()
         .title(left_title)
         .title(right_title)
+        .title_bottom(bottom_right)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(FOCUS_COLOR));
-    if let Some(bt) = bottom_title {
+    if let Some(bt) = bottom_left {
         block = block.title_bottom(bt);
     }
 
@@ -1368,7 +1380,8 @@ mod tests {
             title: "Invariant violation in render pipeline".to_string(),
             repo: domain::RepoSlug::new("ooloth", "hub"),
             url: "https://github.com/ooloth/hub/issues/42".to_string(),
-            age: chrono::Duration::zero(),
+            author: "agent".to_string(),
+            age: chrono::Duration::days(3),
             urgency: domain::Urgency::Low,
             labels: vec![
                 "status:needs-human-review".to_string(),
@@ -1390,7 +1403,8 @@ mod tests {
             title: "No description issue".to_string(),
             repo: domain::RepoSlug::new("ooloth", "hub"),
             url: "https://github.com/ooloth/hub/issues/7".to_string(),
-            age: chrono::Duration::zero(),
+            author: "agent".to_string(),
+            age: chrono::Duration::days(3),
             urgency: domain::Urgency::Low,
             labels: vec![],
             body: None,

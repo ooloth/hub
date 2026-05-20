@@ -30,5 +30,5 @@ expression: screen_text(&buf)
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-╰ status:needs-human-review · area:render ─────────────────────────────────────────────────────────────────────────────╯
+╰ status:needs-human-review · area:render ──────────────────────────────────────────────────────────────── @agent · 3d ╯
   [↩] confirm · [Esc] cancel
