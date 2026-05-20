@@ -115,6 +115,8 @@ pub struct PullRequest {
     pub total_changed_files: u32,
     #[serde(default)]
     pub review_threads: Vec<ReviewThread>,
+    #[serde(default)]
+    pub pr_comments: Vec<ReviewComment>,
 }
 
 pub const NEEDS_HUMAN_REVIEW_LABEL: &str = "status:needs-human-review";

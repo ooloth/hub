@@ -18,6 +18,7 @@ mod detail;
 
 pub(super) const FOCUS_COLOR: Color = Color::Rgb(203, 166, 247); // Catppuccin Mocha Mauve
 pub(super) const LAVENDER: Color = Color::Rgb(180, 190, 254); // Catppuccin Mocha Lavender
+pub(super) const PEACH: Color = Color::Rgb(250, 179, 135); // Catppuccin Mocha Peach
 pub(super) const SELECTION_BG: Color = Color::Rgb(41, 45, 62);
 
 pub(super) fn dim() -> Style {
@@ -534,22 +535,24 @@ fn parse_hunk_new_start(hunk_header: &str) -> Option<u32> {
         .and_then(|n| n.parse().ok())
 }
 
+fn comment_lines(comment: &domain::ReviewComment) -> Vec<Line<'static>> {
+    let author_style = Style::default().fg(PEACH).add_modifier(Modifier::ITALIC);
+    let body_style = Style::default().fg(PEACH);
+    let age_str = crate::display::format_age_short(comment.age);
+    let mut out = vec![Line::styled(
+        format!("  @{} · {}", comment.author, age_str),
+        author_style,
+    )];
+    for body_line in comment.body.lines() {
+        out.push(Line::styled(format!("  {body_line}"), body_style));
+    }
+    out.push(Line::from(""));
+    out
+}
+
 fn render_thread_comments(out: &mut Vec<Line<'static>>, thread: &domain::ReviewThread) {
-    let dim_lav = Style::default()
-        .fg(LAVENDER)
-        .add_modifier(Modifier::DIM)
-        .add_modifier(Modifier::ITALIC);
-    let dim = Style::default().add_modifier(Modifier::DIM);
     for comment in &thread.comments {
-        let age_str = crate::display::format_age_short(comment.age);
-        out.push(Line::styled(
-            format!("  @{} · {}", comment.author, age_str),
-            dim_lav,
-        ));
-        for body_line in comment.body.lines() {
-            out.push(Line::styled(format!("  {body_line}"), dim));
-        }
-        out.push(Line::from(""));
+        out.extend(comment_lines(comment));
     }
 }
 
@@ -710,6 +713,10 @@ fn render_pr_detail(
     let mut content = crate::markdown::from_str(raw_body);
     content.lines.insert(0, Line::from(""));
     content.lines.push(Line::from(""));
+
+    for comment in &pr.pr_comments {
+        content.lines.extend(comment_lines(comment));
+    }
 
     let mut diff = pr_diff_lines(pr, inner_width);
     content.lines.append(&mut diff);
@@ -1196,6 +1203,7 @@ mod tests {
             changed_files: vec![],
             total_changed_files: 0,
             review_threads: vec![],
+            pr_comments: vec![],
         })
     }
 
@@ -1738,6 +1746,7 @@ mod tests {
             changed_files: vec![],
             total_changed_files: 0,
             review_threads: vec![],
+            pr_comments: vec![],
         }
     }
 
@@ -1760,6 +1769,7 @@ mod tests {
             changed_files: vec![],
             total_changed_files: 0,
             review_threads: vec![],
+            pr_comments: vec![],
         }
     }
 
@@ -1921,6 +1931,27 @@ mod tests {
         ];
         let mut app = pr_detail_app(pr, 0);
         let buf = draw(&mut app, 80, 40);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_with_pr_comments() {
+        // D5: top-level PR comments appear between body and diff.
+        let mut pr = stub_pr_with_diff();
+        pr.pr_comments = vec![
+            domain::ReviewComment {
+                author: "reviewer".to_string(),
+                age: chrono::Duration::days(1),
+                body: "Looks good overall, a few nits below.".to_string(),
+            },
+            domain::ReviewComment {
+                author: "reviewer2".to_string(),
+                age: chrono::Duration::hours(6),
+                body: "LGTM from my side.".to_string(),
+            },
+        ];
+        let mut app = pr_detail_app(pr, 0);
+        let buf = draw(&mut app, 80, 35);
         insta::assert_snapshot!(screen_text(&buf));
     }
 

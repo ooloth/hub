@@ -84,6 +84,8 @@ struct PrNode {
     #[serde(default)]
     #[serde(rename = "reviewThreads")]
     review_threads: ReviewThreadConnection,
+    #[serde(default)]
+    comments: PrCommentConnection,
 }
 
 #[derive(Deserialize)]
@@ -187,6 +189,19 @@ struct ReviewCommentNode {
 #[derive(Deserialize)]
 struct ReviewCommentAuthor {
     login: String,
+}
+
+#[derive(Deserialize, Default)]
+struct PrCommentConnection {
+    nodes: Vec<PrCommentNode>,
+}
+
+#[derive(Deserialize)]
+struct PrCommentNode {
+    author: ReviewCommentAuthor,
+    #[serde(rename = "createdAt")]
+    created_at: String,
+    body: String,
 }
 
 fn age(created_at: &str) -> chrono::Duration {
@@ -347,6 +362,16 @@ fn nodes_to_prs(
                             .collect(),
                     })
                     .collect(),
+                pr_comments: node
+                    .comments
+                    .nodes
+                    .into_iter()
+                    .map(|c| ReviewComment {
+                        author: c.author.login,
+                        age: age(&c.created_at),
+                        body: c.body,
+                    })
+                    .collect(),
                 age: age(&node.created_at),
                 urgency,
                 kind: if node.is_draft { PrKind::MyDraft } else { kind },
@@ -451,6 +476,7 @@ async fn graphql_prs(token: &str, base: &str, repos: &[GithubPrsRepo]) -> Result
             reviewThreads(first: 50) {{ nodes {{ isResolved path line diffSide
                 comments(first: 10) {{ nodes {{ author {{ login }} createdAt body }} }}
             }} }}
+            comments(first: 50) {{ nodes {{ author {{ login }} createdAt body }} }}
         }} }} }} }}"#
     );
     let response: GraphQlResponse = reqwest::Client::new()
@@ -1307,6 +1333,7 @@ mod tests {
             commits: CommitConnection::default(),
             files: FileConnection::default(),
             review_threads: ReviewThreadConnection::default(),
+            comments: PrCommentConnection::default(),
         }
     }
 

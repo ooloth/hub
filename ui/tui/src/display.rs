@@ -514,6 +514,7 @@ mod tests {
             changed_files: vec![],
             total_changed_files: 0,
             review_threads: vec![],
+            pr_comments: vec![],
         })
     }
 
@@ -721,6 +722,7 @@ mod tests {
             changed_files: vec![],
             total_changed_files: 0,
             review_threads: vec![],
+            pr_comments: vec![],
         })
     }
 
