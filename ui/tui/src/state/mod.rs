@@ -45,7 +45,7 @@ impl App {
                 Some(DisplayItem::Group { items, .. }) => items.len(),
                 _ => 0,
             },
-            Screen::IssueDetail { .. } => 0,
+            Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } => 0,
         }
     }
 
@@ -64,7 +64,7 @@ impl App {
                     view.list_state.select(Some(sel - 1));
                 }
             }
-            Screen::IssueDetail { .. } => {}
+            Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } => {}
         }
     }
 
@@ -86,7 +86,7 @@ impl App {
                     view.list_state.select(Some(sel + 1));
                 }
             }
-            Screen::IssueDetail { .. } => {}
+            Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } => {}
         }
     }
 
@@ -94,7 +94,7 @@ impl App {
         match &mut self.ui.screen {
             Screen::UnifiedList { selected, .. } => *selected = 0,
             Screen::Detail { view, .. } => view.list_state.select(Some(0)),
-            Screen::IssueDetail { .. } => {}
+            Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } => {}
         }
     }
 
@@ -106,7 +106,7 @@ impl App {
         match &mut self.ui.screen {
             Screen::UnifiedList { selected, .. } => *selected = len - 1,
             Screen::Detail { view, .. } => view.list_state.select(Some(len - 1)),
-            Screen::IssueDetail { .. } => {}
+            Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } => {}
         }
     }
 
@@ -124,7 +124,7 @@ impl App {
                 let sel = view.list_state.selected().unwrap_or(0);
                 view.list_state.select(Some(sel.saturating_sub(PAGE)));
             }
-            Screen::IssueDetail { .. } => {}
+            Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } => {}
         }
     }
 
@@ -146,7 +146,7 @@ impl App {
                 let sel = view.list_state.selected().unwrap_or(0);
                 view.list_state.select(Some((sel + PAGE).min(len - 1)));
             }
-            Screen::IssueDetail { .. } => {}
+            Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } => {}
         }
     }
 }

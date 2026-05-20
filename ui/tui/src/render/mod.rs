@@ -121,6 +121,7 @@ const KEYBINDS_ISSUE_READER: &[(&str, &str)] = &[
     ("gg / G", "go to top / bottom"),
     ("Ctrl-u / Ctrl-d", "page up / down"),
     ("a", "approve for agent"),
+    ("d", "dismiss as won't fix"),
     ("Enter", "open in browser"),
     ("i", "investigate"),
     ("r", "refresh"),
@@ -379,7 +380,7 @@ fn position_label(screen: &Screen) -> String {
                 .map(|i| format!("{}/{count}", i + 1))
                 .unwrap_or_default()
         }
-        Screen::IssueDetail { .. } => String::new(),
+        Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } => String::new(),
     }
 }
 
@@ -423,7 +424,10 @@ fn status_bar_left(app: &App) -> String {
         return flash.clone();
     }
     if matches!(app.ui.screen, Screen::IssueDetail { .. }) {
-        return " [a] approve · [↩] open · [Esc] back".to_string();
+        return " [a] approve · [d] dismiss · [↩] open · [Esc] back".to_string();
+    }
+    if matches!(app.ui.screen, Screen::DismissingIssue { .. }) {
+        return " [↩] confirm · [Esc] cancel".to_string();
     }
     let enter_action = compute_enter_action(app);
     let investigate_action = compute_investigate_action(app);
@@ -632,6 +636,39 @@ fn right_status_text(
     }
 }
 
+fn render_dismiss_modal(frame: &mut ratatui::Frame, input: &tui_input::Input, area: Rect) {
+    let prompt = "Reason for dismissal (Enter to confirm, Esc to cancel):";
+    let modal_width = (area.width * 2 / 3)
+        .max(50)
+        .min(area.width.saturating_sub(4));
+    let modal_height = 4u16;
+    let modal = popup_area(area, modal_height, modal_width);
+
+    let [prompt_area, input_area] =
+        Layout::vertical([Constraint::Length(1), Constraint::Length(1)])
+            .margin(1)
+            .areas(modal);
+
+    let scroll = input.visual_scroll(input_area.width.saturating_sub(1) as usize);
+    let value = input.value();
+    let cursor_pos = input.visual_cursor();
+
+    frame.render_widget(Clear, modal);
+    frame.render_widget(
+        Block::new().borders(Borders::ALL).title(" Dismiss issue "),
+        modal,
+    );
+    frame.render_widget(Paragraph::new(prompt).style(dim()), prompt_area);
+    frame.render_widget(
+        Paragraph::new(value.chars().skip(scroll).collect::<String>()),
+        input_area,
+    );
+    frame.set_cursor_position((
+        input_area.x + (cursor_pos.saturating_sub(scroll)) as u16,
+        input_area.y,
+    ));
+}
+
 pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let [content_area, bar_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
@@ -657,6 +694,10 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         Screen::IssueDetail { issue, scroll, .. } => {
             render_issue_detail(frame, issue, scroll, content_area);
         }
+        Screen::DismissingIssue { issue, input, .. } => {
+            render_issue_detail(frame, issue, &mut 0, content_area);
+            render_dismiss_modal(frame, input, frame.area());
+        }
     }
 
     let right_status =
@@ -677,7 +718,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         let keybinds = match &app.ui.screen {
             Screen::UnifiedList { .. } => KEYBINDS_LIST,
             Screen::Detail { .. } => KEYBINDS_DETAIL,
-            Screen::IssueDetail { .. } => KEYBINDS_ISSUE_READER,
+            Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } => KEYBINDS_ISSUE_READER,
         };
         let text = format_keybinds(keybinds);
         let lines = keybinds.len() as u16;
@@ -1360,6 +1401,46 @@ mod tests {
             labels: vec![],
             body: None,
         }
+    }
+
+    fn dismissing_app(issue: domain::Issue, draft: &str) -> App {
+        let mut input = tui_input::Input::default();
+        for c in draft.chars() {
+            input.handle(tui_input::InputRequest::InsertChar(c));
+        }
+        App {
+            ui: UiState {
+                screen: Screen::DismissingIssue {
+                    parent: ListSnapshot {
+                        items: vec![],
+                        selected: 0,
+                        filter: Filter::default(),
+                    },
+                    issue,
+                    input,
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    // ── Full-screen DismissingIssue snapshots ─────────────────────────────────
+
+    #[test]
+    fn full_screen_dismissing_issue_empty_prompt() {
+        // D1: Dismiss modal open with empty input.
+        let mut app = dismissing_app(stub_issue_with_body(), "");
+        let buf = draw(&mut app, 120, 30);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_dismissing_issue_with_text() {
+        // D2: Dismiss modal open with typed reason.
+        let mut app = dismissing_app(stub_issue_with_body(), "Not relevant to this project");
+        let buf = draw(&mut app, 120, 30);
+        insta::assert_snapshot!(screen_text(&buf));
     }
 
     // ── Full-screen IssueDetail snapshots ─────────────────────────────────────

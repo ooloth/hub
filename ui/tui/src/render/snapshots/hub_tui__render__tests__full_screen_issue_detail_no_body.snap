@@ -16,4 +16,4 @@ expression: screen_text(&buf)
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  [a] approve · [↩] open · [Esc] back
+  [a] approve · [d] dismiss · [↩] open · [Esc] back

@@ -42,6 +42,11 @@ pub(crate) enum Screen {
         issue: Issue,
         scroll: u16,
     },
+    DismissingIssue {
+        parent: ListSnapshot,
+        issue: Issue,
+        input: tui_input::Input,
+    },
 }
 
 impl Default for Screen {
@@ -70,7 +75,9 @@ impl Screen {
                     _ => None,
                 }
             }
-            Screen::IssueDetail { issue, .. } => Some(StatusItem::Issue(issue.clone())),
+            Screen::IssueDetail { issue, .. } | Screen::DismissingIssue { issue, .. } => {
+                Some(StatusItem::Issue(issue.clone()))
+            }
         }
     }
 }
@@ -136,6 +143,10 @@ pub(crate) enum Action {
     Investigate,
     Refresh,
     ApproveForAgent,
+    DismissIssue,
+    DismissInput(tui_input::InputRequest),
+    CommitDismissal,
+    CancelDismissal,
     // Filter actions — only take effect from UnifiedList in normal mode.
     FilterCategory(Category),
     ClearFilter,
@@ -152,6 +163,12 @@ pub(crate) enum Effect {
     SetIssueLabels {
         repo: String,
         number: u64,
+        labels: Vec<String>,
+    },
+    DismissIssue {
+        repo: String,
+        number: u64,
+        reason: String,
         labels: Vec<String>,
     },
     LaunchCi {

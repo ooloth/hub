@@ -1,0 +1,34 @@
+---
+source: ui/tui/src/render/mod.rs
+expression: screen_text(&buf)
+---
+╭ Invariant violation in render pipeline ──────────────────────────────────────────────────────────── ooloth/hub · #42 ╮
+│                                                                                                                      │
+│## Summary                                                                                                            │
+│                                                                                                                      │
+│The render pipeline does not handle edge cases correctly.                                                             │
+│                                                                                                                      │
+│## Steps to reproduce                                                                                                 │
+│                                                                                                                      │
+│1. Open the TUI                                                                                                       │
+│2. Navigate to the issue list                                                                                         │
+│3. Press Enter on an issue                                                                                            │
+│                                                                                                                      │
+│## Expected      ┌ Dismiss issue ───────────────────────────────────────────────────────────────────┐                 │
+│                 │Reason for dismissal (Enter to confirm, Esc to cancel):                           │                 │
+│The issue body is│                                                                                  │                 │
+│                 │                                                                                  │                 │
+│## Actual        │                                                                                  │                 │
+│                 └──────────────────────────────────────────────────────────────────────────────────┘                 │
+│The screen is blank.                                                                                                  │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+╰ status:needs-human-review · area:render ─────────────────────────────────────────────────────────────────────────────╯
+  [↩] confirm · [Esc] cancel

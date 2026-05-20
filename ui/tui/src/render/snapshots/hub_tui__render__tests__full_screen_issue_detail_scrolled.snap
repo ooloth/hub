@@ -21,4 +21,4 @@ expression: screen_text(&buf)
 │The screen is blank.                                                          │
 │                                                                              │
 ╰ status:needs-human-review · area:render ─────────────────────────────────────╯
-  [a] approve · [↩] open · [Esc] back
+  [a] approve · [d] dismiss · [↩] open · [Esc] back
