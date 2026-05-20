@@ -116,6 +116,7 @@ pub struct Issue {
     pub title: String,
     pub repo: RepoSlug,
     pub url: String,
+    pub author: String,
     #[serde(with = "duration_secs")]
     pub age: chrono::Duration,
     pub urgency: Urgency,

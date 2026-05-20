@@ -11,6 +11,7 @@ struct ApiIssue {
     number: u64,
     title: String,
     html_url: String,
+    user: ApiUser,
     created_at: String,
     #[serde(default)]
     labels: Vec<ApiLabel>,
@@ -19,6 +20,11 @@ struct ApiIssue {
     #[serde(default)]
     pull_request: Option<PullRequestMarker>,
     body: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ApiUser {
+    login: String,
 }
 
 #[derive(Deserialize)]
@@ -356,6 +362,7 @@ fn to_domain_issue(item: ApiIssue, repo: RepoSlug, username: &str) -> Option<Iss
         title: item.title,
         repo,
         url: item.html_url,
+        author: item.user.login,
         age: age(&item.created_at),
         urgency: classify_urgency(&assignees, &labels, username),
         labels,
@@ -792,6 +799,9 @@ mod tests {
             number: 7,
             title: "Fix the thing".to_string(),
             html_url: "https://github.com/owner/repo/issues/7".to_string(),
+            user: ApiUser {
+                login: "bob".to_string(),
+            },
             created_at: "2024-01-01T00:00:00Z".to_string(),
             labels: vec![ApiLabel {
                 name: "bug".to_string(),
@@ -818,6 +828,7 @@ mod tests {
         assert_eq!(issue.title, "Fix the thing");
         assert_eq!(issue.repo.to_string(), "owner/repo");
         assert_eq!(issue.url, "https://github.com/owner/repo/issues/7");
+        assert_eq!(issue.author, "bob");
         assert_eq!(issue.labels, vec!["bug"]);
         assert_eq!(issue.urgency, Urgency::Medium); // assigned to alice
         assert_eq!(issue.body, Some("This is the issue body.".to_string()));
