@@ -143,6 +143,7 @@ pub async fn ensure_pr_worktree(bare: &Path, number: u64, head_branch: &str) -> 
     // does not block access to an already-created worktree.
     let fetch_all_ok = Command::new("git")
         .args(["-C", &bare_str, "fetch", "origin"])
+        .env("GIT_TERMINAL_PROMPT", "0")
         .output()
         .await
         .map(|o| o.status.success())
@@ -164,6 +165,7 @@ pub async fn ensure_pr_worktree(bare: &Path, number: u64, head_branch: &str) -> 
             "origin",
             &format!("pull/{number}/head:{branch}"),
         ])
+        .env("GIT_TERMINAL_PROMPT", "0")
         .output()
         .await
         .context("git fetch PR ref failed")?;
