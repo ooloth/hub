@@ -657,7 +657,24 @@ fn render_pr_detail(
 
     let bold = Style::default().add_modifier(Modifier::BOLD);
 
-    let left_title = Line::from(format!(" {} ", pr.title)).style(bold);
+    let ci_span = match pr.ci_status {
+        Some(domain::CiStatus::Success) => {
+            Some(Span::styled("✓", Style::default().fg(Color::Green)))
+        }
+        Some(domain::CiStatus::Failure) => Some(Span::styled("✗", Style::default().fg(Color::Red))),
+        Some(domain::CiStatus::Pending) => {
+            Some(Span::styled("…", Style::default().fg(Color::Yellow)))
+        }
+        Some(domain::CiStatus::Neutral) => Some(Span::styled("~", dim())),
+        None => None,
+    };
+
+    let mut title_spans: Vec<Span> = vec![Span::raw(format!(" {} ", pr.title))];
+    if let Some(ci) = ci_span {
+        title_spans.push(ci);
+        title_spans.push(Span::raw(" "));
+    }
+    let left_title = Line::from(title_spans).style(bold);
     let right_title = Line::from(format!(" {} · #{} ", pr.repo, pr.number))
         .style(bold)
         .right_aligned();
@@ -685,19 +702,26 @@ fn render_pr_detail(
         1 => Some(Span::styled("1 comment", bold)),
         n => Some(Span::styled(format!("{n} comments"), bold)),
     };
-    let ci_span = match pr.ci_status {
-        Some(domain::CiStatus::Success) => {
-            Some(Span::styled("✓", Style::default().fg(Color::Green)))
-        }
-        Some(domain::CiStatus::Failure) => Some(Span::styled("✗", Style::default().fg(Color::Red))),
-        Some(domain::CiStatus::Pending) => {
-            Some(Span::styled("…", Style::default().fg(Color::Yellow)))
-        }
-        Some(domain::CiStatus::Neutral) => Some(Span::styled("~", dim())),
-        None => None,
+    let files_spans: Option<Vec<Span>> = if pr.total_changed_files > 0 {
+        let total_add: u32 = pr.changed_files.iter().map(|f| f.additions).sum();
+        let total_del: u32 = pr.changed_files.iter().map(|f| f.deletions).sum();
+        let n = pr.total_changed_files;
+        let file_label = if n == 1 {
+            "1 file".to_string()
+        } else {
+            format!("{n} files")
+        };
+        Some(vec![
+            Span::styled(file_label, bold),
+            Span::styled(" · ", bold),
+            Span::styled(format!("+{total_add}"), Style::default().fg(Color::Green)),
+            Span::styled(format!(" -{total_del}"), Style::default().fg(Color::Red)),
+        ])
+    } else {
+        None
     };
 
-    // Build bottom-left as: [review status ·] [X comments ·] [CI]
+    // Build bottom-left as: [review status ·] [X comments ·] [X files · +Y -Z]
     let mut left_spans: Vec<Span> = vec![Span::raw(" ")];
     let mut has_content = false;
     if let Some(s) = review_status_span {
@@ -711,11 +735,11 @@ fn render_pr_detail(
         left_spans.push(c);
         has_content = true;
     }
-    if let Some(ci) = ci_span {
+    if let Some(fs) = files_spans {
         if has_content {
             left_spans.push(Span::styled(" · ".to_string(), bold));
         }
-        left_spans.push(ci);
+        left_spans.extend(fs);
         has_content = true;
     }
     let bottom_left: Option<Line> = if has_content {
