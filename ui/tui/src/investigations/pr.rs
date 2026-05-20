@@ -38,21 +38,21 @@ fn route(
     kind: PrKind,
     review_decision: Option<ReviewDecision>,
     author: &str,
-) -> (&'static str, String) {
+) -> (String, String) {
     match kind {
         PrKind::ToReview => (
-            "/review-code",
+            "/review-code".to_string(),
             format!("This PR was authored by {author}. Your role is reviewer — do not make local changes."),
         ),
         PrKind::Mine | PrKind::MyDraft => {
             if review_decision == Some(ReviewDecision::ChangesRequested) {
                 (
-                    "/review-pr-comments-converge",
+                    "/review-pr-comments-converge".to_string(),
                     "This is your own PR and reviewers have requested changes. Address their feedback by making local changes.".to_string(),
                 )
             } else {
                 (
-                    "/review-converge",
+                    "/review-converge".to_string(),
                     "This is your own PR. Review and improve it by making local changes.".to_string(),
                 )
             }
