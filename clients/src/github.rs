@@ -62,6 +62,7 @@ struct PrNode {
     number: u64,
     title: String,
     url: String,
+    body: Option<String>,
     author: PrAuthor,
     #[serde(rename = "createdAt")]
     created_at: String,
@@ -218,6 +219,7 @@ fn nodes_to_prs(
                 title: node.title,
                 repo: RepoSlug::new(owner, repo),
                 url: node.url,
+                body: node.body,
                 age: age(&node.created_at),
                 urgency,
                 kind: if node.is_draft { PrKind::MyDraft } else { kind },
@@ -248,7 +250,7 @@ async fn graphql_prs(token: &str, base: &str, repos: &[GithubPrsRepo]) -> Result
     let q = format!("{base} {repo_filters}");
     let query = format!(
         r#"{{ search(query: "{q}", type: ISSUE, first: 100) {{ nodes {{ ... on PullRequest {{
-            number title url
+            number title url body
             author {{ login }}
             createdAt isDraft reviewDecision
             headRefName baseRefName
@@ -1074,6 +1076,7 @@ mod tests {
             number: 1,
             title: "title".into(),
             url: "https://github.com/owner/repo/pull/1".into(),
+            body: None,
             author: PrAuthor {
                 login: author.into(),
             },

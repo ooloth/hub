@@ -36,13 +36,13 @@ impl App {
             }
             Action::Back => {
                 self.ui.screen = match std::mem::take(&mut self.ui.screen) {
-                    Screen::Detail { parent, .. } | Screen::IssueDetail { parent, .. } => {
-                        Screen::UnifiedList {
-                            items: parent.items,
-                            selected: parent.selected,
-                            filter: parent.filter,
-                        }
-                    }
+                    Screen::Detail { parent, .. }
+                    | Screen::IssueDetail { parent, .. }
+                    | Screen::PrDetail { parent, .. } => Screen::UnifiedList {
+                        items: parent.items,
+                        selected: parent.selected,
+                        filter: parent.filter,
+                    },
                     // Already at top level — no-op.
                     other => other,
                 };
@@ -147,6 +147,7 @@ impl App {
             | Action::Investigate => match &self.ui.screen {
                 Screen::UnifiedList { .. } => self.handle_unified_list(action),
                 Screen::IssueDetail { .. } => self.handle_issue_reader(action),
+                Screen::PrDetail { .. } => self.handle_pr_reader(action),
                 Screen::Detail { .. } => self.handle_detail(action),
                 Screen::DismissingIssue { .. } => self.handle_dismissing(action),
             },
@@ -321,6 +322,53 @@ impl App {
         }
     }
 
+    fn handle_pr_reader(&mut self, action: Action) -> Vec<Effect> {
+        match action {
+            Action::MoveUp => {
+                if let Screen::PrDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = scroll.saturating_sub(1);
+                }
+                vec![]
+            }
+            Action::MoveDown => {
+                if let Screen::PrDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = scroll.saturating_add(1);
+                }
+                vec![]
+            }
+            Action::MoveToTop => {
+                if let Screen::PrDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = 0;
+                }
+                vec![]
+            }
+            Action::MoveToBottom => {
+                if let Screen::PrDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = u16::MAX;
+                }
+                vec![]
+            }
+            Action::MovePageUp => {
+                if let Screen::PrDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = scroll.saturating_sub(10);
+                }
+                vec![]
+            }
+            Action::MovePageDown => {
+                if let Screen::PrDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = scroll.saturating_add(10);
+                }
+                vec![]
+            }
+            Action::Enter => self
+                .selected_url()
+                .map(|u| vec![Effect::OpenUrl(u.to_string())])
+                .unwrap_or_default(),
+            Action::Investigate => self.handle_investigate(),
+            _ => unreachable!(),
+        }
+    }
+
     fn handle_dismissing(&mut self, action: Action) -> Vec<Effect> {
         match action {
             Action::CancelDismissal => {
@@ -479,6 +527,27 @@ impl App {
                 };
                 vec![]
             }
+            EnterAction::OpenPrDetail(pr) => {
+                let Screen::UnifiedList {
+                    items,
+                    selected,
+                    filter,
+                } = &self.ui.screen
+                else {
+                    return vec![];
+                };
+                let snapshot = ListSnapshot {
+                    items: items.clone(),
+                    selected: *selected,
+                    filter: filter.clone(),
+                };
+                self.ui.screen = Screen::PrDetail {
+                    parent: snapshot,
+                    pr,
+                    scroll: 0,
+                };
+                vec![]
+            }
         }
     }
 
@@ -500,6 +569,7 @@ impl App {
             Screen::IssueDetail { issue, .. } | Screen::DismissingIssue { issue, .. } => {
                 Some(&issue.url)
             }
+            Screen::PrDetail { pr, .. } => Some(&pr.url),
         }
     }
 }
@@ -519,6 +589,7 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
             Some(DisplayItem::Single(StatusItem::Issue(issue))) => {
                 EnterAction::OpenIssueDetail(issue.clone())
             }
+            Some(DisplayItem::Single(StatusItem::Pr(pr))) => EnterAction::OpenPrDetail(pr.clone()),
             Some(DisplayItem::Single(_)) => app
                 .selected_url()
                 .map(|u| EnterAction::OpenUrl(u.to_string()))
@@ -529,10 +600,11 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
             .selected_url()
             .map(|u| EnterAction::OpenUrl(u.to_string()))
             .unwrap_or(EnterAction::None),
-        Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } => app
-            .selected_url()
-            .map(|u| EnterAction::OpenUrl(u.to_string()))
-            .unwrap_or(EnterAction::None),
+        Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } | Screen::PrDetail { .. } => {
+            app.selected_url()
+                .map(|u| EnterAction::OpenUrl(u.to_string()))
+                .unwrap_or(EnterAction::None)
+        }
     }
 }
 
@@ -603,6 +675,7 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
                 Screen::UnifiedList { filter, .. } => filter.clone(),
                 Screen::Detail { parent, .. }
                 | Screen::IssueDetail { parent, .. }
+                | Screen::PrDetail { parent, .. }
                 | Screen::DismissingIssue { parent, .. } => parent.filter.clone(),
             };
             app.data.raw_items = report.items.clone();
@@ -789,6 +862,7 @@ mod tests {
                 review_count: 0,
                 head_branch: "feat/thing".to_string(),
                 base_branch: "main".to_string(),
+                body: None,
             },
         ))]);
         assert_eq!(
@@ -821,6 +895,7 @@ mod tests {
                 review_count: 1,
                 head_branch: "feat/mine".to_string(),
                 base_branch: "main".to_string(),
+                body: None,
             },
         ))]);
         assert_eq!(
@@ -853,6 +928,7 @@ mod tests {
                 review_count: 2,
                 head_branch: "feat/draft".to_string(),
                 base_branch: "main".to_string(),
+                body: None,
             },
         ))]);
         assert_eq!(

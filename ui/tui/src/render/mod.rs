@@ -117,6 +117,18 @@ const KEYBINDS_DETAIL: &[(&str, &str)] = &[
     ("q / Ctrl-C", "quit"),
 ];
 
+const KEYBINDS_PR_READER: &[(&str, &str)] = &[
+    ("?", "toggle help"),
+    ("k / j", "scroll up / down"),
+    ("gg / G", "go to top / bottom"),
+    ("Ctrl-u / Ctrl-d", "page up / down"),
+    ("Enter", "open in browser"),
+    ("i", "investigate"),
+    ("r", "refresh"),
+    ("Esc", "back to list"),
+    ("q / Ctrl-C", "quit"),
+];
+
 const KEYBINDS_ISSUE_READER: &[(&str, &str)] = &[
     ("?", "toggle help"),
     ("k / j", "scroll up / down"),
@@ -382,7 +394,9 @@ fn position_label(screen: &Screen) -> String {
                 .map(|i| format!("{}/{count}", i + 1))
                 .unwrap_or_default()
         }
-        Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } => String::new(),
+        Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } | Screen::PrDetail { .. } => {
+            String::new()
+        }
     }
 }
 
@@ -392,7 +406,7 @@ fn action_hints(enter: &EnterAction, investigate: &InvestigateAction) -> String 
         EnterAction::OpenDetail { item_count, .. } => {
             format!(" · [↩] expand {item_count} items")
         }
-        EnterAction::OpenIssueDetail(_) => " · [↩] read".to_string(),
+        EnterAction::OpenIssueDetail(_) | EnterAction::OpenPrDetail(_) => " · [↩] read".to_string(),
         EnterAction::None => String::new(),
     };
     let inv_hint = if matches!(investigate, InvestigateAction::None) {
@@ -424,6 +438,9 @@ pub(crate) fn issue_body_line_count(body: Option<&str>, width: usize) -> usize {
 fn status_bar_left(app: &App) -> String {
     if let Some(flash) = &app.ui.flash {
         return flash.clone();
+    }
+    if matches!(app.ui.screen, Screen::PrDetail { .. }) {
+        return " [↩] open · [i] investigate · [Esc] back".to_string();
     }
     if matches!(app.ui.screen, Screen::IssueDetail { .. }) {
         return " [a] approve · [d] dismiss · [↩] open · [Esc] back".to_string();
@@ -494,6 +511,65 @@ fn render_issue_detail(
         .border_style(Style::default().fg(FOCUS_COLOR));
     if let Some(bt) = bottom_left {
         block = block.title_bottom(bt);
+    }
+
+    let mut body = crate::markdown::from_str(raw_body);
+    body.lines.insert(0, ratatui::text::Line::from(""));
+    body.lines.push(ratatui::text::Line::from(""));
+
+    let paragraph = Paragraph::new(body)
+        .block(block)
+        .wrap(ratatui::widgets::Wrap { trim: false })
+        .scroll((*scroll, 0));
+
+    frame.render_widget(paragraph, area);
+}
+
+fn render_pr_detail(
+    frame: &mut ratatui::Frame,
+    pr: &domain::PullRequest,
+    scroll: &mut u16,
+    area: Rect,
+) {
+    let inner_width = area.width.saturating_sub(2) as usize;
+
+    let raw_body = pr
+        .body
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("(no description)");
+
+    let total_lines = issue_body_line_count(pr.body.as_deref(), inner_width) + 2;
+    let viewport_height = area.height.saturating_sub(2) as usize;
+    let max_scroll = total_lines.saturating_sub(viewport_height) as u16;
+    *scroll = (*scroll).min(max_scroll);
+
+    let bold = Style::default().add_modifier(Modifier::BOLD);
+
+    let left_title = Line::from(format!(" {} ", pr.title)).style(bold);
+    let right_title = Line::from(format!(" {} · #{} ", pr.repo, pr.number))
+        .style(bold)
+        .right_aligned();
+
+    let bottom_right = Line::from(format!(" @{} · {} ", pr.author, format_age_short(pr.age),))
+        .style(bold)
+        .right_aligned();
+
+    let review_label = match pr.review_count {
+        0 => None,
+        1 => Some(Line::from(" 1 review ".to_string()).style(bold)),
+        n => Some(Line::from(format!(" {n} reviews ")).style(bold)),
+    };
+
+    let mut block = Block::default()
+        .title(left_title)
+        .title(right_title)
+        .title_bottom(bottom_right)
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(FOCUS_COLOR));
+    if let Some(rl) = review_label {
+        block = block.title_bottom(rl);
     }
 
     let mut body = crate::markdown::from_str(raw_body);
@@ -700,6 +776,9 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         Screen::IssueDetail { issue, scroll, .. } => {
             render_issue_detail(frame, issue, scroll, content_area);
         }
+        Screen::PrDetail { pr, scroll, .. } => {
+            render_pr_detail(frame, pr, scroll, content_area);
+        }
         Screen::DismissingIssue { issue, input, .. } => {
             render_issue_detail(frame, issue, &mut 0, content_area);
             render_dismiss_modal(frame, input, frame.area());
@@ -725,6 +804,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
             Screen::UnifiedList { .. } => KEYBINDS_LIST,
             Screen::Detail { .. } => KEYBINDS_DETAIL,
             Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } => KEYBINDS_ISSUE_READER,
+            Screen::PrDetail { .. } => KEYBINDS_PR_READER,
         };
         let text = format_keybinds(keybinds);
         let lines = keybinds.len() as u16;
@@ -968,6 +1048,7 @@ mod tests {
             review_count: 0,
             head_branch: "feat/fix".to_string(),
             base_branch: "main".to_string(),
+            body: None,
         })
     }
 
@@ -1481,6 +1562,98 @@ mod tests {
     fn status_bar_in_issue_detail() {
         // I4: Status bar in IssueDetail shows "[a] approve · [o] open · [Esc] back".
         let mut app = issue_detail_app(stub_issue_with_body(), 0);
+        let buf = draw(&mut app, 120, 5);
+        insta::assert_snapshot!(status_row(&buf));
+    }
+
+    // ── Full-screen PrDetail snapshots ───────────────────────────────────────
+
+    fn stub_pr_with_body() -> domain::PullRequest {
+        domain::PullRequest {
+            number: 102,
+            title: "Add PrDetail screen".to_string(),
+            repo: domain::RepoSlug::new("ooloth", "hub"),
+            url: "https://github.com/ooloth/hub/pull/102".to_string(),
+            age: chrono::Duration::days(1),
+            urgency: domain::Urgency::Medium,
+            kind: domain::PrKind::Mine,
+            author: "ooloth".to_string(),
+            review_decision: None,
+            review_count: 2,
+            head_branch: "feat/pr-detail".to_string(),
+            base_branch: "main".to_string(),
+            body: Some(
+                "## Summary\n\nAdds a detail screen for PRs.\n\n\
+                 ## Why\n\nReadability from terminal without leaving the TUI."
+                    .to_string(),
+            ),
+        }
+    }
+
+    fn stub_pr_no_body() -> domain::PullRequest {
+        domain::PullRequest {
+            number: 99,
+            title: "Fix typo in README".to_string(),
+            repo: domain::RepoSlug::new("ooloth", "hub"),
+            url: "https://github.com/ooloth/hub/pull/99".to_string(),
+            age: chrono::Duration::hours(5),
+            urgency: domain::Urgency::Low,
+            kind: domain::PrKind::Mine,
+            author: "ooloth".to_string(),
+            review_decision: None,
+            review_count: 0,
+            head_branch: "fix/readme-typo".to_string(),
+            base_branch: "main".to_string(),
+            body: None,
+        }
+    }
+
+    fn pr_detail_app(pr: domain::PullRequest, scroll: u16) -> App {
+        App {
+            ui: UiState {
+                screen: Screen::PrDetail {
+                    parent: ListSnapshot {
+                        items: vec![],
+                        selected: 0,
+                        filter: Filter::default(),
+                    },
+                    pr,
+                    scroll,
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    #[test]
+    fn full_screen_pr_detail_with_body() {
+        // P1: PR with body and review count at scroll=0.
+        let mut app = pr_detail_app(stub_pr_with_body(), 0);
+        let buf = draw(&mut app, 80, 20);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_no_body() {
+        // P2: PR with no body — shows "(no description)" placeholder.
+        let mut app = pr_detail_app(stub_pr_no_body(), 0);
+        let buf = draw(&mut app, 80, 15);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_scrolled() {
+        // P3: PR with body at scroll=2 — content shifts up.
+        let mut app = pr_detail_app(stub_pr_with_body(), 2);
+        let buf = draw(&mut app, 80, 20);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn status_bar_in_pr_detail() {
+        // P4: Status bar shows "[↩] open · [i] investigate · [Esc] back".
+        let mut app = pr_detail_app(stub_pr_with_body(), 0);
         let buf = draw(&mut app, 120, 5);
         insta::assert_snapshot!(status_row(&buf));
     }

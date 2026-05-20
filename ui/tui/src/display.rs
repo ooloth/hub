@@ -509,6 +509,7 @@ mod tests {
             review_count: 0,
             head_branch: "feat/add-feature".to_string(),
             base_branch: "main".to_string(),
+            body: None,
         })
     }
 
@@ -711,6 +712,7 @@ mod tests {
             review_count,
             head_branch: "feat/add-feature".to_string(),
             base_branch: "main".to_string(),
+            body: None,
         })
     }
 

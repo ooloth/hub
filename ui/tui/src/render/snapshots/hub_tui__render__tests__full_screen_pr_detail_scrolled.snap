@@ -1,0 +1,24 @@
+---
+source: ui/tui/src/render/mod.rs
+expression: screen_text(&buf)
+---
+╭ Add PrDetail screen ────────────────────────────────────── ooloth/hub · #102 ╮
+│                                                                              │
+│## Summary                                                                    │
+│                                                                              │
+│Adds a detail screen for PRs.                                                 │
+│                                                                              │
+│## Why                                                                        │
+│                                                                              │
+│Readability from terminal without leaving the TUI.                            │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰ 2 reviews ───────────────────────────────────────────────────── @ooloth · 1d ╯
+  [↩] open · [i] investigate · [Esc] back

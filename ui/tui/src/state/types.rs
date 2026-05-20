@@ -1,5 +1,5 @@
 use anyhow::Result;
-use domain::{Issue, PrKind, ReviewDecision};
+use domain::{Issue, PrKind, PullRequest, ReviewDecision};
 use ratatui::widgets::ListState;
 use workflows::status::{StatusItem, StatusReport};
 
@@ -42,6 +42,11 @@ pub(crate) enum Screen {
         issue: Issue,
         scroll: u16,
     },
+    PrDetail {
+        parent: ListSnapshot,
+        pr: PullRequest,
+        scroll: u16,
+    },
     DismissingIssue {
         parent: ListSnapshot,
         issue: Issue,
@@ -78,6 +83,7 @@ impl Screen {
             Screen::IssueDetail { issue, .. } | Screen::DismissingIssue { issue, .. } => {
                 Some(StatusItem::Issue(issue.clone()))
             }
+            Screen::PrDetail { pr, .. } => Some(StatusItem::Pr(pr.clone())),
         }
     }
 }
@@ -90,6 +96,7 @@ pub(crate) enum EnterAction {
         item_count: usize,
     },
     OpenIssueDetail(Issue),
+    OpenPrDetail(PullRequest),
 }
 
 #[derive(Debug, Eq, PartialEq)]

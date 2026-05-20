@@ -74,6 +74,8 @@ pub struct PullRequest {
     pub review_count: u32,
     pub head_branch: String,
     pub base_branch: String,
+    #[serde(default)]
+    pub body: Option<String>,
 }
 
 pub const NEEDS_HUMAN_REVIEW_LABEL: &str = "status:needs-human-review";

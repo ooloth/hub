@@ -18,7 +18,7 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
 
     let can_go_back = matches!(
         app.ui.screen,
-        Screen::Detail { .. } | Screen::IssueDetail { .. }
+        Screen::Detail { .. } | Screen::IssueDetail { .. } | Screen::PrDetail { .. }
     );
     let has_filter = match &app.ui.screen {
         Screen::UnifiedList { filter, .. } => !filter.is_empty(),
@@ -50,6 +50,7 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
         Screen::UnifiedList { .. } => unified_list_keys(key),
         Screen::Detail { .. } => list_keys(key),
         Screen::IssueDetail { .. } => issue_reader_keys(key),
+        Screen::PrDetail { .. } => pr_reader_keys(key),
         Screen::DismissingIssue { .. } => unreachable!("handled above"),
     }
 }
@@ -101,6 +102,20 @@ fn list_keys(key: KeyEvent) -> Option<Action> {
         (KeyCode::Down, _) | (KeyCode::Char('j'), _) | (KeyCode::Char('l'), _) => {
             Some(Action::MoveDown)
         }
+        (KeyCode::Char('g'), _) => Some(Action::PendingG),
+        (KeyCode::Char('G'), _) => Some(Action::MoveToBottom),
+        (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Action::MovePageUp),
+        (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(Action::MovePageDown),
+        (KeyCode::Enter, _) => Some(Action::Enter),
+        (KeyCode::Char('i'), _) => Some(Action::Investigate),
+        _ => None,
+    }
+}
+
+fn pr_reader_keys(key: KeyEvent) -> Option<Action> {
+    match (key.code, key.modifiers) {
+        (KeyCode::Up, _) | (KeyCode::Char('k'), _) => Some(Action::MoveUp),
+        (KeyCode::Down, _) | (KeyCode::Char('j'), _) => Some(Action::MoveDown),
         (KeyCode::Char('g'), _) => Some(Action::PendingG),
         (KeyCode::Char('G'), _) => Some(Action::MoveToBottom),
         (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Action::MovePageUp),
