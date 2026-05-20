@@ -17,6 +17,7 @@ use crate::state::{
 mod detail;
 
 pub(super) const FOCUS_COLOR: Color = Color::Rgb(203, 166, 247); // Catppuccin Mocha Mauve
+pub(super) const LAVENDER: Color = Color::Rgb(180, 190, 254); // Catppuccin Mocha Lavender
 pub(super) const SELECTION_BG: Color = Color::Rgb(41, 45, 62);
 
 pub(super) fn dim() -> Style {
@@ -532,6 +533,7 @@ fn pr_diff_lines(pr: &domain::PullRequest, sep_width: usize) -> Vec<Line<'static
 
     let sep = Style::default().add_modifier(Modifier::DIM);
     let bold = Style::default().add_modifier(Modifier::BOLD);
+    let lav = Style::default().fg(LAVENDER);
     let mut out: Vec<Line<'static>> = vec![];
 
     for file in &pr.changed_files {
@@ -547,9 +549,9 @@ fn pr_diff_lines(pr: &domain::PullRequest, sep_width: usize) -> Vec<Line<'static
             .saturating_sub(4);
         let fill = "─".repeat(fill_len);
         let header = Line::from(vec![
-            Span::styled(format!("──{left}"), sep),
-            Span::styled(fill, sep),
-            Span::styled("──".to_string(), sep),
+            Span::styled(format!("──{left}"), lav),
+            Span::styled(fill, lav),
+            Span::styled("──".to_string(), lav),
             Span::styled(format!(" +{additions}"), Style::default().fg(Color::Green)),
             Span::styled(format!(" -{deletions} "), Style::default().fg(Color::Red)),
         ])
