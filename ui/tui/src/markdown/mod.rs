@@ -397,20 +397,29 @@ where
         self.set_code_highlighter(lang);
         let span = Span::from(format!("```{lang}"));
         self.push_line(span.into());
+        // Push code style AFTER the opening fence so only content is coloured.
+        if self.code_highlighter.is_none() {
+            self.line_styles.push(self.styles.code());
+        }
         self.needs_newline = true;
     }
 
     fn end_codeblock(&mut self) {
+        // Pop code style BEFORE the closing fence so only content was coloured.
+        if self.code_highlighter.is_none() {
+            self.line_styles.pop();
+        }
         self.push_line(Span::from("```").into());
         self.needs_newline = true;
         self.code_highlighter = None;
     }
 
     fn set_code_highlighter(&mut self, lang: &str) {
-        if let Some(syntax) = SYNTAX_SET.find_syntax_by_token(lang) {
-            self.code_highlighter = Some(HighlightLines::new(syntax, &MOCHA_THEME));
+        if !lang.is_empty() {
+            if let Some(syntax) = SYNTAX_SET.find_syntax_by_token(lang) {
+                self.code_highlighter = Some(HighlightLines::new(syntax, &MOCHA_THEME));
+            }
         }
-        // Unknown language: code_highlighter stays None; body renders unstyled.
     }
 
     fn push_inline_style(&mut self, style: Style) {
@@ -453,5 +462,70 @@ where
             self.push_span(Span::styled(link, self.styles.link()));
             self.push_span(")".into());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::markdown::style_sheet::CatppuccinStyleSheet;
+
+    fn code_style() -> Style {
+        CatppuccinStyleSheet.code()
+    }
+
+    fn fence_lines<'a>(text: &'a Text<'a>) -> Vec<&'a ratatui::text::Line<'a>> {
+        text.lines
+            .iter()
+            .filter(|l| l.spans.iter().any(|s| s.content.starts_with("```")))
+            .collect()
+    }
+
+    fn content_lines<'a>(text: &'a Text<'a>) -> Vec<&'a ratatui::text::Line<'a>> {
+        text.lines
+            .iter()
+            .filter(|l| !l.spans.iter().any(|s| s.content.starts_with("```")))
+            .collect()
+    }
+
+    #[test]
+    fn unlanguaged_fence_content_carries_code_style() {
+        let text = from_str("```\nhello\n```\n");
+        assert!(
+            content_lines(&text).iter().any(|l| l.style == code_style()),
+            "expected content lines to carry code() style"
+        );
+    }
+
+    #[test]
+    fn unlanguaged_fence_delimiters_are_unstyled() {
+        let text = from_str("```\nhello\n```\n");
+        assert!(
+            fence_lines(&text)
+                .iter()
+                .all(|l| l.style == Style::default()),
+            "expected fence lines to have no style"
+        );
+    }
+
+    #[test]
+    fn unknown_language_fence_content_carries_code_style() {
+        let text = from_str("```xyzzy\nhello\n```\n");
+        assert!(
+            content_lines(&text).iter().any(|l| l.style == code_style()),
+            "expected content lines to carry code() style for unknown language"
+        );
+    }
+
+    #[test]
+    fn known_language_fence_produces_styled_spans() {
+        let text = from_str("```rust\nlet x = 1;\n```\n");
+        assert!(
+            text.lines
+                .iter()
+                .flat_map(|l| l.spans.iter())
+                .any(|s| s.style != Style::default()),
+            "expected styled spans for rust fence"
+        );
     }
 }
