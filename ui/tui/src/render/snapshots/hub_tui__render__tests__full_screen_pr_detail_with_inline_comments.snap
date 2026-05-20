@@ -18,19 +18,19 @@ expression: screen_text(&buf)
 │ context                                                                      │
 │-old line                                                                     │
 │+new line                                                                     │
-│  @reviewer · 2d                                                              │
-│  Why not use a constant here?                                                │
+│                                                                              │
+│ @reviewer · 2d                                                               │
+│ Why not use a constant here?                                                 │
 │                                                                              │
 │+another new                                                                  │
 │+third new                                                                    │
-│  @reviewer2 · 3h                                                             │
-│  Overall LGTM.                                                               │
+│                                                                              │
+│ @reviewer2 · 3h                                                              │
+│ Overall LGTM.                                                                │
 │                                                                              │
 │                                                                              │
 │── assets/logo.png ──────────────────────────────────────────────────── +0 -0 │
 │ (binary)                                                                     │
-│                                                                              │
-│                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │

@@ -18,7 +18,7 @@ mod detail;
 
 pub(super) const FOCUS_COLOR: Color = Color::Rgb(203, 166, 247); // Catppuccin Mocha Mauve
 pub(super) const LAVENDER: Color = Color::Rgb(180, 190, 254); // Catppuccin Mocha Lavender
-pub(super) const PEACH: Color = Color::Rgb(250, 179, 135); // Catppuccin Mocha Peach
+pub(super) const YELLOW: Color = Color::Rgb(249, 226, 175); // Catppuccin Mocha Yellow
 pub(super) const SELECTION_BG: Color = Color::Rgb(41, 45, 62);
 
 pub(super) fn dim() -> Style {
@@ -536,22 +536,25 @@ fn parse_hunk_new_start(hunk_header: &str) -> Option<u32> {
 }
 
 fn comment_lines(comment: &domain::ReviewComment) -> Vec<Line<'static>> {
-    let author_style = Style::default().fg(PEACH).add_modifier(Modifier::ITALIC);
-    let body_style = Style::default().fg(PEACH);
+    let author_style = Style::default().fg(YELLOW).add_modifier(Modifier::ITALIC);
+    let body_style = Style::default().fg(YELLOW);
     let age_str = crate::display::format_age_short(comment.age);
     let mut out = vec![Line::styled(
-        format!("  @{} · {}", comment.author, age_str),
+        format!(" @{} · {}", comment.author, age_str),
         author_style,
     )];
     for body_line in comment.body.lines() {
-        out.push(Line::styled(format!("  {body_line}"), body_style));
+        out.push(Line::styled(format!(" {body_line}"), body_style));
     }
     out.push(Line::from(""));
     out
 }
 
 fn render_thread_comments(out: &mut Vec<Line<'static>>, thread: &domain::ReviewThread) {
-    for comment in &thread.comments {
+    for (i, comment) in thread.comments.iter().enumerate() {
+        if i == 0 {
+            out.push(Line::from(""));
+        }
         out.extend(comment_lines(comment));
     }
 }
