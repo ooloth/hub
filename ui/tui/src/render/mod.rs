@@ -526,6 +526,33 @@ fn render_issue_detail(
     frame.render_widget(paragraph, area);
 }
 
+fn parse_hunk_new_start(hunk_header: &str) -> Option<u32> {
+    hunk_header
+        .split_whitespace()
+        .find(|t| t.starts_with('+'))
+        .and_then(|t| t.trim_start_matches('+').split(',').next())
+        .and_then(|n| n.parse().ok())
+}
+
+fn render_thread_comments(out: &mut Vec<Line<'static>>, thread: &domain::ReviewThread) {
+    let dim_lav = Style::default()
+        .fg(LAVENDER)
+        .add_modifier(Modifier::DIM)
+        .add_modifier(Modifier::ITALIC);
+    let dim = Style::default().add_modifier(Modifier::DIM);
+    for comment in &thread.comments {
+        let age_str = crate::display::format_age_short(comment.age);
+        out.push(Line::styled(
+            format!("  @{} · {}", comment.author, age_str),
+            dim_lav,
+        ));
+        for body_line in comment.body.lines() {
+            out.push(Line::styled(format!("  {body_line}"), dim));
+        }
+        out.push(Line::from(""));
+    }
+}
+
 fn pr_diff_lines(pr: &domain::PullRequest, sep_width: usize) -> Vec<Line<'static>> {
     if pr.changed_files.is_empty() {
         return vec![];
@@ -558,23 +585,45 @@ fn pr_diff_lines(pr: &domain::PullRequest, sep_width: usize) -> Vec<Line<'static
         .style(bold);
         out.push(header);
 
+        let file_threads: Vec<&domain::ReviewThread> = pr
+            .review_threads
+            .iter()
+            .filter(|t| t.path == file.path)
+            .collect();
+
         match &file.patch {
             None => {
                 out.push(Line::styled(" (binary) ".to_string(), sep));
+                for thread in file_threads.iter().filter(|t| t.line.is_none()) {
+                    render_thread_comments(&mut out, thread);
+                }
             }
             Some(patch) => {
+                let mut new_line: u32 = 0;
                 for raw in patch.lines() {
                     let line = raw.to_string();
                     if line.starts_with("@@") {
                         out.push(Line::from(""));
-                        out.push(Line::styled(line, Style::default().fg(Color::Cyan)));
+                        out.push(Line::styled(line.clone(), Style::default().fg(Color::Cyan)));
+                        new_line = parse_hunk_new_start(&line).unwrap_or(0);
                     } else if line.starts_with('+') {
                         out.push(Line::styled(line, Style::default().fg(Color::Green)));
+                        for thread in file_threads.iter().filter(|t| t.line == Some(new_line)) {
+                            render_thread_comments(&mut out, thread);
+                        }
+                        new_line += 1;
                     } else if line.starts_with('-') {
                         out.push(Line::styled(line, Style::default().fg(Color::Red)));
                     } else {
                         out.push(Line::from(line));
+                        for thread in file_threads.iter().filter(|t| t.line == Some(new_line)) {
+                            render_thread_comments(&mut out, thread);
+                        }
+                        new_line += 1;
                     }
+                }
+                for thread in file_threads.iter().filter(|t| t.line.is_none()) {
+                    render_thread_comments(&mut out, thread);
                 }
             }
         }
@@ -1146,6 +1195,7 @@ mod tests {
             ci_status: None,
             changed_files: vec![],
             total_changed_files: 0,
+            review_threads: vec![],
         })
     }
 
@@ -1687,6 +1737,7 @@ mod tests {
             ci_status: None,
             changed_files: vec![],
             total_changed_files: 0,
+            review_threads: vec![],
         }
     }
 
@@ -1708,6 +1759,7 @@ mod tests {
             ci_status: None,
             changed_files: vec![],
             total_changed_files: 0,
+            review_threads: vec![],
         }
     }
 
@@ -1840,6 +1892,35 @@ mod tests {
         // D3: scrolled into the diff section.
         let mut app = pr_detail_app(stub_pr_with_diff(), 10);
         let buf = draw(&mut app, 80, 20);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_with_inline_comments() {
+        // D4: inline review comment after a changed line; file-level comment at end.
+        let mut pr = stub_pr_with_diff();
+        pr.review_threads = vec![
+            domain::ReviewThread {
+                path: "src/main.rs".to_string(),
+                line: Some(11), // context line "context" is new-file line 10; "+new line" is 11
+                comments: vec![domain::ReviewComment {
+                    author: "reviewer".to_string(),
+                    age: chrono::Duration::days(2),
+                    body: "Why not use a constant here?".to_string(),
+                }],
+            },
+            domain::ReviewThread {
+                path: "src/main.rs".to_string(),
+                line: None, // file-level
+                comments: vec![domain::ReviewComment {
+                    author: "reviewer2".to_string(),
+                    age: chrono::Duration::hours(3),
+                    body: "Overall LGTM.".to_string(),
+                }],
+            },
+        ];
+        let mut app = pr_detail_app(pr, 0);
+        let buf = draw(&mut app, 80, 40);
         insta::assert_snapshot!(screen_text(&buf));
     }
 

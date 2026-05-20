@@ -1,3 +1,5 @@
 [build]
   # Treat all compiler warnings as errors so they can't accumulate silently.
-  rustflags = ["-D", "warnings"]
+  # large_enum_variant: boxing is premature optimisation; hub clones freely
+  # and optimises only when profiling shows a bottleneck.
+  rustflags = "-D warnings -A clippy::large-enum-variant"

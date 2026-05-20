@@ -1,0 +1,44 @@
+---
+source: ui/tui/src/render/mod.rs
+expression: screen_text(&buf)
+---
+╭ Add PrDetail screen ────────────────────────────────────── ooloth/hub · #102 ╮
+│                                                                              │
+│## Summary                                                                    │
+│                                                                              │
+│Adds a detail screen for PRs.                                                 │
+│                                                                              │
+│## Why                                                                        │
+│                                                                              │
+│Readability from terminal without leaving the TUI.                            │
+│                                                                              │
+│── src/main.rs ──────────────────────────────────────────────────────── +3 -1 │
+│                                                                              │
+│@@ -10,7 +10,9 @@                                                             │
+│ context                                                                      │
+│-old line                                                                     │
+│+new line                                                                     │
+│  @reviewer · 2d                                                              │
+│  Why not use a constant here?                                                │
+│                                                                              │
+│+another new                                                                  │
+│+third new                                                                    │
+│  @reviewer2 · 3h                                                             │
+│  Overall LGTM.                                                               │
+│                                                                              │
+│                                                                              │
+│── assets/logo.png ──────────────────────────────────────────────────── +0 -0 │
+│ (binary)                                                                     │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰ 2 reviews ───────────────────────────────────────────────────── @ooloth · 1d ╯
+  [↩] open · [i] investigate · [Esc] back

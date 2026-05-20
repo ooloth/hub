@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use domain::{
     ChangedFile, CiFailure, CiStatus, GithubPrsRepo, Issue, PrKind, PullRequest, RepoSlug,
-    ReviewDecision, Urgency, NEEDS_HUMAN_REVIEW_LABEL,
+    ReviewComment, ReviewDecision, ReviewThread, Urgency, NEEDS_HUMAN_REVIEW_LABEL,
 };
 use serde::Deserialize;
 
@@ -81,6 +81,9 @@ struct PrNode {
     commits: CommitConnection,
     #[serde(default)]
     files: FileConnection,
+    #[serde(default)]
+    #[serde(rename = "reviewThreads")]
+    review_threads: ReviewThreadConnection,
 }
 
 #[derive(Deserialize)]
@@ -150,6 +153,40 @@ struct PrFileEntry {
     filename: String,
     #[serde(default)]
     patch: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+struct ReviewThreadConnection {
+    nodes: Vec<ReviewThreadNode>,
+}
+
+#[derive(Deserialize)]
+struct ReviewThreadNode {
+    #[serde(rename = "isResolved")]
+    is_resolved: bool,
+    path: String,
+    line: Option<u32>,
+    #[serde(rename = "diffSide")]
+    diff_side: String,
+    comments: ReviewCommentConnection,
+}
+
+#[derive(Deserialize, Default)]
+struct ReviewCommentConnection {
+    nodes: Vec<ReviewCommentNode>,
+}
+
+#[derive(Deserialize)]
+struct ReviewCommentNode {
+    author: ReviewCommentAuthor,
+    #[serde(rename = "createdAt")]
+    created_at: String,
+    body: String,
+}
+
+#[derive(Deserialize)]
+struct ReviewCommentAuthor {
+    login: String,
 }
 
 fn age(created_at: &str) -> chrono::Duration {
@@ -290,6 +327,26 @@ fn nodes_to_prs(
                         patch: None,
                     })
                     .collect(),
+                review_threads: node
+                    .review_threads
+                    .nodes
+                    .into_iter()
+                    .filter(|t| !t.is_resolved && t.diff_side == "RIGHT")
+                    .map(|t| ReviewThread {
+                        path: t.path,
+                        line: t.line,
+                        comments: t
+                            .comments
+                            .nodes
+                            .into_iter()
+                            .map(|c| ReviewComment {
+                                author: c.author.login,
+                                age: age(&c.created_at),
+                                body: c.body,
+                            })
+                            .collect(),
+                    })
+                    .collect(),
                 age: age(&node.created_at),
                 urgency,
                 kind: if node.is_draft { PrKind::MyDraft } else { kind },
@@ -391,6 +448,9 @@ async fn graphql_prs(token: &str, base: &str, repos: &[GithubPrsRepo]) -> Result
             assignees(first: 10) {{ nodes {{ login }} }}
             commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
             files(first: 100) {{ totalCount nodes {{ path additions deletions }} }}
+            reviewThreads(first: 50) {{ nodes {{ isResolved path line diffSide
+                comments(first: 10) {{ nodes {{ author {{ login }} createdAt body }} }}
+            }} }}
         }} }} }} }}"#
     );
     let response: GraphQlResponse = reqwest::Client::new()
@@ -1246,6 +1306,7 @@ mod tests {
             base_ref_name: "main".into(),
             commits: CommitConnection::default(),
             files: FileConnection::default(),
+            review_threads: ReviewThreadConnection::default(),
         }
     }
 

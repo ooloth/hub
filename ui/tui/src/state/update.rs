@@ -866,6 +866,7 @@ mod tests {
                 ci_status: None,
                 changed_files: vec![],
                 total_changed_files: 0,
+                review_threads: vec![],
             },
         ))]);
         assert_eq!(
@@ -902,6 +903,7 @@ mod tests {
                 ci_status: None,
                 changed_files: vec![],
                 total_changed_files: 0,
+                review_threads: vec![],
             },
         ))]);
         assert_eq!(
@@ -938,6 +940,7 @@ mod tests {
                 ci_status: None,
                 changed_files: vec![],
                 total_changed_files: 0,
+                review_threads: vec![],
             },
         ))]);
         assert_eq!(
