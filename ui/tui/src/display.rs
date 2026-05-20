@@ -510,6 +510,7 @@ mod tests {
             head_branch: "feat/add-feature".to_string(),
             base_branch: "main".to_string(),
             body: None,
+            ci_status: None,
         })
     }
 
@@ -713,6 +714,7 @@ mod tests {
             head_branch: "feat/add-feature".to_string(),
             base_branch: "main".to_string(),
             body: None,
+            ci_status: None,
         })
     }
 

@@ -863,6 +863,7 @@ mod tests {
                 head_branch: "feat/thing".to_string(),
                 base_branch: "main".to_string(),
                 body: None,
+                ci_status: None,
             },
         ))]);
         assert_eq!(
@@ -896,6 +897,7 @@ mod tests {
                 head_branch: "feat/mine".to_string(),
                 base_branch: "main".to_string(),
                 body: None,
+                ci_status: None,
             },
         ))]);
         assert_eq!(
@@ -929,6 +931,7 @@ mod tests {
                 head_branch: "feat/draft".to_string(),
                 base_branch: "main".to_string(),
                 body: None,
+                ci_status: None,
             },
         ))]);
         assert_eq!(

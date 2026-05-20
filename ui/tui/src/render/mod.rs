@@ -555,10 +555,31 @@ fn render_pr_detail(
         .style(bold)
         .right_aligned();
 
-    let review_label = match pr.review_count {
+    let ci_span = match pr.ci_status {
+        Some(domain::CiStatus::Success) => {
+            Some(Span::styled("✓", Style::default().fg(Color::Green)))
+        }
+        Some(domain::CiStatus::Failure) => Some(Span::styled("✗", Style::default().fg(Color::Red))),
+        Some(domain::CiStatus::Pending) => {
+            Some(Span::styled("…", Style::default().fg(Color::Yellow)))
+        }
+        Some(domain::CiStatus::Neutral) => Some(Span::styled("~", dim())),
+        None => None,
+    };
+    let review_text = match pr.review_count {
         0 => None,
-        1 => Some(Line::from(" 1 review ".to_string()).style(bold)),
-        n => Some(Line::from(format!(" {n} reviews ")).style(bold)),
+        1 => Some("1 review".to_string()),
+        n => Some(format!("{n} reviews")),
+    };
+    let bottom_left: Option<Line> = match (ci_span, review_text) {
+        (None, None) => None,
+        (Some(ci), None) => Some(Line::from(vec![Span::raw(" "), ci, Span::raw(" ")])),
+        (None, Some(reviews)) => Some(Line::from(format!(" {reviews} ")).style(bold)),
+        (Some(ci), Some(reviews)) => Some(Line::from(vec![
+            Span::styled(format!(" {reviews} · "), bold),
+            ci,
+            Span::raw(" "),
+        ])),
     };
 
     let mut block = Block::default()
@@ -568,8 +589,8 @@ fn render_pr_detail(
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(FOCUS_COLOR));
-    if let Some(rl) = review_label {
-        block = block.title_bottom(rl);
+    if let Some(bl) = bottom_left {
+        block = block.title_bottom(bl);
     }
 
     let mut body = crate::markdown::from_str(raw_body);
@@ -1049,6 +1070,7 @@ mod tests {
             head_branch: "feat/fix".to_string(),
             base_branch: "main".to_string(),
             body: None,
+            ci_status: None,
         })
     }
 
@@ -1587,6 +1609,7 @@ mod tests {
                  ## Why\n\nReadability from terminal without leaving the TUI."
                     .to_string(),
             ),
+            ci_status: None,
         }
     }
 
@@ -1605,6 +1628,7 @@ mod tests {
             head_branch: "fix/readme-typo".to_string(),
             base_branch: "main".to_string(),
             body: None,
+            ci_status: None,
         }
     }
 
@@ -1656,6 +1680,37 @@ mod tests {
         let mut app = pr_detail_app(stub_pr_with_body(), 0);
         let buf = draw(&mut app, 120, 5);
         insta::assert_snapshot!(status_row(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_ci_success() {
+        // P5: CI success badge + review count in bottom-left.
+        let mut pr = stub_pr_with_body();
+        pr.ci_status = Some(domain::CiStatus::Success);
+        let mut app = pr_detail_app(pr, 0);
+        let buf = draw(&mut app, 80, 10);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_ci_failure() {
+        // P6: CI failure badge, no reviews.
+        let mut pr = stub_pr_no_body();
+        pr.ci_status = Some(domain::CiStatus::Failure);
+        let mut app = pr_detail_app(pr, 0);
+        let buf = draw(&mut app, 80, 10);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_ci_pending() {
+        // P7: CI pending badge + 1 review.
+        let mut pr = stub_pr_with_body();
+        pr.ci_status = Some(domain::CiStatus::Pending);
+        pr.review_count = 1;
+        let mut app = pr_detail_app(pr, 0);
+        let buf = draw(&mut app, 80, 10);
+        insta::assert_snapshot!(screen_text(&buf));
     }
 
     // ── Full-screen detail view snapshots ─────────────────────────────────────

@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
 use domain::{
-    CiFailure, GithubPrsRepo, Issue, PrKind, PullRequest, RepoSlug, ReviewDecision, Urgency,
-    NEEDS_HUMAN_REVIEW_LABEL,
+    CiFailure, CiStatus, GithubPrsRepo, Issue, PrKind, PullRequest, RepoSlug, ReviewDecision,
+    Urgency, NEEDS_HUMAN_REVIEW_LABEL,
 };
 use serde::Deserialize;
 
@@ -77,6 +77,8 @@ struct PrNode {
     head_ref_name: String,
     #[serde(rename = "baseRefName")]
     base_ref_name: String,
+    #[serde(default)]
+    commits: CommitConnection,
 }
 
 #[derive(Deserialize)]
@@ -104,6 +106,27 @@ struct PrAssignees {
 #[derive(Deserialize)]
 struct PrAssignee {
     login: String,
+}
+
+#[derive(Deserialize, Default)]
+struct CommitConnection {
+    nodes: Vec<CommitNode>,
+}
+
+#[derive(Deserialize)]
+struct CommitNode {
+    commit: CommitObject,
+}
+
+#[derive(Deserialize)]
+struct CommitObject {
+    #[serde(rename = "statusCheckRollup")]
+    status_check_rollup: Option<StatusCheckRollup>,
+}
+
+#[derive(Deserialize)]
+struct StatusCheckRollup {
+    state: String,
 }
 
 fn age(created_at: &str) -> chrono::Duration {
@@ -220,6 +243,12 @@ fn nodes_to_prs(
                 repo: RepoSlug::new(owner, repo),
                 url: node.url,
                 body: node.body,
+                ci_status: node
+                    .commits
+                    .nodes
+                    .first()
+                    .and_then(|c| c.commit.status_check_rollup.as_ref())
+                    .and_then(|r| parse_ci_state(&r.state)),
                 age: age(&node.created_at),
                 urgency,
                 kind: if node.is_draft { PrKind::MyDraft } else { kind },
@@ -231,6 +260,16 @@ fn nodes_to_prs(
             })
         })
         .collect()
+}
+
+fn parse_ci_state(state: &str) -> Option<CiStatus> {
+    match state {
+        "SUCCESS" => Some(CiStatus::Success),
+        "FAILURE" | "ERROR" => Some(CiStatus::Failure),
+        "PENDING" | "EXPECTED" => Some(CiStatus::Pending),
+        "NEUTRAL" => Some(CiStatus::Neutral),
+        _ => None,
+    }
 }
 
 fn parse_review_decision(s: Option<&str>) -> Option<ReviewDecision> {
@@ -257,6 +296,7 @@ async fn graphql_prs(token: &str, base: &str, repos: &[GithubPrsRepo]) -> Result
             reviews {{ totalCount }}
             repository {{ nameWithOwner }}
             assignees(first: 10) {{ nodes {{ login }} }}
+            commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
         }} }} }} }}"#
     );
     let response: GraphQlResponse = reqwest::Client::new()
@@ -1065,6 +1105,21 @@ mod tests {
         assert!(parse_cutoff("not-a-duration").is_err());
     }
 
+    // ── parse_ci_state ────────────────────────────────────────────────────────
+
+    #[rstest::rstest]
+    #[case("SUCCESS", Some(CiStatus::Success))]
+    #[case("FAILURE", Some(CiStatus::Failure))]
+    #[case("ERROR", Some(CiStatus::Failure))]
+    #[case("PENDING", Some(CiStatus::Pending))]
+    #[case("EXPECTED", Some(CiStatus::Pending))]
+    #[case("NEUTRAL", Some(CiStatus::Neutral))]
+    #[case("", None)]
+    #[case("UNKNOWN", None)]
+    fn parse_ci_state_cases(#[case] input: &str, #[case] expected: Option<CiStatus>) {
+        assert_eq!(parse_ci_state(input), expected);
+    }
+
     // ── nodes_to_prs (assignee and author filtering) ─────────────────────────
 
     fn make_node(assignee_logins: Vec<&str>) -> PrNode {
@@ -1095,6 +1150,7 @@ mod tests {
             },
             head_ref_name: "feat/test".into(),
             base_ref_name: "main".into(),
+            commits: CommitConnection::default(),
         }
     }
 

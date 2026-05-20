@@ -59,6 +59,14 @@ pub enum ReviewDecision {
     ChangesRequested,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum CiStatus {
+    Success,
+    Failure,
+    Pending,
+    Neutral,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PullRequest {
     pub number: u64,
@@ -76,6 +84,8 @@ pub struct PullRequest {
     pub base_branch: String,
     #[serde(default)]
     pub body: Option<String>,
+    #[serde(default)]
+    pub ci_status: Option<CiStatus>,
 }
 
 pub const NEEDS_HUMAN_REVIEW_LABEL: &str = "status:needs-human-review";
