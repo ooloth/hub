@@ -637,28 +637,22 @@ fn right_status_text(
 }
 
 fn render_dismiss_modal(frame: &mut ratatui::Frame, input: &tui_input::Input, area: Rect) {
-    let prompt = "Reason for dismissal (Enter to confirm, Esc to cancel):";
     let modal_width = (area.width * 2 / 3)
         .max(50)
         .min(area.width.saturating_sub(4));
-    let modal_height = 4u16;
-    let modal = popup_area(area, modal_height, modal_width);
+    let modal = popup_area(area, 1, modal_width);
 
-    let [prompt_area, input_area] =
-        Layout::vertical([Constraint::Length(1), Constraint::Length(1)])
-            .margin(1)
-            .areas(modal);
+    let block = Block::new()
+        .borders(Borders::ALL)
+        .title(" Dismiss issue — enter reason (optional) ");
+    let input_area = block.inner(modal);
 
     let scroll = input.visual_scroll(input_area.width.saturating_sub(1) as usize);
     let value = input.value();
     let cursor_pos = input.visual_cursor();
 
     frame.render_widget(Clear, modal);
-    frame.render_widget(
-        Block::new().borders(Borders::ALL).title(" Dismiss issue "),
-        modal,
-    );
-    frame.render_widget(Paragraph::new(prompt).style(dim()), prompt_area);
+    frame.render_widget(block, modal);
     frame.render_widget(
         Paragraph::new(value.chars().skip(scroll).collect::<String>()),
         input_area,

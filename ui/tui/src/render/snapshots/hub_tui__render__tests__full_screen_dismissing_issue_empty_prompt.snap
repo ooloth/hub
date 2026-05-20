@@ -14,12 +14,12 @@ expression: screen_text(&buf)
 │2. Navigate to the issue list                                                                                         │
 │3. Press Enter on an issue                                                                                            │
 │                                                                                                                      │
-│## Expected      ┌ Dismiss issue ───────────────────────────────────────────────────────────────────┐                 │
-│                 │Reason for dismissal (Enter to confirm, Esc to cancel):                           │                 │
+│## Expected                                                                                                           │
+│                 ┌ Dismiss issue — enter reason (optional) ─────────────────────────────────────────┐                 │
 │The issue body is│                                                                                  │                 │
-│                 │                                                                                  │                 │
-│## Actual        │                                                                                  │                 │
 │                 └──────────────────────────────────────────────────────────────────────────────────┘                 │
+│## Actual                                                                                                             │
+│                                                                                                                      │
 │The screen is blank.                                                                                                  │
 │                                                                                                                      │
 │                                                                                                                      │
