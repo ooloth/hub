@@ -657,6 +657,68 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
     }
 }
 
+fn refresh_screen_in_place(screen: &mut Screen, raw: &[workflows::status::StatusItem]) {
+    match screen {
+        Screen::UnifiedList {
+            items,
+            selected,
+            filter,
+        } => {
+            let new_items = build_unified(raw.to_vec(), filter);
+            *selected = (*selected).min(new_items.len().saturating_sub(1));
+            *items = new_items;
+        }
+        Screen::Detail { parent, view } => {
+            let old_label = match parent.items.get(view.group_index) {
+                Some(DisplayItem::Group { label, .. }) => Some(label.clone()),
+                _ => None,
+            };
+            let detail_sel = view.list_state.selected().unwrap_or(0);
+            let new_parent_items = build_unified(raw.to_vec(), &parent.filter);
+            let new_group_index = old_label.as_ref().and_then(|lbl| {
+                new_parent_items
+                    .iter()
+                    .position(|d| matches!(d, DisplayItem::Group { label, .. } if label == lbl))
+            });
+            if let Some(new_idx) = new_group_index {
+                let new_len = new_parent_items.len();
+                parent.selected = parent.selected.min(new_len.saturating_sub(1));
+                parent.items = new_parent_items;
+                view.group_index = new_idx;
+                let group_len = match parent.items.get(new_idx) {
+                    Some(DisplayItem::Group { items, .. }) => items.len(),
+                    _ => 0,
+                };
+                if group_len > 0 {
+                    view.list_state
+                        .select(Some(detail_sel.min(group_len.saturating_sub(1))));
+                }
+            }
+            // Group gone → leave screen frozen
+        }
+        Screen::IssueDetail { parent, .. }
+        | Screen::PrDetail { parent, .. }
+        | Screen::DismissingIssue { parent, .. } => {
+            let new_items = build_unified(raw.to_vec(), &parent.filter);
+            parent.selected = parent.selected.min(new_items.len().saturating_sub(1));
+            parent.items = new_items;
+        }
+    }
+}
+
+fn apply_refresh(app: &mut App, report: workflows::status::StatusReport) -> Result<Vec<Effect>> {
+    let json = serde_json::to_string(&report).context("failed to serialize status report")?;
+    app.data.raw_items = report.items.clone();
+    app.data.last_updated = Some(Utc::now());
+    app.data.refresh_state = if report.errors.is_empty() {
+        RefreshState::Idle
+    } else {
+        RefreshState::Partial(report.errors)
+    };
+    refresh_screen_in_place(&mut app.ui.screen, &app.data.raw_items);
+    Ok(vec![Effect::WriteCache(json)])
+}
+
 pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
     match msg {
         Msg::Action(action) => Ok(app.update(action)),
@@ -668,32 +730,7 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
                 Ok(vec![])
             }
         }
-        Msg::FetchResult(Ok(report)) => {
-            let json =
-                serde_json::to_string(&report).context("failed to serialize status report")?;
-            let filter = match &app.ui.screen {
-                Screen::UnifiedList { filter, .. } => filter.clone(),
-                Screen::Detail { parent, .. }
-                | Screen::IssueDetail { parent, .. }
-                | Screen::PrDetail { parent, .. }
-                | Screen::DismissingIssue { parent, .. } => parent.filter.clone(),
-            };
-            app.data.raw_items = report.items.clone();
-            let items = build_unified(report.items, &filter);
-            app.ui.screen = Screen::UnifiedList {
-                items,
-                selected: 0,
-                filter,
-            };
-            app.data.last_updated = Some(Utc::now());
-            // If any sources failed, show partial state; otherwise fully idle.
-            app.data.refresh_state = if report.errors.is_empty() {
-                RefreshState::Idle
-            } else {
-                RefreshState::Partial(report.errors)
-            };
-            Ok(vec![Effect::WriteCache(json)])
-        }
+        Msg::FetchResult(Ok(report)) => apply_refresh(app, report),
         Msg::FetchResult(Err(e)) => {
             app.data.refresh_state = RefreshState::Failed(e.to_string());
             Ok(vec![])
@@ -707,7 +744,7 @@ mod tests {
         compute_enter_action, compute_investigate_action, handle_msg, Action, App, Effect,
         EnterAction, InvestigateAction, Msg, RefreshState, Screen,
     };
-    use crate::display::{DisplayItem, Filter, ListSnapshot};
+    use crate::display::{Category, DisplayItem, Filter, ListSnapshot};
     use crate::state::{DataState, DetailView, UiState};
     use workflows::status::{StatusItem, StatusReport};
 
@@ -1110,18 +1147,6 @@ mod tests {
             Screen::UnifiedList { items, .. } if !items.is_empty()
         ));
         assert!(app.data.last_updated.is_some());
-    }
-
-    #[test]
-    fn handle_msg_fetch_ok_resets_to_unified_list() {
-        let mut app = app_with_items(vec![DisplayItem::Group {
-            label: "hub".to_string(),
-            items: vec![ci_failure()],
-        }]);
-        apply(&mut app, &[Action::Enter]);
-        app.data.refresh_state = RefreshState::InProgress;
-        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
-        assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
     }
 
     #[test]
@@ -1645,6 +1670,371 @@ mod tests {
     }
 
     // --- compute_enter_action ---
+
+    // --- helpers ---
+
+    fn loki_entry(urgency: domain::Urgency) -> StatusItem {
+        StatusItem::Loki(domain::LokiEntry {
+            title: "Error spike".to_string(),
+            project: "hub".to_string(),
+            env: "prod".to_string(),
+            message: "timeout".to_string(),
+            line: "{}".to_string(),
+            lookback: "1h".to_string(),
+            age: chrono::Duration::zero(),
+            urgency,
+            url: "https://grafana.example.com".to_string(),
+        })
+    }
+
+    fn loki_group_key() -> String {
+        "Error spike · timeout — hub:prod".to_string()
+    }
+
+    fn report_with_loki(n: usize, urgency: domain::Urgency) -> StatusReport {
+        StatusReport {
+            items: (0..n).map(|_| loki_entry(urgency)).collect(),
+            errors: vec![],
+        }
+    }
+
+    fn app_in_loki_detail(
+        group_index: usize,
+        detail_selected: usize,
+        parent_singles: usize,
+        group_loki_count: usize,
+    ) -> App {
+        let mut parent_items: Vec<DisplayItem> = (0..parent_singles)
+            .map(|_| DisplayItem::Single(ci_failure()))
+            .collect();
+        parent_items.insert(
+            group_index,
+            DisplayItem::Group {
+                label: loki_group_key(),
+                items: (0..group_loki_count)
+                    .map(|_| loki_entry(domain::Urgency::Low))
+                    .collect(),
+            },
+        );
+        App {
+            ui: UiState {
+                screen: Screen::Detail {
+                    parent: ListSnapshot {
+                        items: parent_items,
+                        selected: 0,
+                        filter: Filter::default(),
+                    },
+                    view: DetailView {
+                        group_index,
+                        list_state: {
+                            let mut ls = ratatui::widgets::ListState::default();
+                            ls.select(Some(detail_selected));
+                            ls
+                        },
+                    },
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    // --- UnifiedList refresh ---
+
+    fn report_with_two_items() -> StatusReport {
+        StatusReport {
+            items: vec![ci_failure(), stub_issue()],
+            errors: vec![],
+        }
+    }
+
+    #[test]
+    fn refresh_in_unified_list_preserves_selection_when_list_unchanged() {
+        let mut app = app_with_items(vec![
+            DisplayItem::Single(ci_failure()),
+            DisplayItem::Single(stub_issue()),
+        ]);
+        apply(&mut app, &[Action::MoveDown]); // cursor → 1
+        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_two_items()))).unwrap();
+        let Screen::UnifiedList { selected, .. } = app.current_screen() else {
+            panic!("expected UnifiedList");
+        };
+        assert_eq!(*selected, 1);
+    }
+
+    #[test]
+    fn refresh_in_unified_list_clamps_selection_when_list_shrinks() {
+        let mut app = app_with_items(vec![
+            DisplayItem::Single(ci_failure()),
+            DisplayItem::Single(ci_failure()),
+            DisplayItem::Single(ci_failure()),
+            DisplayItem::Single(stub_issue()),
+        ]);
+        apply(&mut app, &[Action::MoveToBottom]); // cursor → 3
+                                                  // report has 2 items → new len 2, cursor clamps to 1
+        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_two_items()))).unwrap();
+        let Screen::UnifiedList { selected, .. } = app.current_screen() else {
+            panic!("expected UnifiedList");
+        };
+        assert_eq!(*selected, 1);
+    }
+
+    #[test]
+    fn refresh_in_unified_list_applies_current_filter() {
+        let mut app = App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    items: vec![],
+                    selected: 0,
+                    filter: Filter {
+                        category: Some(Category::Issues),
+                        query: None,
+                    },
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        };
+        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_two_items()))).unwrap();
+        let Screen::UnifiedList { items, .. } = app.current_screen() else {
+            panic!("expected UnifiedList");
+        };
+        assert_eq!(items.len(), 1);
+        assert!(matches!(
+            &items[0],
+            DisplayItem::Single(workflows::status::StatusItem::Issue(_))
+        ));
+    }
+
+    fn stub_pr() -> StatusItem {
+        StatusItem::Pr(domain::PullRequest {
+            number: 7,
+            title: "Test PR".to_string(),
+            repo: domain::RepoSlug::new("ooloth", "hub"),
+            url: "https://github.com/ooloth/hub/pull/7".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+            kind: domain::PrKind::Mine,
+            author: "ooloth".to_string(),
+            review_decision: None,
+            approval_count: 0,
+            comment_count: 0,
+            head_branch: "feat/thing".to_string(),
+            base_branch: "main".to_string(),
+            body: Some("PR body".to_string()),
+            ci_status: None,
+            changed_files: vec![],
+            total_changed_files: 0,
+            review_threads: vec![],
+            pr_comments: vec![],
+        })
+    }
+
+    fn app_in_pr_detail() -> App {
+        let parent = ListSnapshot {
+            items: vec![DisplayItem::Single(stub_pr())],
+            selected: 0,
+            filter: Filter::default(),
+        };
+        let pr = match stub_pr() {
+            StatusItem::Pr(p) => p,
+            _ => unreachable!(),
+        };
+        App {
+            ui: UiState {
+                screen: Screen::PrDetail {
+                    parent,
+                    pr,
+                    scroll: 0,
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    // --- Detail refresh ---
+
+    #[test]
+    fn refresh_in_detail_preserves_screen_variant() {
+        let mut app = app_in_detail(vec![ci_failure()]);
+        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        assert!(matches!(app.current_screen(), Screen::Detail { .. }));
+    }
+
+    #[test]
+    fn refresh_in_detail_freezes_screen_when_group_vanishes() {
+        // CI items have no group_key; rebuilt parent has only Singles → group label gone
+        let mut app = app_in_detail(vec![ci_failure(), ci_failure()]);
+        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        let Screen::Detail { parent, .. } = app.current_screen() else {
+            panic!("expected Detail");
+        };
+        assert!(matches!(parent.items[0], DisplayItem::Group { .. }));
+    }
+
+    #[test]
+    fn refresh_in_detail_updates_parent_when_group_exists() {
+        // Start with 2-item Loki group; report has 3 → group gains an entry
+        let mut app = app_in_loki_detail(0, 0, 0, 2);
+        handle_msg(
+            &mut app,
+            Msg::FetchResult(Ok(report_with_loki(3, domain::Urgency::Low))),
+        )
+        .unwrap();
+        let Screen::Detail { parent, view } = app.current_screen() else {
+            panic!("expected Detail");
+        };
+        let DisplayItem::Group { items, .. } = &parent.items[view.group_index] else {
+            panic!("expected Group at group_index");
+        };
+        assert_eq!(items.len(), 3);
+    }
+
+    #[test]
+    fn refresh_in_detail_updates_group_index_when_group_reorders() {
+        // Initial parent: [Group(loki_key, [loki_Low]), Single(ci_High)] — group at 0
+        // Report: ci_High + 2×loki_Low → rebuild: [Single(ci_High), Group(loki_key, [×2])]
+        // group_index should update from 0 → 1
+        let mut app = app_in_loki_detail(0, 0, 1, 2);
+        // The 1 parent_single (ci, High) comes AFTER the group initially.
+        // Report gives ci(High) + 2×loki(Low); sort puts ci first → group at index 1.
+        let report = StatusReport {
+            items: vec![
+                ci_failure(),
+                loki_entry(domain::Urgency::Low),
+                loki_entry(domain::Urgency::Low),
+            ],
+            errors: vec![],
+        };
+        handle_msg(&mut app, Msg::FetchResult(Ok(report))).unwrap();
+        let Screen::Detail { view, .. } = app.current_screen() else {
+            panic!("expected Detail");
+        };
+        assert_eq!(view.group_index, 1);
+    }
+
+    #[test]
+    fn refresh_in_detail_clamps_detail_selection_when_group_shrinks() {
+        // Start with 3-item Loki group, detail selection at index 2
+        // Report has 2 Loki items → group shrinks to 2, selection clamps to 1
+        let mut app = app_in_loki_detail(0, 2, 0, 3);
+        handle_msg(
+            &mut app,
+            Msg::FetchResult(Ok(report_with_loki(2, domain::Urgency::Low))),
+        )
+        .unwrap();
+        let Screen::Detail { view, .. } = app.current_screen() else {
+            panic!("expected Detail");
+        };
+        assert_eq!(view.list_state.selected(), Some(1));
+    }
+
+    // --- IssueDetail refresh ---
+
+    #[test]
+    fn refresh_in_issue_detail_preserves_screen_variant() {
+        let mut app = app_in_issue_detail();
+        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        assert!(matches!(app.current_screen(), Screen::IssueDetail { .. }));
+    }
+
+    #[test]
+    fn refresh_in_issue_detail_preserves_scroll() {
+        let mut app = app_in_issue_detail();
+        apply(&mut app, &[Action::MovePageDown]); // scroll → 10
+        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        assert_eq!(issue_detail_scroll(&app), 10);
+    }
+
+    #[test]
+    fn refresh_in_issue_detail_updates_parent_items() {
+        let mut app = app_in_issue_detail(); // parent has stub_issue
+        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        let Screen::IssueDetail { parent, .. } = app.current_screen() else {
+            panic!("expected IssueDetail");
+        };
+        // parent rebuilt from report: now contains the CI item, not the issue
+        assert!(matches!(
+            parent.items[0],
+            DisplayItem::Single(workflows::status::StatusItem::Ci(_))
+        ));
+    }
+
+    // --- PrDetail refresh ---
+
+    fn pr_detail_scroll(app: &App) -> u16 {
+        match app.current_screen() {
+            Screen::PrDetail { scroll, .. } => *scroll,
+            _ => panic!("expected PrDetail"),
+        }
+    }
+
+    #[test]
+    fn refresh_in_pr_detail_preserves_screen_variant() {
+        let mut app = app_in_pr_detail();
+        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        assert!(matches!(app.current_screen(), Screen::PrDetail { .. }));
+    }
+
+    #[test]
+    fn refresh_in_pr_detail_preserves_scroll() {
+        let mut app = app_in_pr_detail();
+        apply(&mut app, &[Action::MovePageDown]); // scroll → 10
+        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        assert_eq!(pr_detail_scroll(&app), 10);
+    }
+
+    #[test]
+    fn refresh_in_pr_detail_updates_parent_items() {
+        let mut app = app_in_pr_detail(); // parent has stub_pr
+        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        let Screen::PrDetail { parent, .. } = app.current_screen() else {
+            panic!("expected PrDetail");
+        };
+        assert!(matches!(
+            parent.items[0],
+            DisplayItem::Single(workflows::status::StatusItem::Ci(_))
+        ));
+    }
+
+    // --- DismissingIssue refresh ---
+
+    #[test]
+    fn refresh_in_dismissing_preserves_screen_variant() {
+        let mut app = app_in_dismissing();
+        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        assert!(matches!(
+            app.current_screen(),
+            Screen::DismissingIssue { .. }
+        ));
+    }
+
+    #[test]
+    fn refresh_in_dismissing_preserves_input_value() {
+        let mut app = app_in_dismissing();
+        app.update(Action::DismissInput(tui_input::InputRequest::InsertChar(
+            'x',
+        )));
+        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        let Screen::DismissingIssue { input, .. } = app.current_screen() else {
+            panic!("expected DismissingIssue");
+        };
+        assert_eq!(input.value(), "x");
+    }
+
+    #[test]
+    fn refresh_in_dismissing_updates_parent_items() {
+        let mut app = app_in_dismissing(); // parent has stub_issue
+        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        let Screen::DismissingIssue { parent, .. } = app.current_screen() else {
+            panic!("expected DismissingIssue");
+        };
+        assert!(matches!(
+            parent.items[0],
+            DisplayItem::Single(workflows::status::StatusItem::Ci(_))
+        ));
+    }
 
     #[test]
     fn compute_enter_action_on_issue_returns_open_issue_detail() {
