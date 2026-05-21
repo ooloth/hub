@@ -36,7 +36,7 @@ pub(crate) fn config(
 
 fn route(kind: PrKind, review_decision: Option<ReviewDecision>, author: &str) -> (String, String) {
     match kind {
-        PrKind::ToReview => (
+        PrKind::ToReview | PrKind::External => (
             "/review-code".to_string(),
             format!("This PR was authored by {author}. Your role is reviewer — do not make local changes."),
         ),
@@ -111,6 +111,14 @@ mod tests {
     fn mine_approved_routes_to_review_converge() {
         let (skill, _) = route(PrKind::Mine, Some(ReviewDecision::Approved), "me");
         assert_eq!(skill, "/review-converge");
+    }
+
+    #[test]
+    fn external_routes_to_review_code() {
+        let (skill, intent) = route(PrKind::External, None, "stranger");
+        assert_eq!(skill, "/review-code");
+        assert!(intent.contains("stranger"));
+        assert!(intent.contains("reviewer"));
     }
 
     #[test]

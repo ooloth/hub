@@ -51,6 +51,7 @@ pub enum PrKind {
     Mine,
     MyDraft,
     ToReview,
+    External,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
