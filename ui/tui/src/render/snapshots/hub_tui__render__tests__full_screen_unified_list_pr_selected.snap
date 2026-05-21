@@ -5,7 +5,7 @@ expression: screen_text(&buf)
 ╭ All ─────────────────────────────────────────────────────────────────────────╮
 │CI · check / fmt · failed                                     ooloth/hub · now│
 ├──────────────────────────────────────────────────────────────────────────────┤
-│PR · Fix #1 · alice · 0 reviews                               owner/repo · now│
+│PR · Fix #1 · alice · no reviews                              owner/repo · now│
 │                                                                              │
 │                                                                              │
 │                                                                              │
@@ -16,4 +16,4 @@ expression: screen_text(&buf)
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- 2/2 · [↩] open · [i] investigate
+ 2/2 · [↩] read · [i] investigate

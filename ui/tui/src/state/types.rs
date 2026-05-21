@@ -1,5 +1,5 @@
 use anyhow::Result;
-use domain::{Issue, PrKind, ReviewDecision};
+use domain::{Issue, PrKind, PullRequest, ReviewDecision};
 use ratatui::widgets::ListState;
 use workflows::status::{StatusItem, StatusReport};
 
@@ -42,6 +42,16 @@ pub(crate) enum Screen {
         issue: Issue,
         scroll: u16,
     },
+    PrDetail {
+        parent: ListSnapshot,
+        pr: PullRequest,
+        scroll: u16,
+    },
+    DismissingIssue {
+        parent: ListSnapshot,
+        issue: Issue,
+        input: tui_input::Input,
+    },
 }
 
 impl Default for Screen {
@@ -70,7 +80,10 @@ impl Screen {
                     _ => None,
                 }
             }
-            Screen::IssueDetail { issue, .. } => Some(StatusItem::Issue(issue.clone())),
+            Screen::IssueDetail { issue, .. } | Screen::DismissingIssue { issue, .. } => {
+                Some(StatusItem::Issue(issue.clone()))
+            }
+            Screen::PrDetail { pr, .. } => Some(StatusItem::Pr(pr.clone())),
         }
     }
 }
@@ -83,6 +96,7 @@ pub(crate) enum EnterAction {
         item_count: usize,
     },
     OpenIssueDetail(Issue),
+    OpenPrDetail(PullRequest),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -136,6 +150,10 @@ pub(crate) enum Action {
     Investigate,
     Refresh,
     ApproveForAgent,
+    DismissIssue,
+    DismissInput(tui_input::InputRequest),
+    CommitDismissal,
+    CancelDismissal,
     // Filter actions — only take effect from UnifiedList in normal mode.
     FilterCategory(Category),
     ClearFilter,
@@ -152,6 +170,12 @@ pub(crate) enum Effect {
     SetIssueLabels {
         repo: String,
         number: u64,
+        labels: Vec<String>,
+    },
+    DismissIssue {
+        repo: String,
+        number: u64,
+        reason: String,
         labels: Vec<String>,
     },
     LaunchCi {

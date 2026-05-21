@@ -3,17 +3,17 @@ source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
 ╭ All ─────────────────────────────────────────────────────────────────────────╮
-│PR · Fix #1 · alice · 0 reviews                               owner/repo · now│
-│PR · Fix #1 · alice · 0 reviews                               owner/repo · now│
-│PR · Fix #1 · alice · 0 reviews                               owner/repo · now│
-│PR · Fix #1 · alice · 0 reviews                               owner/repo · now│
-│PR · Fix #1 · alice · 0 reviews                               owner/repo · now│
-│PR · Fix #1 · alice · 0 reviews                               owner/repo · now│
-│PR · Fix #1 · alice · 0 reviews                               owner/repo · now│
-│PR · Fix #1 · alice · 0 reviews                               owner/repo · now│
-│PR · Fix #1 · alice · 0 reviews                               owner/repo · now│
-│PR · Fix #1 · alice · 0 reviews                               owner/repo · now│
-│PR · Fix #1 · alice · 0 reviews                               owner/repo · now│
-│PR · Fix #1 · alice · 0 reviews                               owner/repo · now│
+│PR · Fix #1 · alice · no reviews                              owner/repo · now│
+│PR · Fix #1 · alice · no reviews                              owner/repo · now│
+│PR · Fix #1 · alice · no reviews                              owner/repo · now│
+│PR · Fix #1 · alice · no reviews                              owner/repo · now│
+│PR · Fix #1 · alice · no reviews                              owner/repo · now│
+│PR · Fix #1 · alice · no reviews                              owner/repo · now│
+│PR · Fix #1 · alice · no reviews                              owner/repo · now│
+│PR · Fix #1 · alice · no reviews                              owner/repo · now│
+│PR · Fix #1 · alice · no reviews                              owner/repo · now│
+│PR · Fix #1 · alice · no reviews                              owner/repo · now│
+│PR · Fix #1 · alice · no reviews                              owner/repo · now│
+│PR · Fix #1 · alice · no reviews                              owner/repo · now│
 ╰──────────────────────────────────────────────────────────────────────────────╯
- 15/15 · [↩] open · [i] investigate
+ 15/15 · [↩] read · [i] investigate

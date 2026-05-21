@@ -6,7 +6,9 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, ListState, Paragraph},
 };
 
-use crate::display::{display_item_line, display_item_urgency, DisplayItem, Filter, LineParts};
+use crate::display::{
+    display_item_line, display_item_urgency, format_age_short, DisplayItem, Filter, LineParts,
+};
 use crate::state::{
     compute_enter_action, compute_investigate_action, App, EnterAction, InvestigateAction,
     RefreshState, Screen,
@@ -15,6 +17,8 @@ use crate::state::{
 mod detail;
 
 pub(super) const FOCUS_COLOR: Color = Color::Rgb(203, 166, 247); // Catppuccin Mocha Mauve
+pub(super) const LAVENDER: Color = Color::Rgb(180, 190, 254); // Catppuccin Mocha Lavender
+pub(super) const YELLOW: Color = Color::Rgb(249, 226, 175); // Catppuccin Mocha Yellow
 pub(super) const SELECTION_BG: Color = Color::Rgb(41, 45, 62);
 
 pub(super) fn dim() -> Style {
@@ -115,12 +119,25 @@ const KEYBINDS_DETAIL: &[(&str, &str)] = &[
     ("q / Ctrl-C", "quit"),
 ];
 
+const KEYBINDS_PR_READER: &[(&str, &str)] = &[
+    ("?", "toggle help"),
+    ("k / j", "scroll up / down"),
+    ("gg / G", "go to top / bottom"),
+    ("Ctrl-u / Ctrl-d", "page up / down"),
+    ("Enter", "open in browser"),
+    ("i", "investigate"),
+    ("r", "refresh"),
+    ("Esc", "back to list"),
+    ("q / Ctrl-C", "quit"),
+];
+
 const KEYBINDS_ISSUE_READER: &[(&str, &str)] = &[
     ("?", "toggle help"),
     ("k / j", "scroll up / down"),
     ("gg / G", "go to top / bottom"),
     ("Ctrl-u / Ctrl-d", "page up / down"),
     ("a", "approve for agent"),
+    ("d", "dismiss as won't fix"),
     ("Enter", "open in browser"),
     ("i", "investigate"),
     ("r", "refresh"),
@@ -379,7 +396,9 @@ fn position_label(screen: &Screen) -> String {
                 .map(|i| format!("{}/{count}", i + 1))
                 .unwrap_or_default()
         }
-        Screen::IssueDetail { .. } => String::new(),
+        Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } | Screen::PrDetail { .. } => {
+            String::new()
+        }
     }
 }
 
@@ -389,7 +408,7 @@ fn action_hints(enter: &EnterAction, investigate: &InvestigateAction) -> String 
         EnterAction::OpenDetail { item_count, .. } => {
             format!(" · [↩] expand {item_count} items")
         }
-        EnterAction::OpenIssueDetail(_) => " · [↩] read".to_string(),
+        EnterAction::OpenIssueDetail(_) | EnterAction::OpenPrDetail(_) => " · [↩] read".to_string(),
         EnterAction::None => String::new(),
     };
     let inv_hint = if matches!(investigate, InvestigateAction::None) {
@@ -422,8 +441,14 @@ fn status_bar_left(app: &App) -> String {
     if let Some(flash) = &app.ui.flash {
         return flash.clone();
     }
+    if matches!(app.ui.screen, Screen::PrDetail { .. }) {
+        return " [↩] open · [i] investigate · [Esc] back".to_string();
+    }
     if matches!(app.ui.screen, Screen::IssueDetail { .. }) {
-        return " [a] approve · [↩] open · [Esc] back".to_string();
+        return " [a] approve · [d] dismiss · [↩] open · [Esc] back".to_string();
+    }
+    if matches!(app.ui.screen, Screen::DismissingIssue { .. }) {
+        return " [↩] confirm · [Esc] cancel".to_string();
     }
     let enter_action = compute_enter_action(app);
     let investigate_action = compute_investigate_action(app);
@@ -460,8 +485,8 @@ fn render_issue_detail(
         .style(bold)
         .right_aligned();
 
-    // Bottom title: labels
-    let bottom_title = if issue.labels.is_empty() {
+    // Bottom-left title: labels
+    let bottom_left = if issue.labels.is_empty() {
         None
     } else {
         let mut s = String::from(" ");
@@ -470,21 +495,312 @@ fn render_issue_detail(
         Some(Line::from(s).style(bold))
     };
 
+    // Bottom-right title: author + age
+    let bottom_right = Line::from(format!(
+        " @{} · {} ",
+        issue.author,
+        format_age_short(issue.age),
+    ))
+    .style(bold)
+    .right_aligned();
+
     let mut block = Block::default()
         .title(left_title)
         .title(right_title)
+        .title_bottom(bottom_right)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(FOCUS_COLOR));
-    if let Some(bt) = bottom_title {
+    if let Some(bt) = bottom_left {
         block = block.title_bottom(bt);
     }
 
-    let mut body = tui_markdown::from_str(raw_body);
+    let mut body = crate::markdown::from_str(raw_body);
     body.lines.insert(0, ratatui::text::Line::from(""));
     body.lines.push(ratatui::text::Line::from(""));
 
     let paragraph = Paragraph::new(body)
+        .block(block)
+        .wrap(ratatui::widgets::Wrap { trim: false })
+        .scroll((*scroll, 0));
+
+    frame.render_widget(paragraph, area);
+}
+
+fn parse_hunk_new_start(hunk_header: &str) -> Option<u32> {
+    hunk_header
+        .split_whitespace()
+        .find(|t| t.starts_with('+'))
+        .and_then(|t| t.trim_start_matches('+').split(',').next())
+        .and_then(|n| n.parse().ok())
+}
+
+fn comment_lines(comment: &domain::ReviewComment) -> Vec<Line<'static>> {
+    let author_style = Style::default().fg(YELLOW).add_modifier(Modifier::ITALIC);
+    let body_style = Style::default().fg(YELLOW);
+    let age_str = crate::display::format_age_short(comment.age);
+    let mut out = vec![Line::styled(
+        format!(" @{} · {}", comment.author, age_str),
+        author_style,
+    )];
+    for body_line in comment.body.lines() {
+        out.push(Line::styled(format!(" {body_line}"), body_style));
+    }
+    out.push(Line::from(""));
+    out
+}
+
+fn render_thread_comments(out: &mut Vec<Line<'static>>, thread: &domain::ReviewThread) {
+    for (i, comment) in thread.comments.iter().enumerate() {
+        if i == 0 {
+            out.push(Line::from(""));
+        }
+        out.extend(comment_lines(comment));
+    }
+}
+
+fn pr_diff_lines(pr: &domain::PullRequest, sep_width: usize) -> Vec<Line<'static>> {
+    if pr.changed_files.is_empty() {
+        return vec![];
+    }
+
+    let sep = Style::default().add_modifier(Modifier::DIM);
+    let bold = Style::default().add_modifier(Modifier::BOLD);
+    let lav = Style::default().fg(LAVENDER);
+    let mut out: Vec<Line<'static>> = vec![];
+
+    for file in &pr.changed_files {
+        let additions = file.additions;
+        let deletions = file.deletions;
+        let path = file.path.clone();
+
+        let left = format!(" {path} ");
+        let fill_len = sep_width
+            .saturating_sub(
+                left.chars().count() + format!(" +{additions} -{deletions} ").chars().count(),
+            )
+            .saturating_sub(4);
+        let fill = "─".repeat(fill_len);
+        let header = Line::from(vec![
+            Span::styled(format!("──{left}"), lav),
+            Span::styled(fill, lav),
+            Span::styled("──".to_string(), lav),
+            Span::styled(format!(" +{additions}"), Style::default().fg(Color::Green)),
+            Span::styled(format!(" -{deletions} "), Style::default().fg(Color::Red)),
+        ])
+        .style(bold);
+        out.push(header);
+
+        let file_threads: Vec<&domain::ReviewThread> = pr
+            .review_threads
+            .iter()
+            .filter(|t| t.path == file.path)
+            .collect();
+
+        match &file.patch {
+            None => {
+                out.push(Line::styled(" (binary) ".to_string(), sep));
+                for thread in file_threads.iter().filter(|t| t.line.is_none()) {
+                    render_thread_comments(&mut out, thread);
+                }
+            }
+            Some(patch) => {
+                let mut new_line: u32 = 0;
+                for raw in patch.lines() {
+                    let line = raw.to_string();
+                    if line.starts_with("@@") {
+                        out.push(Line::from(""));
+                        out.push(Line::styled(line.clone(), Style::default().fg(Color::Cyan)));
+                        new_line = parse_hunk_new_start(&line).unwrap_or(0);
+                    } else if line.starts_with('+') {
+                        out.push(Line::styled(line, Style::default().fg(Color::Green)));
+                        for thread in file_threads.iter().filter(|t| t.line == Some(new_line)) {
+                            render_thread_comments(&mut out, thread);
+                        }
+                        new_line += 1;
+                    } else if line.starts_with('-') {
+                        out.push(Line::styled(line, Style::default().fg(Color::Red)));
+                    } else {
+                        out.push(Line::from(line));
+                        for thread in file_threads.iter().filter(|t| t.line == Some(new_line)) {
+                            render_thread_comments(&mut out, thread);
+                        }
+                        new_line += 1;
+                    }
+                }
+                for thread in file_threads.iter().filter(|t| t.line.is_none()) {
+                    render_thread_comments(&mut out, thread);
+                }
+            }
+        }
+        out.push(Line::from(""));
+    }
+
+    let shown = pr.changed_files.len() as u32;
+    let total = pr.total_changed_files;
+    if total > shown {
+        let hidden = total - shown;
+        out.push(Line::styled(
+            format!(" … and {hidden} more files not shown "),
+            sep,
+        ));
+    }
+
+    out.push(Line::from(""));
+    out
+}
+
+fn render_pr_detail(
+    frame: &mut ratatui::Frame,
+    pr: &domain::PullRequest,
+    scroll: &mut u16,
+    area: Rect,
+) {
+    let inner_width = area.width.saturating_sub(2) as usize;
+
+    let bold = Style::default().add_modifier(Modifier::BOLD);
+
+    let ci_span = match pr.ci_status {
+        Some(domain::CiStatus::Success) => {
+            Some(Span::styled("✓", Style::default().fg(Color::Green)))
+        }
+        Some(domain::CiStatus::Failure) => Some(Span::styled("✗", Style::default().fg(Color::Red))),
+        Some(domain::CiStatus::Pending) => {
+            Some(Span::styled("…", Style::default().fg(Color::Yellow)))
+        }
+        Some(domain::CiStatus::Neutral) => Some(Span::styled("~", dim())),
+        None => None,
+    };
+
+    let mut title_spans: Vec<Span> = vec![Span::raw(format!(" {} ", pr.title))];
+    if let Some(ci) = ci_span {
+        title_spans.push(ci);
+        title_spans.push(Span::raw(" "));
+    }
+    let left_title = Line::from(title_spans).style(bold);
+    let right_title = Line::from(format!(" {} · #{} ", pr.repo, pr.number))
+        .style(bold)
+        .right_aligned();
+
+    let bottom_right = Line::from(format!(" @{} · {} ", pr.author, format_age_short(pr.age),))
+        .style(bold)
+        .right_aligned();
+
+    let review_status_span = match pr.review_decision {
+        Some(domain::ReviewDecision::ChangesRequested) => Some(Span::styled(
+            "Changes requested",
+            Style::default().fg(Color::Red),
+        )),
+        Some(domain::ReviewDecision::Approved) => {
+            let label = match pr.approval_count {
+                1 => "1 approval".to_string(),
+                n => format!("{n} approvals"),
+            };
+            Some(Span::styled(label, Style::default().fg(Color::Green)))
+        }
+        None => Some(Span::styled("No reviews", bold)),
+    };
+    let comment_span = match pr.comment_count {
+        0 => None,
+        1 => Some(Span::styled("1 comment", bold)),
+        n => Some(Span::styled(format!("{n} comments"), bold)),
+    };
+    let files_spans: Option<Vec<Span>> = if pr.total_changed_files > 0 {
+        let total_add: u32 = pr.changed_files.iter().map(|f| f.additions).sum();
+        let total_del: u32 = pr.changed_files.iter().map(|f| f.deletions).sum();
+        let n = pr.total_changed_files;
+        let file_label = if n == 1 {
+            "1 file".to_string()
+        } else {
+            format!("{n} files")
+        };
+        Some(vec![
+            Span::styled(file_label, bold),
+            Span::styled(" · ", bold),
+            Span::styled(format!("+{total_add}"), Style::default().fg(Color::Green)),
+            Span::styled(format!(" -{total_del}"), Style::default().fg(Color::Red)),
+        ])
+    } else {
+        None
+    };
+
+    // Build bottom-left as: [review status ·] [X comments ·] [X files · +Y -Z]
+    let mut left_spans: Vec<Span> = vec![Span::raw(" ")];
+    let mut has_content = false;
+    if let Some(s) = review_status_span {
+        left_spans.push(s);
+        has_content = true;
+    }
+    if let Some(c) = comment_span {
+        if has_content {
+            left_spans.push(Span::styled(" · ".to_string(), bold));
+        }
+        left_spans.push(c);
+        has_content = true;
+    }
+    if let Some(fs) = files_spans {
+        if has_content {
+            left_spans.push(Span::styled(" · ".to_string(), bold));
+        }
+        left_spans.extend(fs);
+        has_content = true;
+    }
+    let bottom_left: Option<Line> = if has_content {
+        left_spans.push(Span::raw(" "));
+        Some(Line::from(left_spans))
+    } else {
+        None
+    };
+
+    let mut block = Block::default()
+        .title(left_title)
+        .title(right_title)
+        .title_bottom(bottom_right)
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(FOCUS_COLOR));
+    if let Some(bl) = bottom_left {
+        block = block.title_bottom(bl);
+    }
+
+    let raw_body = pr
+        .body
+        .as_deref()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("(no description)");
+
+    let mut content = crate::markdown::from_str(raw_body);
+    content.lines.insert(0, Line::from(""));
+    content.lines.push(Line::from(""));
+
+    if !pr.pr_comments.is_empty() {
+        let label = " top-level comments ";
+        let fill_len = inner_width.saturating_sub(label.chars().count() + 4);
+        let fill = "─".repeat(fill_len);
+        let lav = Style::default().fg(LAVENDER);
+        content.lines.push(
+            Line::from(vec![
+                Span::styled(format!("──{label}"), lav),
+                Span::styled(fill, lav),
+                Span::styled("──".to_string(), lav),
+            ])
+            .style(Style::default().add_modifier(Modifier::BOLD)),
+        );
+        content.lines.push(Line::from(""));
+        for comment in &pr.pr_comments {
+            content.lines.extend(comment_lines(comment));
+        }
+    }
+
+    let mut diff = pr_diff_lines(pr, inner_width);
+    content.lines.append(&mut diff);
+
+    let total_lines = content.lines.len();
+    let viewport_height = area.height.saturating_sub(2) as usize;
+    let max_scroll = total_lines.saturating_sub(viewport_height) as u16;
+    *scroll = (*scroll).min(max_scroll);
+
+    let paragraph = Paragraph::new(content)
         .block(block)
         .wrap(ratatui::widgets::Wrap { trim: false })
         .scroll((*scroll, 0));
@@ -632,6 +948,33 @@ fn right_status_text(
     }
 }
 
+fn render_dismiss_modal(frame: &mut ratatui::Frame, input: &tui_input::Input, area: Rect) {
+    let modal_width = (area.width * 2 / 3)
+        .max(50)
+        .min(area.width.saturating_sub(4));
+    let modal = popup_area(area, 1, modal_width);
+
+    let block = Block::new()
+        .borders(Borders::ALL)
+        .title(" Dismiss issue — enter reason (optional) ");
+    let input_area = block.inner(modal);
+
+    let scroll = input.visual_scroll(input_area.width.saturating_sub(1) as usize);
+    let value = input.value();
+    let cursor_pos = input.visual_cursor();
+
+    frame.render_widget(Clear, modal);
+    frame.render_widget(block, modal);
+    frame.render_widget(
+        Paragraph::new(value.chars().skip(scroll).collect::<String>()),
+        input_area,
+    );
+    frame.set_cursor_position((
+        input_area.x + (cursor_pos.saturating_sub(scroll)) as u16,
+        input_area.y,
+    ));
+}
+
 pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let [content_area, bar_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
@@ -657,6 +1000,13 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         Screen::IssueDetail { issue, scroll, .. } => {
             render_issue_detail(frame, issue, scroll, content_area);
         }
+        Screen::PrDetail { pr, scroll, .. } => {
+            render_pr_detail(frame, pr, scroll, content_area);
+        }
+        Screen::DismissingIssue { issue, input, .. } => {
+            render_issue_detail(frame, issue, &mut 0, content_area);
+            render_dismiss_modal(frame, input, frame.area());
+        }
     }
 
     let right_status =
@@ -677,7 +1027,8 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         let keybinds = match &app.ui.screen {
             Screen::UnifiedList { .. } => KEYBINDS_LIST,
             Screen::Detail { .. } => KEYBINDS_DETAIL,
-            Screen::IssueDetail { .. } => KEYBINDS_ISSUE_READER,
+            Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } => KEYBINDS_ISSUE_READER,
+            Screen::PrDetail { .. } => KEYBINDS_PR_READER,
         };
         let text = format_keybinds(keybinds);
         let lines = keybinds.len() as u16;
@@ -918,9 +1269,16 @@ mod tests {
             kind: domain::PrKind::ToReview,
             author: "alice".to_string(),
             review_decision: None,
-            review_count: 0,
+            approval_count: 0,
+            comment_count: 0,
             head_branch: "feat/fix".to_string(),
             base_branch: "main".to_string(),
+            body: None,
+            ci_status: None,
+            changed_files: vec![],
+            total_changed_files: 0,
+            review_threads: vec![],
+            pr_comments: vec![],
         })
     }
 
@@ -1333,7 +1691,8 @@ mod tests {
             title: "Invariant violation in render pipeline".to_string(),
             repo: domain::RepoSlug::new("ooloth", "hub"),
             url: "https://github.com/ooloth/hub/issues/42".to_string(),
-            age: chrono::Duration::zero(),
+            author: "agent".to_string(),
+            age: chrono::Duration::days(3),
             urgency: domain::Urgency::Low,
             labels: vec![
                 "status:needs-human-review".to_string(),
@@ -1355,11 +1714,52 @@ mod tests {
             title: "No description issue".to_string(),
             repo: domain::RepoSlug::new("ooloth", "hub"),
             url: "https://github.com/ooloth/hub/issues/7".to_string(),
-            age: chrono::Duration::zero(),
+            author: "agent".to_string(),
+            age: chrono::Duration::days(3),
             urgency: domain::Urgency::Low,
             labels: vec![],
             body: None,
         }
+    }
+
+    fn dismissing_app(issue: domain::Issue, draft: &str) -> App {
+        let mut input = tui_input::Input::default();
+        for c in draft.chars() {
+            input.handle(tui_input::InputRequest::InsertChar(c));
+        }
+        App {
+            ui: UiState {
+                screen: Screen::DismissingIssue {
+                    parent: ListSnapshot {
+                        items: vec![],
+                        selected: 0,
+                        filter: Filter::default(),
+                    },
+                    issue,
+                    input,
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    // ── Full-screen DismissingIssue snapshots ─────────────────────────────────
+
+    #[test]
+    fn full_screen_dismissing_issue_empty_prompt() {
+        // D1: Dismiss modal open with empty input.
+        let mut app = dismissing_app(stub_issue_with_body(), "");
+        let buf = draw(&mut app, 120, 30);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_dismissing_issue_with_text() {
+        // D2: Dismiss modal open with typed reason.
+        let mut app = dismissing_app(stub_issue_with_body(), "Not relevant to this project");
+        let buf = draw(&mut app, 120, 30);
+        insta::assert_snapshot!(screen_text(&buf));
     }
 
     // ── Full-screen IssueDetail snapshots ─────────────────────────────────────
@@ -1394,6 +1794,264 @@ mod tests {
         let mut app = issue_detail_app(stub_issue_with_body(), 0);
         let buf = draw(&mut app, 120, 5);
         insta::assert_snapshot!(status_row(&buf));
+    }
+
+    // ── Full-screen PrDetail snapshots ───────────────────────────────────────
+
+    fn stub_pr_with_body() -> domain::PullRequest {
+        domain::PullRequest {
+            number: 102,
+            title: "Add PrDetail screen".to_string(),
+            repo: domain::RepoSlug::new("ooloth", "hub"),
+            url: "https://github.com/ooloth/hub/pull/102".to_string(),
+            age: chrono::Duration::days(1),
+            urgency: domain::Urgency::Medium,
+            kind: domain::PrKind::Mine,
+            author: "ooloth".to_string(),
+            review_decision: None,
+            approval_count: 0,
+            comment_count: 2,
+            head_branch: "feat/pr-detail".to_string(),
+            base_branch: "main".to_string(),
+            body: Some(
+                "## Summary\n\nAdds a detail screen for PRs.\n\n\
+                 ## Why\n\nReadability from terminal without leaving the TUI."
+                    .to_string(),
+            ),
+            ci_status: None,
+            changed_files: vec![],
+            total_changed_files: 0,
+            review_threads: vec![],
+            pr_comments: vec![],
+        }
+    }
+
+    fn stub_pr_no_body() -> domain::PullRequest {
+        domain::PullRequest {
+            number: 99,
+            title: "Fix typo in README".to_string(),
+            repo: domain::RepoSlug::new("ooloth", "hub"),
+            url: "https://github.com/ooloth/hub/pull/99".to_string(),
+            age: chrono::Duration::hours(5),
+            urgency: domain::Urgency::Low,
+            kind: domain::PrKind::Mine,
+            author: "ooloth".to_string(),
+            review_decision: None,
+            approval_count: 0,
+            comment_count: 0,
+            head_branch: "fix/readme-typo".to_string(),
+            base_branch: "main".to_string(),
+            body: None,
+            ci_status: None,
+            changed_files: vec![],
+            total_changed_files: 0,
+            review_threads: vec![],
+            pr_comments: vec![],
+        }
+    }
+
+    fn pr_detail_app(pr: domain::PullRequest, scroll: u16) -> App {
+        App {
+            ui: UiState {
+                screen: Screen::PrDetail {
+                    parent: ListSnapshot {
+                        items: vec![],
+                        selected: 0,
+                        filter: Filter::default(),
+                    },
+                    pr,
+                    scroll,
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    #[test]
+    fn full_screen_pr_detail_with_body() {
+        // P1: PR with body and review count at scroll=0.
+        let mut app = pr_detail_app(stub_pr_with_body(), 0);
+        let buf = draw(&mut app, 80, 20);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_no_body() {
+        // P2: PR with no body — shows "(no description)" placeholder.
+        let mut app = pr_detail_app(stub_pr_no_body(), 0);
+        let buf = draw(&mut app, 80, 15);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_scrolled() {
+        // P3: PR with body at scroll=2 — content shifts up.
+        let mut app = pr_detail_app(stub_pr_with_body(), 2);
+        let buf = draw(&mut app, 80, 20);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn status_bar_in_pr_detail() {
+        // P4: Status bar shows "[↩] open · [i] investigate · [Esc] back".
+        let mut app = pr_detail_app(stub_pr_with_body(), 0);
+        let buf = draw(&mut app, 120, 5);
+        insta::assert_snapshot!(status_row(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_ci_success() {
+        // P5: CI success badge + review count in bottom-left.
+        let mut pr = stub_pr_with_body();
+        pr.ci_status = Some(domain::CiStatus::Success);
+        let mut app = pr_detail_app(pr, 0);
+        let buf = draw(&mut app, 80, 10);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_ci_failure() {
+        // P6: CI failure badge, no reviews.
+        let mut pr = stub_pr_no_body();
+        pr.ci_status = Some(domain::CiStatus::Failure);
+        let mut app = pr_detail_app(pr, 0);
+        let buf = draw(&mut app, 80, 10);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_ci_pending() {
+        // P7: CI pending badge + 1 approval.
+        let mut pr = stub_pr_with_body();
+        pr.ci_status = Some(domain::CiStatus::Pending);
+        pr.approval_count = 1;
+        pr.review_decision = Some(domain::ReviewDecision::Approved);
+        let mut app = pr_detail_app(pr, 0);
+        let buf = draw(&mut app, 80, 10);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_approved() {
+        // P8: approved decision shown in bottom-left.
+        let mut pr = stub_pr_no_body();
+        pr.review_decision = Some(domain::ReviewDecision::Approved);
+        pr.approval_count = 1;
+        let mut app = pr_detail_app(pr, 0);
+        let buf = draw(&mut app, 80, 10);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_changes_requested() {
+        // P9: changes-requested decision shown in bottom-left.
+        let mut pr = stub_pr_no_body();
+        pr.review_decision = Some(domain::ReviewDecision::ChangesRequested);
+        let mut app = pr_detail_app(pr, 0);
+        let buf = draw(&mut app, 80, 10);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    // ── PrDetail diff snapshots ───────────────────────────────────────────────
+
+    fn stub_pr_with_diff() -> domain::PullRequest {
+        let mut pr = stub_pr_with_body();
+        pr.total_changed_files = 2;
+        pr.changed_files = vec![
+            domain::ChangedFile {
+                path: "src/main.rs".to_string(),
+                additions: 3,
+                deletions: 1,
+                patch: Some(
+                    "@@ -10,7 +10,9 @@\n context\n-old line\n+new line\n+another new\n+third new"
+                        .to_string(),
+                ),
+            },
+            domain::ChangedFile {
+                path: "assets/logo.png".to_string(),
+                additions: 0,
+                deletions: 0,
+                patch: None,
+            },
+        ];
+        pr
+    }
+
+    #[test]
+    fn full_screen_pr_detail_with_diff() {
+        // D1: PR body followed by diff section with one text file and one binary.
+        let mut app = pr_detail_app(stub_pr_with_diff(), 0);
+        let buf = draw(&mut app, 80, 30);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_diff_truncated() {
+        // D2: total_changed_files > changed_files.len() — shows truncation footer.
+        let mut pr = stub_pr_with_diff();
+        pr.total_changed_files = 150;
+        let mut app = pr_detail_app(pr, 0);
+        let buf = draw(&mut app, 80, 30);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_diff_scrolled() {
+        // D3: scrolled into the diff section.
+        let mut app = pr_detail_app(stub_pr_with_diff(), 10);
+        let buf = draw(&mut app, 80, 20);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_with_inline_comments() {
+        // D4: inline review comment after a changed line; file-level comment at end.
+        let mut pr = stub_pr_with_diff();
+        pr.review_threads = vec![
+            domain::ReviewThread {
+                path: "src/main.rs".to_string(),
+                line: Some(11), // context line "context" is new-file line 10; "+new line" is 11
+                comments: vec![domain::ReviewComment {
+                    author: "reviewer".to_string(),
+                    age: chrono::Duration::days(2),
+                    body: "Why not use a constant here?".to_string(),
+                }],
+            },
+            domain::ReviewThread {
+                path: "src/main.rs".to_string(),
+                line: None, // file-level
+                comments: vec![domain::ReviewComment {
+                    author: "reviewer2".to_string(),
+                    age: chrono::Duration::hours(3),
+                    body: "Overall LGTM.".to_string(),
+                }],
+            },
+        ];
+        let mut app = pr_detail_app(pr, 0);
+        let buf = draw(&mut app, 80, 40);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_with_pr_comments() {
+        // D5: top-level PR comments appear between body and diff.
+        let mut pr = stub_pr_with_diff();
+        pr.pr_comments = vec![
+            domain::ReviewComment {
+                author: "reviewer".to_string(),
+                age: chrono::Duration::days(1),
+                body: "Looks good overall, a few nits below.".to_string(),
+            },
+            domain::ReviewComment {
+                author: "reviewer2".to_string(),
+                age: chrono::Duration::hours(6),
+                body: "LGTM from my side.".to_string(),
+            },
+        ];
+        let mut app = pr_detail_app(pr, 0);
+        let buf = draw(&mut app, 80, 35);
+        insta::assert_snapshot!(screen_text(&buf));
     }
 
     // ── Full-screen detail view snapshots ─────────────────────────────────────

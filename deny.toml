@@ -25,6 +25,8 @@
 
 [advisories]
   version = 2
+  # Ignore "unmaintained" advisories — they flag stable transitive deps we can't control.
+  unmaintained = "none"
 
 [sources]
   unknown-git = "deny"

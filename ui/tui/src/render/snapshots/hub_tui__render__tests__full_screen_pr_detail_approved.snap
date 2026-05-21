@@ -1,0 +1,14 @@
+---
+source: ui/tui/src/render/mod.rs
+expression: screen_text(&buf)
+---
+╭ Fix typo in README ──────────────────────────────────────── ooloth/hub · #99 ╮
+│                                                                              │
+│(no description)                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰ 1 approval ──────────────────────────────────────────────────── @ooloth · 5h ╯
+  [↩] open · [i] investigate · [Esc] back

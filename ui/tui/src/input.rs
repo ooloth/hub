@@ -1,6 +1,8 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::display::Category;
+use tui_input::InputRequest;
+
 use crate::state::{Action, App, Screen};
 
 pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
@@ -9,9 +11,14 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
         return query_mode_key(key);
     }
 
+    // Dismiss prompt intercepts all keys (Ctrl-C still quits).
+    if matches!(app.ui.screen, Screen::DismissingIssue { .. }) {
+        return dismiss_mode_key(key);
+    }
+
     let can_go_back = matches!(
         app.ui.screen,
-        Screen::Detail { .. } | Screen::IssueDetail { .. }
+        Screen::Detail { .. } | Screen::IssueDetail { .. } | Screen::PrDetail { .. }
     );
     let has_filter = match &app.ui.screen {
         Screen::UnifiedList { filter, .. } => !filter.is_empty(),
@@ -43,6 +50,8 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
         Screen::UnifiedList { .. } => unified_list_keys(key),
         Screen::Detail { .. } => list_keys(key),
         Screen::IssueDetail { .. } => issue_reader_keys(key),
+        Screen::PrDetail { .. } => pr_reader_keys(key),
+        Screen::DismissingIssue { .. } => unreachable!("handled above"),
     }
 }
 
@@ -103,6 +112,20 @@ fn list_keys(key: KeyEvent) -> Option<Action> {
     }
 }
 
+fn pr_reader_keys(key: KeyEvent) -> Option<Action> {
+    match (key.code, key.modifiers) {
+        (KeyCode::Up, _) | (KeyCode::Char('k'), _) => Some(Action::MoveUp),
+        (KeyCode::Down, _) | (KeyCode::Char('j'), _) => Some(Action::MoveDown),
+        (KeyCode::Char('g'), _) => Some(Action::PendingG),
+        (KeyCode::Char('G'), _) => Some(Action::MoveToBottom),
+        (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Action::MovePageUp),
+        (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(Action::MovePageDown),
+        (KeyCode::Enter, _) => Some(Action::Enter),
+        (KeyCode::Char('i'), _) => Some(Action::Investigate),
+        _ => None,
+    }
+}
+
 fn issue_reader_keys(key: KeyEvent) -> Option<Action> {
     match (key.code, key.modifiers) {
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => Some(Action::MoveUp),
@@ -113,7 +136,29 @@ fn issue_reader_keys(key: KeyEvent) -> Option<Action> {
         (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(Action::MovePageDown),
         (KeyCode::Enter, _) => Some(Action::Enter),
         (KeyCode::Char('a'), _) => Some(Action::ApproveForAgent),
+        (KeyCode::Char('d'), _) => Some(Action::DismissIssue),
         (KeyCode::Char('i'), _) => Some(Action::Investigate),
+        _ => None,
+    }
+}
+
+fn dismiss_mode_key(key: KeyEvent) -> Option<Action> {
+    if matches!(
+        (key.code, key.modifiers),
+        (KeyCode::Char('c'), KeyModifiers::CONTROL)
+    ) {
+        return Some(Action::Quit);
+    }
+    match key.code {
+        KeyCode::Esc => Some(Action::CancelDismissal),
+        KeyCode::Enter => Some(Action::CommitDismissal),
+        KeyCode::Char(c) => Some(Action::DismissInput(InputRequest::InsertChar(c))),
+        KeyCode::Backspace => Some(Action::DismissInput(InputRequest::DeletePrevChar)),
+        KeyCode::Delete => Some(Action::DismissInput(InputRequest::DeleteNextChar)),
+        KeyCode::Left => Some(Action::DismissInput(InputRequest::GoToPrevChar)),
+        KeyCode::Right => Some(Action::DismissInput(InputRequest::GoToNextChar)),
+        KeyCode::Home => Some(Action::DismissInput(InputRequest::GoToStart)),
+        KeyCode::End => Some(Action::DismissInput(InputRequest::GoToEnd)),
         _ => None,
     }
 }
@@ -204,6 +249,7 @@ mod tests {
                         title: "test".to_string(),
                         repo: domain::RepoSlug::new("ooloth", "hub"),
                         url: "https://github.com/ooloth/hub/issues/1".to_string(),
+                        author: "agent".to_string(),
                         age: chrono::Duration::zero(),
                         urgency: domain::Urgency::Low,
                         labels: vec![],
@@ -376,6 +422,7 @@ mod tests {
     #[case(ctrl('d'), Some(Action::MovePageDown))]
     #[case(k(KeyCode::Enter), Some(Action::Enter))]
     #[case(ch('a'), Some(Action::ApproveForAgent))]
+    #[case(ch('d'), Some(Action::DismissIssue))]
     #[case(ch('i'), Some(Action::Investigate))]
     #[case(ch('o'), None)]
     #[case(ch('p'), None)]
@@ -391,6 +438,95 @@ mod tests {
         assert_eq!(
             key_to_action(&issue_detail_app(), k(KeyCode::Esc)),
             Some(Action::Back)
+        );
+    }
+
+    fn dismissing_app() -> App {
+        let parent = ListSnapshot {
+            items: vec![],
+            selected: 0,
+            filter: Filter::default(),
+        };
+        App {
+            ui: UiState {
+                screen: Screen::DismissingIssue {
+                    parent,
+                    issue: domain::Issue {
+                        number: 1,
+                        title: "test".to_string(),
+                        repo: domain::RepoSlug::new("ooloth", "hub"),
+                        url: "https://github.com/ooloth/hub/issues/1".to_string(),
+                        author: "agent".to_string(),
+                        age: chrono::Duration::zero(),
+                        urgency: domain::Urgency::Low,
+                        labels: vec![],
+                        body: None,
+                    },
+                    input: tui_input::Input::default(),
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    #[rstest]
+    #[case(k(KeyCode::Esc), Some(Action::CancelDismissal))]
+    #[case(k(KeyCode::Enter), Some(Action::CommitDismissal))]
+    #[case(
+        ch('x'),
+        Some(Action::DismissInput(tui_input::InputRequest::InsertChar('x')))
+    )]
+    #[case(
+        k(KeyCode::Backspace),
+        Some(Action::DismissInput(tui_input::InputRequest::DeletePrevChar))
+    )]
+    #[case(
+        k(KeyCode::Delete),
+        Some(Action::DismissInput(tui_input::InputRequest::DeleteNextChar))
+    )]
+    #[case(
+        k(KeyCode::Left),
+        Some(Action::DismissInput(tui_input::InputRequest::GoToPrevChar))
+    )]
+    #[case(
+        k(KeyCode::Right),
+        Some(Action::DismissInput(tui_input::InputRequest::GoToNextChar))
+    )]
+    #[case(
+        k(KeyCode::Home),
+        Some(Action::DismissInput(tui_input::InputRequest::GoToStart))
+    )]
+    #[case(
+        k(KeyCode::End),
+        Some(Action::DismissInput(tui_input::InputRequest::GoToEnd))
+    )]
+    fn dismiss_mode_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
+        assert_eq!(key_to_action(&dismissing_app(), key), expected);
+    }
+
+    #[test]
+    fn ctrl_c_quits_during_dismiss_prompt() {
+        assert_eq!(
+            key_to_action(&dismissing_app(), ctrl('c')),
+            Some(Action::Quit)
+        );
+    }
+
+    #[test]
+    fn normal_keys_intercepted_as_chars_in_dismiss_prompt() {
+        // 'q' and 'r' are captured as char inserts, not their usual actions
+        assert_eq!(
+            key_to_action(&dismissing_app(), ch('q')),
+            Some(Action::DismissInput(tui_input::InputRequest::InsertChar(
+                'q'
+            )))
+        );
+        assert_eq!(
+            key_to_action(&dismissing_app(), ch('r')),
+            Some(Action::DismissInput(tui_input::InputRequest::InsertChar(
+                'r'
+            )))
         );
     }
 

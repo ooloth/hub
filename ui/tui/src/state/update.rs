@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use ratatui::widgets::ListState;
 
-use domain::agent_ready_labels;
+use domain::{agent_ready_labels, dismissed_labels};
 
 use super::{
     Action, App, DetailView, Effect, EnterAction, InvestigateAction, Msg, RefreshState, Screen,
@@ -36,13 +36,13 @@ impl App {
             }
             Action::Back => {
                 self.ui.screen = match std::mem::take(&mut self.ui.screen) {
-                    Screen::Detail { parent, .. } | Screen::IssueDetail { parent, .. } => {
-                        Screen::UnifiedList {
-                            items: parent.items,
-                            selected: parent.selected,
-                            filter: parent.filter,
-                        }
-                    }
+                    Screen::Detail { parent, .. }
+                    | Screen::IssueDetail { parent, .. }
+                    | Screen::PrDetail { parent, .. } => Screen::UnifiedList {
+                        items: parent.items,
+                        selected: parent.selected,
+                        filter: parent.filter,
+                    },
                     // Already at top level — no-op.
                     other => other,
                 };
@@ -140,10 +140,16 @@ impl App {
             | Action::MovePageDown
             | Action::Enter
             | Action::ApproveForAgent
+            | Action::DismissIssue
+            | Action::DismissInput(_)
+            | Action::CommitDismissal
+            | Action::CancelDismissal
             | Action::Investigate => match &self.ui.screen {
                 Screen::UnifiedList { .. } => self.handle_unified_list(action),
                 Screen::IssueDetail { .. } => self.handle_issue_reader(action),
+                Screen::PrDetail { .. } => self.handle_pr_reader(action),
                 Screen::Detail { .. } => self.handle_detail(action),
+                Screen::DismissingIssue { .. } => self.handle_dismissing(action),
             },
         }
     }
@@ -298,7 +304,117 @@ impl App {
                     labels,
                 }]
             }
+            Action::DismissIssue => {
+                let Screen::IssueDetail { issue, parent, .. } = &self.ui.screen else {
+                    return vec![];
+                };
+                let issue = issue.clone();
+                let parent = parent.clone();
+                self.ui.screen = Screen::DismissingIssue {
+                    parent,
+                    issue,
+                    input: tui_input::Input::default(),
+                };
+                vec![]
+            }
             Action::Investigate => self.handle_investigate(),
+            _ => unreachable!(),
+        }
+    }
+
+    fn handle_pr_reader(&mut self, action: Action) -> Vec<Effect> {
+        match action {
+            Action::MoveUp => {
+                if let Screen::PrDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = scroll.saturating_sub(1);
+                }
+                vec![]
+            }
+            Action::MoveDown => {
+                if let Screen::PrDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = scroll.saturating_add(1);
+                }
+                vec![]
+            }
+            Action::MoveToTop => {
+                if let Screen::PrDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = 0;
+                }
+                vec![]
+            }
+            Action::MoveToBottom => {
+                if let Screen::PrDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = u16::MAX;
+                }
+                vec![]
+            }
+            Action::MovePageUp => {
+                if let Screen::PrDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = scroll.saturating_sub(10);
+                }
+                vec![]
+            }
+            Action::MovePageDown => {
+                if let Screen::PrDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = scroll.saturating_add(10);
+                }
+                vec![]
+            }
+            Action::Enter => self
+                .selected_url()
+                .map(|u| vec![Effect::OpenUrl(u.to_string())])
+                .unwrap_or_default(),
+            Action::Investigate => self.handle_investigate(),
+            _ => unreachable!(),
+        }
+    }
+
+    fn handle_dismissing(&mut self, action: Action) -> Vec<Effect> {
+        match action {
+            Action::CancelDismissal => {
+                let Screen::DismissingIssue { parent, issue, .. } =
+                    std::mem::take(&mut self.ui.screen)
+                else {
+                    return vec![];
+                };
+                self.ui.screen = Screen::IssueDetail {
+                    parent,
+                    issue,
+                    scroll: 0,
+                };
+                vec![]
+            }
+            Action::CommitDismissal => {
+                let Screen::DismissingIssue {
+                    parent,
+                    issue,
+                    input,
+                } = std::mem::take(&mut self.ui.screen)
+                else {
+                    return vec![];
+                };
+                let reason = input.value().to_string();
+                let labels = dismissed_labels(&issue.labels);
+                let repo = issue.repo.to_string();
+                let number = issue.number;
+                self.ui.screen = Screen::IssueDetail {
+                    parent,
+                    issue,
+                    scroll: 0,
+                };
+                vec![Effect::DismissIssue {
+                    repo,
+                    number,
+                    reason,
+                    labels,
+                }]
+            }
+            Action::DismissInput(req) => {
+                if let Screen::DismissingIssue { input, .. } = &mut self.ui.screen {
+                    input.handle(req);
+                }
+                vec![]
+            }
             _ => unreachable!(),
         }
     }
@@ -411,6 +527,27 @@ impl App {
                 };
                 vec![]
             }
+            EnterAction::OpenPrDetail(pr) => {
+                let Screen::UnifiedList {
+                    items,
+                    selected,
+                    filter,
+                } = &self.ui.screen
+                else {
+                    return vec![];
+                };
+                let snapshot = ListSnapshot {
+                    items: items.clone(),
+                    selected: *selected,
+                    filter: filter.clone(),
+                };
+                self.ui.screen = Screen::PrDetail {
+                    parent: snapshot,
+                    pr,
+                    scroll: 0,
+                };
+                vec![]
+            }
         }
     }
 
@@ -429,7 +566,10 @@ impl App {
                     _ => None,
                 }
             }
-            Screen::IssueDetail { issue, .. } => Some(&issue.url),
+            Screen::IssueDetail { issue, .. } | Screen::DismissingIssue { issue, .. } => {
+                Some(&issue.url)
+            }
+            Screen::PrDetail { pr, .. } => Some(&pr.url),
         }
     }
 }
@@ -449,6 +589,7 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
             Some(DisplayItem::Single(StatusItem::Issue(issue))) => {
                 EnterAction::OpenIssueDetail(issue.clone())
             }
+            Some(DisplayItem::Single(StatusItem::Pr(pr))) => EnterAction::OpenPrDetail(pr.clone()),
             Some(DisplayItem::Single(_)) => app
                 .selected_url()
                 .map(|u| EnterAction::OpenUrl(u.to_string()))
@@ -459,10 +600,11 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
             .selected_url()
             .map(|u| EnterAction::OpenUrl(u.to_string()))
             .unwrap_or(EnterAction::None),
-        Screen::IssueDetail { .. } => app
-            .selected_url()
-            .map(|u| EnterAction::OpenUrl(u.to_string()))
-            .unwrap_or(EnterAction::None),
+        Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } | Screen::PrDetail { .. } => {
+            app.selected_url()
+                .map(|u| EnterAction::OpenUrl(u.to_string()))
+                .unwrap_or(EnterAction::None)
+        }
     }
 }
 
@@ -531,9 +673,10 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
                 serde_json::to_string(&report).context("failed to serialize status report")?;
             let filter = match &app.ui.screen {
                 Screen::UnifiedList { filter, .. } => filter.clone(),
-                Screen::Detail { parent, .. } | Screen::IssueDetail { parent, .. } => {
-                    parent.filter.clone()
-                }
+                Screen::Detail { parent, .. }
+                | Screen::IssueDetail { parent, .. }
+                | Screen::PrDetail { parent, .. }
+                | Screen::DismissingIssue { parent, .. } => parent.filter.clone(),
             };
             app.data.raw_items = report.items.clone();
             let items = build_unified(report.items, &filter);
@@ -687,6 +830,7 @@ mod tests {
                 title: "TUI investigation".to_string(),
                 repo: domain::RepoSlug::new("ooloth", "hub"),
                 url: "https://github.com/ooloth/hub/issues/31".to_string(),
+                author: "agent".to_string(),
                 age: chrono::Duration::zero(),
                 urgency: domain::Urgency::Low,
                 labels: vec![],
@@ -715,9 +859,16 @@ mod tests {
                 kind: domain::PrKind::ToReview,
                 author: "alice".to_string(),
                 review_decision: None,
-                review_count: 0,
+                approval_count: 0,
+                comment_count: 0,
                 head_branch: "feat/thing".to_string(),
                 base_branch: "main".to_string(),
+                body: None,
+                ci_status: None,
+                changed_files: vec![],
+                total_changed_files: 0,
+                review_threads: vec![],
+                pr_comments: vec![],
             },
         ))]);
         assert_eq!(
@@ -747,9 +898,16 @@ mod tests {
                 kind: domain::PrKind::Mine,
                 author: "ooloth".to_string(),
                 review_decision: Some(domain::ReviewDecision::Approved),
-                review_count: 1,
+                approval_count: 1,
+                comment_count: 0,
                 head_branch: "feat/mine".to_string(),
                 base_branch: "main".to_string(),
+                body: None,
+                ci_status: None,
+                changed_files: vec![],
+                total_changed_files: 0,
+                review_threads: vec![],
+                pr_comments: vec![],
             },
         ))]);
         assert_eq!(
@@ -779,9 +937,16 @@ mod tests {
                 kind: domain::PrKind::MyDraft,
                 author: "ooloth".to_string(),
                 review_decision: Some(domain::ReviewDecision::ChangesRequested),
-                review_count: 2,
+                approval_count: 0,
+                comment_count: 0,
                 head_branch: "feat/draft".to_string(),
                 base_branch: "main".to_string(),
+                body: None,
+                ci_status: None,
+                changed_files: vec![],
+                total_changed_files: 0,
+                review_threads: vec![],
+                pr_comments: vec![],
             },
         ))]);
         assert_eq!(
@@ -1204,6 +1369,7 @@ mod tests {
             title: "Test issue".to_string(),
             repo: domain::RepoSlug::new("ooloth", "hub"),
             url: "https://github.com/ooloth/hub/issues/42".to_string(),
+            author: "agent".to_string(),
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::Low,
             labels: vec!["status:needs-human-review".to_string()],
@@ -1375,6 +1541,107 @@ mod tests {
             panic!("expected OpenUrl");
         };
         assert!(url.contains("issues/42"));
+    }
+
+    // --- DismissIssue flow ---
+
+    fn app_in_dismissing() -> App {
+        let mut app = app_in_issue_detail();
+        app.update(Action::DismissIssue);
+        app
+    }
+
+    #[test]
+    fn dismiss_issue_transitions_to_dismissing_screen() {
+        let app = app_in_dismissing();
+        assert!(matches!(
+            app.current_screen(),
+            Screen::DismissingIssue { .. }
+        ));
+    }
+
+    #[test]
+    fn dismiss_issue_preserves_parent_and_issue() {
+        let app = app_in_dismissing();
+        let Screen::DismissingIssue { issue, .. } = app.current_screen() else {
+            panic!("expected DismissingIssue");
+        };
+        assert_eq!(issue.number, 42);
+        assert_eq!(issue.repo.to_string(), "ooloth/hub");
+    }
+
+    #[test]
+    fn dismiss_input_insert_char_updates_value() {
+        let mut app = app_in_dismissing();
+        app.update(Action::DismissInput(tui_input::InputRequest::InsertChar(
+            'h',
+        )));
+        app.update(Action::DismissInput(tui_input::InputRequest::InsertChar(
+            'i',
+        )));
+        let Screen::DismissingIssue { input, .. } = app.current_screen() else {
+            panic!("expected DismissingIssue");
+        };
+        assert_eq!(input.value(), "hi");
+    }
+
+    #[test]
+    fn cancel_dismissal_returns_to_issue_detail_with_same_issue() {
+        let mut app = app_in_dismissing();
+        app.update(Action::CancelDismissal);
+        let Screen::IssueDetail { issue, .. } = app.current_screen() else {
+            panic!("expected IssueDetail");
+        };
+        assert_eq!(issue.number, 42);
+    }
+
+    #[test]
+    fn cancel_dismissal_emits_no_effects() {
+        let mut app = app_in_dismissing();
+        let effects = app.update(Action::CancelDismissal);
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn commit_dismissal_returns_to_issue_detail() {
+        let mut app = app_in_dismissing();
+        app.update(Action::CommitDismissal);
+        assert!(matches!(app.current_screen(), Screen::IssueDetail { .. }));
+    }
+
+    #[test]
+    fn commit_dismissal_emits_dismiss_issue_effect_with_correct_fields() {
+        let mut app = app_in_dismissing();
+        app.update(Action::DismissInput(tui_input::InputRequest::InsertChar(
+            'x',
+        )));
+        let effects = app.update(Action::CommitDismissal);
+        assert_eq!(effects.len(), 1);
+        let Effect::DismissIssue {
+            repo,
+            number,
+            reason,
+            labels,
+        } = effects.into_iter().next().unwrap()
+        else {
+            panic!("expected DismissIssue");
+        };
+        assert_eq!(repo, "ooloth/hub");
+        assert_eq!(number, 42);
+        assert_eq!(reason, "x");
+        assert!(labels.contains(&"wontfix".to_string()));
+        assert!(!labels.contains(&"status:needs-human-review".to_string()));
+    }
+
+    #[test]
+    fn commit_dismissal_with_empty_reason_still_emits_effect() {
+        let mut app = app_in_dismissing();
+        let effects = app.update(Action::CommitDismissal);
+        assert_eq!(effects.len(), 1);
+        let Effect::DismissIssue { reason, .. } = effects.into_iter().next().unwrap() else {
+            panic!("expected DismissIssue");
+        };
+        assert_eq!(reason, "");
     }
 
     // --- compute_enter_action ---

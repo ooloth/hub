@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
 use domain::{
-    CiFailure, GithubPrsRepo, Issue, PrKind, PullRequest, RepoSlug, ReviewDecision, Urgency,
-    NEEDS_HUMAN_REVIEW_LABEL,
+    ChangedFile, CiFailure, CiStatus, GithubPrsRepo, Issue, PrKind, PullRequest, RepoSlug,
+    ReviewComment, ReviewDecision, ReviewThread, Urgency, NEEDS_HUMAN_REVIEW_LABEL,
 };
 use serde::Deserialize;
 
@@ -11,6 +11,7 @@ struct ApiIssue {
     number: u64,
     title: String,
     html_url: String,
+    user: ApiUser,
     created_at: String,
     #[serde(default)]
     labels: Vec<ApiLabel>,
@@ -19,6 +20,11 @@ struct ApiIssue {
     #[serde(default)]
     pull_request: Option<PullRequestMarker>,
     body: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ApiUser {
+    login: String,
 }
 
 #[derive(Deserialize)]
@@ -56,6 +62,7 @@ struct PrNode {
     number: u64,
     title: String,
     url: String,
+    body: Option<String>,
     author: PrAuthor,
     #[serde(rename = "createdAt")]
     created_at: String,
@@ -63,13 +70,22 @@ struct PrNode {
     is_draft: bool,
     #[serde(rename = "reviewDecision")]
     review_decision: Option<String>,
-    reviews: ReviewCounts,
+    reviews: ReviewConnection,
     repository: PrRepository,
     assignees: PrAssignees,
     #[serde(rename = "headRefName")]
     head_ref_name: String,
     #[serde(rename = "baseRefName")]
     base_ref_name: String,
+    #[serde(default)]
+    commits: CommitConnection,
+    #[serde(default)]
+    files: FileConnection,
+    #[serde(default)]
+    #[serde(rename = "reviewThreads")]
+    review_threads: ReviewThreadConnection,
+    #[serde(default)]
+    comments: PrCommentConnection,
 }
 
 #[derive(Deserialize)]
@@ -77,10 +93,14 @@ struct PrAuthor {
     login: String,
 }
 
+#[derive(Deserialize, Default)]
+struct ReviewConnection {
+    nodes: Vec<ReviewStateNode>,
+}
+
 #[derive(Deserialize)]
-struct ReviewCounts {
-    #[serde(rename = "totalCount")]
-    total_count: u32,
+struct ReviewStateNode {
+    state: String,
 }
 
 #[derive(Deserialize)]
@@ -97,6 +117,95 @@ struct PrAssignees {
 #[derive(Deserialize)]
 struct PrAssignee {
     login: String,
+}
+
+#[derive(Deserialize, Default)]
+struct CommitConnection {
+    nodes: Vec<CommitNode>,
+}
+
+#[derive(Deserialize)]
+struct CommitNode {
+    commit: CommitObject,
+}
+
+#[derive(Deserialize)]
+struct CommitObject {
+    #[serde(rename = "statusCheckRollup")]
+    status_check_rollup: Option<StatusCheckRollup>,
+}
+
+#[derive(Deserialize)]
+struct StatusCheckRollup {
+    state: String,
+}
+
+#[derive(Deserialize, Default)]
+struct FileConnection {
+    #[serde(rename = "totalCount")]
+    total_count: u32,
+    nodes: Vec<FileNode>,
+}
+
+#[derive(Deserialize)]
+struct FileNode {
+    path: String,
+    additions: u32,
+    deletions: u32,
+}
+
+#[derive(Deserialize)]
+struct PrFileEntry {
+    filename: String,
+    #[serde(default)]
+    patch: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+struct ReviewThreadConnection {
+    nodes: Vec<ReviewThreadNode>,
+}
+
+#[derive(Deserialize)]
+struct ReviewThreadNode {
+    #[serde(rename = "isResolved")]
+    is_resolved: bool,
+    path: String,
+    line: Option<u32>,
+    #[serde(rename = "diffSide")]
+    diff_side: String,
+    comments: ReviewCommentConnection,
+}
+
+#[derive(Deserialize, Default)]
+struct ReviewCommentConnection {
+    nodes: Vec<ReviewCommentNode>,
+}
+
+#[derive(Deserialize)]
+struct ReviewCommentNode {
+    author: ReviewCommentAuthor,
+    #[serde(rename = "createdAt")]
+    created_at: String,
+    body: String,
+}
+
+#[derive(Deserialize)]
+struct ReviewCommentAuthor {
+    login: String,
+}
+
+#[derive(Deserialize, Default)]
+struct PrCommentConnection {
+    nodes: Vec<PrCommentNode>,
+}
+
+#[derive(Deserialize)]
+struct PrCommentNode {
+    author: ReviewCommentAuthor,
+    #[serde(rename = "createdAt")]
+    created_at: String,
+    body: String,
 }
 
 fn age(created_at: &str) -> chrono::Duration {
@@ -119,13 +228,15 @@ pub async fn prs_awaiting_review(token: &str, repos: &[GithubPrsRepo]) -> Result
     if repos.is_empty() {
         return Ok(vec![]);
     }
-    nodes_to_prs(
+    let mut prs = nodes_to_prs(
         graphql_prs(token, "is:open is:pr review-requested:@me", repos).await?,
         Urgency::Medium,
         PrKind::ToReview,
         None,
         repos,
-    )
+    )?;
+    enrich_with_file_patches(token, &mut prs).await;
+    Ok(prs)
 }
 
 /// Returns open non-draft PRs across the given repos authored by `github_username`,
@@ -141,13 +252,15 @@ pub async fn my_open_prs(
     if repos.is_empty() {
         return Ok(vec![]);
     }
-    nodes_to_prs(
+    let mut prs = nodes_to_prs(
         graphql_prs(token, "is:open is:pr -is:draft author:@me", repos).await?,
         Urgency::High,
         PrKind::Mine,
         Some(github_username),
         repos,
-    )
+    )?;
+    enrich_with_file_patches(token, &mut prs).await;
+    Ok(prs)
 }
 
 /// Returns open draft PRs across the given repos authored by `github_username`,
@@ -163,13 +276,15 @@ pub async fn my_draft_prs(
     if repos.is_empty() {
         return Ok(vec![]);
     }
-    nodes_to_prs(
+    let mut prs = nodes_to_prs(
         graphql_prs(token, "is:open is:pr is:draft author:@me", repos).await?,
         Urgency::Medium,
         PrKind::MyDraft,
         Some(github_username),
         repos,
-    )
+    )?;
+    enrich_with_file_patches(token, &mut prs).await;
+    Ok(prs)
 }
 
 fn nodes_to_prs(
@@ -207,22 +322,147 @@ fn nodes_to_prs(
                             node.repository.name_with_owner
                         )
                     })?;
+            let approval_count = node
+                .reviews
+                .nodes
+                .iter()
+                .filter(|r| r.state == "APPROVED")
+                .count() as u32;
+            let thread_comment_count: usize = node
+                .review_threads
+                .nodes
+                .iter()
+                .map(|t| t.comments.nodes.len())
+                .sum();
+            let comment_count = (thread_comment_count + node.comments.nodes.len()) as u32;
             Ok(PullRequest {
                 number: node.number,
                 title: node.title,
                 repo: RepoSlug::new(owner, repo),
                 url: node.url,
+                body: node.body,
+                ci_status: node
+                    .commits
+                    .nodes
+                    .first()
+                    .and_then(|c| c.commit.status_check_rollup.as_ref())
+                    .and_then(|r| parse_ci_state(&r.state)),
+                total_changed_files: node.files.total_count,
+                changed_files: node
+                    .files
+                    .nodes
+                    .into_iter()
+                    .map(|f| ChangedFile {
+                        path: f.path,
+                        additions: f.additions,
+                        deletions: f.deletions,
+                        patch: None,
+                    })
+                    .collect(),
+                review_threads: node
+                    .review_threads
+                    .nodes
+                    .into_iter()
+                    .filter(|t| !t.is_resolved && t.diff_side == "RIGHT")
+                    .map(|t| ReviewThread {
+                        path: t.path,
+                        line: t.line,
+                        comments: t
+                            .comments
+                            .nodes
+                            .into_iter()
+                            .map(|c| ReviewComment {
+                                author: c.author.login,
+                                age: age(&c.created_at),
+                                body: c.body,
+                            })
+                            .collect(),
+                    })
+                    .collect(),
+                pr_comments: node
+                    .comments
+                    .nodes
+                    .into_iter()
+                    .map(|c| ReviewComment {
+                        author: c.author.login,
+                        age: age(&c.created_at),
+                        body: c.body,
+                    })
+                    .collect(),
                 age: age(&node.created_at),
                 urgency,
                 kind: if node.is_draft { PrKind::MyDraft } else { kind },
                 author: node.author.login,
                 review_decision: parse_review_decision(node.review_decision.as_deref()),
-                review_count: node.reviews.total_count,
+                approval_count,
+                comment_count,
                 head_branch: node.head_ref_name,
                 base_branch: node.base_ref_name,
             })
         })
         .collect()
+}
+
+async fn fetch_file_patches(
+    token: &str,
+    repo: &str,
+    number: u64,
+) -> std::collections::HashMap<String, Option<String>> {
+    let result: Result<Vec<PrFileEntry>> = async {
+        let entries: Vec<PrFileEntry> = reqwest::Client::new()
+            .get(format!(
+                "https://api.github.com/repos/{repo}/pulls/{number}/files"
+            ))
+            .query(&[("per_page", "100")])
+            .bearer_auth(token)
+            .header("User-Agent", "hub-cli")
+            .header("Accept", "application/vnd.github.v3+json")
+            .send()
+            .await
+            .context("failed to reach GitHub API for PR files")?
+            .error_for_status()
+            .context("GitHub API error fetching PR files")?
+            .json()
+            .await
+            .context("failed to parse PR files response")?;
+        Ok(entries)
+    }
+    .await;
+    result
+        .unwrap_or_default()
+        .into_iter()
+        .map(|e| (e.filename, e.patch))
+        .collect()
+}
+
+async fn enrich_with_file_patches(token: &str, prs: &mut [PullRequest]) {
+    let futures: Vec<_> = prs
+        .iter()
+        .map(|pr| {
+            let token = token.to_string();
+            let repo = pr.repo.to_string();
+            let number = pr.number;
+            async move { fetch_file_patches(&token, &repo, number).await }
+        })
+        .collect();
+    let all_patches = futures::future::join_all(futures).await;
+    for (pr, patches) in prs.iter_mut().zip(all_patches) {
+        for file in pr.changed_files.iter_mut() {
+            if let Some(patch) = patches.get(&file.path) {
+                file.patch = patch.clone();
+            }
+        }
+    }
+}
+
+fn parse_ci_state(state: &str) -> Option<CiStatus> {
+    match state {
+        "SUCCESS" => Some(CiStatus::Success),
+        "FAILURE" | "ERROR" => Some(CiStatus::Failure),
+        "PENDING" | "EXPECTED" => Some(CiStatus::Pending),
+        "NEUTRAL" => Some(CiStatus::Neutral),
+        _ => None,
+    }
 }
 
 fn parse_review_decision(s: Option<&str>) -> Option<ReviewDecision> {
@@ -242,13 +482,19 @@ async fn graphql_prs(token: &str, base: &str, repos: &[GithubPrsRepo]) -> Result
     let q = format!("{base} {repo_filters}");
     let query = format!(
         r#"{{ search(query: "{q}", type: ISSUE, first: 100) {{ nodes {{ ... on PullRequest {{
-            number title url
+            number title url body
             author {{ login }}
             createdAt isDraft reviewDecision
             headRefName baseRefName
-            reviews {{ totalCount }}
+            reviews(first: 50) {{ nodes {{ state }} }}
             repository {{ nameWithOwner }}
             assignees(first: 10) {{ nodes {{ login }} }}
+            commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
+            files(first: 100) {{ totalCount nodes {{ path additions deletions }} }}
+            reviewThreads(first: 50) {{ nodes {{ isResolved path line diffSide
+                comments(first: 10) {{ nodes {{ author {{ login }} createdAt body }} }}
+            }} }}
+            comments(first: 50) {{ nodes {{ author {{ login }} createdAt body }} }}
         }} }} }} }}"#
     );
     let response: GraphQlResponse = reqwest::Client::new()
@@ -356,6 +602,7 @@ fn to_domain_issue(item: ApiIssue, repo: RepoSlug, username: &str) -> Option<Iss
         title: item.title,
         repo,
         url: item.html_url,
+        author: item.user.login,
         age: age(&item.created_at),
         urgency: classify_urgency(&assignees, &labels, username),
         labels,
@@ -400,6 +647,68 @@ pub async fn set_issue_labels(
         .with_context(|| format!("failed to reach GitHub API for {repo}#{number}"))?
         .error_for_status()
         .with_context(|| format!("GitHub API error setting labels on {repo}#{number}"))?;
+    Ok(())
+}
+
+/// Dismisses an issue as won't fix: replaces its labels, optionally posts a
+/// reason comment, then closes the issue with `state_reason: not_planned`.
+///
+/// Steps run sequentially; if any step fails the error identifies which one.
+pub async fn dismiss_issue(
+    token: &str,
+    repo: &str,
+    number: u64,
+    reason: &str,
+    labels: &[String],
+) -> Result<()> {
+    let client = reqwest::Client::new();
+
+    client
+        .put(format!(
+            "https://api.github.com/repos/{repo}/issues/{number}/labels"
+        ))
+        .bearer_auth(token)
+        .header("User-Agent", "hub-cli")
+        .header("Accept", "application/vnd.github.v3+json")
+        .json(&serde_json::json!({ "labels": labels }))
+        .send()
+        .await
+        .with_context(|| format!("failed to reach GitHub API setting labels on {repo}#{number}"))?
+        .error_for_status()
+        .with_context(|| format!("GitHub API error setting labels on {repo}#{number}"))?;
+
+    if !reason.is_empty() {
+        client
+            .post(format!(
+                "https://api.github.com/repos/{repo}/issues/{number}/comments"
+            ))
+            .bearer_auth(token)
+            .header("User-Agent", "hub-cli")
+            .header("Accept", "application/vnd.github.v3+json")
+            .json(&serde_json::json!({ "body": reason }))
+            .send()
+            .await
+            .with_context(|| {
+                format!("failed to reach GitHub API posting comment on {repo}#{number}")
+            })?
+            .error_for_status()
+            .with_context(|| format!("GitHub API error posting comment on {repo}#{number}"))?;
+    }
+
+    client
+        .patch(format!(
+            "https://api.github.com/repos/{repo}/issues/{number}"
+        ))
+        .bearer_auth(token)
+        .header("User-Agent", "hub-cli")
+        .header("Accept", "application/vnd.github.v3+json")
+        .json(&serde_json::json!({ "state": "closed", "state_reason": "not_planned" }))
+        .send()
+        .await
+        .with_context(|| format!("failed to reach GitHub API closing {repo}#{number}"))?
+        .error_for_status()
+        .with_context(|| format!("GitHub API error closing {repo}#{number}"))?;
+
     Ok(())
 }
 
@@ -730,6 +1039,9 @@ mod tests {
             number: 7,
             title: "Fix the thing".to_string(),
             html_url: "https://github.com/owner/repo/issues/7".to_string(),
+            user: ApiUser {
+                login: "bob".to_string(),
+            },
             created_at: "2024-01-01T00:00:00Z".to_string(),
             labels: vec![ApiLabel {
                 name: "bug".to_string(),
@@ -756,6 +1068,7 @@ mod tests {
         assert_eq!(issue.title, "Fix the thing");
         assert_eq!(issue.repo.to_string(), "owner/repo");
         assert_eq!(issue.url, "https://github.com/owner/repo/issues/7");
+        assert_eq!(issue.author, "bob");
         assert_eq!(issue.labels, vec!["bug"]);
         assert_eq!(issue.urgency, Urgency::Medium); // assigned to alice
         assert_eq!(issue.body, Some("This is the issue body.".to_string()));
@@ -990,6 +1303,21 @@ mod tests {
         assert!(parse_cutoff("not-a-duration").is_err());
     }
 
+    // ── parse_ci_state ────────────────────────────────────────────────────────
+
+    #[rstest::rstest]
+    #[case("SUCCESS", Some(CiStatus::Success))]
+    #[case("FAILURE", Some(CiStatus::Failure))]
+    #[case("ERROR", Some(CiStatus::Failure))]
+    #[case("PENDING", Some(CiStatus::Pending))]
+    #[case("EXPECTED", Some(CiStatus::Pending))]
+    #[case("NEUTRAL", Some(CiStatus::Neutral))]
+    #[case("", None)]
+    #[case("UNKNOWN", None)]
+    fn parse_ci_state_cases(#[case] input: &str, #[case] expected: Option<CiStatus>) {
+        assert_eq!(parse_ci_state(input), expected);
+    }
+
     // ── nodes_to_prs (assignee and author filtering) ─────────────────────────
 
     fn make_node(assignee_logins: Vec<&str>) -> PrNode {
@@ -1001,13 +1329,14 @@ mod tests {
             number: 1,
             title: "title".into(),
             url: "https://github.com/owner/repo/pull/1".into(),
+            body: None,
             author: PrAuthor {
                 login: author.into(),
             },
             created_at: "2024-01-01T00:00:00Z".into(),
             is_draft: false,
             review_decision: None,
-            reviews: ReviewCounts { total_count: 0 },
+            reviews: ReviewConnection::default(),
             repository: PrRepository {
                 name_with_owner: repo.into(),
             },
@@ -1019,6 +1348,10 @@ mod tests {
             },
             head_ref_name: "feat/test".into(),
             base_ref_name: "main".into(),
+            commits: CommitConnection::default(),
+            files: FileConnection::default(),
+            review_threads: ReviewThreadConnection::default(),
+            comments: PrCommentConnection::default(),
         }
     }
 

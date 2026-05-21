@@ -171,12 +171,13 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
 pub(crate) fn item_line(item: &StatusItem) -> LineParts {
     match item {
         StatusItem::Pr(pr) => {
-            let review_str = || {
-                if pr.review_count == 1 {
-                    "1 review".to_string()
-                } else {
-                    format!("{} reviews", pr.review_count)
-                }
+            let review_status = match pr.review_decision {
+                Some(domain::ReviewDecision::ChangesRequested) => "changes requested".to_string(),
+                Some(domain::ReviewDecision::Approved) => match pr.approval_count {
+                    1 => "1 approval".to_string(),
+                    n => format!("{n} approvals"),
+                },
+                None => "no reviews".to_string(),
             };
             let dim_inline = if pr.kind == domain::PrKind::MyDraft {
                 vec![
@@ -185,21 +186,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
                     "draft".to_string(),
                 ]
             } else {
-                match pr.review_decision {
-                    Some(domain::ReviewDecision::Approved) => vec![
-                        format!(" #{}", pr.number),
-                        pr.author.clone(),
-                        "approved".to_string(),
-                        review_str(),
-                    ],
-                    Some(domain::ReviewDecision::ChangesRequested) => vec![
-                        format!(" #{}", pr.number),
-                        pr.author.clone(),
-                        "changes requested".to_string(),
-                        review_str(),
-                    ],
-                    None => vec![format!(" #{}", pr.number), pr.author.clone(), review_str()],
-                }
+                vec![format!(" #{}", pr.number), pr.author.clone(), review_status]
             };
             LineParts {
                 primary: vec![pr.title.clone()],
@@ -428,6 +415,39 @@ impl Filter {
     }
 }
 
+struct QueryTerms {
+    positives: Vec<String>,
+    negatives: Vec<String>,
+}
+
+impl QueryTerms {
+    fn parse(q: &str) -> Self {
+        let mut positives = Vec::new();
+        let mut negatives = Vec::new();
+        for token in q.split_whitespace() {
+            match token.strip_prefix('-') {
+                Some(neg) if !neg.is_empty() => negatives.push(neg.to_lowercase()),
+                Some(_) => {} // bare '-', ignored
+                None => positives.push(token.to_lowercase()),
+            }
+        }
+        QueryTerms {
+            positives,
+            negatives,
+        }
+    }
+
+    fn matches(&self, lowercased_text: &str) -> bool {
+        self.positives
+            .iter()
+            .all(|p| lowercased_text.contains(p.as_str()))
+            && self
+                .negatives
+                .iter()
+                .all(|n| !lowercased_text.contains(n.as_str()))
+    }
+}
+
 pub(crate) fn build_unified(items: Vec<StatusItem>, filter: &Filter) -> Vec<DisplayItem> {
     let filtered: Vec<StatusItem> = items
         .into_iter()
@@ -438,11 +458,9 @@ pub(crate) fn build_unified(items: Vec<StatusItem>, filter: &Filter) -> Vec<Disp
                 }
             }
             if let Some(q) = &filter.query {
-                if !item_line(item)
-                    .all_text()
-                    .to_lowercase()
-                    .contains(&q.to_lowercase())
-                {
+                let terms = QueryTerms::parse(q);
+                let text = item_line(item).all_text().to_lowercase();
+                if !terms.matches(&text) {
                     return false;
                 }
             }
@@ -506,9 +524,16 @@ mod tests {
             kind: domain::PrKind::ToReview,
             author: "alice".to_string(),
             review_decision: None,
-            review_count: 0,
+            approval_count: 0,
+            comment_count: 0,
             head_branch: "feat/add-feature".to_string(),
             base_branch: "main".to_string(),
+            body: None,
+            ci_status: None,
+            changed_files: vec![],
+            total_changed_files: 0,
+            review_threads: vec![],
+            pr_comments: vec![],
         })
     }
 
@@ -518,6 +543,7 @@ mod tests {
             title: "Fix bug".to_string(),
             repo: domain::RepoSlug::new("owner", "repo"),
             url: "https://github.com/owner/repo/issues/7".to_string(),
+            author: "alice".to_string(),
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::Low,
             labels: vec![],
@@ -531,6 +557,7 @@ mod tests {
             title: "Fix bug".to_string(),
             repo: domain::RepoSlug::new("owner", "repo"),
             url: "https://github.com/owner/repo/issues/8".to_string(),
+            author: "alice".to_string(),
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::Low,
             labels: vec!["bug".to_string(), "wontfix".to_string()],
@@ -694,7 +721,7 @@ mod tests {
     fn make_pr_with(
         kind: domain::PrKind,
         review_decision: Option<domain::ReviewDecision>,
-        review_count: u32,
+        approval_count: u32,
     ) -> StatusItem {
         StatusItem::Pr(domain::PullRequest {
             number: 42,
@@ -706,9 +733,16 @@ mod tests {
             kind,
             author: "ooloth".to_string(),
             review_decision,
-            review_count,
+            approval_count,
+            comment_count: 0,
             head_branch: "feat/add-feature".to_string(),
             base_branch: "main".to_string(),
+            body: None,
+            ci_status: None,
+            changed_files: vec![],
+            total_changed_files: 0,
+            review_threads: vec![],
+            pr_comments: vec![],
         })
     }
 
@@ -1036,6 +1070,134 @@ mod tests {
             query: Some("foo".to_string()),
         };
         assert!(!f.is_empty());
+    }
+
+    // ── query parsing: AND logic and negative terms ──────────────────────────
+
+    // pr() all_text: "PR Add feature  #42 alice no reviews owner/repo now"
+    // issue() all_text: "Issue Fix bug  #7 owner/repo now"
+
+    #[test]
+    fn build_unified_query_and_matches_words_non_adjacently() {
+        // "feature" and "alice" both appear in pr() but are not adjacent —
+        // old substring match misses this; AND logic finds it
+        let result = build_unified(
+            vec![pr(), issue()],
+            &Filter {
+                category: None,
+                query: Some("feature alice".to_string()),
+            },
+        );
+        assert_eq!(result.len(), 1);
+        assert!(matches!(&result[0], DisplayItem::Single(StatusItem::Pr(_))));
+    }
+
+    #[test]
+    fn build_unified_query_and_excludes_when_any_word_absent() {
+        // pr() has "feature" but not "zzznomatch" — no match
+        let result = build_unified(
+            vec![pr(), issue()],
+            &Filter {
+                category: None,
+                query: Some("feature zzznomatch".to_string()),
+            },
+        );
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn build_unified_query_negative_term_excludes_matching_items() {
+        // "-alice" — "alice" appears in pr()'s dim_inline (author) but not in issue()
+        let result = build_unified(
+            vec![pr(), issue()],
+            &Filter {
+                category: None,
+                query: Some("-alice".to_string()),
+            },
+        );
+        assert_eq!(result.len(), 1);
+        assert!(matches!(
+            &result[0],
+            DisplayItem::Single(StatusItem::Issue(_))
+        ));
+    }
+
+    #[test]
+    fn build_unified_query_mixed_positive_and_negative() {
+        // "owner" appears in both (from "owner/repo"); "-alice" excludes pr()
+        let result = build_unified(
+            vec![pr(), issue()],
+            &Filter {
+                category: None,
+                query: Some("owner -alice".to_string()),
+            },
+        );
+        assert_eq!(result.len(), 1);
+        assert!(matches!(
+            &result[0],
+            DisplayItem::Single(StatusItem::Issue(_))
+        ));
+    }
+
+    #[test]
+    fn build_unified_query_negative_term_is_case_insensitive() {
+        // "-ALICE" excludes pr() — negation terms are lowercased before matching
+        let result = build_unified(
+            vec![pr(), issue()],
+            &Filter {
+                category: None,
+                query: Some("-ALICE".to_string()),
+            },
+        );
+        assert_eq!(result.len(), 1);
+        assert!(matches!(
+            &result[0],
+            DisplayItem::Single(StatusItem::Issue(_))
+        ));
+    }
+
+    #[test]
+    fn build_unified_query_bare_hyphen_is_ignored() {
+        // "- fix": bare "-" is dropped; "fix" matches issue() which has "Fix bug"
+        let result = build_unified(
+            vec![pr(), issue()],
+            &Filter {
+                category: None,
+                query: Some("- fix".to_string()),
+            },
+        );
+        assert_eq!(result.len(), 1);
+        assert!(matches!(
+            &result[0],
+            DisplayItem::Single(StatusItem::Issue(_))
+        ));
+    }
+
+    #[test]
+    fn build_unified_query_hyphen_mid_word_is_literal_positive() {
+        // "fix-bug" — leading char is 'f', not '-', so treated as positive literal
+        // issue() has "Fix bug" (space, not hyphen) → no match → empty
+        let result = build_unified(
+            vec![pr(), issue()],
+            &Filter {
+                category: None,
+                query: Some("fix-bug".to_string()),
+            },
+        );
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn build_unified_query_whitespace_only_matches_all() {
+        // "   " — all tokens dropped, effectively no constraint
+        let result = build_unified(
+            vec![pr(), issue(), ci()],
+            &Filter {
+                category: None,
+                query: Some("   ".to_string()),
+            },
+        );
+        assert_eq!(result.len(), 3);
     }
 
     #[test]
