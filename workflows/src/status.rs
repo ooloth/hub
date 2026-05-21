@@ -131,23 +131,26 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
     }
 
     // GitHub PRs — collect errors for each category that fails.
+    let mut all_prs: Vec<PullRequest> = Vec::new();
     if let Ok(prs) = my_open {
-        items.extend(prs.into_iter().map(StatusItem::Pr));
+        all_prs.extend(prs);
     } else {
         errors.push("github my open prs".to_string());
     }
-
     if let Ok(prs) = review_queue {
-        items.extend(prs.into_iter().map(StatusItem::Pr));
+        all_prs.extend(prs);
     } else {
         errors.push("github prs awaiting review".to_string());
     }
-
     if let Ok(prs) = my_drafts {
-        items.extend(prs.into_iter().map(StatusItem::Pr));
+        all_prs.extend(prs);
     } else {
         errors.push("github my draft prs".to_string());
     }
+    // A PR can match multiple queries (e.g. author + review-requested); keep first occurrence.
+    let mut seen_prs: std::collections::HashSet<(String, u64)> = std::collections::HashSet::new();
+    all_prs.retain(|pr| seen_prs.insert((pr.repo.to_string(), pr.number)));
+    items.extend(all_prs.into_iter().map(StatusItem::Pr));
 
     // GitHub CI.
     if let Ok(ci) = ci_failures {
