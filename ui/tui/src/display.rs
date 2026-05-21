@@ -415,6 +415,39 @@ impl Filter {
     }
 }
 
+struct QueryTerms {
+    positives: Vec<String>,
+    negatives: Vec<String>,
+}
+
+impl QueryTerms {
+    fn parse(q: &str) -> Self {
+        let mut positives = Vec::new();
+        let mut negatives = Vec::new();
+        for token in q.split_whitespace() {
+            match token.strip_prefix('-') {
+                Some(neg) if !neg.is_empty() => negatives.push(neg.to_lowercase()),
+                Some(_) => {} // bare '-', ignored
+                None => positives.push(token.to_lowercase()),
+            }
+        }
+        QueryTerms {
+            positives,
+            negatives,
+        }
+    }
+
+    fn matches(&self, lowercased_text: &str) -> bool {
+        self.positives
+            .iter()
+            .all(|p| lowercased_text.contains(p.as_str()))
+            && self
+                .negatives
+                .iter()
+                .all(|n| !lowercased_text.contains(n.as_str()))
+    }
+}
+
 pub(crate) fn build_unified(items: Vec<StatusItem>, filter: &Filter) -> Vec<DisplayItem> {
     let filtered: Vec<StatusItem> = items
         .into_iter()
@@ -425,11 +458,9 @@ pub(crate) fn build_unified(items: Vec<StatusItem>, filter: &Filter) -> Vec<Disp
                 }
             }
             if let Some(q) = &filter.query {
-                if !item_line(item)
-                    .all_text()
-                    .to_lowercase()
-                    .contains(&q.to_lowercase())
-                {
+                let terms = QueryTerms::parse(q);
+                let text = item_line(item).all_text().to_lowercase();
+                if !terms.matches(&text) {
                     return false;
                 }
             }
@@ -1039,6 +1070,134 @@ mod tests {
             query: Some("foo".to_string()),
         };
         assert!(!f.is_empty());
+    }
+
+    // ── query parsing: AND logic and negative terms ──────────────────────────
+
+    // pr() all_text: "PR Add feature  #42 alice no reviews owner/repo now"
+    // issue() all_text: "Issue Fix bug  #7 owner/repo now"
+
+    #[test]
+    fn build_unified_query_and_matches_words_non_adjacently() {
+        // "feature" and "alice" both appear in pr() but are not adjacent —
+        // old substring match misses this; AND logic finds it
+        let result = build_unified(
+            vec![pr(), issue()],
+            &Filter {
+                category: None,
+                query: Some("feature alice".to_string()),
+            },
+        );
+        assert_eq!(result.len(), 1);
+        assert!(matches!(&result[0], DisplayItem::Single(StatusItem::Pr(_))));
+    }
+
+    #[test]
+    fn build_unified_query_and_excludes_when_any_word_absent() {
+        // pr() has "feature" but not "zzznomatch" — no match
+        let result = build_unified(
+            vec![pr(), issue()],
+            &Filter {
+                category: None,
+                query: Some("feature zzznomatch".to_string()),
+            },
+        );
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn build_unified_query_negative_term_excludes_matching_items() {
+        // "-alice" — "alice" appears in pr()'s dim_inline (author) but not in issue()
+        let result = build_unified(
+            vec![pr(), issue()],
+            &Filter {
+                category: None,
+                query: Some("-alice".to_string()),
+            },
+        );
+        assert_eq!(result.len(), 1);
+        assert!(matches!(
+            &result[0],
+            DisplayItem::Single(StatusItem::Issue(_))
+        ));
+    }
+
+    #[test]
+    fn build_unified_query_mixed_positive_and_negative() {
+        // "owner" appears in both (from "owner/repo"); "-alice" excludes pr()
+        let result = build_unified(
+            vec![pr(), issue()],
+            &Filter {
+                category: None,
+                query: Some("owner -alice".to_string()),
+            },
+        );
+        assert_eq!(result.len(), 1);
+        assert!(matches!(
+            &result[0],
+            DisplayItem::Single(StatusItem::Issue(_))
+        ));
+    }
+
+    #[test]
+    fn build_unified_query_negative_term_is_case_insensitive() {
+        // "-ALICE" excludes pr() — negation terms are lowercased before matching
+        let result = build_unified(
+            vec![pr(), issue()],
+            &Filter {
+                category: None,
+                query: Some("-ALICE".to_string()),
+            },
+        );
+        assert_eq!(result.len(), 1);
+        assert!(matches!(
+            &result[0],
+            DisplayItem::Single(StatusItem::Issue(_))
+        ));
+    }
+
+    #[test]
+    fn build_unified_query_bare_hyphen_is_ignored() {
+        // "- fix": bare "-" is dropped; "fix" matches issue() which has "Fix bug"
+        let result = build_unified(
+            vec![pr(), issue()],
+            &Filter {
+                category: None,
+                query: Some("- fix".to_string()),
+            },
+        );
+        assert_eq!(result.len(), 1);
+        assert!(matches!(
+            &result[0],
+            DisplayItem::Single(StatusItem::Issue(_))
+        ));
+    }
+
+    #[test]
+    fn build_unified_query_hyphen_mid_word_is_literal_positive() {
+        // "fix-bug" — leading char is 'f', not '-', so treated as positive literal
+        // issue() has "Fix bug" (space, not hyphen) → no match → empty
+        let result = build_unified(
+            vec![pr(), issue()],
+            &Filter {
+                category: None,
+                query: Some("fix-bug".to_string()),
+            },
+        );
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn build_unified_query_whitespace_only_matches_all() {
+        // "   " — all tokens dropped, effectively no constraint
+        let result = build_unified(
+            vec![pr(), issue(), ci()],
+            &Filter {
+                category: None,
+                query: Some("   ".to_string()),
+            },
+        );
+        assert_eq!(result.len(), 3);
     }
 
     #[test]
