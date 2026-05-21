@@ -14,6 +14,29 @@ fn transcripts_dir() -> PathBuf {
     PathBuf::from(home).join(".hub").join("transcripts")
 }
 
+/// Returns true if a Claude stderr line looks like a diagnostic/status message
+/// rather than tool output or file content.
+///
+/// Claude's own diagnostic messages are short single-line status updates (e.g.
+/// "Waiting for API…", model-load notices, process errors). Tool call results
+/// and file contents that can leak into stderr are typically long or
+/// JSON-encoded. This heuristic errs on the side of silence: a line that
+/// might be personal data is suppressed from caller stderr even if it happens
+/// to be short. The full stderr is always written to the transcript for local
+/// debugging.
+fn is_claude_diagnostic(line: &str) -> bool {
+    // Suppress anything over 200 chars — diagnostic messages are short.
+    if line.len() > 200 {
+        return false;
+    }
+    // Suppress lines that look like JSON (tool results, API responses).
+    let trimmed = line.trim_start();
+    if trimmed.starts_with('{') || trimmed.starts_with('[') {
+        return false;
+    }
+    true
+}
+
 /// Formats a single stream-json event line into a human-readable transcript
 /// fragment. Returns `None` for event types that don't contribute readable
 /// content (e.g. rate_limit_event, stream_event deltas, system status pings).
@@ -281,9 +304,15 @@ pub async fn run_one(name: &str, repo: &str, issue: u64) -> Result<()> {
             line = stderr.next_line(), if !stderr_done => {
                 match line.context("error reading claude stderr")? {
                     Some(l) => {
-                        eprintln!("{l}");
+                        // Always write to transcript for local debugging.
                         transcript.write_all(l.as_bytes()).await?;
                         transcript.write_all(b"\n").await?;
+                        // Only forward lines that look like Claude's own
+                        // diagnostic output — not tool results or file
+                        // contents that may contain personal data.
+                        if is_claude_diagnostic(&l) {
+                            eprintln!("{l}");
+                        }
                     }
                     None => stderr_done = true,
                 }
@@ -326,4 +355,39 @@ pub async fn run_one(name: &str, repo: &str, issue: u64) -> Result<()> {
 
     eprintln!("hub implement: done {repo}#{issue}");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_claude_diagnostic;
+
+    #[test]
+    fn short_status_messages_are_diagnostic() {
+        assert!(is_claude_diagnostic("Waiting for API…"));
+        assert!(is_claude_diagnostic("hub implement: starting ooloth/hub#81"));
+        assert!(is_claude_diagnostic("Error: something went wrong"));
+        assert!(is_claude_diagnostic(""));
+    }
+
+    #[test]
+    fn json_lines_are_not_diagnostic() {
+        assert!(!is_claude_diagnostic(
+            r#"{"type":"tool_result","content":"hello@example.com"}"#
+        ));
+        assert!(!is_claude_diagnostic(r#"[{"key":"value"}]"#));
+    }
+
+    #[test]
+    fn long_lines_are_not_diagnostic() {
+        let long = "x".repeat(201);
+        assert!(!is_claude_diagnostic(&long));
+    }
+
+    #[test]
+    fn lines_at_length_boundary_are_handled() {
+        let exactly_200 = "x".repeat(200);
+        assert!(is_claude_diagnostic(&exactly_200));
+        let over_200 = "x".repeat(201);
+        assert!(!is_claude_diagnostic(&over_200));
+    }
 }
