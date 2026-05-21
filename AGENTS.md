@@ -51,8 +51,6 @@ do not depend on `config/` directly.
 
 ### Rust Conventions
 
-See `~/.claude/references/rust.md` and `~/.claude/references/type-design.md`.
-
 Hard rules for agents:
 
 - **Error handling**: `anyhow` only. No `thiserror`. `?` everywhere. `.context("msg")` for human-readable chains.
