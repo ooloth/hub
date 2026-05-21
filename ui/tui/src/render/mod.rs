@@ -18,6 +18,7 @@ mod detail;
 
 pub(super) const FOCUS_COLOR: Color = Color::Rgb(203, 166, 247); // Catppuccin Mocha Mauve
 pub(super) const LAVENDER: Color = Color::Rgb(180, 190, 254); // Catppuccin Mocha Lavender
+pub(super) const YELLOW: Color = Color::Rgb(249, 226, 175); // Catppuccin Mocha Yellow
 pub(super) const SELECTION_BG: Color = Color::Rgb(41, 45, 62);
 
 pub(super) fn dim() -> Style {
@@ -526,6 +527,38 @@ fn render_issue_detail(
     frame.render_widget(paragraph, area);
 }
 
+fn parse_hunk_new_start(hunk_header: &str) -> Option<u32> {
+    hunk_header
+        .split_whitespace()
+        .find(|t| t.starts_with('+'))
+        .and_then(|t| t.trim_start_matches('+').split(',').next())
+        .and_then(|n| n.parse().ok())
+}
+
+fn comment_lines(comment: &domain::ReviewComment) -> Vec<Line<'static>> {
+    let author_style = Style::default().fg(YELLOW).add_modifier(Modifier::ITALIC);
+    let body_style = Style::default().fg(YELLOW);
+    let age_str = crate::display::format_age_short(comment.age);
+    let mut out = vec![Line::styled(
+        format!(" @{} · {}", comment.author, age_str),
+        author_style,
+    )];
+    for body_line in comment.body.lines() {
+        out.push(Line::styled(format!(" {body_line}"), body_style));
+    }
+    out.push(Line::from(""));
+    out
+}
+
+fn render_thread_comments(out: &mut Vec<Line<'static>>, thread: &domain::ReviewThread) {
+    for (i, comment) in thread.comments.iter().enumerate() {
+        if i == 0 {
+            out.push(Line::from(""));
+        }
+        out.extend(comment_lines(comment));
+    }
+}
+
 fn pr_diff_lines(pr: &domain::PullRequest, sep_width: usize) -> Vec<Line<'static>> {
     if pr.changed_files.is_empty() {
         return vec![];
@@ -558,23 +591,45 @@ fn pr_diff_lines(pr: &domain::PullRequest, sep_width: usize) -> Vec<Line<'static
         .style(bold);
         out.push(header);
 
+        let file_threads: Vec<&domain::ReviewThread> = pr
+            .review_threads
+            .iter()
+            .filter(|t| t.path == file.path)
+            .collect();
+
         match &file.patch {
             None => {
                 out.push(Line::styled(" (binary) ".to_string(), sep));
+                for thread in file_threads.iter().filter(|t| t.line.is_none()) {
+                    render_thread_comments(&mut out, thread);
+                }
             }
             Some(patch) => {
+                let mut new_line: u32 = 0;
                 for raw in patch.lines() {
                     let line = raw.to_string();
                     if line.starts_with("@@") {
                         out.push(Line::from(""));
-                        out.push(Line::styled(line, Style::default().fg(Color::Cyan)));
+                        out.push(Line::styled(line.clone(), Style::default().fg(Color::Cyan)));
+                        new_line = parse_hunk_new_start(&line).unwrap_or(0);
                     } else if line.starts_with('+') {
                         out.push(Line::styled(line, Style::default().fg(Color::Green)));
+                        for thread in file_threads.iter().filter(|t| t.line == Some(new_line)) {
+                            render_thread_comments(&mut out, thread);
+                        }
+                        new_line += 1;
                     } else if line.starts_with('-') {
                         out.push(Line::styled(line, Style::default().fg(Color::Red)));
                     } else {
                         out.push(Line::from(line));
+                        for thread in file_threads.iter().filter(|t| t.line == Some(new_line)) {
+                            render_thread_comments(&mut out, thread);
+                        }
+                        new_line += 1;
                     }
+                }
+                for thread in file_threads.iter().filter(|t| t.line.is_none()) {
+                    render_thread_comments(&mut out, thread);
                 }
             }
         }
@@ -605,15 +660,6 @@ fn render_pr_detail(
 
     let bold = Style::default().add_modifier(Modifier::BOLD);
 
-    let left_title = Line::from(format!(" {} ", pr.title)).style(bold);
-    let right_title = Line::from(format!(" {} · #{} ", pr.repo, pr.number))
-        .style(bold)
-        .right_aligned();
-
-    let bottom_right = Line::from(format!(" @{} · {} ", pr.author, format_age_short(pr.age),))
-        .style(bold)
-        .right_aligned();
-
     let ci_span = match pr.ci_status {
         Some(domain::CiStatus::Success) => {
             Some(Span::styled("✓", Style::default().fg(Color::Green)))
@@ -625,20 +671,85 @@ fn render_pr_detail(
         Some(domain::CiStatus::Neutral) => Some(Span::styled("~", dim())),
         None => None,
     };
-    let review_text = match pr.review_count {
-        0 => None,
-        1 => Some("1 review".to_string()),
-        n => Some(format!("{n} reviews")),
+
+    let mut title_spans: Vec<Span> = vec![Span::raw(format!(" {} ", pr.title))];
+    if let Some(ci) = ci_span {
+        title_spans.push(ci);
+        title_spans.push(Span::raw(" "));
+    }
+    let left_title = Line::from(title_spans).style(bold);
+    let right_title = Line::from(format!(" {} · #{} ", pr.repo, pr.number))
+        .style(bold)
+        .right_aligned();
+
+    let bottom_right = Line::from(format!(" @{} · {} ", pr.author, format_age_short(pr.age),))
+        .style(bold)
+        .right_aligned();
+
+    let review_status_span = match pr.review_decision {
+        Some(domain::ReviewDecision::ChangesRequested) => Some(Span::styled(
+            "Changes requested",
+            Style::default().fg(Color::Red),
+        )),
+        Some(domain::ReviewDecision::Approved) => {
+            let label = match pr.approval_count {
+                1 => "1 approval".to_string(),
+                n => format!("{n} approvals"),
+            };
+            Some(Span::styled(label, Style::default().fg(Color::Green)))
+        }
+        None => Some(Span::styled("No reviews", bold)),
     };
-    let bottom_left: Option<Line> = match (ci_span, review_text) {
-        (None, None) => None,
-        (Some(ci), None) => Some(Line::from(vec![Span::raw(" "), ci, Span::raw(" ")])),
-        (None, Some(reviews)) => Some(Line::from(format!(" {reviews} ")).style(bold)),
-        (Some(ci), Some(reviews)) => Some(Line::from(vec![
-            Span::styled(format!(" {reviews} · "), bold),
-            ci,
-            Span::raw(" "),
-        ])),
+    let comment_span = match pr.comment_count {
+        0 => None,
+        1 => Some(Span::styled("1 comment", bold)),
+        n => Some(Span::styled(format!("{n} comments"), bold)),
+    };
+    let files_spans: Option<Vec<Span>> = if pr.total_changed_files > 0 {
+        let total_add: u32 = pr.changed_files.iter().map(|f| f.additions).sum();
+        let total_del: u32 = pr.changed_files.iter().map(|f| f.deletions).sum();
+        let n = pr.total_changed_files;
+        let file_label = if n == 1 {
+            "1 file".to_string()
+        } else {
+            format!("{n} files")
+        };
+        Some(vec![
+            Span::styled(file_label, bold),
+            Span::styled(" · ", bold),
+            Span::styled(format!("+{total_add}"), Style::default().fg(Color::Green)),
+            Span::styled(format!(" -{total_del}"), Style::default().fg(Color::Red)),
+        ])
+    } else {
+        None
+    };
+
+    // Build bottom-left as: [review status ·] [X comments ·] [X files · +Y -Z]
+    let mut left_spans: Vec<Span> = vec![Span::raw(" ")];
+    let mut has_content = false;
+    if let Some(s) = review_status_span {
+        left_spans.push(s);
+        has_content = true;
+    }
+    if let Some(c) = comment_span {
+        if has_content {
+            left_spans.push(Span::styled(" · ".to_string(), bold));
+        }
+        left_spans.push(c);
+        has_content = true;
+    }
+    if let Some(fs) = files_spans {
+        if has_content {
+            left_spans.push(Span::styled(" · ".to_string(), bold));
+        }
+        left_spans.extend(fs);
+        has_content = true;
+    }
+    let bottom_left: Option<Line> = if has_content {
+        left_spans.push(Span::raw(" "));
+        Some(Line::from(left_spans))
+    } else {
+        None
     };
 
     let mut block = Block::default()
@@ -661,6 +772,25 @@ fn render_pr_detail(
     let mut content = crate::markdown::from_str(raw_body);
     content.lines.insert(0, Line::from(""));
     content.lines.push(Line::from(""));
+
+    if !pr.pr_comments.is_empty() {
+        let label = " top-level comments ";
+        let fill_len = inner_width.saturating_sub(label.chars().count() + 4);
+        let fill = "─".repeat(fill_len);
+        let lav = Style::default().fg(LAVENDER);
+        content.lines.push(
+            Line::from(vec![
+                Span::styled(format!("──{label}"), lav),
+                Span::styled(fill, lav),
+                Span::styled("──".to_string(), lav),
+            ])
+            .style(Style::default().add_modifier(Modifier::BOLD)),
+        );
+        content.lines.push(Line::from(""));
+        for comment in &pr.pr_comments {
+            content.lines.extend(comment_lines(comment));
+        }
+    }
 
     let mut diff = pr_diff_lines(pr, inner_width);
     content.lines.append(&mut diff);
@@ -1139,13 +1269,16 @@ mod tests {
             kind: domain::PrKind::ToReview,
             author: "alice".to_string(),
             review_decision: None,
-            review_count: 0,
+            approval_count: 0,
+            comment_count: 0,
             head_branch: "feat/fix".to_string(),
             base_branch: "main".to_string(),
             body: None,
             ci_status: None,
             changed_files: vec![],
             total_changed_files: 0,
+            review_threads: vec![],
+            pr_comments: vec![],
         })
     }
 
@@ -1676,7 +1809,8 @@ mod tests {
             kind: domain::PrKind::Mine,
             author: "ooloth".to_string(),
             review_decision: None,
-            review_count: 2,
+            approval_count: 0,
+            comment_count: 2,
             head_branch: "feat/pr-detail".to_string(),
             base_branch: "main".to_string(),
             body: Some(
@@ -1687,6 +1821,8 @@ mod tests {
             ci_status: None,
             changed_files: vec![],
             total_changed_files: 0,
+            review_threads: vec![],
+            pr_comments: vec![],
         }
     }
 
@@ -1701,13 +1837,16 @@ mod tests {
             kind: domain::PrKind::Mine,
             author: "ooloth".to_string(),
             review_decision: None,
-            review_count: 0,
+            approval_count: 0,
+            comment_count: 0,
             head_branch: "fix/readme-typo".to_string(),
             base_branch: "main".to_string(),
             body: None,
             ci_status: None,
             changed_files: vec![],
             total_changed_files: 0,
+            review_threads: vec![],
+            pr_comments: vec![],
         }
     }
 
@@ -1783,10 +1922,32 @@ mod tests {
 
     #[test]
     fn full_screen_pr_detail_ci_pending() {
-        // P7: CI pending badge + 1 review.
+        // P7: CI pending badge + 1 approval.
         let mut pr = stub_pr_with_body();
         pr.ci_status = Some(domain::CiStatus::Pending);
-        pr.review_count = 1;
+        pr.approval_count = 1;
+        pr.review_decision = Some(domain::ReviewDecision::Approved);
+        let mut app = pr_detail_app(pr, 0);
+        let buf = draw(&mut app, 80, 10);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_approved() {
+        // P8: approved decision shown in bottom-left.
+        let mut pr = stub_pr_no_body();
+        pr.review_decision = Some(domain::ReviewDecision::Approved);
+        pr.approval_count = 1;
+        let mut app = pr_detail_app(pr, 0);
+        let buf = draw(&mut app, 80, 10);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_changes_requested() {
+        // P9: changes-requested decision shown in bottom-left.
+        let mut pr = stub_pr_no_body();
+        pr.review_decision = Some(domain::ReviewDecision::ChangesRequested);
         let mut app = pr_detail_app(pr, 0);
         let buf = draw(&mut app, 80, 10);
         insta::assert_snapshot!(screen_text(&buf));
@@ -1840,6 +2001,56 @@ mod tests {
         // D3: scrolled into the diff section.
         let mut app = pr_detail_app(stub_pr_with_diff(), 10);
         let buf = draw(&mut app, 80, 20);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_with_inline_comments() {
+        // D4: inline review comment after a changed line; file-level comment at end.
+        let mut pr = stub_pr_with_diff();
+        pr.review_threads = vec![
+            domain::ReviewThread {
+                path: "src/main.rs".to_string(),
+                line: Some(11), // context line "context" is new-file line 10; "+new line" is 11
+                comments: vec![domain::ReviewComment {
+                    author: "reviewer".to_string(),
+                    age: chrono::Duration::days(2),
+                    body: "Why not use a constant here?".to_string(),
+                }],
+            },
+            domain::ReviewThread {
+                path: "src/main.rs".to_string(),
+                line: None, // file-level
+                comments: vec![domain::ReviewComment {
+                    author: "reviewer2".to_string(),
+                    age: chrono::Duration::hours(3),
+                    body: "Overall LGTM.".to_string(),
+                }],
+            },
+        ];
+        let mut app = pr_detail_app(pr, 0);
+        let buf = draw(&mut app, 80, 40);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_with_pr_comments() {
+        // D5: top-level PR comments appear between body and diff.
+        let mut pr = stub_pr_with_diff();
+        pr.pr_comments = vec![
+            domain::ReviewComment {
+                author: "reviewer".to_string(),
+                age: chrono::Duration::days(1),
+                body: "Looks good overall, a few nits below.".to_string(),
+            },
+            domain::ReviewComment {
+                author: "reviewer2".to_string(),
+                age: chrono::Duration::hours(6),
+                body: "LGTM from my side.".to_string(),
+            },
+        ];
+        let mut app = pr_detail_app(pr, 0);
+        let buf = draw(&mut app, 80, 35);
         insta::assert_snapshot!(screen_text(&buf));
     }
 

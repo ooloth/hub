@@ -18,17 +18,27 @@ expression: screen_text(&buf)
 │ context                                                                      │
 │-old line                                                                     │
 │+new line                                                                     │
+│                                                                              │
+│ @reviewer · 2d                                                               │
+│ Why not use a constant here?                                                 │
+│                                                                              │
 │+another new                                                                  │
 │+third new                                                                    │
+│                                                                              │
+│ @reviewer2 · 3h                                                              │
+│ Overall LGTM.                                                                │
+│                                                                              │
 │                                                                              │
 │── assets/logo.png ──────────────────────────────────────────────────── +0 -0 │
 │ (binary)                                                                     │
 │                                                                              │
-│ … and 148 more files not shown                                               │
 │                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
-╰ No reviews · 2 comments · 150 files · +3 -1 ─────────────────── @ooloth · 1d ╯
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰ No reviews · 2 comments · 2 files · +3 -1 ───────────────────── @ooloth · 1d ╯
   [↩] open · [i] investigate · [Esc] back

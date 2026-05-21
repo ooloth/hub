@@ -76,6 +76,21 @@ pub struct ChangedFile {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ReviewComment {
+    pub author: String,
+    #[serde(with = "duration_secs")]
+    pub age: chrono::Duration,
+    pub body: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ReviewThread {
+    pub path: String,
+    pub line: Option<u32>,
+    pub comments: Vec<ReviewComment>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PullRequest {
     pub number: u64,
     pub title: String,
@@ -87,7 +102,10 @@ pub struct PullRequest {
     pub kind: PrKind,
     pub author: String,
     pub review_decision: Option<ReviewDecision>,
-    pub review_count: u32,
+    #[serde(default)]
+    pub approval_count: u32,
+    #[serde(default)]
+    pub comment_count: u32,
     pub head_branch: String,
     pub base_branch: String,
     #[serde(default)]
@@ -98,6 +116,10 @@ pub struct PullRequest {
     pub changed_files: Vec<ChangedFile>,
     #[serde(default)]
     pub total_changed_files: u32,
+    #[serde(default)]
+    pub review_threads: Vec<ReviewThread>,
+    #[serde(default)]
+    pub pr_comments: Vec<ReviewComment>,
 }
 
 pub const NEEDS_HUMAN_REVIEW_LABEL: &str = "status:needs-human-review";
