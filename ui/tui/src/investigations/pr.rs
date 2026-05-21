@@ -34,11 +34,7 @@ pub(crate) fn config(
     }
 }
 
-fn route(
-    kind: PrKind,
-    review_decision: Option<ReviewDecision>,
-    author: &str,
-) -> (String, String) {
+fn route(kind: PrKind, review_decision: Option<ReviewDecision>, author: &str) -> (String, String) {
     match kind {
         PrKind::ToReview => (
             "/review-code".to_string(),
