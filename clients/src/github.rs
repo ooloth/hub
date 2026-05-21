@@ -230,8 +230,33 @@ pub async fn prs_awaiting_review(token: &str, repos: &[GithubPrsRepo]) -> Result
     }
     let mut prs = nodes_to_prs(
         graphql_prs(token, "is:open is:pr review-requested:@me", repos).await?,
-        Urgency::Medium,
+        Urgency::High,
         PrKind::ToReview,
+        None,
+        repos,
+    )?;
+    enrich_with_file_patches(token, &mut prs).await;
+    Ok(prs)
+}
+
+/// Returns open non-draft PRs across the given repos not authored by the authenticated user
+/// and not where their review was explicitly requested.
+///
+/// # Errors
+/// Returns an error if the GitHub API is unreachable or returns a non-2xx response.
+pub async fn external_prs(token: &str, repos: &[GithubPrsRepo]) -> Result<Vec<PullRequest>> {
+    if repos.is_empty() {
+        return Ok(vec![]);
+    }
+    let mut prs = nodes_to_prs(
+        graphql_prs(
+            token,
+            "is:open is:pr -is:draft -author:@me -review-requested:@me",
+            repos,
+        )
+        .await?,
+        Urgency::Medium,
+        PrKind::External,
         None,
         repos,
     )?;

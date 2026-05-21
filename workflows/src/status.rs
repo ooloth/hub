@@ -3,7 +3,7 @@ use domain::{CiFailure, Issue, LinearIssue, PullRequest, Urgency};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 
-pub const SCHEMA_VERSION: i32 = 12;
+pub const SCHEMA_VERSION: i32 = 13;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum StatusItem {
@@ -95,7 +95,7 @@ pub struct StatusParams {
 /// # Errors
 /// Returns an error if any API call fails.
 pub async fn run(params: StatusParams) -> Result<StatusReport> {
-    let (my_open, review_queue, my_drafts, issues, ci_failures, linear_issues) = tokio::join!(
+    let (my_open, review_queue, my_drafts, external, issues, ci_failures, linear_issues) = tokio::join!(
         clients::github::my_open_prs(
             &params.github_token,
             &params.pr_repos,
@@ -107,6 +107,7 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
             &params.pr_repos,
             &params.github_username,
         ),
+        clients::github::external_prs(&params.github_token, &params.pr_repos),
         clients::github::issues(
             &params.github_token,
             &params.issue_repos,
@@ -146,6 +147,11 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
         all_prs.extend(prs);
     } else {
         errors.push("github my draft prs".to_string());
+    }
+    if let Ok(prs) = external {
+        all_prs.extend(prs);
+    } else {
+        errors.push("github external prs".to_string());
     }
     // A PR can match multiple queries (e.g. author + review-requested); keep first occurrence.
     let mut seen_prs: std::collections::HashSet<(String, u64)> = std::collections::HashSet::new();
