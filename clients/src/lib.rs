@@ -1,3 +1,4 @@
+pub mod gcp;
 pub mod github;
 pub mod linear;
 pub mod loki;
