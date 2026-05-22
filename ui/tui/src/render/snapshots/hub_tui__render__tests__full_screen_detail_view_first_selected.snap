@@ -4,8 +4,8 @@ expression: screen_text(&buf)
 ---
 ╭ All ─────────────────────────────────────────────────────────────────────────╮
 │CI ▾ check / fmt · failed (2)                                 ooloth/hub · now│
-│CI │ check / fmt · failed                                     ooloth/hub · now│
-│CI │ check / fmt · failed                                     ooloth/hub · now│
+│CI  │ check / fmt · failed                                    ooloth/hub · now│
+│CI  └ check / fmt · failed                                    ooloth/hub · now│
 │                                                                              │
 │                                                                              │
 │                                                                              │

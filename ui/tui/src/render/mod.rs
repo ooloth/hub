@@ -182,7 +182,11 @@ fn build_unified_list_item(
     } else {
         0
     };
-    let category_prefix_width = parts.category.chars().count() + 3; // category + " · "
+    let separator_width = match parts.separator {
+        RowSeparator::TreeChild(_) => 4, // "  │ " / "  └ "
+        _ => 3,                          // " · " / " ▸ " / " ▾ "
+    };
+    let category_prefix_width = parts.category.chars().count() + separator_width;
     let content_budget = inner_width
         .saturating_sub(chrome_total)
         .saturating_sub(category_prefix_width);
@@ -205,7 +209,10 @@ fn build_unified_list_item(
             let arrow = if expanded { "▾" } else { "▸" };
             Span::styled(format!(" {} ", arrow), Style::default().fg(bullet_color))
         }
-        RowSeparator::TreeChild => Span::styled(" │ ", Style::default().fg(bullet_color)),
+        RowSeparator::TreeChild(last) => {
+            let bar = if last { "└" } else { "│" };
+            Span::styled(format!("  {} ", bar), Style::default().fg(bullet_color))
+        }
     };
     let mut spans: Vec<Span<'static>> = vec![Span::styled(parts.category, text_style), separator];
     push_segments(

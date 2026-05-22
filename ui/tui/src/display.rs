@@ -32,6 +32,7 @@ pub(crate) enum FlatRow {
         #[allow(dead_code)]
         parent_key: GroupKey,
         item: StatusItem,
+        is_last: bool,
     },
 }
 
@@ -61,10 +62,12 @@ pub(crate) fn flatten(items: &[DisplayItem], expanded: &HashSet<GroupKey>) -> Ve
                     first_item,
                 });
                 if is_expanded {
-                    for child in group_items {
+                    let last_idx = group_items.len().saturating_sub(1);
+                    for (i, child) in group_items.iter().enumerate() {
                         rows.push(FlatRow::GroupChild {
                             parent_key: label.clone(),
                             item: child.clone(),
+                            is_last: i == last_idx,
                         });
                     }
                 }
@@ -134,7 +137,7 @@ pub(crate) struct ListSnapshot {
 pub(crate) enum RowSeparator {
     Bullet,
     Toggle(bool),
-    TreeChild,
+    TreeChild(bool), // true = last child (renders └), false = non-last (renders │)
 }
 
 #[derive(Clone, Debug)]
@@ -462,9 +465,9 @@ pub(crate) fn flat_row_line(row: &FlatRow) -> LineParts {
                 ..base
             }
         }
-        FlatRow::GroupChild { item, .. } => {
+        FlatRow::GroupChild { item, is_last, .. } => {
             let mut parts = item_line(item);
-            parts.separator = RowSeparator::TreeChild;
+            parts.separator = RowSeparator::TreeChild(*is_last);
             parts
         }
     }
