@@ -131,18 +131,26 @@ async fn fetch_project(name: &str, repo: &str, github_token: &str, repos_dir: &P
 /// On first creation the fetch is required; it is followed by a PR-specific fetch
 /// (`pull/<number>/head`), a `git worktree add`, and setting the upstream tracking
 /// branch so `git push` targets the real PR branch, not a phantom `origin/pr-<number>`.
-pub async fn ensure_pr_worktree(bare: &Path, number: u64, head_branch: &str) -> Result<PathBuf> {
+pub async fn ensure_pr_worktree(
+    bare: &Path,
+    number: u64,
+    head_branch: &str,
+    github_token: &str,
+) -> Result<PathBuf> {
     let bare_str = bare.to_string_lossy().into_owned();
     let branch = format!("pr-{number}");
     let worktree = bare.join(&branch);
     let worktree_str = worktree.to_string_lossy().into_owned();
+    let rewrite = format!(
+        "url.https://x-access-token:{github_token}@github.com/.insteadOf=https://github.com/"
+    );
 
     let worktree_exists = worktree.is_dir();
 
     // Update all remote tracking refs. Non-fatal on re-entry so a network hiccup
     // does not block access to an already-created worktree.
     let fetch_all_ok = Command::new("git")
-        .args(["-C", &bare_str, "fetch", "origin"])
+        .args(["-C", &bare_str, "-c", &rewrite, "fetch", "origin"])
         .env("GIT_TERMINAL_PROMPT", "0")
         .output()
         .await
@@ -161,6 +169,8 @@ pub async fn ensure_pr_worktree(bare: &Path, number: u64, head_branch: &str) -> 
         .args([
             "-C",
             &bare_str,
+            "-c",
+            &rewrite,
             "fetch",
             "origin",
             &format!("pull/{number}/head:{branch}"),
@@ -208,11 +218,15 @@ pub async fn ensure_pr_worktree(bare: &Path, number: u64, head_branch: &str) -> 
 /// latest commit. Use this at investigation launch time; use
 /// `ensure_default_branch_worktree` from the background fetch path where the
 /// fetch has already happened.
-pub async fn sync_default_branch_worktree(bare: &Path) -> Result<()> {
+pub async fn sync_default_branch_worktree(bare: &Path, github_token: &str) -> Result<()> {
     let bare_str = bare.to_string_lossy().into_owned();
+    let rewrite = format!(
+        "url.https://x-access-token:{github_token}@github.com/.insteadOf=https://github.com/"
+    );
 
     let fetch = Command::new("git")
-        .args(["-C", &bare_str, "fetch", "origin"])
+        .args(["-C", &bare_str, "-c", &rewrite, "fetch", "origin"])
+        .env("GIT_TERMINAL_PROMPT", "0")
         .output()
         .await
         .context("git fetch origin failed")?;
@@ -427,7 +441,9 @@ mod tests {
             "setup: bare should be stale before the call"
         );
 
-        ensure_pr_worktree(&bare, 42, "feat/test").await.unwrap();
+        ensure_pr_worktree(&bare, 42, "feat/test", "")
+            .await
+            .unwrap();
 
         let after = git_rev_parse(&bare, "refs/remotes/origin/main").await;
         assert_eq!(
@@ -453,7 +469,7 @@ mod tests {
         let wt_before = git_rev_parse(&worktree, "HEAD").await;
         assert_ne!(wt_before, new_sha, "setup: worktree should be stale");
 
-        sync_default_branch_worktree(&bare).await.unwrap();
+        sync_default_branch_worktree(&bare, "").await.unwrap();
 
         // After sync: both the remote tracking ref and the worktree HEAD are current.
         let remote_after = git_rev_parse(&bare, "refs/remotes/origin/main").await;

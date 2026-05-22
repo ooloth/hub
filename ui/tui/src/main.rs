@@ -165,7 +165,7 @@ async fn resolve_investigation_cwd(config: &config::Config, repo: &str) -> Resul
 
     // Always fetch and sync — ensures the agent sees current code regardless of
     // when the background refresh last ran.
-    workflows::fetch::sync_default_branch_worktree(&bare)
+    workflows::fetch::sync_default_branch_worktree(&bare, &config.github_token)
         .await
         .map_err(|e| format!("Failed to sync worktree: {e}"))?;
 
@@ -193,7 +193,7 @@ async fn resolve_pr_worktree(
         return Err("Not fetched yet; run hub fetch".to_string());
     }
 
-    workflows::fetch::ensure_pr_worktree(&bare, number, head_branch)
+    workflows::fetch::ensure_pr_worktree(&bare, number, head_branch, &config.github_token)
         .await
         .map_err(|e| format!("Failed to create PR worktree: {e}"))
 }
