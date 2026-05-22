@@ -8,11 +8,16 @@ pub(crate) fn config(
     title: &str,
     message: &str,
     line: &str,
+    url: &str,
+    lookback: &str,
 ) -> LaunchConfig {
     LaunchConfig {
         system_prompt: PROMPT.to_string(),
         prompt: format!(
-            "Investigate Loki error in project {project} (env: {env}). Title: {title}. Message: {message}. Log line: {line}"
+            "Investigate Loki error in project {project} (env: {env}). \
+Title: {title}. Message: {message}. \
+Log lines (last {lookback}): {line}. \
+Grafana URL (pre-filtered): {url}"
         ),
         model: "opus".to_string(),
         allowed_tools: "Bash,Read".to_string(),
@@ -32,6 +37,8 @@ mod tests {
             "backend errors",
             "Parser validation error",
             "{}",
+            "",
+            "15m",
         );
         assert!(cfg.system_prompt.contains("## Purpose"));
         assert!(!cfg.system_prompt.starts_with("---"));
@@ -44,10 +51,14 @@ mod tests {
             "internal",
             "backend errors",
             "Parser validation error",
-            r#"{"message":"Parser validation error"}"#,
+            r#"[{"message":"Parser validation error"}]"#,
+            "https://grafana.example.com/explore",
+            "15m",
         );
         assert!(cfg.prompt.contains("mapapp"));
         assert!(cfg.prompt.contains("internal"));
         assert!(cfg.prompt.contains("Parser validation error"));
+        assert!(cfg.prompt.contains("15m"));
+        assert!(cfg.prompt.contains("grafana.example.com"));
     }
 }

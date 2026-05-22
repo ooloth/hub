@@ -406,10 +406,14 @@ async fn run_loop(
                     title,
                     message,
                     line,
+                    url,
+                    lookback,
                 } => match std::env::current_dir() {
                     Ok(cwd) => {
                         if let Err(err) = investigations::launch(
-                            investigations::gcp::config(&project, &env, &title, &message, &line),
+                            investigations::gcp::config(
+                                &project, &env, &title, &message, &line, &url, &lookback,
+                            ),
                             &cwd,
                             &config.github_token,
                         ) {
@@ -426,10 +430,14 @@ async fn run_loop(
                     title,
                     message,
                     line,
+                    url,
+                    lookback,
                 } => match std::env::current_dir() {
                     Ok(cwd) => {
                         if let Err(err) = investigations::launch(
-                            investigations::loki::config(&project, &env, &title, &message, &line),
+                            investigations::loki::config(
+                                &project, &env, &title, &message, &line, &url, &lookback,
+                            ),
                             &cwd,
                             &config.github_token,
                         ) {

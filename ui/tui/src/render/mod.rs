@@ -7,7 +7,8 @@ use ratatui::{
 };
 
 use crate::display::{
-    flat_row_line, flat_row_urgency, format_age_short, Filter, FlatRow, LineParts, RowSeparator,
+    flat_row_line, flat_row_urgency, format_age_short, Filter, FlatRow, LineParts, LogDetailView,
+    LogLine, RowSeparator,
 };
 use crate::state::{
     compute_enter_action, compute_investigate_action, App, EnterAction, InvestigateAction,
@@ -893,55 +894,56 @@ fn render_dismiss_modal(frame: &mut ratatui::Frame, input: &tui_input::Input, ar
 
 fn render_log_detail(
     frame: &mut ratatui::Frame,
-    entry: &domain::LogEntry,
+    view: &LogDetailView,
     scroll: &mut u16,
     area: Rect,
 ) {
-    let (title, subtitle, line) = match entry {
-        domain::LogEntry::Gcp {
+    let (title, subtitle, lines) = match view {
+        LogDetailView::Gcp {
             title,
             project,
             env,
             message,
-            line,
+            lines,
             ..
         } => (
             format!(" {} ", title),
             format!(" GCP · {}:{} · {} ", project, env, message),
-            line.as_str(),
+            lines,
         ),
-        domain::LogEntry::Loki {
+        LogDetailView::Loki {
             title,
             project,
             env,
             message,
-            line,
+            lines,
             ..
         } => (
             format!(" {} ", title),
             format!(" Loki · {}:{} · {} ", project, env, message),
-            line.as_str(),
+            lines,
         ),
     };
 
     let bold = Style::default().add_modifier(Modifier::BOLD);
     let inner_width = area.width.saturating_sub(2) as usize;
 
-    let all_lines: Vec<Line<'static>> = match serde_json::from_str::<serde_json::Value>(line) {
-        Ok(value) => {
-            let pretty = serde_json::to_string_pretty(&value).unwrap_or_else(|_| line.to_string());
-            crate::markdown::highlight_json(&pretty)
+    let mut all_lines: Vec<Line<'static>> = Vec::new();
+    for (i, log_line) in lines.iter().enumerate() {
+        if i > 0 {
+            all_lines.push(Line::from(""));
         }
-        Err(_) => {
-            let mut lines = vec![Line::styled("(not valid JSON — showing raw text)", dim())];
-            lines.extend(
-                wrap_text(line, inner_width.max(1))
-                    .into_iter()
-                    .map(Line::from),
-            );
-            lines
+        match log_line {
+            LogLine::Json(v) => {
+                let pretty = serde_json::to_string_pretty(v).unwrap_or_else(|_| format!("{v}"));
+                all_lines.extend(crate::markdown::highlight_json(&pretty));
+            }
+            LogLine::Raw(s) => {
+                all_lines.push(Line::styled("(not valid JSON — showing raw text)", dim()));
+                all_lines.extend(wrap_text(s, inner_width.max(1)).into_iter().map(Line::from));
+            }
         }
-    };
+    }
 
     let total_lines = all_lines.len();
     let viewport_height = area.height.saturating_sub(2) as usize;
@@ -980,8 +982,8 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
                 content_area,
             );
         }
-        Screen::LogDetail { entry, scroll, .. } => {
-            render_log_detail(frame, entry, scroll, content_area);
+        Screen::LogDetail { view, scroll, .. } => {
+            render_log_detail(frame, view, scroll, content_area);
         }
         Screen::IssueDetail { issue, scroll, .. } => {
             render_issue_detail(frame, issue, scroll, content_area);

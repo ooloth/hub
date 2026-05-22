@@ -1,10 +1,12 @@
 use std::collections::HashSet;
 
 use anyhow::Result;
-use domain::{Issue, LogEntry, PrKind, PullRequest, ReviewDecision};
+use domain::{Issue, PrKind, PullRequest, ReviewDecision};
 use workflows::status::{StatusItem, StatusReport};
 
-use crate::display::{Category, DisplayItem, Filter, FlatRow, GroupKey, ListSnapshot};
+use crate::display::{
+    Category, DisplayItem, Filter, FlatRow, GroupKey, ListSnapshot, LogDetailView,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ReviewSkill {
@@ -68,7 +70,7 @@ pub(crate) enum Screen {
     },
     LogDetail {
         parent: ListSnapshot,
-        entry: LogEntry,
+        view: LogDetailView,
         scroll: u16,
     },
     PrDetail {
@@ -129,7 +131,7 @@ impl Screen {
 pub(crate) enum EnterAction {
     None,
     OpenUrl(String),
-    OpenLogDetail(LogEntry),
+    OpenLogDetail(LogDetailView),
     OpenIssueDetail(Issue),
     OpenPrDetail(PullRequest),
 }
@@ -151,6 +153,8 @@ pub(crate) enum InvestigateAction {
         title: String,
         message: String,
         line: String,
+        url: String,
+        lookback: String,
     },
     LaunchLoki {
         project: String,
@@ -158,6 +162,8 @@ pub(crate) enum InvestigateAction {
         title: String,
         message: String,
         line: String,
+        url: String,
+        lookback: String,
     },
     LaunchPr {
         repo: String,
@@ -247,6 +253,8 @@ pub(crate) enum Effect {
         title: String,
         message: String,
         line: String,
+        url: String,
+        lookback: String,
     },
     LaunchLoki {
         project: String,
@@ -254,6 +262,8 @@ pub(crate) enum Effect {
         title: String,
         message: String,
         line: String,
+        url: String,
+        lookback: String,
     },
     LaunchPr {
         repo: String,

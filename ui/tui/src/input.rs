@@ -229,13 +229,14 @@ mod tests {
             ui: UiState {
                 screen: Screen::LogDetail {
                     parent: snapshot,
-                    entry: domain::LogEntry::Gcp {
+                    view: crate::display::LogDetailView::Gcp {
                         project: "proj".to_string(),
                         env: "prod".to_string(),
                         title: "errors".to_string(),
                         message: "oops".to_string(),
-                        line: "{}".to_string(),
                         url: String::new(),
+                        lookback: "1h".to_string(),
+                        lines: vec![crate::display::LogLine::parse("{}")],
                     },
                     scroll: 0,
                 },

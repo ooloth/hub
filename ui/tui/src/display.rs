@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 
-use domain::LogEntry;
 use workflows::status::StatusItem;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -77,23 +76,78 @@ pub(crate) fn flatten(items: &[DisplayItem], expanded: &HashSet<GroupKey>) -> Ve
     rows
 }
 
-pub(crate) fn log_entry_from_status_item(item: &StatusItem) -> Option<LogEntry> {
+/// A single log line, parsed once at construction.
+#[derive(Clone, Debug)]
+pub(crate) enum LogLine {
+    Json(serde_json::Value),
+    Raw(String),
+}
+
+impl LogLine {
+    pub(crate) fn parse(s: &str) -> Self {
+        match serde_json::from_str(s) {
+            Ok(v) => LogLine::Json(v),
+            Err(_) => LogLine::Raw(s.to_string()),
+        }
+    }
+}
+
+/// View data for the LogDetail screen: shared metadata from one monitoring alert
+/// plus all raw log lines from that alert window (one for a single item, many for a group).
+#[derive(Clone, Debug)]
+pub(crate) enum LogDetailView {
+    Gcp {
+        project: String,
+        env: String,
+        title: String,
+        message: String,
+        url: String,
+        lookback: String,
+        lines: Vec<LogLine>,
+    },
+    Loki {
+        project: String,
+        env: String,
+        title: String,
+        message: String,
+        url: String,
+        lookback: String,
+        lines: Vec<LogLine>,
+    },
+}
+
+/// Serialise log lines to a compact JSON array string for investigation agents.
+/// Json lines are included as-is; Raw lines are wrapped in JSON strings.
+pub(crate) fn lines_to_compact_json(lines: &[LogLine]) -> String {
+    let arr: Vec<serde_json::Value> = lines
+        .iter()
+        .map(|l| match l {
+            LogLine::Json(v) => v.clone(),
+            LogLine::Raw(s) => serde_json::Value::String(s.clone()),
+        })
+        .collect();
+    serde_json::to_string(&serde_json::Value::Array(arr)).unwrap_or_else(|_| "[]".to_string())
+}
+
+pub(crate) fn log_detail_view_from_item(item: &StatusItem) -> Option<LogDetailView> {
     match item {
-        StatusItem::Gcp(g) => Some(LogEntry::Gcp {
+        StatusItem::Gcp(g) => Some(LogDetailView::Gcp {
             project: g.project.clone(),
             env: g.env.clone(),
             title: g.title.clone(),
             message: g.message.clone(),
-            line: g.line.clone(),
             url: g.url.clone(),
+            lookback: g.lookback.clone(),
+            lines: vec![LogLine::parse(&g.line)],
         }),
-        StatusItem::Loki(l) => Some(LogEntry::Loki {
+        StatusItem::Loki(l) => Some(LogDetailView::Loki {
             project: l.project.clone(),
             env: l.env.clone(),
             title: l.title.clone(),
             message: l.message.clone(),
-            line: l.line.clone(),
             url: l.url.clone(),
+            lookback: l.lookback.clone(),
+            lines: vec![LogLine::parse(&l.line)],
         }),
         _ => None,
     }
@@ -225,6 +279,8 @@ pub(crate) enum InvestigationKind {
         title: String,
         message: String,
         line: String,
+        url: String,
+        lookback: String,
     },
     Loki {
         project: String,
@@ -232,6 +288,8 @@ pub(crate) enum InvestigationKind {
         title: String,
         message: String,
         line: String,
+        url: String,
+        lookback: String,
     },
     Pr {
         repo: String,
@@ -273,14 +331,18 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
             env: g.env.clone(),
             title: g.title.clone(),
             message: g.message.clone(),
-            line: g.line.clone(),
+            line: lines_to_compact_json(&[LogLine::parse(&g.line)]),
+            url: g.url.clone(),
+            lookback: g.lookback.clone(),
         }),
         StatusItem::Loki(l) => Some(InvestigationKind::Loki {
             project: l.project.clone(),
             env: l.env.clone(),
             title: l.title.clone(),
             message: l.message.clone(),
-            line: l.line.clone(),
+            line: lines_to_compact_json(&[LogLine::parse(&l.line)]),
+            url: l.url.clone(),
+            lookback: l.lookback.clone(),
         }),
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => Some(InvestigationKind::MediaBlocked {

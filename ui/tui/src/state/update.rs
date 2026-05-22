@@ -1,14 +1,14 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
 
-use domain::{agent_ready_labels, dismissed_labels, LogEntry};
+use domain::{agent_ready_labels, dismissed_labels};
 
 use super::{
     Action, App, Effect, EnterAction, InvestigateAction, Msg, PrOwnership, RefreshState, Screen,
 };
 use crate::display::{
-    build_unified, flatten, item_investigation, item_url, log_entry_from_status_item, Filter,
-    FlatRow, InvestigationKind, ListSnapshot,
+    build_unified, flatten, item_investigation, item_url, lines_to_compact_json,
+    log_detail_view_from_item, Filter, FlatRow, InvestigationKind, ListSnapshot, LogDetailView,
 };
 
 impl App {
@@ -655,12 +655,16 @@ impl App {
                 title,
                 message,
                 line,
+                url,
+                lookback,
             } => vec![Effect::LaunchGcp {
                 project,
                 env,
                 title,
                 message,
                 line,
+                url,
+                lookback,
             }],
             InvestigateAction::LaunchLoki {
                 project,
@@ -668,12 +672,16 @@ impl App {
                 title,
                 message,
                 line,
+                url,
+                lookback,
             } => vec![Effect::LaunchLoki {
                 project,
                 env,
                 title,
                 message,
                 line,
+                url,
+                lookback,
             }],
             #[cfg(feature = "private")]
             InvestigateAction::LaunchMediaBlocked { title, error } => {
@@ -690,7 +698,7 @@ impl App {
         match ea {
             EnterAction::None => vec![],
             EnterAction::OpenUrl(url) => vec![Effect::OpenUrl(url)],
-            EnterAction::OpenLogDetail(entry) => {
+            EnterAction::OpenLogDetail(view) => {
                 let Screen::UnifiedList {
                     items,
                     selected,
@@ -709,7 +717,7 @@ impl App {
                 };
                 self.ui.screen = Screen::LogDetail {
                     parent: snapshot,
-                    entry,
+                    view,
                     scroll: 0,
                 };
                 vec![]
@@ -776,9 +784,11 @@ impl App {
                 FlatRow::GroupChild { item, .. } => item_url(item),
                 FlatRow::GroupHeader { .. } => None,
             },
-            Screen::LogDetail { entry, .. } => {
-                let url = match entry {
-                    LogEntry::Gcp { url, .. } | LogEntry::Loki { url, .. } => url.as_str(),
+            Screen::LogDetail { view, .. } => {
+                let url = match view {
+                    LogDetailView::Gcp { url, .. } | LogDetailView::Loki { url, .. } => {
+                        url.as_str()
+                    }
                 };
                 if url.is_empty() {
                     None
@@ -809,8 +819,8 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
                 StatusItem::Issue(issue) => EnterAction::OpenIssueDetail(issue.clone()),
                 StatusItem::Pr(pr) => EnterAction::OpenPrDetail(pr.clone()),
                 StatusItem::Gcp(_) | StatusItem::Loki(_) => {
-                    if let Some(entry) = log_entry_from_status_item(item) {
-                        EnterAction::OpenLogDetail(entry)
+                    if let Some(view) = log_detail_view_from_item(item) {
+                        EnterAction::OpenLogDetail(view)
                     } else {
                         EnterAction::None
                     }
@@ -835,36 +845,42 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
 }
 
 pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
-    // LogDetail carries the entry directly — no need to go via selected_status_item().
-    if let Screen::LogDetail { entry, .. } = &app.ui.screen {
-        return match entry {
-            LogEntry::Gcp {
+    // LogDetail carries the view directly — serialise all lines to a compact JSON array.
+    if let Screen::LogDetail { view, .. } = &app.ui.screen {
+        return match view {
+            LogDetailView::Gcp {
                 project,
                 env,
                 title,
                 message,
-                line,
-                ..
+                url,
+                lookback,
+                lines,
             } => InvestigateAction::LaunchGcp {
                 project: project.clone(),
                 env: env.clone(),
                 title: title.clone(),
                 message: message.clone(),
-                line: line.clone(),
+                line: lines_to_compact_json(lines),
+                url: url.clone(),
+                lookback: lookback.clone(),
             },
-            LogEntry::Loki {
+            LogDetailView::Loki {
                 project,
                 env,
                 title,
                 message,
-                line,
-                ..
+                url,
+                lookback,
+                lines,
             } => InvestigateAction::LaunchLoki {
                 project: project.clone(),
                 env: env.clone(),
                 title: title.clone(),
                 message: message.clone(),
-                line: line.clone(),
+                line: lines_to_compact_json(lines),
+                url: url.clone(),
+                lookback: lookback.clone(),
             },
         };
     }
@@ -902,12 +918,16 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
             title,
             message,
             line,
+            url,
+            lookback,
         }) => InvestigateAction::LaunchGcp {
             project,
             env,
             title,
             message,
             line,
+            url,
+            lookback,
         },
         Some(InvestigationKind::Loki {
             project,
@@ -915,12 +935,16 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
             title,
             message,
             line,
+            url,
+            lookback,
         }) => InvestigateAction::LaunchLoki {
             project,
             env,
             title,
             message,
             line,
+            url,
+            lookback,
         },
         #[cfg(feature = "private")]
         Some(InvestigationKind::MediaBlocked { title, error }) => {
@@ -996,7 +1020,10 @@ mod tests {
         compute_enter_action, compute_investigate_action, handle_msg, Action, App, Effect,
         EnterAction, InvestigateAction, Msg, RefreshState, Screen,
     };
-    use crate::display::{flatten, Category, DisplayItem, Filter, GroupKey, ListSnapshot};
+    use crate::display::{
+        flatten, log_detail_view_from_item, Category, DisplayItem, Filter, GroupKey, ListSnapshot,
+        LogDetailView, LogLine,
+    };
     use crate::state::{DataState, UiState};
     use workflows::status::{StatusItem, StatusReport};
 
@@ -1019,34 +1046,15 @@ mod tests {
     }
 
     fn app_in_log_detail(item: StatusItem) -> App {
-        use domain::LogEntry;
-        let entry = match &item {
-            StatusItem::Gcp(g) => LogEntry::Gcp {
-                project: g.project.clone(),
-                env: g.env.clone(),
-                title: g.title.clone(),
-                message: g.message.clone(),
-                line: g.line.clone(),
-                url: g.url.clone(),
-            },
-            StatusItem::Loki(l) => LogEntry::Loki {
-                project: l.project.clone(),
-                env: l.env.clone(),
-                title: l.title.clone(),
-                message: l.message.clone(),
-                line: l.line.clone(),
-                url: l.url.clone(),
-            },
-            StatusItem::Ci(_) => LogEntry::Gcp {
-                project: "p".to_string(),
-                env: "e".to_string(),
-                title: "t".to_string(),
-                message: "m".to_string(),
-                line: "{}".to_string(),
-                url: "https://example.com".to_string(),
-            },
-            _ => unimplemented!("app_in_log_detail: unsupported item type"),
-        };
+        let view = log_detail_view_from_item(&item).unwrap_or_else(|| LogDetailView::Gcp {
+            project: "p".to_string(),
+            env: "e".to_string(),
+            title: "t".to_string(),
+            message: "m".to_string(),
+            url: "https://example.com".to_string(),
+            lookback: "1h".to_string(),
+            lines: vec![LogLine::parse("{}")],
+        });
         let parent = ListSnapshot {
             items: vec![DisplayItem::Single(item)],
             selected: 0,
@@ -1057,7 +1065,7 @@ mod tests {
             ui: UiState {
                 screen: Screen::LogDetail {
                     parent,
-                    entry,
+                    view,
                     scroll: 0,
                 },
                 ..UiState::default()
@@ -1144,7 +1152,9 @@ mod tests {
                 env: "neuro".to_string(),
                 title: "errors".to_string(),
                 message: "something broke".to_string(),
-                line: r#"{"message":"something broke"}"#.to_string(),
+                line: r#"[{"message":"something broke"}]"#.to_string(),
+                url: "https://console.cloud.google.com/logs/query".to_string(),
+                lookback: "7d".to_string(),
             }
         );
     }
