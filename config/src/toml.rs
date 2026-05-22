@@ -23,9 +23,6 @@ pub struct Environment {
     pub env: String,
     pub gcp_project: Option<String>,
     pub gcp_region: Option<String>,
-    pub service: Option<String>,
-    pub cluster: Option<String>,
-    pub namespace: Option<String>,
     pub loki_endpoint: Option<String>,
     pub grafana_url: Option<String>,
     #[serde(default)]
@@ -44,29 +41,17 @@ pub enum WorkflowConfig {
     },
     #[serde(rename = "github-issues")]
     GithubIssues {},
-    #[serde(rename = "user-activity-gcp")]
-    UserActivityGcp {
-        #[serde(default)]
-        include_users: Vec<String>,
-        #[serde(default)]
-        exclude_users: Vec<String>,
-    },
-    #[serde(rename = "errors-gcp")]
-    ErrorsGcp {
-        #[serde(default)]
-        exclude_users: Vec<String>,
-    },
-    #[serde(rename = "warnings-gcp")]
-    WarningsGcp {
-        #[serde(default)]
-        exclude_users: Vec<String>,
+    #[serde(rename = "gcp-logs")]
+    GcpLogs {
+        title: String,
+        query: String,
+        lookback: Option<String>,
     },
     #[serde(rename = "loki-logs")]
     LokiLogs {
         title: String,
         query: String,
         lookback: Option<String>,
-        error_threshold: Option<u32>,
     },
 }
 
@@ -110,12 +95,9 @@ mod tests {
     }
 
     #[rstest]
-    #[case("errors-gcp", WorkflowConfig::ErrorsGcp { exclude_users: vec![] })]
     #[case("github-ci", WorkflowConfig::GithubCi { lookback: None })]
     #[case("github-issues", WorkflowConfig::GithubIssues {})]
     #[case("github-prs", WorkflowConfig::GithubPrs { exclude_authors: vec![] })]
-    #[case("user-activity-gcp", WorkflowConfig::UserActivityGcp { include_users: vec![], exclude_users: vec![] })]
-    #[case("warnings-gcp", WorkflowConfig::WarningsGcp { exclude_users: vec![] })]
     fn all_workflow_types_parse_with_name_only(
         #[case] name: &str,
         #[case] expected: WorkflowConfig,
@@ -208,13 +190,12 @@ mod tests {
                 title: "app errors".into(),
                 query: "{app=\"myapp\"} | logfmt | level=\"error\"".into(),
                 lookback: None,
-                error_threshold: None,
             }]
         );
     }
 
     #[test]
-    fn loki_logs_parses_with_all_fields() {
+    fn loki_logs_parses_with_lookback() {
         let result = parse(
             r#"
             [[project]]
@@ -230,7 +211,6 @@ mod tests {
             title = "worker panics"
             query = '{app="myapp",component="worker"} |= "panic"'
             lookback = "30m"
-            error_threshold = 1
         "#,
         )
         .unwrap();
@@ -240,38 +220,68 @@ mod tests {
                 title: "worker panics".into(),
                 query: r#"{app="myapp",component="worker"} |= "panic""#.into(),
                 lookback: Some("30m".into()),
-                error_threshold: Some(1),
             }]
         );
     }
 
     #[test]
-    fn environment_with_gcp_workflow() {
+    fn gcp_logs_parses_with_required_fields_only() {
         let result = parse(
             r#"
             [[project]]
-            name = "my-app"
-            repo = "org/my-app"
+            name = "myapp"
+            repo = "org/myapp"
 
             [[project.environment]]
-            env = "prod"
+            env = "neuro"
             gcp_project = "my-org-prod"
-            service = "my-app"
 
             [[project.environment.workflow]]
-            name = "user-activity-gcp"
-            exclude_users = ["bot@example.com"]
+            name = "gcp-logs"
+            title = "errors"
+            query = 'resource.type="cloud_run_revision" AND severity>=ERROR'
         "#,
         )
         .unwrap();
         let env = &result.project[0].environment[0];
-        assert_eq!(env.env, "prod");
         assert_eq!(env.gcp_project.as_deref(), Some("my-org-prod"));
         assert_eq!(
             env.workflow,
-            vec![WorkflowConfig::UserActivityGcp {
-                include_users: vec![],
-                exclude_users: vec!["bot@example.com".into()],
+            vec![WorkflowConfig::GcpLogs {
+                title: "errors".into(),
+                query: "resource.type=\"cloud_run_revision\" AND severity>=ERROR".into(),
+                lookback: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn gcp_logs_parses_with_lookback() {
+        let result = parse(
+            r#"
+            [[project]]
+            name = "myapp"
+            repo = "org/myapp"
+
+            [[project.environment]]
+            env = "neuro"
+            gcp_project = "my-org-prod"
+            gcp_region = "us-central1"
+
+            [[project.environment.workflow]]
+            name = "gcp-logs"
+            title = "errors"
+            query = 'resource.type="cloud_run_revision" AND severity>=ERROR'
+            lookback = "30m"
+        "#,
+        )
+        .unwrap();
+        assert_eq!(
+            result.project[0].environment[0].workflow,
+            vec![WorkflowConfig::GcpLogs {
+                title: "errors".into(),
+                query: "resource.type=\"cloud_run_revision\" AND severity>=ERROR".into(),
+                lookback: Some("30m".into()),
             }]
         );
     }
@@ -369,36 +379,33 @@ mod tests {
 
             [[project.environment]]
             env = "internal"
-            cluster = "internal-cluster"
-            namespace = "default"
+            loki_endpoint = "https://loki.example.com"
+            grafana_url = "https://grafana.example.com"
 
             [[project.environment.workflow]]
             name = "loki-logs"
             title = "app errors"
             query = '{app="myapp"} | logfmt | level="error"'
             lookback = "1h"
-            error_threshold = 10
 
             [[project.environment]]
-            env = "prod"
+            env = "neuro"
             gcp_project = "org-prod"
             gcp_region = "us-central1"
-            service = "myapp"
 
             [[project.environment.workflow]]
-            name = "user-activity-gcp"
-            include_users = ["alice@example.com"]
+            name = "gcp-logs"
+            title = "errors"
+            query = 'resource.type="cloud_run_revision" AND severity>=ERROR'
 
             [[project.environment.workflow]]
-            name = "errors-gcp"
-            exclude_users = ["bot@example.com"]
-
-            [[project.environment.workflow]]
-            name = "warnings-gcp"
+            name = "gcp-logs"
+            title = "errors (external)"
+            query = 'resource.type="cloud_run_revision" AND severity>=ERROR AND labels."user-type"="external"'
+            lookback = "30m"
 
             [[monitor.workflow]]
             name = "github-prs"
-            exclude_authors = ["dependabot", "renovate"]
         "#,
         )
         .unwrap();
@@ -419,23 +426,6 @@ mod tests {
             let result = parse(&toml).unwrap();
             prop_assert_eq!(&result.project[0].name, &name);
             prop_assert_eq!(&result.project[0].repo, &format!("{owner}/{repo}"));
-        }
-
-        // Arbitrary exclude_users lists survive a parse round-trip.
-        #[test]
-        fn exclude_users_round_trip(
-            users in proptest::collection::vec("[a-zA-Z][a-zA-Z0-9@._-]{0,30}", 0..10),
-        ) {
-            let list = users.iter().map(|u| format!("\"{u}\"")).collect::<Vec<_>>().join(", ");
-            let toml = format!(
-                "[[project]]\nname = \"hub\"\nrepo = \"ooloth/hub\"\n\
-                 [[project.workflow]]\nname = \"errors-gcp\"\nexclude_users = [{list}]\n"
-            );
-            let result = parse(&toml).unwrap();
-            let WorkflowConfig::ErrorsGcp { exclude_users } = &result.project[0].workflow[0] else {
-                panic!("expected ErrorsGcp");
-            };
-            prop_assert_eq!(exclude_users, &users);
         }
     }
 }

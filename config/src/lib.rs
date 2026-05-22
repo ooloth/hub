@@ -84,7 +84,7 @@ impl Config {
     }
 
     /// Returns one `LokiEnv` per environment that has a `loki_endpoint` and at least
-    /// one `loki-logs` workflow. Lookback defaults to `"1h"` and threshold to `10`.
+    /// one `loki-logs` workflow. Lookback defaults to `"1h"`.
     pub fn loki_envs(&self) -> Vec<domain::LokiEnv> {
         self.projects
             .iter()
@@ -99,14 +99,12 @@ impl Config {
                                 title,
                                 query,
                                 lookback,
-                                error_threshold,
                             } = w
                             {
                                 Some(domain::LokiQuery {
                                     title: title.clone(),
                                     query: query.clone(),
                                     lookback: lookback.clone().unwrap_or_else(|| "1h".into()),
-                                    threshold: error_threshold.unwrap_or(10),
                                 })
                             } else {
                                 None
@@ -122,6 +120,49 @@ impl Config {
                         endpoint,
                         token: self.loki_token.clone(),
                         grafana_url: env.grafana_url.clone(),
+                        queries,
+                    })
+                })
+            })
+            .collect()
+    }
+
+    /// Returns one `GcpEnv` per environment that has a `gcp_project` and at least
+    /// one `gcp-logs` workflow. Lookback defaults to `"1h"`.
+    pub fn gcp_envs(&self) -> Vec<domain::GcpEnv> {
+        self.projects
+            .iter()
+            .flat_map(|p| {
+                p.environment.iter().filter_map(|env| {
+                    let gcp_project = env.gcp_project.clone()?;
+                    let queries: Vec<domain::GcpQuery> = env
+                        .workflow
+                        .iter()
+                        .filter_map(|w| {
+                            if let toml::WorkflowConfig::GcpLogs {
+                                title,
+                                query,
+                                lookback,
+                            } = w
+                            {
+                                Some(domain::GcpQuery {
+                                    title: title.clone(),
+                                    query: query.clone(),
+                                    lookback: lookback.clone().unwrap_or_else(|| "1h".into()),
+                                })
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    if queries.is_empty() {
+                        return None;
+                    }
+                    Some(domain::GcpEnv {
+                        project: p.name.clone(),
+                        env: env.env.clone(),
+                        gcp_project,
+                        gcp_region: env.gcp_region.clone(),
                         queries,
                     })
                 })
@@ -165,11 +206,23 @@ mod tests {
             env: "prod".into(),
             gcp_project: None,
             gcp_region: None,
-            service: None,
-            cluster: None,
-            namespace: None,
             loki_endpoint: Some(endpoint.into()),
             grafana_url: grafana_url.map(Into::into),
+            workflow: workflows,
+        }
+    }
+
+    fn gcp_env(
+        gcp_project: &str,
+        gcp_region: Option<&str>,
+        workflows: Vec<toml::WorkflowConfig>,
+    ) -> toml::Environment {
+        toml::Environment {
+            env: "neuro".into(),
+            gcp_project: Some(gcp_project.into()),
+            gcp_region: gcp_region.map(Into::into),
+            loki_endpoint: None,
+            grafana_url: None,
             workflow: workflows,
         }
     }
@@ -179,9 +232,6 @@ mod tests {
             env: "prod".into(),
             gcp_project: None,
             gcp_region: None,
-            service: None,
-            cluster: None,
-            namespace: None,
             loki_endpoint: None,
             grafana_url: None,
             workflow: workflows,
@@ -373,7 +423,6 @@ mod tests {
                     title: "errors".into(),
                     query: "{app=\"myapp\"}".into(),
                     lookback: Some("30m".into()),
-                    error_threshold: Some(5),
                 }],
             )],
         )]);
@@ -383,7 +432,6 @@ mod tests {
         assert_eq!(envs[0].endpoint, "https://loki.example.com");
         assert_eq!(envs[0].queries[0].title, "errors");
         assert_eq!(envs[0].queries[0].lookback, "30m");
-        assert_eq!(envs[0].queries[0].threshold, 5);
     }
 
     #[test]
@@ -398,30 +446,10 @@ mod tests {
                     title: "errors".into(),
                     query: "{app=\"myapp\"}".into(),
                     lookback: None,
-                    error_threshold: Some(5),
                 }],
             )],
         )]);
         assert_eq!(cfg.loki_envs()[0].queries[0].lookback, "1h");
-    }
-
-    #[test]
-    fn loki_envs_defaults_threshold_to_10() {
-        let cfg = config(vec![project_with_envs(
-            "myapp",
-            "org/myapp",
-            vec![loki_env(
-                "https://loki.example.com",
-                None,
-                vec![toml::WorkflowConfig::LokiLogs {
-                    title: "errors".into(),
-                    query: "{app=\"myapp\"}".into(),
-                    lookback: None,
-                    error_threshold: None,
-                }],
-            )],
-        )]);
-        assert_eq!(cfg.loki_envs()[0].queries[0].threshold, 10);
     }
 
     #[test]
@@ -433,7 +461,6 @@ mod tests {
                 title: "errors".into(),
                 query: "{app=\"myapp\"}".into(),
                 lookback: None,
-                error_threshold: None,
             }])],
         )]);
         assert!(cfg.loki_envs().is_empty());
@@ -447,5 +474,120 @@ mod tests {
             vec![loki_env("https://loki.example.com", None, vec![])],
         )]);
         assert!(cfg.loki_envs().is_empty());
+    }
+
+    // gcp_envs
+
+    #[test]
+    fn gcp_envs_returns_env_with_gcp_project_and_gcp_logs() {
+        let cfg = config(vec![project_with_envs(
+            "myapp",
+            "org/myapp",
+            vec![gcp_env(
+                "my-org-prod",
+                None,
+                vec![toml::WorkflowConfig::GcpLogs {
+                    title: "errors".into(),
+                    query: "severity>=ERROR".into(),
+                    lookback: Some("30m".into()),
+                }],
+            )],
+        )]);
+        let envs = cfg.gcp_envs();
+        assert_eq!(envs.len(), 1);
+        assert_eq!(envs[0].project, "myapp");
+        assert_eq!(envs[0].env, "neuro");
+        assert_eq!(envs[0].gcp_project, "my-org-prod");
+        assert_eq!(envs[0].queries[0].title, "errors");
+        assert_eq!(envs[0].queries[0].lookback, "30m");
+    }
+
+    #[test]
+    fn gcp_envs_defaults_lookback_to_1h() {
+        let cfg = config(vec![project_with_envs(
+            "myapp",
+            "org/myapp",
+            vec![gcp_env(
+                "my-org-prod",
+                None,
+                vec![toml::WorkflowConfig::GcpLogs {
+                    title: "errors".into(),
+                    query: "severity>=ERROR".into(),
+                    lookback: None,
+                }],
+            )],
+        )]);
+        assert_eq!(cfg.gcp_envs()[0].queries[0].lookback, "1h");
+    }
+
+    #[test]
+    fn gcp_envs_propagates_gcp_region() {
+        let cfg = config(vec![project_with_envs(
+            "myapp",
+            "org/myapp",
+            vec![gcp_env(
+                "my-org-prod",
+                Some("us-central1"),
+                vec![toml::WorkflowConfig::GcpLogs {
+                    title: "errors".into(),
+                    query: "severity>=ERROR".into(),
+                    lookback: None,
+                }],
+            )],
+        )]);
+        assert_eq!(cfg.gcp_envs()[0].gcp_region.as_deref(), Some("us-central1"));
+    }
+
+    #[test]
+    fn gcp_envs_skips_env_without_gcp_project() {
+        let cfg = config(vec![project_with_envs(
+            "myapp",
+            "org/myapp",
+            vec![env_no_loki(vec![toml::WorkflowConfig::GcpLogs {
+                title: "errors".into(),
+                query: "severity>=ERROR".into(),
+                lookback: None,
+            }])],
+        )]);
+        assert!(cfg.gcp_envs().is_empty());
+    }
+
+    #[test]
+    fn gcp_envs_skips_env_with_gcp_project_but_no_gcp_logs_workflow() {
+        let cfg = config(vec![project_with_envs(
+            "myapp",
+            "org/myapp",
+            vec![gcp_env("my-org-prod", None, vec![])],
+        )]);
+        assert!(cfg.gcp_envs().is_empty());
+    }
+
+    #[test]
+    fn gcp_envs_collects_multiple_queries_on_one_env() {
+        let cfg = config(vec![project_with_envs(
+            "myapp",
+            "org/myapp",
+            vec![gcp_env(
+                "my-org-prod",
+                None,
+                vec![
+                    toml::WorkflowConfig::GcpLogs {
+                        title: "errors".into(),
+                        query: "severity>=ERROR".into(),
+                        lookback: None,
+                    },
+                    toml::WorkflowConfig::GcpLogs {
+                        title: "errors (external)".into(),
+                        query: "severity>=ERROR AND labels.user_type=\"external\"".into(),
+                        lookback: Some("30m".into()),
+                    },
+                ],
+            )],
+        )]);
+        let envs = cfg.gcp_envs();
+        assert_eq!(envs.len(), 1);
+        assert_eq!(envs[0].queries.len(), 2);
+        assert_eq!(envs[0].queries[0].title, "errors");
+        assert_eq!(envs[0].queries[1].title, "errors (external)");
     }
 }

@@ -14,11 +14,6 @@ pub async fn run(env: &LokiEnv) -> Result<Vec<LokiEntry>> {
         )
         .await?;
 
-        let count = u32::try_from(entries.len()).unwrap_or(u32::MAX);
-        if count < query.threshold {
-            continue;
-        }
-
         let url = grafana_explore_url(env.grafana_url.as_deref(), &query.query, &query.lookback);
 
         for entry in &entries {

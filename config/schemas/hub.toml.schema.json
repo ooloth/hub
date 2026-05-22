@@ -58,19 +58,7 @@
         },
         "gcp_region": {
           "type": "string",
-          "description": "GCP region — e.g. us-central1."
-        },
-        "service": {
-          "type": "string",
-          "description": "Service or app name within the platform."
-        },
-        "cluster": {
-          "type": "string",
-          "description": "GKE cluster name."
-        },
-        "namespace": {
-          "type": "string",
-          "description": "Kubernetes namespace."
+          "description": "GCP region — e.g. us-central1. Optional; used for richer GCP Console log links."
         },
         "loki_endpoint": {
           "type": "string",
@@ -90,27 +78,32 @@
     "workflow": {
       "description": "A workflow instance. Entries are sorted alphabetically by workflow name slug.",
       "oneOf": [
-        { "$ref": "#/definitions/workflow_errors_gcp" },
+        { "$ref": "#/definitions/workflow_gcp_logs" },
         { "$ref": "#/definitions/workflow_github_ci" },
         { "$ref": "#/definitions/workflow_github_issues" },
         { "$ref": "#/definitions/workflow_github_prs" },
         { "$ref": "#/definitions/workflow_loki_logs" },
-        { "$ref": "#/definitions/workflow_user_activity_gcp" },
-        { "$ref": "#/definitions/workflow_warnings_gcp" },
         { "$ref": "#/definitions/workflow_private" }
       ]
     },
-    "workflow_errors_gcp": {
+    "workflow_gcp_logs": {
       "type": "object",
-      "description": "Surfaces errors from Google Cloud Logging. Reads gcp_project and service from parent environment. Credentials via GCP_TOKEN.",
-      "required": ["name"],
+      "description": "Surfaces log entries from GCP Cloud Logging via gcloud CLI. Reads gcp_project (and optionally gcp_region) from the parent environment.",
+      "required": ["name", "title", "query"],
       "additionalProperties": false,
       "properties": {
-        "name": { "const": "errors-gcp" },
-        "exclude_users": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Exclude errors from these principals — e.g. bot service accounts."
+        "name": { "const": "gcp-logs" },
+        "title": {
+          "type": "string",
+          "description": "Human-readable label for this signal — e.g. 'errors', 'errors (external users)'."
+        },
+        "query": {
+          "type": "string",
+          "description": "Complete GCP Logging filter string. All returned entries are surfaced. Example: 'resource.type=\"cloud_run_revision\" AND severity>=ERROR'."
+        },
+        "lookback": {
+          "type": "string",
+          "description": "How far back to query — e.g. '1h', '30m'. Default: '1h'."
         }
       }
     },
@@ -161,7 +154,7 @@
     },
     "workflow_loki_logs": {
       "type": "object",
-      "description": "Emits a LokiErrors signal when a LogQL query returns at least error_threshold entries. Reads loki_endpoint from parent environment. Credentials via LOKI_TOKEN (optional for VPN-only endpoints).",
+      "description": "Surfaces log entries matching a LogQL query. Reads loki_endpoint from parent environment. Credentials via LOKI_TOKEN (optional for VPN-only endpoints).",
       "required": ["name", "title", "query"],
       "additionalProperties": false,
       "properties": {
@@ -172,49 +165,11 @@
         },
         "query": {
           "type": "string",
-          "description": "Complete LogQL expression. All returned entries count toward the threshold."
+          "description": "Complete LogQL expression. All returned entries are surfaced."
         },
         "lookback": {
           "type": "string",
           "description": "How far back to query — e.g. '1h', '30m'. Default: '1h'."
-        },
-        "error_threshold": {
-          "type": "integer",
-          "minimum": 1,
-          "description": "Minimum entry count to emit a signal. Default: 10."
-        }
-      }
-    },
-    "workflow_user_activity_gcp": {
-      "type": "object",
-      "description": "Surfaces user activity from Google Cloud Logging. Reads gcp_project and service from parent environment. Credentials via GCP_TOKEN.",
-      "required": ["name"],
-      "additionalProperties": false,
-      "properties": {
-        "name": { "const": "user-activity-gcp" },
-        "include_users": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Only surface activity from these principals. When set, all others are ignored."
-        },
-        "exclude_users": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Exclude activity from these principals — e.g. bot service accounts."
-        }
-      }
-    },
-    "workflow_warnings_gcp": {
-      "type": "object",
-      "description": "Surfaces warnings from Google Cloud Logging. Reads gcp_project and service from parent environment. Credentials via GCP_TOKEN.",
-      "required": ["name"],
-      "additionalProperties": false,
-      "properties": {
-        "name": { "const": "warnings-gcp" },
-        "exclude_users": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Exclude warnings from these principals — e.g. bot service accounts."
         }
       }
     },
@@ -227,13 +182,11 @@
           "type": "string",
           "not": {
             "enum": [
-              "errors-gcp",
+              "gcp-logs",
               "github-ci",
               "github-issues",
               "github-prs",
-              "loki-logs",
-              "user-activity-gcp",
-              "warnings-gcp"
+              "loki-logs"
             ]
           }
         }

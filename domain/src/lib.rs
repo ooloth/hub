@@ -202,7 +202,6 @@ pub struct LokiQuery {
     pub title: String,
     pub query: String,
     pub lookback: String,
-    pub threshold: u32,
 }
 
 /// A GitHub repository configured for the github-prs workflow, with the PR authors to exclude.
@@ -223,7 +222,7 @@ pub struct LokiEnv {
     pub queries: Vec<LokiQuery>,
 }
 
-/// One log entry returned by a Loki query that breached its threshold.
+/// One log entry returned by a Loki query.
 /// Emitted once per raw log line; the display layer groups by `message`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LokiEntry {
@@ -231,6 +230,45 @@ pub struct LokiEntry {
     pub project: String,
     pub env: String,
     /// The `message` stream label — stable error category, used as the grouping key.
+    pub message: String,
+    /// Raw JSON log line, passed to investigation agents for context.
+    pub line: String,
+    pub lookback: String,
+    #[serde(with = "duration_secs")]
+    pub age: chrono::Duration,
+    pub urgency: Urgency,
+    pub url: String,
+}
+
+/// A GCP Cloud Logging query to run for one monitoring scenario.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GcpQuery {
+    pub title: String,
+    /// Raw GCP Logging filter string, fully user-controlled.
+    pub query: String,
+    pub lookback: String,
+}
+
+/// All GCP Cloud Logging queries configured for one deployment environment.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GcpEnv {
+    pub project: String,
+    pub env: String,
+    /// GCP project ID, used as the `resourceNames` scope for API calls.
+    pub gcp_project: String,
+    /// GCP region — used for GCP Console log links. Optional.
+    pub gcp_region: Option<String>,
+    pub queries: Vec<GcpQuery>,
+}
+
+/// One log entry returned by a GCP Cloud Logging query.
+/// Emitted once per raw log line; the display layer groups by `message`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GcpEntry {
+    pub title: String,
+    pub project: String,
+    pub env: String,
+    /// Display + grouping key extracted from the log payload.
     pub message: String,
     /// Raw JSON log line, passed to investigation agents for context.
     pub line: String,

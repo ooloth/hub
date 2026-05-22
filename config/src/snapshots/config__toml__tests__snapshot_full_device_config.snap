@@ -20,15 +20,12 @@ HubToml {
                     env: "internal",
                     gcp_project: None,
                     gcp_region: None,
-                    service: None,
-                    cluster: Some(
-                        "internal-cluster",
+                    loki_endpoint: Some(
+                        "https://loki.example.com",
                     ),
-                    namespace: Some(
-                        "default",
+                    grafana_url: Some(
+                        "https://grafana.example.com",
                     ),
-                    loki_endpoint: None,
-                    grafana_url: None,
                     workflow: [
                         LokiLogs {
                             title: "app errors",
@@ -36,41 +33,31 @@ HubToml {
                             lookback: Some(
                                 "1h",
                             ),
-                            error_threshold: Some(
-                                10,
-                            ),
                         },
                     ],
                 },
                 Environment {
-                    env: "prod",
+                    env: "neuro",
                     gcp_project: Some(
                         "org-prod",
                     ),
                     gcp_region: Some(
                         "us-central1",
                     ),
-                    service: Some(
-                        "myapp",
-                    ),
-                    cluster: None,
-                    namespace: None,
                     loki_endpoint: None,
                     grafana_url: None,
                     workflow: [
-                        UserActivityGcp {
-                            include_users: [
-                                "alice@example.com",
-                            ],
-                            exclude_users: [],
+                        GcpLogs {
+                            title: "errors",
+                            query: "resource.type=\"cloud_run_revision\" AND severity>=ERROR",
+                            lookback: None,
                         },
-                        ErrorsGcp {
-                            exclude_users: [
-                                "bot@example.com",
-                            ],
-                        },
-                        WarningsGcp {
-                            exclude_users: [],
+                        GcpLogs {
+                            title: "errors (external)",
+                            query: "resource.type=\"cloud_run_revision\" AND severity>=ERROR AND labels.\"user-type\"=\"external\"",
+                            lookback: Some(
+                                "30m",
+                            ),
                         },
                     ],
                 },
