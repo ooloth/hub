@@ -290,6 +290,38 @@ pub async fn ensure_default_branch_worktree(bare: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Creates a fresh detached-HEAD investigation worktree under `bare` at a
+/// timestamped path. Returns the worktree path. The caller is responsible
+/// for removing it via `git worktree remove --force` when done.
+pub async fn create_investigation_worktree(bare: &Path) -> Result<PathBuf> {
+    let bare_str = bare.to_string_lossy().into_owned();
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let worktree = bare.join(format!("investigation-{ts}"));
+    let worktree_str = worktree.to_string_lossy().into_owned();
+
+    let add = Command::new("git")
+        .args([
+            "-C",
+            &bare_str,
+            "worktree",
+            "add",
+            "--detach",
+            &worktree_str,
+        ])
+        .output()
+        .await
+        .context("git worktree add failed for investigation")?;
+    if !add.status.success() {
+        let stderr = String::from_utf8_lossy(&add.stderr);
+        anyhow::bail!("git worktree add --detach failed: {stderr}");
+    }
+
+    Ok(worktree)
+}
+
 async fn clean_merged_worktrees(bare_dir: &str) -> Result<()> {
     let out = Command::new("git")
         .args(["-C", bare_dir, "worktree", "list", "--porcelain"])

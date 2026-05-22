@@ -7,7 +7,7 @@ use crossterm::{
 };
 use futures::StreamExt;
 use ratatui::{backend::CrosstermBackend, Terminal};
-use std::{io, path::PathBuf, time::Duration};
+use std::{io, time::Duration};
 use tokio::sync::mpsc;
 use workflows::status::{StatusReport, SCHEMA_VERSION};
 
@@ -152,56 +152,6 @@ fn spawn_fetch(config: &config::Config, tx: mpsc::Sender<Result<StatusReport>>) 
     });
 }
 
-async fn resolve_investigation_cwd(config: &config::Config, repo: &str) -> Result<PathBuf, String> {
-    let name = config
-        .projects
-        .iter()
-        .find(|p| p.repo == repo)
-        .map(|p| p.name.as_str())
-        .ok_or_else(|| format!("No project found for {repo}"))?;
-
-    let repos = workflows::fetch::repos_dir();
-    let bare = repos.join(name);
-
-    if !bare.exists() {
-        return Err("Not fetched yet; run hub fetch".to_string());
-    }
-
-    // Always fetch and sync — ensures the agent sees current code regardless of
-    // when the background refresh last ran.
-    workflows::fetch::sync_default_branch_worktree(&bare, &config.github_token)
-        .await
-        .map_err(|e| format!("Failed to sync worktree: {e}"))?;
-
-    workflows::fetch::default_branch_worktree(&repos, name)
-        .ok_or_else(|| "Worktree sync succeeded but path not found".to_string())
-}
-
-async fn resolve_pr_worktree(
-    config: &config::Config,
-    repo: &str,
-    number: u64,
-    head_branch: &str,
-) -> Result<PathBuf, String> {
-    let name = config
-        .projects
-        .iter()
-        .find(|p| p.repo == repo)
-        .map(|p| p.name.as_str())
-        .ok_or_else(|| format!("No project found for {repo}"))?;
-
-    let repos = workflows::fetch::repos_dir();
-    let bare = repos.join(name);
-
-    if !bare.exists() {
-        return Err("Not fetched yet; run hub fetch".to_string());
-    }
-
-    workflows::fetch::ensure_pr_worktree(&bare, number, head_branch, &config.github_token)
-        .await
-        .map_err(|e| format!("Failed to create PR worktree: {e}"))
-}
-
 fn spawn_git_fetch(config: &config::Config) {
     let github_token = config.github_token.clone();
     let projects: Vec<(String, String)> = config
@@ -310,31 +260,27 @@ async fn run_loop(
                     let _ = open::that_detached(url);
                 }
                 Effect::LaunchCi { repo, run_url } => {
-                    match resolve_investigation_cwd(config, &repo).await {
-                        Ok(cwd) => {
-                            if let Err(err) = investigations::launch(
-                                investigations::ci::config(&repo, &run_url),
-                                &cwd,
-                                &config.github_token,
-                            ) {
-                                app.ui.flash = Some(err.to_string());
-                            }
-                        }
-                        Err(msg) => app.ui.flash = Some(msg),
+                    if let Err(err) = investigations::launch(
+                        investigations::ci::config(&repo, &run_url),
+                        investigations::WorktreeSpec::DefaultBranch { repo },
+                        config,
+                        &config.github_token,
+                    )
+                    .await
+                    {
+                        app.ui.flash = Some(err.to_string());
                     }
                 }
                 Effect::LaunchIssue { repo, number } => {
-                    match resolve_investigation_cwd(config, &repo).await {
-                        Ok(cwd) => {
-                            if let Err(err) = investigations::launch(
-                                investigations::issue::config(&repo, number),
-                                &cwd,
-                                &config.github_token,
-                            ) {
-                                app.ui.flash = Some(err.to_string());
-                            }
-                        }
-                        Err(msg) => app.ui.flash = Some(msg),
+                    if let Err(err) = investigations::launch(
+                        investigations::issue::config(&repo, number),
+                        investigations::WorktreeSpec::DefaultBranch { repo },
+                        config,
+                        &config.github_token,
+                    )
+                    .await
+                    {
+                        app.ui.flash = Some(err.to_string());
                     }
                 }
                 Effect::LaunchPr {
@@ -344,43 +290,51 @@ async fn run_loop(
                     review_decision,
                     head_branch,
                     ..
-                } => match resolve_pr_worktree(config, &repo, number, &head_branch).await {
-                    Ok(cwd) => {
-                        let ownership = PrOwnership::from_kind(kind);
-                        let skill =
-                            if review_decision == Some(domain::ReviewDecision::ChangesRequested) {
-                                ReviewSkill::PrCommentsConverge
-                            } else {
-                                ReviewSkill::Converge
-                            };
-                        if let Err(err) = investigations::launch(
-                            investigations::pr::review_config(number, &repo, ownership, skill),
-                            &cwd,
-                            &config.github_token,
-                        ) {
-                            app.ui.flash = Some(err.to_string());
-                        }
+                } => {
+                    let ownership = PrOwnership::from_kind(kind);
+                    let skill = if review_decision == Some(domain::ReviewDecision::ChangesRequested)
+                    {
+                        ReviewSkill::PrCommentsConverge
+                    } else {
+                        ReviewSkill::Converge
+                    };
+                    if let Err(err) = investigations::launch(
+                        investigations::pr::review_config(number, &repo, ownership, skill),
+                        investigations::WorktreeSpec::PullRequest {
+                            repo,
+                            number,
+                            head_branch,
+                        },
+                        config,
+                        &config.github_token,
+                    )
+                    .await
+                    {
+                        app.ui.flash = Some(err.to_string());
                     }
-                    Err(msg) => app.ui.flash = Some(msg),
-                },
+                }
                 Effect::AskAboutPr {
                     repo,
                     number,
                     ownership,
                     head_branch,
                     ..
-                } => match resolve_pr_worktree(config, &repo, number, &head_branch).await {
-                    Ok(cwd) => {
-                        if let Err(err) = investigations::launch(
-                            investigations::pr::bare_config(number, &repo, ownership),
-                            &cwd,
-                            &config.github_token,
-                        ) {
-                            app.ui.flash = Some(err.to_string());
-                        }
+                } => {
+                    if let Err(err) = investigations::launch(
+                        investigations::pr::bare_config(number, &repo, ownership),
+                        investigations::WorktreeSpec::PullRequest {
+                            repo,
+                            number,
+                            head_branch,
+                        },
+                        config,
+                        &config.github_token,
+                    )
+                    .await
+                    {
+                        app.ui.flash = Some(err.to_string());
                     }
-                    Err(msg) => app.ui.flash = Some(msg),
-                },
+                }
                 Effect::ReviewPr {
                     repo,
                     number,
@@ -388,18 +342,22 @@ async fn run_loop(
                     skill,
                     head_branch,
                     ..
-                } => match resolve_pr_worktree(config, &repo, number, &head_branch).await {
-                    Ok(cwd) => {
-                        if let Err(err) = investigations::launch(
-                            investigations::pr::review_config(number, &repo, ownership, skill),
-                            &cwd,
-                            &config.github_token,
-                        ) {
-                            app.ui.flash = Some(err.to_string());
-                        }
+                } => {
+                    if let Err(err) = investigations::launch(
+                        investigations::pr::review_config(number, &repo, ownership, skill),
+                        investigations::WorktreeSpec::PullRequest {
+                            repo,
+                            number,
+                            head_branch,
+                        },
+                        config,
+                        &config.github_token,
+                    )
+                    .await
+                    {
+                        app.ui.flash = Some(err.to_string());
                     }
-                    Err(msg) => app.ui.flash = Some(msg),
-                },
+                }
                 Effect::LaunchGcp {
                     project,
                     env,
@@ -409,29 +367,27 @@ async fn run_loop(
                     url,
                     lookback,
                     gcp_project,
-                } => match std::env::current_dir() {
-                    Ok(cwd) => {
-                        if let Err(err) = investigations::launch(
-                            investigations::gcp::config(
-                                &project,
-                                &env,
-                                &title,
-                                &message,
-                                &line,
-                                &url,
-                                &lookback,
-                                &gcp_project,
-                            ),
-                            &cwd,
-                            &config.github_token,
-                        ) {
-                            app.ui.flash = Some(err.to_string());
-                        }
+                } => {
+                    if let Err(err) = investigations::launch(
+                        investigations::gcp::config(
+                            &project,
+                            &env,
+                            &title,
+                            &message,
+                            &line,
+                            &url,
+                            &lookback,
+                            &gcp_project,
+                        ),
+                        investigations::WorktreeSpec::Ephemeral { project },
+                        config,
+                        &config.github_token,
+                    )
+                    .await
+                    {
+                        app.ui.flash = Some(err.to_string());
                     }
-                    Err(e) => {
-                        app.ui.flash = Some(format!("Cannot determine working directory: {e}"));
-                    }
-                },
+                }
                 Effect::LaunchLoki {
                     project,
                     env,
@@ -440,37 +396,33 @@ async fn run_loop(
                     line,
                     url,
                     lookback,
-                } => match std::env::current_dir() {
-                    Ok(cwd) => {
-                        if let Err(err) = investigations::launch(
-                            investigations::loki::config(
-                                &project, &env, &title, &message, &line, &url, &lookback,
-                            ),
-                            &cwd,
-                            &config.github_token,
-                        ) {
-                            app.ui.flash = Some(err.to_string());
-                        }
+                } => {
+                    if let Err(err) = investigations::launch(
+                        investigations::loki::config(
+                            &project, &env, &title, &message, &line, &url, &lookback,
+                        ),
+                        investigations::WorktreeSpec::Ephemeral { project },
+                        config,
+                        &config.github_token,
+                    )
+                    .await
+                    {
+                        app.ui.flash = Some(err.to_string());
                     }
-                    Err(e) => {
-                        app.ui.flash = Some(format!("Cannot determine working directory: {e}"));
-                    }
-                },
+                }
                 #[cfg(feature = "private")]
-                Effect::LaunchMediaBlocked { title, error } => match std::env::current_dir() {
-                    Ok(cwd) => {
-                        if let Err(err) = investigations::launch(
-                            investigations::media::config(&title, &error),
-                            &cwd,
-                            &config.github_token,
-                        ) {
-                            app.ui.flash = Some(err.to_string());
-                        }
+                Effect::LaunchMediaBlocked { title, error } => {
+                    if let Err(err) = investigations::launch(
+                        investigations::media::config(&title, &error),
+                        investigations::WorktreeSpec::CurrentDir,
+                        config,
+                        &config.github_token,
+                    )
+                    .await
+                    {
+                        app.ui.flash = Some(err.to_string());
                     }
-                    Err(e) => {
-                        app.ui.flash = Some(format!("Cannot determine working directory: {e}"));
-                    }
-                },
+                }
                 Effect::SetIssueLabels {
                     repo,
                     number,

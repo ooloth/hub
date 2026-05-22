@@ -4,12 +4,13 @@ Diagnoses a GCP Cloud Logging error by finding where it originates in the codeba
 
 ## Prerequisites
 
-- Running in the project's local worktree (hub TUI ensures this)
+- Running in a fresh detached-HEAD worktree of the project repo (hub TUI creates it automatically from the last-fetched state of the default branch). Use `rg`, `Read`, and `git log` directly — no setup needed.
 
 ## Context
 
 Launched from the hub TUI with:
-- `project` — hub project name (e.g. "mapapp")
+
+- `project` — hub project name (e.g. "dash-phenoapp-v2")
 - `env` — environment (e.g. "neuro", "prod")
 - `gcp_project` — GCP cloud project ID (e.g. "rp006-prod-49a893d8"); use this as `--project` in `gcloud` commands and as the `project=` param in GCP Console URLs
 - `title` — error category (e.g. "errors")
@@ -87,6 +88,7 @@ You can name the error's origin, its likely cause, and at least one concrete nex
 **Cause:** One or two sentences explaining why it's happening.
 
 **Options:**
+
 1. First fix — when to use it
 2. Second fix — if applicable
 

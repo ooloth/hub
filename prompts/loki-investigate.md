@@ -4,7 +4,7 @@ Diagnoses a Loki application error by finding where it originates in the codebas
 
 ## Prerequisites
 
-- Running in the project's local worktree (hub TUI ensures this)
+- Running in a fresh detached-HEAD worktree of the project repo (hub TUI creates it automatically from the last-fetched state of the default branch). Use `rg`, `Read`, and `git log` directly — no setup needed.
 
 ## Context
 
