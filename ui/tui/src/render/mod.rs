@@ -125,7 +125,7 @@ const KEYBINDS_PR_READER: &[(&str, &str)] = &[
     ("gg / G", "go to top / bottom"),
     ("Ctrl-u / Ctrl-d", "page up / down"),
     ("Enter", "open in browser"),
-    ("i", "ask about PR"),
+    ("i", "investigate PR"),
     ("v", "review"),
     ("m", "squash and merge"),
     ("r", "refresh"),
@@ -446,7 +446,7 @@ fn status_bar_left(app: &App) -> String {
         return flash.clone();
     }
     if matches!(app.ui.screen, Screen::PrDetail { .. }) {
-        return " [↩] open · [i] ask · [v] review · [m] merge · [Esc] back".to_string();
+        return " [↩] open · [i] investigate · [v] review · [m] merge · [Esc] back".to_string();
     }
 
     if matches!(app.ui.screen, Screen::IssueDetail { .. }) {

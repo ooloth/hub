@@ -2,4 +2,4 @@
 source: ui/tui/src/render/mod.rs
 expression: status_row(&buf)
 ---
-  [↩] open · [i] ask · [v] review · [m] merge · [Esc] back
+  [↩] open · [i] investigate · [v] review · [m] merge · [Esc] back
