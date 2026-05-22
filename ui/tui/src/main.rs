@@ -310,6 +310,7 @@ async fn run_loop(
                             if let Err(err) = investigations::launch(
                                 investigations::ci::config(&repo, &run_url),
                                 &cwd,
+                                &config.github_token,
                             ) {
                                 app.ui.flash = Some(err.to_string());
                             }
@@ -323,6 +324,7 @@ async fn run_loop(
                             if let Err(err) = investigations::launch(
                                 investigations::issue::config(&repo, number),
                                 &cwd,
+                                &config.github_token,
                             ) {
                                 app.ui.flash = Some(err.to_string());
                             }
@@ -349,6 +351,7 @@ async fn run_loop(
                         if let Err(err) = investigations::launch(
                             investigations::pr::review_config(number, &repo, ownership, skill),
                             &cwd,
+                            &config.github_token,
                         ) {
                             app.ui.flash = Some(err.to_string());
                         }
@@ -366,6 +369,7 @@ async fn run_loop(
                         if let Err(err) = investigations::launch(
                             investigations::pr::bare_config(number, &repo, ownership),
                             &cwd,
+                            &config.github_token,
                         ) {
                             app.ui.flash = Some(err.to_string());
                         }
@@ -384,6 +388,7 @@ async fn run_loop(
                         if let Err(err) = investigations::launch(
                             investigations::pr::review_config(number, &repo, ownership, skill),
                             &cwd,
+                            &config.github_token,
                         ) {
                             app.ui.flash = Some(err.to_string());
                         }
@@ -401,6 +406,7 @@ async fn run_loop(
                         if let Err(err) = investigations::launch(
                             investigations::loki::config(&project, &env, &title, &message, &line),
                             &cwd,
+                            &config.github_token,
                         ) {
                             app.ui.flash = Some(err.to_string());
                         }
@@ -415,6 +421,7 @@ async fn run_loop(
                         if let Err(err) = investigations::launch(
                             investigations::media::config(&title, &error),
                             &cwd,
+                            &config.github_token,
                         ) {
                             app.ui.flash = Some(err.to_string());
                         }
