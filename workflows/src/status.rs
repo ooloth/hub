@@ -3,7 +3,7 @@ use domain::{CiFailure, Issue, LinearIssue, PullRequest, Urgency};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 
-pub const SCHEMA_VERSION: i32 = 13;
+pub const SCHEMA_VERSION: i32 = 14;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum StatusItem {
@@ -12,6 +12,7 @@ pub enum StatusItem {
     Ci(CiFailure),
     Linear(LinearIssue),
     Loki(domain::LokiEntry),
+    Gcp(domain::GcpEntry),
     #[cfg(feature = "private")]
     MediaBlocked(crate::private::status::BlockedItem),
     #[cfg(feature = "private")]
@@ -33,6 +34,7 @@ impl StatusItem {
             Self::Ci(c) => c.urgency,
             Self::Linear(l) => l.urgency,
             Self::Loki(l) => l.urgency,
+            Self::Gcp(g) => g.urgency,
             #[cfg(feature = "private")]
             Self::MediaBlocked(b) => b.urgency,
             #[cfg(feature = "private")]
@@ -51,6 +53,7 @@ impl StatusItem {
             Self::Ci(c) => c.age,
             Self::Linear(l) => l.age,
             Self::Loki(l) => l.age,
+            Self::Gcp(g) => g.age,
             #[cfg(feature = "private")]
             Self::MediaBlocked(b) => b.age,
             #[cfg(feature = "private")]
@@ -87,6 +90,7 @@ pub struct StatusParams {
     pub linear_token: Option<String>,
     pub private_workflow_names: Vec<String>,
     pub loki_envs: Vec<domain::LokiEnv>,
+    pub gcp_envs: Vec<domain::GcpEnv>,
 }
 
 /// Fetches all status data concurrently, merges into a unified list, and sorts
@@ -176,6 +180,13 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
         match crate::loki::run(env).await {
             Ok(loki_items) => items.extend(loki_items.into_iter().map(StatusItem::Loki)),
             Err(_) => errors.push(format!("loki ({} · {})", env.project, env.env)),
+        }
+    }
+
+    for env in &params.gcp_envs {
+        match crate::gcp::run(env).await {
+            Ok(gcp_items) => items.extend(gcp_items.into_iter().map(StatusItem::Gcp)),
+            Err(_) => errors.push(format!("gcp ({} · {})", env.project, env.env)),
         }
     }
 

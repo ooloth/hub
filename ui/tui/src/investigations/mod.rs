@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 pub(crate) mod ci;
+pub(crate) mod gcp;
 pub(crate) mod issue;
 pub(crate) mod loki;
 pub(crate) mod pr;

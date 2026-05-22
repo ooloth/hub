@@ -549,6 +549,19 @@ impl App {
                 review_decision,
                 head_branch,
             }],
+            InvestigateAction::LaunchGcp {
+                project,
+                env,
+                title,
+                message,
+                line,
+            } => vec![Effect::LaunchGcp {
+                project,
+                env,
+                title,
+                message,
+                line,
+            }],
             InvestigateAction::LaunchLoki {
                 project,
                 env,
@@ -745,6 +758,19 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
             review_decision,
             head_branch,
             base_branch,
+        },
+        Some(InvestigationKind::Gcp {
+            project,
+            env,
+            title,
+            message,
+            line,
+        }) => InvestigateAction::LaunchGcp {
+            project,
+            env,
+            title,
+            message,
+            line,
         },
         Some(InvestigationKind::Loki {
             project,

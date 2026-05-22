@@ -150,6 +150,13 @@ pub(crate) enum InvestigateAction {
         repo: String,
         number: u64,
     },
+    LaunchGcp {
+        project: String,
+        env: String,
+        title: String,
+        message: String,
+        line: String,
+    },
     LaunchLoki {
         project: String,
         env: String,
@@ -236,6 +243,13 @@ pub(crate) enum Effect {
     LaunchIssue {
         repo: String,
         number: u64,
+    },
+    LaunchGcp {
+        project: String,
+        env: String,
+        title: String,
+        message: String,
+        line: String,
     },
     LaunchLoki {
         project: String,

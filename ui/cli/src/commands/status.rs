@@ -17,6 +17,7 @@ pub(crate) async fn run(config: &Config) -> Result<()> {
         linear_token: config.linear_token.clone(),
         private_workflow_names: config.private_monitor_workflow_names(),
         loki_envs: config.loki_envs(),
+        gcp_envs: config.gcp_envs(),
     })
     .await?;
 
@@ -111,6 +112,14 @@ fn render_line(item: &StatusItem) {
             l.env,
             l.title,
             l.message,
+        ),
+        StatusItem::Gcp(g) => println!(
+            "  {}  {} · {} · {} · {}",
+            tier_label(g.urgency),
+            g.project,
+            g.env,
+            g.title,
+            g.message,
         ),
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => println!(

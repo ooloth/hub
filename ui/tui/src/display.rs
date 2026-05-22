@@ -66,6 +66,7 @@ pub(crate) fn item_url(item: &StatusItem) -> Option<&str> {
         StatusItem::Ci(c) => Some(&c.url),
         StatusItem::Linear(l) => Some(&l.url),
         StatusItem::Loki(l) => Some(l.url.as_str()).filter(|u| !u.is_empty()),
+        StatusItem::Gcp(g) => Some(g.url.as_str()).filter(|u| !u.is_empty()),
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => Some(&b.url),
         #[cfg(feature = "private")]
@@ -110,6 +111,13 @@ pub(crate) enum InvestigationKind {
         repo: String,
         number: u64,
     },
+    Gcp {
+        project: String,
+        env: String,
+        title: String,
+        message: String,
+        line: String,
+    },
     Loki {
         project: String,
         env: String,
@@ -151,6 +159,13 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
             review_decision: pr.review_decision,
             head_branch: pr.head_branch.clone(),
             base_branch: pr.base_branch.clone(),
+        }),
+        StatusItem::Gcp(g) => Some(InvestigationKind::Gcp {
+            project: g.project.clone(),
+            env: g.env.clone(),
+            title: g.title.clone(),
+            message: g.message.clone(),
+            line: g.line.clone(),
         }),
         StatusItem::Loki(l) => Some(InvestigationKind::Loki {
             project: l.project.clone(),
@@ -243,6 +258,13 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             category: "Loki".to_string(),
             age: format_age_short(l.age),
         },
+        StatusItem::Gcp(g) => LineParts {
+            primary: vec![g.title.clone(), g.message.clone()],
+            dim_inline: vec![],
+            source: Some(format!("{}:{}", g.project, g.env)),
+            category: "GCP".to_string(),
+            age: format_age_short(g.age),
+        },
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => LineParts {
             primary: vec!["Import blocked".to_string(), b.error.clone()],
@@ -301,6 +323,7 @@ pub(crate) fn item_urgency(item: &StatusItem) -> domain::Urgency {
         StatusItem::Ci(c) => c.urgency,
         StatusItem::Linear(l) => l.urgency,
         StatusItem::Loki(l) => l.urgency,
+        StatusItem::Gcp(g) => g.urgency,
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => b.urgency,
         #[cfg(feature = "private")]
@@ -346,7 +369,7 @@ pub(crate) fn display_item_urgency(item: &DisplayItem) -> domain::Urgency {
 
 pub(crate) fn item_category(item: &StatusItem) -> Category {
     match item {
-        StatusItem::Ci(_) | StatusItem::Loki(_) => Category::Errors,
+        StatusItem::Ci(_) | StatusItem::Loki(_) | StatusItem::Gcp(_) => Category::Errors,
         StatusItem::Pr(_) => Category::Prs,
         StatusItem::Issue(_) | StatusItem::Linear(_) => Category::Issues,
         #[cfg(feature = "private")]
@@ -358,6 +381,12 @@ pub(crate) fn item_category(item: &StatusItem) -> Category {
 }
 
 pub(crate) fn group_key(item: &StatusItem) -> Option<String> {
+    if let StatusItem::Gcp(g) = item {
+        return Some(format!(
+            "{} · {} — {}:{}",
+            g.title, g.message, g.project, g.env
+        ));
+    }
     if let StatusItem::Loki(l) = item {
         return Some(format!(
             "{} · {} — {}:{}",
@@ -603,6 +632,20 @@ mod tests {
         })
     }
 
+    fn gcp() -> StatusItem {
+        StatusItem::Gcp(domain::GcpEntry {
+            title: "errors".to_string(),
+            project: "mapapp".to_string(),
+            env: "neuro".to_string(),
+            message: "something broke".to_string(),
+            line: "{}".to_string(),
+            lookback: "1h".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::High,
+            url: "https://console.cloud.google.com/logs/query".to_string(),
+        })
+    }
+
     fn ci_job_step() -> StatusItem {
         StatusItem::Ci(domain::CiFailure {
             repo: domain::RepoSlug::new("owner", "repo"),
@@ -665,6 +708,7 @@ mod tests {
             format!("ci_full:     {}", item_line(&ci_full()).flat()),
             format!("linear:      {}", item_line(&linear()).flat()),
             format!("loki:        {}", item_line(&loki()).flat()),
+            format!("gcp:         {}", item_line(&gcp()).flat()),
             format!(
                 "group_3:     {}",
                 display_item_line(&DisplayItem::Group {
@@ -712,6 +756,35 @@ mod tests {
     #[test]
     fn item_category_linear_is_issues() {
         assert_eq!(item_category(&linear()), Category::Issues);
+    }
+
+    #[test]
+    fn item_category_gcp_is_errors() {
+        assert_eq!(item_category(&gcp()), Category::Errors);
+    }
+
+    #[test]
+    fn item_investigation_gcp_returns_kind() {
+        assert!(matches!(
+            item_investigation(&gcp()),
+            Some(InvestigationKind::Gcp { .. })
+        ));
+    }
+
+    #[test]
+    fn item_url_gcp_returns_url() {
+        assert_eq!(
+            item_url(&gcp()),
+            Some("https://console.cloud.google.com/logs/query")
+        );
+    }
+
+    #[test]
+    fn group_key_gcp_returns_key() {
+        assert_eq!(
+            group_key(&gcp()),
+            Some("errors · something broke — mapapp:neuro".to_string())
+        );
     }
 
     fn make_pr(kind: domain::PrKind) -> StatusItem {

@@ -141,6 +141,7 @@ fn spawn_fetch(config: &config::Config, tx: mpsc::Sender<Result<StatusReport>>) 
         linear_token: config.linear_token.clone(),
         private_workflow_names: config.private_monitor_workflow_names(),
         loki_envs: config.loki_envs(),
+        gcp_envs: config.gcp_envs(),
     };
 
     tokio::spawn(async move {
@@ -229,6 +230,7 @@ fn request_refresh(
             linear_token: config.linear_token.clone(),
             private_workflow_names: config.private_monitor_workflow_names(),
             loki_envs: config.loki_envs(),
+            gcp_envs: config.gcp_envs(),
         };
         let git_params = include_git_fetch.then(|| {
             let token = config.github_token.clone();
@@ -394,6 +396,26 @@ async fn run_loop(
                         }
                     }
                     Err(msg) => app.ui.flash = Some(msg),
+                },
+                Effect::LaunchGcp {
+                    project,
+                    env,
+                    title,
+                    message,
+                    line,
+                } => match std::env::current_dir() {
+                    Ok(cwd) => {
+                        if let Err(err) = investigations::launch(
+                            investigations::gcp::config(&project, &env, &title, &message, &line),
+                            &cwd,
+                            &config.github_token,
+                        ) {
+                            app.ui.flash = Some(err.to_string());
+                        }
+                    }
+                    Err(e) => {
+                        app.ui.flash = Some(format!("Cannot determine working directory: {e}"));
+                    }
                 },
                 Effect::LaunchLoki {
                     project,
