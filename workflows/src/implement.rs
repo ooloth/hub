@@ -248,7 +248,7 @@ pub async fn run_one(name: &str, repo: &str, issue: u64) -> Result<()> {
             "Bash,Read,Edit,Write,Skill",
             "--model",
             "opus",
-            "--system-prompt",
+            "--append-system-prompt",
             PROMPT,
             &task,
         ])

@@ -30,7 +30,7 @@ pub(crate) fn launch(config: LaunchConfig, cwd: &Path) -> Result<()> {
     };
 
     let command = format!(
-        "claude --dangerously-skip-permissions --model {} --allowedTools '{}' --system-prompt \"$HUB_SYSTEM_PROMPT\"{}",
+        "claude --dangerously-skip-permissions --model {} --allowedTools '{}' --append-system-prompt \"$HUB_SYSTEM_PROMPT\"{}",
         config.model,
         config.allowed_tools,
         task_arg,
