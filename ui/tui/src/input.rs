@@ -85,12 +85,10 @@ fn query_mode_key(key: KeyEvent) -> Option<Action> {
 
 fn unified_list_keys(key: KeyEvent) -> Option<Action> {
     match (key.code, key.modifiers) {
-        (KeyCode::Up, _) | (KeyCode::Char('k'), _) | (KeyCode::Char('h'), _) => {
-            Some(Action::MoveUp)
-        }
-        (KeyCode::Down, _) | (KeyCode::Char('j'), _) | (KeyCode::Char('l'), _) => {
-            Some(Action::MoveDown)
-        }
+        (KeyCode::Up, _) | (KeyCode::Char('k'), _) => Some(Action::MoveUp),
+        (KeyCode::Down, _) | (KeyCode::Char('j'), _) => Some(Action::MoveDown),
+        (KeyCode::Char('h'), _) => Some(Action::CollapseGroup),
+        (KeyCode::Char('l'), _) => Some(Action::ExpandGroup),
         (KeyCode::Char('g'), _) => Some(Action::PendingG),
         (KeyCode::Char('G'), _) => Some(Action::MoveToBottom),
         (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Action::MovePageUp),
@@ -379,10 +377,10 @@ mod tests {
     #[rstest]
     #[case(k(KeyCode::Up), Some(Action::MoveUp))]
     #[case(ch('k'), Some(Action::MoveUp))]
-    #[case(ch('h'), Some(Action::MoveUp))]
+    #[case(ch('h'), Some(Action::CollapseGroup))]
     #[case(k(KeyCode::Down), Some(Action::MoveDown))]
     #[case(ch('j'), Some(Action::MoveDown))]
-    #[case(ch('l'), Some(Action::MoveDown))]
+    #[case(ch('l'), Some(Action::ExpandGroup))]
     #[case(ch('g'), Some(Action::PendingG))]
     #[case(ch('G'), Some(Action::MoveToBottom))]
     #[case(ctrl('u'), Some(Action::MovePageUp))]

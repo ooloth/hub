@@ -91,11 +91,11 @@ fn push_segments(
 
 const KEYBINDS_LIST: &[(&str, &str)] = &[
     ("?", "toggle help"),
-    ("h / k", "up"),
-    ("j / l", "down"),
+    ("k / j", "up / down"),
     ("gg / G", "go to top / bottom"),
     ("Ctrl-u / Ctrl-d", "page up / down"),
-    ("Enter", "open / drill into group"),
+    ("h / l", "collapse / expand group"),
+    ("Enter", "open"),
     ("i", "investigate"),
     ("p / e / o", "filter PRs / Errors / Issues"),
     ("/", "search"),
@@ -309,7 +309,6 @@ fn position_label(screen: &Screen) -> String {
 fn action_hints(enter: &EnterAction, investigate: &InvestigateAction) -> String {
     let enter_hint = match enter {
         EnterAction::OpenUrl(_) | EnterAction::OpenLogDetail(_) => " · [↩] open".to_string(),
-        EnterAction::ToggleGroup(_) => " · [↩] expand/collapse".to_string(),
         EnterAction::OpenIssueDetail(_) | EnterAction::OpenPrDetail(_) => " · [↩] read".to_string(),
         EnterAction::None => String::new(),
     };
@@ -357,7 +356,24 @@ fn status_bar_left(app: &App) -> String {
     let investigate_action = compute_investigate_action(app);
     let pos = position_label(app.current_screen());
     let hints = action_hints(&enter_action, &investigate_action);
-    format!("{pos}{hints}")
+    let group_hint = if let Screen::UnifiedList {
+        flat_rows,
+        selected,
+        ..
+    } = &app.ui.screen
+    {
+        match flat_rows.get(*selected) {
+            Some(FlatRow::GroupHeader {
+                expanded: false, ..
+            }) => " · [l] expand",
+            Some(FlatRow::GroupHeader { expanded: true, .. }) => " · [h] collapse",
+            Some(FlatRow::GroupChild { .. }) => " · [h] collapse",
+            _ => "",
+        }
+    } else {
+        ""
+    };
+    format!("{pos}{hints}{group_hint}")
 }
 
 fn render_issue_detail(
@@ -1368,13 +1384,6 @@ mod tests {
         let enter = EnterAction::OpenUrl("https://example.com".to_string());
         let inv = InvestigateAction::None;
         assert_eq!(action_hints(&enter, &inv), " · [↩] open");
-    }
-
-    #[test]
-    fn action_hints_expand_group() {
-        let enter = EnterAction::ToggleGroup(GroupKey::new("hub errors".to_string()));
-        let inv = InvestigateAction::None;
-        assert_eq!(action_hints(&enter, &inv), " · [↩] expand/collapse");
     }
 
     #[test]

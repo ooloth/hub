@@ -143,6 +143,8 @@ impl App {
             | Action::MovePageUp
             | Action::MovePageDown
             | Action::Enter
+            | Action::ExpandGroup
+            | Action::CollapseGroup
             | Action::ApproveForAgent
             | Action::MergePr
             | Action::CommitMerge
@@ -225,6 +227,86 @@ impl App {
             Action::Enter => {
                 let ea = compute_enter_action(self);
                 self.apply_enter_action(ea)
+            }
+            Action::ExpandGroup => {
+                let to_expand = {
+                    let Screen::UnifiedList {
+                        flat_rows,
+                        selected,
+                        ..
+                    } = &self.ui.screen
+                    else {
+                        return vec![];
+                    };
+                    match flat_rows.get(*selected) {
+                        Some(FlatRow::GroupHeader {
+                            key,
+                            expanded: false,
+                            ..
+                        }) => Some(key.clone()),
+                        _ => None,
+                    }
+                };
+                if let Some(key) = to_expand {
+                    if let Screen::UnifiedList {
+                        items,
+                        flat_rows,
+                        expanded_groups,
+                        ..
+                    } = &mut self.ui.screen
+                    {
+                        expanded_groups.insert(key);
+                        *flat_rows = flatten(items, expanded_groups);
+                    }
+                }
+                vec![]
+            }
+            Action::CollapseGroup => {
+                let to_collapse = {
+                    let Screen::UnifiedList {
+                        flat_rows,
+                        selected,
+                        expanded_groups,
+                        ..
+                    } = &self.ui.screen
+                    else {
+                        return vec![];
+                    };
+                    match flat_rows.get(*selected) {
+                        Some(FlatRow::GroupHeader {
+                            key,
+                            expanded: true,
+                            ..
+                        }) => Some((key.clone(), false)),
+                        Some(FlatRow::GroupChild { parent_key, .. })
+                            if expanded_groups.contains(parent_key) =>
+                        {
+                            Some((parent_key.clone(), true))
+                        }
+                        _ => None,
+                    }
+                };
+                if let Some((key, jump_to_parent)) = to_collapse {
+                    if let Screen::UnifiedList {
+                        items,
+                        flat_rows,
+                        selected,
+                        expanded_groups,
+                        ..
+                    } = &mut self.ui.screen
+                    {
+                        expanded_groups.remove(&key);
+                        *flat_rows = flatten(items, expanded_groups);
+                        if jump_to_parent {
+                            if let Some(idx) = flat_rows.iter().position(
+                                |r| matches!(r, FlatRow::GroupHeader { key: k, .. } if k == &key),
+                            ) {
+                                *selected = idx;
+                            }
+                        }
+                    }
+                }
+                vec![]
             }
             Action::Investigate => self.handle_investigate(),
             _ => unreachable!(),
@@ -608,24 +690,6 @@ impl App {
         match ea {
             EnterAction::None => vec![],
             EnterAction::OpenUrl(url) => vec![Effect::OpenUrl(url)],
-            EnterAction::ToggleGroup(key) => {
-                let Screen::UnifiedList {
-                    items,
-                    flat_rows,
-                    expanded_groups,
-                    ..
-                } = &mut self.ui.screen
-                else {
-                    return vec![];
-                };
-                if expanded_groups.contains(&key) {
-                    expanded_groups.remove(&key);
-                } else {
-                    expanded_groups.insert(key);
-                }
-                *flat_rows = flatten(items, expanded_groups);
-                vec![]
-            }
             EnterAction::OpenLogDetail(entry) => {
                 let Screen::UnifiedList {
                     items,
@@ -740,7 +804,7 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
             selected,
             ..
         } => match flat_rows.get(*selected) {
-            Some(FlatRow::GroupHeader { key, .. }) => EnterAction::ToggleGroup(key.clone()),
+            Some(FlatRow::GroupHeader { .. }) => EnterAction::None,
             Some(FlatRow::GroupChild { item, .. }) | Some(FlatRow::Single(item)) => match item {
                 StatusItem::Issue(issue) => EnterAction::OpenIssueDetail(issue.clone()),
                 StatusItem::Pr(pr) => EnterAction::OpenPrDetail(pr.clone()),
@@ -1258,31 +1322,76 @@ mod tests {
     }
 
     #[test]
-    fn enter_on_group_in_unified_list_toggles_expansion() {
+    fn enter_on_group_header_is_noop() {
         let mut app = app_with_items(vec![DisplayItem::Group {
             label: GroupKey::new("hub".to_string()),
             items: vec![ci_failure(), ci_failure()],
         }]);
-        // Before: group is collapsed — flat_rows has 1 header
-        let initial_len = match app.current_screen() {
-            Screen::UnifiedList { flat_rows, .. } => flat_rows.len(),
-            _ => panic!(),
-        };
-        assert_eq!(initial_len, 1);
         app.update(Action::Enter);
-        // After: group expanded — header + 2 children = 3
-        let expanded_len = match app.current_screen() {
+        let len = match app.current_screen() {
             Screen::UnifiedList { flat_rows, .. } => flat_rows.len(),
             _ => panic!(),
         };
-        assert_eq!(expanded_len, 3);
-        // Second Enter collapses it back
-        app.update(Action::Enter);
-        let collapsed_len = match app.current_screen() {
-            Screen::UnifiedList { flat_rows, .. } => flat_rows.len(),
+        assert_eq!(len, 1);
+    }
+
+    #[test]
+    fn expand_group_expands_collapsed_header() {
+        let mut app = app_with_items(vec![DisplayItem::Group {
+            label: GroupKey::new("hub".to_string()),
+            items: vec![ci_failure(), ci_failure()],
+        }]);
+        assert_eq!(app.active_list_len(), 1);
+        app.update(Action::ExpandGroup);
+        assert_eq!(app.active_list_len(), 3);
+    }
+
+    #[test]
+    fn expand_group_on_expanded_header_is_noop() {
+        let mut app = app_with_items(vec![DisplayItem::Group {
+            label: GroupKey::new("hub".to_string()),
+            items: vec![ci_failure(), ci_failure()],
+        }]);
+        app.update(Action::ExpandGroup);
+        assert_eq!(app.active_list_len(), 3);
+        app.update(Action::ExpandGroup);
+        assert_eq!(app.active_list_len(), 3);
+    }
+
+    #[test]
+    fn collapse_group_collapses_expanded_header() {
+        let mut app = app_with_items(vec![DisplayItem::Group {
+            label: GroupKey::new("hub".to_string()),
+            items: vec![ci_failure(), ci_failure()],
+        }]);
+        app.update(Action::ExpandGroup);
+        assert_eq!(app.active_list_len(), 3);
+        app.update(Action::CollapseGroup);
+        assert_eq!(app.active_list_len(), 1);
+    }
+
+    #[test]
+    fn collapse_group_on_child_jumps_to_header() {
+        let mut app = app_with_items(vec![DisplayItem::Group {
+            label: GroupKey::new("hub".to_string()),
+            items: vec![ci_failure(), ci_failure()],
+        }]);
+        app.update(Action::ExpandGroup);
+        // Move to first child (index 1)
+        app.update(Action::MoveDown);
+        let before_selected = match app.current_screen() {
+            Screen::UnifiedList { selected, .. } => *selected,
             _ => panic!(),
         };
-        assert_eq!(collapsed_len, 1);
+        assert_eq!(before_selected, 1);
+        app.update(Action::CollapseGroup);
+        // Should collapse and jump back to header at index 0
+        let after_selected = match app.current_screen() {
+            Screen::UnifiedList { selected, .. } => *selected,
+            _ => panic!(),
+        };
+        assert_eq!(after_selected, 0);
+        assert_eq!(app.active_list_len(), 1);
     }
 
     #[test]

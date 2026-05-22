@@ -129,7 +129,6 @@ impl Screen {
 pub(crate) enum EnterAction {
     None,
     OpenUrl(String),
-    ToggleGroup(GroupKey),
     OpenLogDetail(LogEntry),
     OpenIssueDetail(Issue),
     OpenPrDetail(PullRequest),
@@ -190,6 +189,8 @@ pub(crate) enum Action {
     MovePageDown,
     PendingG,
     Enter,
+    ExpandGroup,
+    CollapseGroup,
     Investigate,
     AskAboutPr,
     OpenReviewPicker,
