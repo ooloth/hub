@@ -1,4 +1,100 @@
+use std::collections::HashSet;
+
+use domain::LogEntry;
 use workflows::status::StatusItem;
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) struct GroupKey(String);
+
+impl GroupKey {
+    pub(crate) fn new(s: String) -> Self {
+        Self(s)
+    }
+}
+
+impl std::fmt::Display for GroupKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum FlatRow {
+    Single(StatusItem),
+    GroupHeader {
+        key: GroupKey,
+        count: usize,
+        urgency: domain::Urgency,
+        expanded: bool,
+        first_item: StatusItem,
+    },
+    GroupChild {
+        #[allow(dead_code)]
+        parent_key: GroupKey,
+        item: StatusItem,
+    },
+}
+
+pub(crate) fn flatten(items: &[DisplayItem], expanded: &HashSet<GroupKey>) -> Vec<FlatRow> {
+    let mut rows = Vec::new();
+    for item in items {
+        match item {
+            DisplayItem::Single(s) => rows.push(FlatRow::Single(s.clone())),
+            DisplayItem::Group {
+                label,
+                items: group_items,
+            } => {
+                let is_expanded = expanded.contains(label);
+                let urgency = group_items
+                    .first()
+                    .map(item_urgency)
+                    .unwrap_or(domain::Urgency::Low);
+                let first_item = group_items
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| group_items[0].clone());
+                rows.push(FlatRow::GroupHeader {
+                    key: label.clone(),
+                    count: group_items.len(),
+                    urgency,
+                    expanded: is_expanded,
+                    first_item,
+                });
+                if is_expanded {
+                    for child in group_items {
+                        rows.push(FlatRow::GroupChild {
+                            parent_key: label.clone(),
+                            item: child.clone(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    rows
+}
+
+pub(crate) fn log_entry_from_status_item(item: &StatusItem) -> Option<LogEntry> {
+    match item {
+        StatusItem::Gcp(g) => Some(LogEntry::Gcp {
+            project: g.project.clone(),
+            env: g.env.clone(),
+            title: g.title.clone(),
+            message: g.message.clone(),
+            line: g.line.clone(),
+            url: g.url.clone(),
+        }),
+        StatusItem::Loki(l) => Some(LogEntry::Loki {
+            project: l.project.clone(),
+            env: l.env.clone(),
+            title: l.title.clone(),
+            message: l.message.clone(),
+            line: l.line.clone(),
+            url: l.url.clone(),
+        }),
+        _ => None,
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub(crate) enum Category {
@@ -21,7 +117,7 @@ impl Category {
 pub(crate) enum DisplayItem {
     Single(StatusItem),
     Group {
-        label: String,
+        label: GroupKey,
         items: Vec<StatusItem>,
     },
 }
@@ -31,6 +127,7 @@ pub(crate) struct ListSnapshot {
     pub(crate) items: Vec<DisplayItem>,
     pub(crate) selected: usize,
     pub(crate) filter: Filter,
+    pub(crate) expanded_groups: HashSet<GroupKey>,
 }
 
 #[derive(Clone, Debug)]
@@ -304,18 +401,6 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
     }
 }
 
-pub(crate) fn item_detail_line(item: &StatusItem) -> LineParts {
-    #[cfg(feature = "private")]
-    if let StatusItem::MediaBlocked(b) = item {
-        return LineParts {
-            primary: vec![b.title.clone()],
-            dim_inline: vec![],
-            ..item_line(item)
-        };
-    }
-    item_line(item)
-}
-
 pub(crate) fn item_urgency(item: &StatusItem) -> domain::Urgency {
     match item {
         StatusItem::Pr(pr) => pr.urgency,
@@ -335,35 +420,38 @@ pub(crate) fn item_urgency(item: &StatusItem) -> domain::Urgency {
     }
 }
 
-pub(crate) fn display_item_line(item: &DisplayItem) -> LineParts {
-    match item {
-        DisplayItem::Single(s) => item_line(s),
-        DisplayItem::Group { items, .. } => {
-            let count = items.len();
-            match items.first().map(item_line) {
-                Some(base) => LineParts {
-                    dim_inline: vec![format!(" ({count})")],
-                    ..base
-                },
-                None => LineParts {
-                    primary: vec![],
-                    dim_inline: vec![],
-                    source: None,
-                    category: String::new(),
-                    age: String::new(),
-                },
-            }
-        }
+pub(crate) fn flat_row_urgency(row: &FlatRow) -> domain::Urgency {
+    match row {
+        FlatRow::Single(item) => item_urgency(item),
+        FlatRow::GroupHeader { urgency, .. } => *urgency,
+        FlatRow::GroupChild { item, .. } => item_urgency(item),
     }
 }
 
-pub(crate) fn display_item_urgency(item: &DisplayItem) -> domain::Urgency {
-    match item {
-        DisplayItem::Single(s) => item_urgency(s),
-        DisplayItem::Group { items, .. } => items
-            .first()
-            .map(item_urgency)
-            .unwrap_or(domain::Urgency::Low),
+pub(crate) fn flat_row_line(row: &FlatRow) -> LineParts {
+    match row {
+        FlatRow::Single(item) => item_line(item),
+        FlatRow::GroupHeader {
+            count,
+            expanded,
+            first_item,
+            ..
+        } => {
+            let base = item_line(first_item);
+            let arrow = if *expanded { "▾" } else { "▸" };
+            LineParts {
+                primary: vec![format!("{arrow} {}", base.primary.join(" · "))],
+                dim_inline: vec![format!(" ({count})")],
+                ..base
+            }
+        }
+        FlatRow::GroupChild { item, .. } => {
+            let base = item_line(item);
+            LineParts {
+                primary: vec![format!("  {}", base.primary.join(" · "))],
+                ..base
+            }
+        }
     }
 }
 
@@ -380,22 +468,22 @@ pub(crate) fn item_category(item: &StatusItem) -> Category {
     }
 }
 
-pub(crate) fn group_key(item: &StatusItem) -> Option<String> {
+pub(crate) fn group_key(item: &StatusItem) -> Option<GroupKey> {
     if let StatusItem::Gcp(g) = item {
-        return Some(format!(
+        return Some(GroupKey::new(format!(
             "{} · {} — {}:{}",
             g.title, g.message, g.project, g.env
-        ));
+        )));
     }
     if let StatusItem::Loki(l) = item {
-        return Some(format!(
+        return Some(GroupKey::new(format!(
             "{} · {} — {}:{}",
             l.title, l.message, l.project, l.env
-        ));
+        )));
     }
     #[cfg(feature = "private")]
     if let StatusItem::MediaBlocked(b) = item {
-        return Some(format!("Import blocked · {}", b.error));
+        return Some(GroupKey::new(format!("Import blocked · {}", b.error)));
     }
     None
 }
@@ -408,7 +496,7 @@ pub(crate) fn aggregate(items: Vec<StatusItem>) -> Vec<DisplayItem> {
                 items: group_items, ..
             }) = result
                 .iter_mut()
-                .find(|d| matches!(d, DisplayItem::Group { label, .. } if *label == key))
+                .find(|d| matches!(d, DisplayItem::Group { label, .. } if label == &key))
             {
                 group_items.push(item);
                 continue;
@@ -424,7 +512,8 @@ pub(crate) fn aggregate(items: Vec<StatusItem>) -> Vec<DisplayItem> {
     result
         .into_iter()
         .map(|d| match d {
-            DisplayItem::Group { items, .. } if items.len() == 1 => {
+            DisplayItem::Group { label, items } if items.len() == 1 => {
+                let _ = label;
                 DisplayItem::Single(items.into_iter().next().unwrap())
             }
             other => other,
@@ -711,9 +800,12 @@ mod tests {
             format!("gcp:         {}", item_line(&gcp()).flat()),
             format!(
                 "group_3:     {}",
-                display_item_line(&DisplayItem::Group {
-                    label: "MemoryError · OOM killed — project-x:prod".to_string(),
-                    items: vec![loki(), loki(), loki()],
+                flat_row_line(&FlatRow::GroupHeader {
+                    key: GroupKey::new("MemoryError · OOM killed — project-x:prod".to_string()),
+                    count: 3,
+                    urgency: item_urgency(&loki()),
+                    expanded: false,
+                    first_item: loki(),
                 })
                 .flat()
             ),
@@ -729,10 +821,6 @@ mod tests {
             format!("media_blocked:  {}", item_line(&media_blocked()).flat()),
             format!("media_missing:  {}", item_line(&media_missing()).flat()),
             format!("media_health:   {}", item_line(&media_health()).flat()),
-            format!(
-                "media_blocked_detail: {}",
-                item_detail_line(&media_blocked()).flat()
-            ),
         ]
         .join("\n");
         insta::assert_snapshot!(lines);
@@ -783,7 +871,9 @@ mod tests {
     fn group_key_gcp_returns_key() {
         assert_eq!(
             group_key(&gcp()),
-            Some("errors · something broke — mapapp:neuro".to_string())
+            Some(GroupKey::new(
+                "errors · something broke — mapapp:neuro".to_string()
+            ))
         );
     }
 
@@ -916,12 +1006,15 @@ mod tests {
     }
 
     #[test]
-    fn display_item_urgency_group_uses_first_item() {
-        let group = DisplayItem::Group {
-            label: "g".to_string(),
-            items: vec![ci(), issue()],
+    fn flat_row_urgency_group_header_uses_urgency_field() {
+        let header = FlatRow::GroupHeader {
+            key: GroupKey::new("g".to_string()),
+            count: 2,
+            urgency: domain::Urgency::High,
+            expanded: false,
+            first_item: ci(),
         };
-        assert_eq!(display_item_urgency(&group), domain::Urgency::High);
+        assert_eq!(flat_row_urgency(&header), domain::Urgency::High);
     }
 
     #[test]
@@ -1277,7 +1370,16 @@ mod tests {
     fn build_unified_sorts_by_urgency_ascending_critical_first() {
         // issue=Low, pr=Medium, ci=High — input in reverse order
         let result = build_unified(vec![issue(), pr(), ci()], &Filter::default());
-        let urgencies: Vec<_> = result.iter().map(display_item_urgency).collect();
+        let urgencies: Vec<_> = result
+            .iter()
+            .map(|item| match item {
+                DisplayItem::Single(s) => item_urgency(s),
+                DisplayItem::Group { items, .. } => items
+                    .first()
+                    .map(item_urgency)
+                    .unwrap_or(domain::Urgency::Low),
+            })
+            .collect();
         assert_eq!(
             urgencies,
             vec![

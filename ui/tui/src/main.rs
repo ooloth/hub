@@ -11,13 +11,14 @@ use std::{io, path::PathBuf, time::Duration};
 use tokio::sync::mpsc;
 use workflows::status::{StatusReport, SCHEMA_VERSION};
 
-use crate::display::{build_unified, Filter};
+use crate::display::{build_unified, flatten, Filter};
 use crate::input::key_to_action;
 use crate::render::render;
 use crate::state::{
     handle_msg, App, DataState, Effect, Msg, PrOwnership, RefreshState, ReviewSkill, Screen,
     UiState,
 };
+use std::collections::HashSet;
 
 mod display;
 mod input;
@@ -104,9 +105,11 @@ async fn main() -> Result<()> {
         },
         ui: UiState {
             screen: Screen::UnifiedList {
+                flat_rows: flatten(&initial_display, &HashSet::new()),
                 items: initial_display,
                 selected: 0,
                 filter: initial_filter,
+                expanded_groups: HashSet::new(),
             },
             ..UiState::default()
         },

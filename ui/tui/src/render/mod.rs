@@ -7,14 +7,12 @@ use ratatui::{
 };
 
 use crate::display::{
-    display_item_line, display_item_urgency, format_age_short, DisplayItem, Filter, LineParts,
+    flat_row_line, flat_row_urgency, format_age_short, Filter, FlatRow, LineParts,
 };
 use crate::state::{
     compute_enter_action, compute_investigate_action, App, EnterAction, InvestigateAction,
     RefreshState, Screen,
 };
-
-mod detail;
 
 pub(super) const FOCUS_COLOR: Color = Color::Rgb(203, 166, 247); // Catppuccin Mocha Mauve
 pub(super) const LAVENDER: Color = Color::Rgb(180, 190, 254); // Catppuccin Mocha Lavender
@@ -106,7 +104,7 @@ const KEYBINDS_LIST: &[(&str, &str)] = &[
     ("q / Ctrl-C", "quit"),
 ];
 
-const KEYBINDS_DETAIL: &[(&str, &str)] = &[
+const KEYBINDS_LOG_READER: &[(&str, &str)] = &[
     ("?", "toggle help"),
     ("h / k", "up"),
     ("j / l", "down"),
@@ -169,107 +167,6 @@ fn popup_area(area: Rect, content_lines: u16, content_width: u16) -> Rect {
         width,
         height,
     )
-}
-
-pub(super) fn render_list_view<T>(
-    frame: &mut ratatui::Frame,
-    area: Rect,
-    items: &[T],
-    list_state: &mut ListState,
-    item_data: impl Fn(&T) -> (Option<String>, Vec<String>, Option<String>, domain::Urgency),
-    hint_fn: impl Fn(&T) -> Option<String>,
-) {
-    let full_width = area.width as usize;
-    let selected = list_state.selected();
-    let selected_hint = selected.and_then(|i| items.get(i)).and_then(hint_fn);
-    let list_items: Vec<ListItem> = items
-        .iter()
-        .enumerate()
-        .map(|(i, item)| {
-            let is_selected = selected == Some(i);
-            let (label, primary_segs, dim_suffix, urgency) = item_data(item);
-            let bullet_color = urgency_color(urgency);
-            let hint = if is_selected {
-                selected_hint.clone()
-            } else {
-                None
-            };
-            let labels: Vec<Span<'static>> = match label {
-                Some(l) => vec![
-                    Span::styled(l, urgency_style(urgency)),
-                    bullet_span(bullet_color),
-                ],
-                None => vec![],
-            };
-            let label_width: usize = labels.iter().map(|s| s.content.chars().count()).sum();
-            let flat_primary = primary_segs.join(" · ");
-            let item_width = full_width
-                .saturating_sub(label_width)
-                .saturating_sub(dim_suffix.as_ref().map_or(0, |s| s.chars().count()))
-                .saturating_sub(hint.as_ref().map_or(0, |h| h.chars().count() + 2));
-            build_list_item(
-                labels,
-                primary_segs,
-                wrap_text(&flat_primary, item_width),
-                dim_suffix,
-                hint,
-                bullet_color,
-            )
-        })
-        .collect();
-    let list = List::new(list_items).highlight_style(list_highlight());
-    frame.render_stateful_widget(list, area, list_state);
-}
-
-fn build_list_item(
-    labels: Vec<Span<'static>>,
-    primary_segs: Vec<String>,
-    wrapped: Vec<String>,
-    dim_suffix: Option<String>,
-    hint: Option<String>,
-    bullet_color: Color,
-) -> ListItem<'static> {
-    let indent: usize = labels.iter().map(|s| s.content.chars().count()).sum();
-    let suffix_span = dim_suffix.map(|s| Span::styled(s, dim()));
-    let hint_span = hint.map(|h| Span::styled(format!("  {h}"), dim()));
-    let mut lines: Vec<Line> = wrapped
-        .into_iter()
-        .enumerate()
-        .map(|(j, chunk)| {
-            if j == 0 {
-                let mut spans = labels.clone();
-                let chunk_chars: Vec<char> = chunk.chars().collect();
-                push_segments(
-                    &mut spans,
-                    &primary_segs,
-                    &chunk_chars,
-                    Style::default(),
-                    bullet_color,
-                );
-                Line::from(spans)
-            } else {
-                Line::from(Span::raw(format!("{}{chunk}", " ".repeat(indent))))
-            }
-        })
-        .collect();
-    if lines.is_empty() {
-        lines.push(if labels.is_empty() {
-            Line::from(Span::raw(""))
-        } else {
-            let mut spans = labels;
-            spans.push(Span::raw(""));
-            Line::from(spans)
-        });
-    }
-    if let Some(last) = lines.last_mut() {
-        if let Some(s) = suffix_span {
-            last.spans.push(s);
-        }
-        if let Some(h) = hint_span {
-            last.spans.push(h);
-        }
-    }
-    ListItem::new(Text::from(lines))
 }
 
 fn build_unified_list_item(
@@ -388,17 +285,8 @@ fn position_label(screen: &Screen) -> String {
                 format!("{}/{n}", selected + 1)
             }
         }
-        Screen::Detail { parent, view } => {
-            let count = match parent.items.get(view.group_index) {
-                Some(DisplayItem::Group { items, .. }) => items.len(),
-                _ => 0,
-            };
-            view.list_state
-                .selected()
-                .map(|i| format!("{}/{count}", i + 1))
-                .unwrap_or_default()
-        }
-        Screen::IssueDetail { .. }
+        Screen::LogDetail { .. }
+        | Screen::IssueDetail { .. }
         | Screen::DismissingIssue { .. }
         | Screen::PrDetail { .. }
         | Screen::ReviewingPr { .. }
@@ -408,10 +296,8 @@ fn position_label(screen: &Screen) -> String {
 
 fn action_hints(enter: &EnterAction, investigate: &InvestigateAction) -> String {
     let enter_hint = match enter {
-        EnterAction::OpenUrl(_) => " · [↩] open".to_string(),
-        EnterAction::OpenDetail { item_count, .. } => {
-            format!(" · [↩] expand {item_count} items")
-        }
+        EnterAction::OpenUrl(_) | EnterAction::OpenLogDetail(_) => " · [↩] open".to_string(),
+        EnterAction::ToggleGroup(_) => " · [↩] expand/collapse".to_string(),
         EnterAction::OpenIssueDetail(_) | EnterAction::OpenPrDetail(_) => " · [↩] read".to_string(),
         EnterAction::None => String::new(),
     };
@@ -848,7 +734,7 @@ fn urgency_divider(width: usize, chrome: Style) -> ListItem<'static> {
 
 fn render_unified(
     frame: &mut ratatui::Frame,
-    items: &[DisplayItem],
+    flat_rows: &[FlatRow],
     selected: usize,
     filter: &Filter,
     query_input: Option<&str>,
@@ -870,27 +756,24 @@ fn render_unified(
     let width = inner.width as usize;
 
     // Build display rows: inject urgency dividers at tier boundaries.
-    // Track which display-row index corresponds to each item index.
     let mut display_items: Vec<ListItem> = vec![];
     let mut selected_display: Option<usize> = None;
     let mut prev_urgency: Option<domain::Urgency> = None;
     let mut divider_rows: Vec<usize> = vec![];
 
-    for (item_idx, item) in items.iter().enumerate() {
-        let urgency = display_item_urgency(item);
-        // Inject a divider between urgency tiers, but not before the first group.
+    for (row_idx, row) in flat_rows.iter().enumerate() {
+        let urgency = flat_row_urgency(row);
         if prev_urgency.is_some() && Some(urgency) != prev_urgency {
             divider_rows.push(display_items.len());
             display_items.push(urgency_divider(width, chrome));
         }
         prev_urgency = Some(urgency);
 
-        if item_idx == selected {
+        if row_idx == selected {
             selected_display = Some(display_items.len());
         }
 
-        let parts = display_item_line(item);
-
+        let parts = flat_row_line(row);
         let text_style = urgency_style(urgency);
         let bullet_color = urgency_color(urgency);
 
@@ -980,27 +863,85 @@ fn render_dismiss_modal(frame: &mut ratatui::Frame, input: &tui_input::Input, ar
     ));
 }
 
+fn render_log_detail(
+    frame: &mut ratatui::Frame,
+    entry: &domain::LogEntry,
+    scroll: &mut u16,
+    area: Rect,
+) {
+    let (title, subtitle, line) = match entry {
+        domain::LogEntry::Gcp {
+            title,
+            project,
+            env,
+            message,
+            line,
+            ..
+        } => (
+            format!(" {} ", title),
+            format!(" GCP · {}:{} · {} ", project, env, message),
+            line.as_str(),
+        ),
+        domain::LogEntry::Loki {
+            title,
+            project,
+            env,
+            message,
+            line,
+            ..
+        } => (
+            format!(" {} ", title),
+            format!(" Loki · {}:{} · {} ", project, env, message),
+            line.as_str(),
+        ),
+    };
+
+    let bold = Style::default().add_modifier(Modifier::BOLD);
+    let inner_width = area.width.saturating_sub(2) as usize;
+    let wrapped = wrap_text(line, inner_width.max(1));
+    let total_lines = wrapped.len();
+    let viewport_height = area.height.saturating_sub(2) as usize;
+    let max_scroll = total_lines.saturating_sub(viewport_height) as u16;
+    *scroll = (*scroll).min(max_scroll);
+
+    let block = Block::default()
+        .title(Line::from(title).style(bold))
+        .title_bottom(Line::from(subtitle).style(dim()))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(FOCUS_COLOR));
+
+    let body: Vec<Line> = wrapped
+        .into_iter()
+        .skip(*scroll as usize)
+        .map(Line::from)
+        .collect();
+
+    frame.render_widget(Paragraph::new(Text::from(body)).block(block), area);
+}
+
 pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let [content_area, bar_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
 
     match &mut app.ui.screen {
         Screen::UnifiedList {
-            items,
+            flat_rows,
             selected,
             filter,
+            ..
         } => {
             render_unified(
                 frame,
-                items,
+                flat_rows,
                 *selected,
                 filter,
                 app.ui.query_input.as_deref(),
                 content_area,
             );
         }
-        Screen::Detail { parent, view } => {
-            detail::render_detail(frame, view, parent, content_area);
+        Screen::LogDetail { entry, scroll, .. } => {
+            render_log_detail(frame, entry, scroll, content_area);
         }
         Screen::IssueDetail { issue, scroll, .. } => {
             render_issue_detail(frame, issue, scroll, content_area);
@@ -1054,7 +995,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     if app.ui.show_help {
         let keybinds = match &app.ui.screen {
             Screen::UnifiedList { .. } => KEYBINDS_LIST,
-            Screen::Detail { .. } => KEYBINDS_DETAIL,
+            Screen::LogDetail { .. } => KEYBINDS_LOG_READER,
             Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } => KEYBINDS_ISSUE_READER,
             Screen::PrDetail { .. } | Screen::ReviewingPr { .. } | Screen::MergingPr { .. } => {
                 KEYBINDS_PR_READER
@@ -1078,16 +1019,16 @@ mod tests {
         action_hints, position_label, render, right_status_text, status_bar_left, urgency_color,
         urgency_style, wrap_text,
     };
-    use crate::display::{Category, DisplayItem, Filter, ListSnapshot};
+    use crate::display::{flatten, Category, DisplayItem, Filter, GroupKey, ListSnapshot};
     use crate::state::{
-        App, DataState, DetailView, EnterAction, InvestigateAction, RefreshState, Screen, UiState,
+        App, DataState, EnterAction, InvestigateAction, RefreshState, Screen, UiState,
     };
     use chrono::Utc;
     use ratatui::backend::TestBackend;
     use ratatui::style::Color;
-    use ratatui::widgets::ListState;
     use ratatui::Terminal;
     use rstest::rstest;
+    use std::collections::HashSet;
     use workflows::status::StatusItem;
 
     // ── urgency_color / urgency_style ────────────────────────────────────────
@@ -1232,7 +1173,7 @@ mod tests {
         // Frame 2: single CI item selected → longer left text with ↩ URL and i hint.
         // Catches stale characters if the longer left text isn't fully overwritten.
         let group = DisplayItem::Group {
-            label: "errors".to_string(),
+            label: GroupKey::new("errors".to_string()),
             items: vec![ci_item()],
         };
         let single = DisplayItem::Single(ci_item());
@@ -1313,12 +1254,16 @@ mod tests {
     }
 
     fn unified_list_app(items: Vec<DisplayItem>) -> App {
+        let expanded = HashSet::new();
+        let flat_rows = flatten(&items, &expanded);
         App {
             ui: UiState {
                 screen: Screen::UnifiedList {
+                    flat_rows,
                     items,
                     selected: 0,
                     filter: Filter::default(),
+                    expanded_groups: expanded,
                 },
                 ..UiState::default()
             },
@@ -1326,21 +1271,36 @@ mod tests {
         }
     }
 
-    fn detail_app(snapshot_items: Vec<DisplayItem>, group_index: usize, sel: usize) -> App {
-        let mut ls = ListState::default();
-        ls.select(Some(sel));
+    fn make_screen(items: Vec<DisplayItem>, selected: usize, filter: Filter) -> Screen {
+        let expanded = HashSet::new();
+        let flat_rows = flatten(&items, &expanded);
+        Screen::UnifiedList {
+            flat_rows,
+            items,
+            selected,
+            filter,
+            expanded_groups: expanded,
+        }
+    }
+
+    fn expanded_group_app(group_items: Vec<workflows::status::StatusItem>, selected: usize) -> App {
+        use crate::display::GroupKey;
+        let key = GroupKey::new("hub errors".to_string());
+        let items = vec![DisplayItem::Group {
+            label: key.clone(),
+            items: group_items,
+        }];
+        let mut expanded = HashSet::new();
+        expanded.insert(key);
+        let flat_rows = flatten(&items, &expanded);
         App {
             ui: UiState {
-                screen: Screen::Detail {
-                    parent: ListSnapshot {
-                        items: snapshot_items,
-                        selected: 0,
-                        filter: Filter::default(),
-                    },
-                    view: DetailView {
-                        group_index,
-                        list_state: ls,
-                    },
+                screen: Screen::UnifiedList {
+                    flat_rows,
+                    items,
+                    selected,
+                    filter: Filter::default(),
+                    expanded_groups: expanded,
                 },
                 ..UiState::default()
             },
@@ -1362,14 +1322,19 @@ mod tests {
 
     #[test]
     fn position_label_unified_list_shows_index_of_n() {
+        let items = vec![
+            DisplayItem::Single(pr()),
+            DisplayItem::Single(pr()),
+            DisplayItem::Single(pr()),
+        ];
+        let expanded = HashSet::new();
+        let flat_rows = flatten(&items, &expanded);
         let screen = Screen::UnifiedList {
-            items: vec![
-                DisplayItem::Single(pr()),
-                DisplayItem::Single(pr()),
-                DisplayItem::Single(pr()),
-            ],
+            flat_rows,
+            items,
             selected: 1,
             filter: Filter::default(),
+            expanded_groups: expanded,
         };
         assert_eq!(position_label(&screen), "2/3");
     }
@@ -1383,12 +1348,9 @@ mod tests {
 
     #[test]
     fn action_hints_expand_group() {
-        let enter = EnterAction::OpenDetail {
-            group_index: 0,
-            item_count: 3,
-        };
+        let enter = EnterAction::ToggleGroup(GroupKey::new("hub errors".to_string()));
         let inv = InvestigateAction::None;
-        assert_eq!(action_hints(&enter, &inv), " · [↩] expand 3 items");
+        assert_eq!(action_hints(&enter, &inv), " · [↩] expand/collapse");
     }
 
     #[test]
@@ -1536,7 +1498,7 @@ mod tests {
     fn full_screen_unified_list_group_selected() {
         // U3: A group item is selected — shows "↩ to expand" hint in the row.
         let mut app = unified_list_app(vec![DisplayItem::Group {
-            label: "hub errors".to_string(),
+            label: GroupKey::new("hub errors".to_string()),
             items: vec![ci_item()],
         }]);
         let buf = draw(&mut app, 80, 15);
@@ -1548,14 +1510,14 @@ mod tests {
         // U4: Category filter active — green border + category label in the title.
         let mut app = App {
             ui: UiState {
-                screen: Screen::UnifiedList {
-                    items: vec![DisplayItem::Single(ci_item())],
-                    selected: 0,
-                    filter: Filter {
+                screen: make_screen(
+                    vec![DisplayItem::Single(ci_item())],
+                    0,
+                    Filter {
                         category: Some(Category::Errors),
                         query: None,
                     },
-                },
+                ),
                 ..UiState::default()
             },
             ..App::default()
@@ -1569,11 +1531,7 @@ mod tests {
         // U5: Search query being typed — yellow border + query text in the title.
         let mut app = App {
             ui: UiState {
-                screen: Screen::UnifiedList {
-                    items: vec![DisplayItem::Single(ci_item())],
-                    selected: 0,
-                    filter: Filter::default(),
-                },
+                screen: make_screen(vec![DisplayItem::Single(ci_item())], 0, Filter::default()),
                 query_input: Some("hub".to_string()),
                 ..UiState::default()
             },
@@ -1596,11 +1554,7 @@ mod tests {
         // U7: Help popup overlaid on the list.
         let mut app = App {
             ui: UiState {
-                screen: Screen::UnifiedList {
-                    items: vec![DisplayItem::Single(ci_item())],
-                    selected: 0,
-                    filter: Filter::default(),
-                },
+                screen: make_screen(vec![DisplayItem::Single(ci_item())], 0, Filter::default()),
                 show_help: true,
                 ..UiState::default()
             },
@@ -1619,11 +1573,11 @@ mod tests {
         // (b) the CI item above it shows no hint; (c) position label is "2/2".
         let mut app = App {
             ui: UiState {
-                screen: Screen::UnifiedList {
-                    items: vec![DisplayItem::Single(ci_item()), DisplayItem::Single(pr())],
-                    selected: 1,
-                    filter: Filter::default(),
-                },
+                screen: make_screen(
+                    vec![DisplayItem::Single(ci_item()), DisplayItem::Single(pr())],
+                    1,
+                    Filter::default(),
+                ),
                 ..UiState::default()
             },
             ..App::default()
@@ -1640,11 +1594,7 @@ mod tests {
         let items: Vec<DisplayItem> = (0..15).map(|_| DisplayItem::Single(pr())).collect();
         let mut app = App {
             ui: UiState {
-                screen: Screen::UnifiedList {
-                    items,
-                    selected: 14,
-                    filter: Filter::default(),
-                },
+                screen: make_screen(items, 14, Filter::default()),
                 ..UiState::default()
             },
             ..App::default()
@@ -1659,14 +1609,14 @@ mod tests {
         // filter title, empty body.  Different from U1 (no filter) and U4 (items match).
         let mut app = App {
             ui: UiState {
-                screen: Screen::UnifiedList {
-                    items: vec![],
-                    selected: 0,
-                    filter: Filter {
+                screen: make_screen(
+                    vec![],
+                    0,
+                    Filter {
                         category: Some(Category::Errors),
                         query: None,
                     },
-                },
+                ),
                 ..UiState::default()
             },
             ..App::default()
@@ -1681,14 +1631,14 @@ mod tests {
         // border + query in title. Distinct from U5 (query_input set → yellow border).
         let mut app = App {
             ui: UiState {
-                screen: Screen::UnifiedList {
-                    items: vec![DisplayItem::Single(ci_item())],
-                    selected: 0,
-                    filter: Filter {
+                screen: make_screen(
+                    vec![DisplayItem::Single(ci_item())],
+                    0,
+                    Filter {
                         category: None,
                         query: Some("hub".to_string()),
                     },
-                },
+                ),
                 ..UiState::default()
             },
             ..App::default()
@@ -1705,6 +1655,7 @@ mod tests {
                         items: vec![],
                         selected: 0,
                         filter: Filter::default(),
+                        expanded_groups: HashSet::new(),
                     },
                     issue,
                     scroll,
@@ -1764,6 +1715,7 @@ mod tests {
                         items: vec![],
                         selected: 0,
                         filter: Filter::default(),
+                        expanded_groups: HashSet::new(),
                     },
                     issue,
                     input,
@@ -1888,6 +1840,7 @@ mod tests {
                         items: vec![],
                         selected: 0,
                         filter: Filter::default(),
+                        expanded_groups: HashSet::new(),
                     },
                     pr,
                     scroll,
@@ -1993,6 +1946,7 @@ mod tests {
                         items: vec![],
                         selected: 0,
                         filter: Filter::default(),
+                        expanded_groups: HashSet::new(),
                     },
                     pr,
                 },
@@ -2123,24 +2077,16 @@ mod tests {
 
     #[test]
     fn full_screen_detail_view_first_selected() {
-        // D1: Group expanded, first item selected.
-        let items = vec![DisplayItem::Group {
-            label: "hub errors".to_string(),
-            items: vec![ci_item(), ci_item()],
-        }];
-        let mut app = detail_app(items, 0, 0);
+        // D1: Group expanded inline, first child selected.
+        let mut app = expanded_group_app(vec![ci_item(), ci_item()], 1);
         let buf = draw(&mut app, 80, 15);
         insta::assert_snapshot!(screen_text(&buf));
     }
 
     #[test]
     fn full_screen_detail_view_last_selected() {
-        // D2: Group expanded, last item selected (different scroll position).
-        let items = vec![DisplayItem::Group {
-            label: "hub errors".to_string(),
-            items: vec![ci_item(), ci_item()],
-        }];
-        let mut app = detail_app(items, 0, 1);
+        // D2: Group expanded inline, last child selected.
+        let mut app = expanded_group_app(vec![ci_item(), ci_item()], 2);
         let buf = draw(&mut app, 80, 15);
         insta::assert_snapshot!(screen_text(&buf));
     }
@@ -2163,12 +2109,8 @@ mod tests {
 
     #[test]
     fn status_bar_single_frame_detail_view() {
-        // S2: Detail view — position is within the group; enter hint shows the item URL.
-        let items = vec![DisplayItem::Group {
-            label: "hub errors".to_string(),
-            items: vec![ci_item(), ci_item()],
-        }];
-        let mut app = detail_app(items, 0, 0);
+        // S2: Group expanded inline, child selected — enter hint shows "open" (item has URL).
+        let mut app = expanded_group_app(vec![ci_item(), ci_item()], 1);
         let buf = draw(&mut app, 120, 5);
         insta::assert_snapshot!(status_row(&buf));
     }

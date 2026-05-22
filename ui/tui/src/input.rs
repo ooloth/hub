@@ -28,7 +28,7 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
 
     let can_go_back = matches!(
         app.ui.screen,
-        Screen::Detail { .. } | Screen::IssueDetail { .. } | Screen::PrDetail { .. }
+        Screen::LogDetail { .. } | Screen::IssueDetail { .. } | Screen::PrDetail { .. }
     );
     let has_filter = match &app.ui.screen {
         Screen::UnifiedList { filter, .. } => !filter.is_empty(),
@@ -58,7 +58,7 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
 
     match app.current_screen() {
         Screen::UnifiedList { .. } => unified_list_keys(key),
-        Screen::Detail { .. } => list_keys(key),
+        Screen::LogDetail { .. } => log_detail_keys(key),
         Screen::IssueDetail { .. } => issue_reader_keys(key),
         Screen::PrDetail { .. } => pr_reader_keys(key),
         Screen::ReviewingPr { .. } => unreachable!("handled above"),
@@ -106,24 +106,6 @@ fn unified_list_keys(key: KeyEvent) -> Option<Action> {
     }
 }
 
-fn list_keys(key: KeyEvent) -> Option<Action> {
-    match (key.code, key.modifiers) {
-        (KeyCode::Up, _) | (KeyCode::Char('k'), _) | (KeyCode::Char('h'), _) => {
-            Some(Action::MoveUp)
-        }
-        (KeyCode::Down, _) | (KeyCode::Char('j'), _) | (KeyCode::Char('l'), _) => {
-            Some(Action::MoveDown)
-        }
-        (KeyCode::Char('g'), _) => Some(Action::PendingG),
-        (KeyCode::Char('G'), _) => Some(Action::MoveToBottom),
-        (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Action::MovePageUp),
-        (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(Action::MovePageDown),
-        (KeyCode::Enter, _) => Some(Action::Enter),
-        (KeyCode::Char('i'), _) => Some(Action::Investigate),
-        _ => None,
-    }
-}
-
 fn pr_reader_keys(key: KeyEvent) -> Option<Action> {
     match (key.code, key.modifiers) {
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => Some(Action::MoveUp),
@@ -151,6 +133,18 @@ fn reviewing_pr_key(key: KeyEvent) -> Option<Action> {
         KeyCode::Char('c') => Some(Action::CommitReview(ReviewSkill::Converge)),
         KeyCode::Char('m') => Some(Action::CommitReview(ReviewSkill::PrCommentsConverge)),
         KeyCode::Esc => Some(Action::CancelReview),
+        _ => None,
+    }
+}
+
+fn log_detail_keys(key: KeyEvent) -> Option<Action> {
+    match (key.code, key.modifiers) {
+        (KeyCode::Up, _) | (KeyCode::Char('k'), _) => Some(Action::MoveUp),
+        (KeyCode::Down, _) | (KeyCode::Char('j'), _) => Some(Action::MoveDown),
+        (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Action::MovePageUp),
+        (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(Action::MovePageDown),
+        (KeyCode::Enter, _) => Some(Action::Enter),
+        (KeyCode::Char('i'), _) => Some(Action::Investigate),
         _ => None,
     }
 }
@@ -209,8 +203,8 @@ fn dismiss_mode_key(key: KeyEvent) -> Option<Action> {
 #[cfg(test)]
 mod tests {
     use super::key_to_action;
-    use crate::display::{Category, DisplayItem, Filter, ListSnapshot};
-    use crate::state::{Action, App, DetailView, ReviewSkill, Screen, UiState};
+    use crate::display::{Category, Filter, ListSnapshot};
+    use crate::state::{Action, App, ReviewSkill, Screen, UiState};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use rstest::rstest;
 
@@ -226,23 +220,26 @@ mod tests {
         KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
     }
 
-    fn detail_app() -> App {
+    fn log_detail_app() -> App {
         let snapshot = ListSnapshot {
-            items: vec![DisplayItem::Group {
-                label: "group".to_string(),
-                items: vec![],
-            }],
+            items: vec![],
             selected: 0,
             filter: Filter::default(),
+            expanded_groups: std::collections::HashSet::new(),
         };
         App {
             ui: UiState {
-                screen: Screen::Detail {
+                screen: Screen::LogDetail {
                     parent: snapshot,
-                    view: DetailView {
-                        group_index: 0,
-                        list_state: ratatui::widgets::ListState::default(),
+                    entry: domain::LogEntry::Gcp {
+                        project: "proj".to_string(),
+                        env: "prod".to_string(),
+                        title: "errors".to_string(),
+                        message: "oops".to_string(),
+                        line: "{}".to_string(),
+                        url: String::new(),
                     },
+                    scroll: 0,
                 },
                 ..UiState::default()
             },
@@ -255,11 +252,13 @@ mod tests {
             ui: UiState {
                 screen: Screen::UnifiedList {
                     items: vec![],
+                    flat_rows: vec![],
                     selected: 0,
                     filter: Filter {
                         category: Some(category),
                         query: None,
                     },
+                    expanded_groups: std::collections::HashSet::new(),
                 },
                 ..UiState::default()
             },
@@ -282,6 +281,7 @@ mod tests {
             items: vec![],
             selected: 0,
             filter: Filter::default(),
+            expanded_groups: std::collections::HashSet::new(),
         };
         App {
             ui: UiState {
@@ -323,8 +323,8 @@ mod tests {
     #[case(ctrl('c'), Some(Action::Quit))]
     #[case(ch('?'), Some(Action::ToggleHelp))]
     #[case(ch('r'), Some(Action::Refresh))]
-    fn universal_keys_fire_in_detail(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
-        assert_eq!(key_to_action(&detail_app(), key), expected);
+    fn universal_keys_fire_in_log_detail(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
+        assert_eq!(key_to_action(&log_detail_app(), key), expected);
     }
 
     #[test]
@@ -343,9 +343,9 @@ mod tests {
     }
 
     #[test]
-    fn esc_goes_back_from_detail() {
+    fn esc_goes_back_from_log_detail() {
         assert_eq!(
-            key_to_action(&detail_app(), k(KeyCode::Esc)),
+            key_to_action(&log_detail_app(), k(KeyCode::Esc)),
             Some(Action::Back)
         );
     }
@@ -422,24 +422,24 @@ mod tests {
     #[rstest]
     #[case(k(KeyCode::Up), Some(Action::MoveUp))]
     #[case(ch('k'), Some(Action::MoveUp))]
-    #[case(ch('h'), Some(Action::MoveUp))]
     #[case(k(KeyCode::Down), Some(Action::MoveDown))]
     #[case(ch('j'), Some(Action::MoveDown))]
-    #[case(ch('l'), Some(Action::MoveDown))]
-    #[case(ch('g'), Some(Action::PendingG))]
-    #[case(ch('G'), Some(Action::MoveToBottom))]
     #[case(ctrl('u'), Some(Action::MovePageUp))]
     #[case(ctrl('d'), Some(Action::MovePageDown))]
     #[case(k(KeyCode::Enter), Some(Action::Enter))]
     #[case(ch('i'), Some(Action::Investigate))]
+    #[case(ch('h'), None)]
+    #[case(ch('l'), None)]
+    #[case(ch('g'), None)]
+    #[case(ch('G'), None)]
     #[case(ch('p'), None)]
     #[case(ch('e'), None)]
     #[case(ch('o'), None)]
     #[case(ch('a'), None)]
     #[case(ch('/'), None)]
     #[case(ch('x'), None)]
-    fn detail_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
-        assert_eq!(key_to_action(&detail_app(), key), expected);
+    fn log_detail_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
+        assert_eq!(key_to_action(&log_detail_app(), key), expected);
     }
 
     #[rstest]
@@ -489,6 +489,7 @@ mod tests {
             items: vec![],
             selected: 0,
             filter: Filter::default(),
+            expanded_groups: std::collections::HashSet::new(),
         };
         App {
             ui: UiState {
@@ -594,6 +595,7 @@ mod tests {
             items: vec![],
             selected: 0,
             filter: Filter::default(),
+            expanded_groups: std::collections::HashSet::new(),
         };
         App {
             ui: UiState {
@@ -633,6 +635,7 @@ mod tests {
             items: vec![],
             selected: 0,
             filter: Filter::default(),
+            expanded_groups: std::collections::HashSet::new(),
         };
         App {
             ui: UiState {
@@ -714,6 +717,7 @@ mod tests {
             items: vec![],
             selected: 0,
             filter: Filter::default(),
+            expanded_groups: std::collections::HashSet::new(),
         };
         App {
             ui: UiState {

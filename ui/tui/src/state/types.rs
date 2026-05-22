@@ -1,9 +1,10 @@
+use std::collections::HashSet;
+
 use anyhow::Result;
-use domain::{Issue, PrKind, PullRequest, ReviewDecision};
-use ratatui::widgets::ListState;
+use domain::{Issue, LogEntry, PrKind, PullRequest, ReviewDecision};
 use workflows::status::{StatusItem, StatusReport};
 
-use crate::display::{Category, DisplayItem, Filter, ListSnapshot};
+use crate::display::{Category, DisplayItem, Filter, FlatRow, GroupKey, ListSnapshot};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ReviewSkill {
@@ -45,31 +46,29 @@ pub(crate) enum RefreshState {
     Failed(String),
 }
 
-#[derive(Debug)]
-pub(crate) struct DetailView {
-    pub(crate) group_index: usize,
-    pub(crate) list_state: ListState,
-}
-
 // Flat enum encoding the valid navigation graph in the type system.
-// UnifiedList is the default (top-level) screen. Detail carries a
-// ListSnapshot as its return address — pressing Back restores the
-// list to the exact items/selection/filter state before drill-in.
+// UnifiedList is the default (top-level) screen. Detail screens carry a
+// ListSnapshot as their return address — pressing Back restores the list
+// to the exact items/selection/filter/expansion state before drill-in.
 // IssueDetail shows the full body of a single issue with a scroll offset.
+// LogDetail shows the raw JSON log line for a GCP or Loki entry.
 #[derive(Debug)]
 pub(crate) enum Screen {
     UnifiedList {
         items: Vec<DisplayItem>,
+        flat_rows: Vec<FlatRow>,
         selected: usize,
         filter: Filter,
-    },
-    Detail {
-        parent: ListSnapshot,
-        view: DetailView,
+        expanded_groups: HashSet<GroupKey>,
     },
     IssueDetail {
         parent: ListSnapshot,
         issue: Issue,
+        scroll: u16,
+    },
+    LogDetail {
+        parent: ListSnapshot,
+        entry: LogEntry,
         scroll: u16,
     },
     PrDetail {
@@ -96,8 +95,10 @@ impl Default for Screen {
     fn default() -> Self {
         Screen::UnifiedList {
             items: vec![],
+            flat_rows: vec![],
             selected: 0,
             filter: Filter::default(),
+            expanded_groups: HashSet::new(),
         }
     }
 }
@@ -106,18 +107,15 @@ impl Screen {
     pub(crate) fn selected_status_item(&self) -> Option<StatusItem> {
         match self {
             Screen::UnifiedList {
-                items, selected, ..
-            } => match items.get(*selected)? {
-                DisplayItem::Single(item) => Some(item.clone()),
-                DisplayItem::Group { .. } => None,
+                flat_rows,
+                selected,
+                ..
+            } => match flat_rows.get(*selected)? {
+                FlatRow::Single(item) => Some(item.clone()),
+                FlatRow::GroupChild { item, .. } => Some(item.clone()),
+                FlatRow::GroupHeader { .. } => None,
             },
-            Screen::Detail { parent, view } => {
-                let sel = view.list_state.selected().unwrap_or(0);
-                match parent.items.get(view.group_index)? {
-                    DisplayItem::Group { items, .. } => items.get(sel).cloned(),
-                    _ => None,
-                }
-            }
+            Screen::LogDetail { .. } => None,
             Screen::IssueDetail { issue, .. } | Screen::DismissingIssue { issue, .. } => {
                 Some(StatusItem::Issue(issue.clone()))
             }
@@ -131,10 +129,8 @@ impl Screen {
 pub(crate) enum EnterAction {
     None,
     OpenUrl(String),
-    OpenDetail {
-        group_index: usize,
-        item_count: usize,
-    },
+    ToggleGroup(GroupKey),
+    OpenLogDetail(LogEntry),
     OpenIssueDetail(Issue),
     OpenPrDetail(PullRequest),
 }

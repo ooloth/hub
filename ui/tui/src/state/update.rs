@@ -1,16 +1,14 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
-use ratatui::widgets::ListState;
 
-use domain::{agent_ready_labels, dismissed_labels};
+use domain::{agent_ready_labels, dismissed_labels, LogEntry};
 
 use super::{
-    Action, App, DetailView, Effect, EnterAction, InvestigateAction, Msg, PrOwnership,
-    RefreshState, Screen,
+    Action, App, Effect, EnterAction, InvestigateAction, Msg, PrOwnership, RefreshState, Screen,
 };
 use crate::display::{
-    build_unified, item_investigation, item_url, DisplayItem, Filter, InvestigationKind,
-    ListSnapshot,
+    build_unified, flatten, item_investigation, item_url, log_entry_from_status_item, Filter,
+    FlatRow, InvestigationKind, ListSnapshot,
 };
 
 impl App {
@@ -36,14 +34,19 @@ impl App {
             }
             Action::Back => {
                 self.ui.screen = match std::mem::take(&mut self.ui.screen) {
-                    Screen::Detail { parent, .. }
+                    Screen::LogDetail { parent, .. }
                     | Screen::IssueDetail { parent, .. }
                     | Screen::PrDetail { parent, .. }
-                    | Screen::ReviewingPr { parent, .. } => Screen::UnifiedList {
-                        items: parent.items,
-                        selected: parent.selected,
-                        filter: parent.filter,
-                    },
+                    | Screen::ReviewingPr { parent, .. } => {
+                        let flat_rows = flatten(&parent.items, &parent.expanded_groups);
+                        Screen::UnifiedList {
+                            items: parent.items,
+                            flat_rows,
+                            selected: parent.selected,
+                            filter: parent.filter,
+                            expanded_groups: parent.expanded_groups,
+                        }
+                    }
                     // Already at top level — no-op.
                     other => other,
                 };
@@ -154,11 +157,11 @@ impl App {
             | Action::CommitReview(_)
             | Action::CancelReview => match &self.ui.screen {
                 Screen::UnifiedList { .. } => self.handle_unified_list(action),
+                Screen::LogDetail { .. } => self.handle_log_detail(action),
                 Screen::IssueDetail { .. } => self.handle_issue_reader(action),
                 Screen::PrDetail { .. } => self.handle_pr_reader(action),
                 Screen::ReviewingPr { .. } => self.handle_reviewing_pr(action),
                 Screen::MergingPr { .. } => self.handle_merging_pr(action),
-                Screen::Detail { .. } => self.handle_detail(action),
                 Screen::DismissingIssue { .. } => self.handle_dismissing(action),
             },
         }
@@ -168,10 +171,13 @@ impl App {
         let items = build_unified(self.data.raw_items.clone(), &new_filter);
         if let Screen::UnifiedList {
             items: ref mut i,
+            flat_rows: ref mut fr,
             selected: ref mut s,
             filter: ref mut f,
+            expanded_groups: ref eg,
         } = self.ui.screen
         {
+            *fr = flatten(&items, eg);
             *i = items;
             *s = 0;
             *f = new_filter;
@@ -225,36 +231,48 @@ impl App {
         }
     }
 
-    fn handle_detail(&mut self, action: Action) -> Vec<Effect> {
+    fn handle_log_detail(&mut self, action: Action) -> Vec<Effect> {
         match action {
             Action::MoveUp => {
-                self.move_up();
+                if let Screen::LogDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = scroll.saturating_sub(1);
+                }
                 vec![]
             }
             Action::MoveDown => {
-                self.move_down();
+                if let Screen::LogDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = scroll.saturating_add(1);
+                }
                 vec![]
             }
             Action::MoveToTop => {
-                self.move_to_top();
+                if let Screen::LogDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = 0;
+                }
                 vec![]
             }
             Action::MoveToBottom => {
-                self.move_to_bottom();
+                if let Screen::LogDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = u16::MAX;
+                }
                 vec![]
             }
             Action::MovePageUp => {
-                self.move_page_up();
+                if let Screen::LogDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = scroll.saturating_sub(10);
+                }
                 vec![]
             }
             Action::MovePageDown => {
-                self.move_page_down();
+                if let Screen::LogDetail { scroll, .. } = &mut self.ui.screen {
+                    *scroll = scroll.saturating_add(10);
+                }
                 vec![]
             }
-            Action::Enter => {
-                let ea = compute_enter_action(self);
-                self.apply_enter_action(ea)
-            }
+            Action::Enter => self
+                .selected_url()
+                .map(|u| vec![Effect::OpenUrl(u.to_string())])
+                .unwrap_or_default(),
             Action::Investigate => self.handle_investigate(),
             _ => unreachable!(),
         }
@@ -590,14 +608,31 @@ impl App {
         match ea {
             EnterAction::None => vec![],
             EnterAction::OpenUrl(url) => vec![Effect::OpenUrl(url)],
-            EnterAction::OpenDetail {
-                group_index,
-                item_count,
-            } => {
+            EnterAction::ToggleGroup(key) => {
+                let Screen::UnifiedList {
+                    items,
+                    flat_rows,
+                    expanded_groups,
+                    ..
+                } = &mut self.ui.screen
+                else {
+                    return vec![];
+                };
+                if expanded_groups.contains(&key) {
+                    expanded_groups.remove(&key);
+                } else {
+                    expanded_groups.insert(key);
+                }
+                *flat_rows = flatten(items, expanded_groups);
+                vec![]
+            }
+            EnterAction::OpenLogDetail(entry) => {
                 let Screen::UnifiedList {
                     items,
                     selected,
                     filter,
+                    expanded_groups,
+                    ..
                 } = &self.ui.screen
                 else {
                     return vec![];
@@ -606,21 +641,12 @@ impl App {
                     items: items.clone(),
                     selected: *selected,
                     filter: filter.clone(),
+                    expanded_groups: expanded_groups.clone(),
                 };
-                assert!(
-                    matches!(items.get(group_index), Some(DisplayItem::Group { .. })),
-                    "group_index must point to a Group variant"
-                );
-                let mut ds = ListState::default();
-                if item_count > 0 {
-                    ds.select(Some(0));
-                }
-                self.ui.screen = Screen::Detail {
+                self.ui.screen = Screen::LogDetail {
                     parent: snapshot,
-                    view: DetailView {
-                        group_index,
-                        list_state: ds,
-                    },
+                    entry,
+                    scroll: 0,
                 };
                 vec![]
             }
@@ -629,6 +655,8 @@ impl App {
                     items,
                     selected,
                     filter,
+                    expanded_groups,
+                    ..
                 } = &self.ui.screen
                 else {
                     return vec![];
@@ -637,6 +665,7 @@ impl App {
                     items: items.clone(),
                     selected: *selected,
                     filter: filter.clone(),
+                    expanded_groups: expanded_groups.clone(),
                 };
                 self.ui.screen = Screen::IssueDetail {
                     parent: snapshot,
@@ -650,6 +679,8 @@ impl App {
                     items,
                     selected,
                     filter,
+                    expanded_groups,
+                    ..
                 } = &self.ui.screen
                 else {
                     return vec![];
@@ -658,6 +689,7 @@ impl App {
                     items: items.clone(),
                     selected: *selected,
                     filter: filter.clone(),
+                    expanded_groups: expanded_groups.clone(),
                 };
                 self.ui.screen = Screen::PrDetail {
                     parent: snapshot,
@@ -672,16 +704,22 @@ impl App {
     pub(crate) fn selected_url(&self) -> Option<&str> {
         match &self.ui.screen {
             Screen::UnifiedList {
-                items, selected, ..
-            } => match items.get(*selected)? {
-                DisplayItem::Single(item) => item_url(item),
-                DisplayItem::Group { .. } => None,
+                flat_rows,
+                selected,
+                ..
+            } => match flat_rows.get(*selected)? {
+                FlatRow::Single(item) => item_url(item),
+                FlatRow::GroupChild { item, .. } => item_url(item),
+                FlatRow::GroupHeader { .. } => None,
             },
-            Screen::Detail { parent, view } => {
-                let sel = view.list_state.selected().unwrap_or(0);
-                match parent.items.get(view.group_index)? {
-                    DisplayItem::Group { items, .. } => items.get(sel).and_then(item_url),
-                    _ => None,
+            Screen::LogDetail { entry, .. } => {
+                let url = match entry {
+                    LogEntry::Gcp { url, .. } | LogEntry::Loki { url, .. } => url.as_str(),
+                };
+                if url.is_empty() {
+                    None
+                } else {
+                    Some(url)
                 }
             }
             Screen::IssueDetail { issue, .. } | Screen::DismissingIssue { issue, .. } => {
@@ -698,29 +736,30 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
     use workflows::status::StatusItem;
     match app.current_screen() {
         Screen::UnifiedList {
-            items, selected, ..
-        } => match items.get(*selected) {
-            Some(DisplayItem::Group {
-                items: group_items, ..
-            }) => EnterAction::OpenDetail {
-                group_index: *selected,
-                item_count: group_items.len(),
+            flat_rows,
+            selected,
+            ..
+        } => match flat_rows.get(*selected) {
+            Some(FlatRow::GroupHeader { key, .. }) => EnterAction::ToggleGroup(key.clone()),
+            Some(FlatRow::GroupChild { item, .. }) | Some(FlatRow::Single(item)) => match item {
+                StatusItem::Issue(issue) => EnterAction::OpenIssueDetail(issue.clone()),
+                StatusItem::Pr(pr) => EnterAction::OpenPrDetail(pr.clone()),
+                StatusItem::Gcp(_) | StatusItem::Loki(_) => {
+                    if let Some(entry) = log_entry_from_status_item(item) {
+                        EnterAction::OpenLogDetail(entry)
+                    } else {
+                        EnterAction::None
+                    }
+                }
+                _ => app
+                    .selected_url()
+                    .map(|u| EnterAction::OpenUrl(u.to_string()))
+                    .unwrap_or(EnterAction::None),
             },
-            Some(DisplayItem::Single(StatusItem::Issue(issue))) => {
-                EnterAction::OpenIssueDetail(issue.clone())
-            }
-            Some(DisplayItem::Single(StatusItem::Pr(pr))) => EnterAction::OpenPrDetail(pr.clone()),
-            Some(DisplayItem::Single(_)) => app
-                .selected_url()
-                .map(|u| EnterAction::OpenUrl(u.to_string()))
-                .unwrap_or(EnterAction::None),
             None => EnterAction::None,
         },
-        Screen::Detail { .. } => app
-            .selected_url()
-            .map(|u| EnterAction::OpenUrl(u.to_string()))
-            .unwrap_or(EnterAction::None),
-        Screen::IssueDetail { .. }
+        Screen::LogDetail { .. }
+        | Screen::IssueDetail { .. }
         | Screen::DismissingIssue { .. }
         | Screen::PrDetail { .. }
         | Screen::ReviewingPr { .. }
@@ -732,6 +771,40 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
 }
 
 pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
+    // LogDetail carries the entry directly — no need to go via selected_status_item().
+    if let Screen::LogDetail { entry, .. } = &app.ui.screen {
+        return match entry {
+            LogEntry::Gcp {
+                project,
+                env,
+                title,
+                message,
+                line,
+                ..
+            } => InvestigateAction::LaunchGcp {
+                project: project.clone(),
+                env: env.clone(),
+                title: title.clone(),
+                message: message.clone(),
+                line: line.clone(),
+            },
+            LogEntry::Loki {
+                project,
+                env,
+                title,
+                message,
+                line,
+                ..
+            } => InvestigateAction::LaunchLoki {
+                project: project.clone(),
+                env: env.clone(),
+                title: title.clone(),
+                message: message.clone(),
+                line: line.clone(),
+            },
+        };
+    }
+
     let Some(item) = app.ui.screen.selected_status_item() else {
         return InvestigateAction::None;
     };
@@ -797,42 +870,18 @@ fn refresh_screen_in_place(screen: &mut Screen, raw: &[workflows::status::Status
     match screen {
         Screen::UnifiedList {
             items,
+            flat_rows,
             selected,
             filter,
+            expanded_groups,
         } => {
             let new_items = build_unified(raw.to_vec(), filter);
             *selected = (*selected).min(new_items.len().saturating_sub(1));
+            *flat_rows = flatten(&new_items, expanded_groups);
             *items = new_items;
         }
-        Screen::Detail { parent, view } => {
-            let old_label = match parent.items.get(view.group_index) {
-                Some(DisplayItem::Group { label, .. }) => Some(label.clone()),
-                _ => None,
-            };
-            let detail_sel = view.list_state.selected().unwrap_or(0);
-            let new_parent_items = build_unified(raw.to_vec(), &parent.filter);
-            let new_group_index = old_label.as_ref().and_then(|lbl| {
-                new_parent_items
-                    .iter()
-                    .position(|d| matches!(d, DisplayItem::Group { label, .. } if label == lbl))
-            });
-            if let Some(new_idx) = new_group_index {
-                let new_len = new_parent_items.len();
-                parent.selected = parent.selected.min(new_len.saturating_sub(1));
-                parent.items = new_parent_items;
-                view.group_index = new_idx;
-                let group_len = match parent.items.get(new_idx) {
-                    Some(DisplayItem::Group { items, .. }) => items.len(),
-                    _ => 0,
-                };
-                if group_len > 0 {
-                    view.list_state
-                        .select(Some(detail_sel.min(group_len.saturating_sub(1))));
-                }
-            }
-            // Group gone → leave screen frozen
-        }
-        Screen::IssueDetail { parent, .. }
+        Screen::LogDetail { parent, .. }
+        | Screen::IssueDetail { parent, .. }
         | Screen::PrDetail { parent, .. }
         | Screen::ReviewingPr { parent, .. }
         | Screen::MergingPr { parent, .. }
@@ -877,21 +926,27 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::{
         compute_enter_action, compute_investigate_action, handle_msg, Action, App, Effect,
         EnterAction, InvestigateAction, Msg, RefreshState, Screen,
     };
-    use crate::display::{Category, DisplayItem, Filter, ListSnapshot};
-    use crate::state::{DataState, DetailView, UiState};
+    use crate::display::{flatten, Category, DisplayItem, Filter, GroupKey, ListSnapshot};
+    use crate::state::{DataState, UiState};
     use workflows::status::{StatusItem, StatusReport};
 
     fn app_with_items(items: Vec<DisplayItem>) -> App {
+        let expanded = HashSet::new();
+        let flat_rows = flatten(&items, &expanded);
         App {
             ui: UiState {
                 screen: Screen::UnifiedList {
+                    flat_rows,
                     items,
                     selected: 0,
                     filter: Filter::default(),
+                    expanded_groups: expanded,
                 },
                 ..UiState::default()
             },
@@ -899,27 +954,47 @@ mod tests {
         }
     }
 
-    fn app_in_detail(group_items: Vec<StatusItem>) -> App {
-        let snapshot = ListSnapshot {
-            items: vec![DisplayItem::Group {
-                label: "group".to_string(),
-                items: group_items,
-            }],
+    fn app_in_log_detail(item: StatusItem) -> App {
+        use domain::LogEntry;
+        let entry = match &item {
+            StatusItem::Gcp(g) => LogEntry::Gcp {
+                project: g.project.clone(),
+                env: g.env.clone(),
+                title: g.title.clone(),
+                message: g.message.clone(),
+                line: g.line.clone(),
+                url: g.url.clone(),
+            },
+            StatusItem::Loki(l) => LogEntry::Loki {
+                project: l.project.clone(),
+                env: l.env.clone(),
+                title: l.title.clone(),
+                message: l.message.clone(),
+                line: l.line.clone(),
+                url: l.url.clone(),
+            },
+            StatusItem::Ci(_) => LogEntry::Gcp {
+                project: "p".to_string(),
+                env: "e".to_string(),
+                title: "t".to_string(),
+                message: "m".to_string(),
+                line: "{}".to_string(),
+                url: "https://example.com".to_string(),
+            },
+            _ => unimplemented!("app_in_log_detail: unsupported item type"),
+        };
+        let parent = ListSnapshot {
+            items: vec![DisplayItem::Single(item)],
             selected: 0,
             filter: Filter::default(),
+            expanded_groups: HashSet::new(),
         };
         App {
             ui: UiState {
-                screen: Screen::Detail {
-                    parent: snapshot,
-                    view: DetailView {
-                        group_index: 0,
-                        list_state: {
-                            let mut ls = ratatui::widgets::ListState::default();
-                            ls.select(Some(0));
-                            ls
-                        },
-                    },
+                screen: Screen::LogDetail {
+                    parent,
+                    entry,
+                    scroll: 0,
                 },
                 ..UiState::default()
             },
@@ -985,13 +1060,27 @@ mod tests {
     }
 
     #[test]
-    fn investigate_action_launches_ci_from_detail_selection() {
-        let app = app_in_detail(vec![ci_failure()]);
+    fn investigate_action_launches_gcp_from_log_detail() {
+        let gcp = StatusItem::Gcp(domain::GcpEntry {
+            title: "errors".to_string(),
+            project: "mapapp".to_string(),
+            env: "neuro".to_string(),
+            message: "something broke".to_string(),
+            line: r#"{"message":"something broke"}"#.to_string(),
+            lookback: "7d".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::High,
+            url: "https://console.cloud.google.com/logs/query".to_string(),
+        });
+        let app = app_in_log_detail(gcp);
         assert_eq!(
             compute_investigate_action(&app),
-            InvestigateAction::LaunchCi {
-                repo: "ooloth/hub".to_string(),
-                run_url: "https://github.com/ooloth/hub/actions/runs/123".to_string(),
+            InvestigateAction::LaunchGcp {
+                project: "mapapp".to_string(),
+                env: "neuro".to_string(),
+                title: "errors".to_string(),
+                message: "something broke".to_string(),
+                line: r#"{"message":"something broke"}"#.to_string(),
             }
         );
     }
@@ -1169,58 +1258,55 @@ mod tests {
     }
 
     #[test]
-    fn enter_on_group_in_unified_list_opens_detail() {
+    fn enter_on_group_in_unified_list_toggles_expansion() {
         let mut app = app_with_items(vec![DisplayItem::Group {
-            label: "hub".to_string(),
-            items: vec![ci_failure()],
+            label: GroupKey::new("hub".to_string()),
+            items: vec![ci_failure(), ci_failure()],
         }]);
+        // Before: group is collapsed — flat_rows has 1 header
+        let initial_len = match app.current_screen() {
+            Screen::UnifiedList { flat_rows, .. } => flat_rows.len(),
+            _ => panic!(),
+        };
+        assert_eq!(initial_len, 1);
         app.update(Action::Enter);
-        assert!(matches!(app.current_screen(), Screen::Detail { .. }));
+        // After: group expanded — header + 2 children = 3
+        let expanded_len = match app.current_screen() {
+            Screen::UnifiedList { flat_rows, .. } => flat_rows.len(),
+            _ => panic!(),
+        };
+        assert_eq!(expanded_len, 3);
+        // Second Enter collapses it back
+        app.update(Action::Enter);
+        let collapsed_len = match app.current_screen() {
+            Screen::UnifiedList { flat_rows, .. } => flat_rows.len(),
+            _ => panic!(),
+        };
+        assert_eq!(collapsed_len, 1);
     }
 
     #[test]
-    fn back_from_detail_returns_to_unified_list() {
-        let mut app = app_with_items(vec![DisplayItem::Group {
-            label: "hub".to_string(),
-            items: vec![ci_failure()],
-        }]);
+    fn back_from_log_detail_returns_to_unified_list() {
+        let loki = StatusItem::Loki(domain::LokiEntry {
+            title: "Error spike".to_string(),
+            project: "hub".to_string(),
+            env: "prod".to_string(),
+            message: "timeout".to_string(),
+            line: "{}".to_string(),
+            lookback: "1h".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::High,
+            url: "https://grafana.example.com".to_string(),
+        });
+        let mut app = app_with_items(vec![DisplayItem::Single(loki)]);
         apply(&mut app, &[Action::Enter, Action::Back]);
         assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
-    }
-
-    #[test]
-    fn back_from_detail_restores_selection() {
-        let mut app = app_with_items(vec![
-            DisplayItem::Single(ci_failure()),
-            DisplayItem::Group {
-                label: "hub".to_string(),
-                items: vec![ci_failure()],
-            },
-        ]);
-        // move to second item (the group) then drill in
-        apply(&mut app, &[Action::MoveDown, Action::Enter, Action::Back]);
-        let Screen::UnifiedList { selected, .. } = app.current_screen() else {
-            panic!("expected UnifiedList");
-        };
-        assert_eq!(*selected, 1);
     }
 
     #[test]
     fn back_does_nothing_from_unified_list() {
         let mut app = App::default();
         app.update(Action::Back);
-        assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
-    }
-
-    #[test]
-    fn full_navigation_round_trip() {
-        let mut app = app_with_items(vec![DisplayItem::Group {
-            label: "hub".to_string(),
-            items: vec![ci_failure()],
-        }]);
-        apply(&mut app, &[Action::Enter]);
-        assert!(matches!(app.current_screen(), Screen::Detail { .. }));
-        apply(&mut app, &[Action::Back]);
         assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
     }
 
@@ -1353,19 +1439,6 @@ mod tests {
     #[test]
     fn investigate_action_launches_media_from_unified_list_selection() {
         let app = app_with_items(vec![DisplayItem::Single(media_blocked())]);
-        assert_eq!(
-            compute_investigate_action(&app),
-            InvestigateAction::LaunchMediaBlocked {
-                title: "Show — S01E01".to_string(),
-                error: "Invalid video file".to_string(),
-            }
-        );
-    }
-
-    #[cfg(feature = "private")]
-    #[test]
-    fn investigate_action_launches_media_from_detail_selection() {
-        let app = app_in_detail(vec![media_blocked()]);
         assert_eq!(
             compute_investigate_action(&app),
             InvestigateAction::LaunchMediaBlocked {
@@ -1542,6 +1615,7 @@ mod tests {
             items: vec![DisplayItem::Single(stub_issue())],
             selected: 0,
             filter: Filter::default(),
+            expanded_groups: HashSet::new(),
         };
         let issue = match stub_issue() {
             StatusItem::Issue(i) => i,
@@ -1808,72 +1882,6 @@ mod tests {
 
     // --- helpers ---
 
-    fn loki_entry(urgency: domain::Urgency) -> StatusItem {
-        StatusItem::Loki(domain::LokiEntry {
-            title: "Error spike".to_string(),
-            project: "hub".to_string(),
-            env: "prod".to_string(),
-            message: "timeout".to_string(),
-            line: "{}".to_string(),
-            lookback: "1h".to_string(),
-            age: chrono::Duration::zero(),
-            urgency,
-            url: "https://grafana.example.com".to_string(),
-        })
-    }
-
-    fn loki_group_key() -> String {
-        "Error spike · timeout — hub:prod".to_string()
-    }
-
-    fn report_with_loki(n: usize, urgency: domain::Urgency) -> StatusReport {
-        StatusReport {
-            items: (0..n).map(|_| loki_entry(urgency)).collect(),
-            errors: vec![],
-        }
-    }
-
-    fn app_in_loki_detail(
-        group_index: usize,
-        detail_selected: usize,
-        parent_singles: usize,
-        group_loki_count: usize,
-    ) -> App {
-        let mut parent_items: Vec<DisplayItem> = (0..parent_singles)
-            .map(|_| DisplayItem::Single(ci_failure()))
-            .collect();
-        parent_items.insert(
-            group_index,
-            DisplayItem::Group {
-                label: loki_group_key(),
-                items: (0..group_loki_count)
-                    .map(|_| loki_entry(domain::Urgency::Low))
-                    .collect(),
-            },
-        );
-        App {
-            ui: UiState {
-                screen: Screen::Detail {
-                    parent: ListSnapshot {
-                        items: parent_items,
-                        selected: 0,
-                        filter: Filter::default(),
-                    },
-                    view: DetailView {
-                        group_index,
-                        list_state: {
-                            let mut ls = ratatui::widgets::ListState::default();
-                            ls.select(Some(detail_selected));
-                            ls
-                        },
-                    },
-                },
-                ..UiState::default()
-            },
-            ..App::default()
-        }
-    }
-
     // --- UnifiedList refresh ---
 
     fn report_with_two_items() -> StatusReport {
@@ -1920,11 +1928,13 @@ mod tests {
             ui: UiState {
                 screen: Screen::UnifiedList {
                     items: vec![],
+                    flat_rows: vec![],
                     selected: 0,
                     filter: Filter {
                         category: Some(Category::Issues),
                         query: None,
                     },
+                    expanded_groups: HashSet::new(),
                 },
                 ..UiState::default()
             },
@@ -1970,6 +1980,7 @@ mod tests {
             items: vec![DisplayItem::Single(stub_pr())],
             selected: 0,
             filter: Filter::default(),
+            expanded_groups: HashSet::new(),
         };
         let pr = match stub_pr() {
             StatusItem::Pr(p) => p,
@@ -1986,83 +1997,6 @@ mod tests {
             },
             ..App::default()
         }
-    }
-
-    // --- Detail refresh ---
-
-    #[test]
-    fn refresh_in_detail_preserves_screen_variant() {
-        let mut app = app_in_detail(vec![ci_failure()]);
-        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
-        assert!(matches!(app.current_screen(), Screen::Detail { .. }));
-    }
-
-    #[test]
-    fn refresh_in_detail_freezes_screen_when_group_vanishes() {
-        // CI items have no group_key; rebuilt parent has only Singles → group label gone
-        let mut app = app_in_detail(vec![ci_failure(), ci_failure()]);
-        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
-        let Screen::Detail { parent, .. } = app.current_screen() else {
-            panic!("expected Detail");
-        };
-        assert!(matches!(parent.items[0], DisplayItem::Group { .. }));
-    }
-
-    #[test]
-    fn refresh_in_detail_updates_parent_when_group_exists() {
-        // Start with 2-item Loki group; report has 3 → group gains an entry
-        let mut app = app_in_loki_detail(0, 0, 0, 2);
-        handle_msg(
-            &mut app,
-            Msg::FetchResult(Ok(report_with_loki(3, domain::Urgency::Low))),
-        )
-        .unwrap();
-        let Screen::Detail { parent, view } = app.current_screen() else {
-            panic!("expected Detail");
-        };
-        let DisplayItem::Group { items, .. } = &parent.items[view.group_index] else {
-            panic!("expected Group at group_index");
-        };
-        assert_eq!(items.len(), 3);
-    }
-
-    #[test]
-    fn refresh_in_detail_updates_group_index_when_group_reorders() {
-        // Initial parent: [Group(loki_key, [loki_Low]), Single(ci_High)] — group at 0
-        // Report: ci_High + 2×loki_Low → rebuild: [Single(ci_High), Group(loki_key, [×2])]
-        // group_index should update from 0 → 1
-        let mut app = app_in_loki_detail(0, 0, 1, 2);
-        // The 1 parent_single (ci, High) comes AFTER the group initially.
-        // Report gives ci(High) + 2×loki(Low); sort puts ci first → group at index 1.
-        let report = StatusReport {
-            items: vec![
-                ci_failure(),
-                loki_entry(domain::Urgency::Low),
-                loki_entry(domain::Urgency::Low),
-            ],
-            errors: vec![],
-        };
-        handle_msg(&mut app, Msg::FetchResult(Ok(report))).unwrap();
-        let Screen::Detail { view, .. } = app.current_screen() else {
-            panic!("expected Detail");
-        };
-        assert_eq!(view.group_index, 1);
-    }
-
-    #[test]
-    fn refresh_in_detail_clamps_detail_selection_when_group_shrinks() {
-        // Start with 3-item Loki group, detail selection at index 2
-        // Report has 2 Loki items → group shrinks to 2, selection clamps to 1
-        let mut app = app_in_loki_detail(0, 2, 0, 3);
-        handle_msg(
-            &mut app,
-            Msg::FetchResult(Ok(report_with_loki(2, domain::Urgency::Low))),
-        )
-        .unwrap();
-        let Screen::Detail { view, .. } = app.current_screen() else {
-            panic!("expected Detail");
-        };
-        assert_eq!(view.list_state.selected(), Some(1));
     }
 
     // --- IssueDetail refresh ---

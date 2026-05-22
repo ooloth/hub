@@ -14,4 +14,4 @@ ci_full:     Build / cargo check · error[E0308]: mismatched types
 linear:      Do the thing (ENG-99)
 loki:        MemoryError · OOM killed
 gcp:         errors · something broke
-group_3:     MemoryError · OOM killed (3)
+group_3:     ▸ MemoryError · OOM killed (3)
