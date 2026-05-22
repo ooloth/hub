@@ -23,10 +23,17 @@ pub(crate) fn launch(config: LaunchConfig, cwd: &Path) -> Result<()> {
         bail!("not in tmux; investigation requires a tmux session");
     }
 
+    let task_arg = if config.prompt.is_empty() {
+        String::new()
+    } else {
+        " \"$HUB_TASK_PROMPT\"".to_string()
+    };
+
     let command = format!(
-        "claude --dangerously-skip-permissions --model {} --allowedTools '{}' --system-prompt \"$HUB_SYSTEM_PROMPT\" \"$HUB_TASK_PROMPT\"",
+        "claude --dangerously-skip-permissions --model {} --allowedTools '{}' --system-prompt \"$HUB_SYSTEM_PROMPT\"{}",
         config.model,
         config.allowed_tools,
+        task_arg,
     );
 
     let pane = std::env::var("TMUX_PANE").unwrap_or_default();

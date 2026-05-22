@@ -5,7 +5,8 @@ use ratatui::widgets::ListState;
 use domain::{agent_ready_labels, dismissed_labels};
 
 use super::{
-    Action, App, DetailView, Effect, EnterAction, InvestigateAction, Msg, RefreshState, Screen,
+    Action, App, DetailView, Effect, EnterAction, InvestigateAction, Msg, PrOwnership,
+    RefreshState, Screen,
 };
 use crate::display::{
     build_unified, item_investigation, item_url, DisplayItem, Filter, InvestigationKind,
@@ -37,7 +38,8 @@ impl App {
                 self.ui.screen = match std::mem::take(&mut self.ui.screen) {
                     Screen::Detail { parent, .. }
                     | Screen::IssueDetail { parent, .. }
-                    | Screen::PrDetail { parent, .. } => Screen::UnifiedList {
+                    | Screen::PrDetail { parent, .. }
+                    | Screen::ReviewingPr { parent, .. } => Screen::UnifiedList {
                         items: parent.items,
                         selected: parent.selected,
                         filter: parent.filter,
@@ -146,10 +148,15 @@ impl App {
             | Action::DismissInput(_)
             | Action::CommitDismissal
             | Action::CancelDismissal
-            | Action::Investigate => match &self.ui.screen {
+            | Action::Investigate
+            | Action::AskAboutPr
+            | Action::OpenReviewPicker
+            | Action::CommitReview(_)
+            | Action::CancelReview => match &self.ui.screen {
                 Screen::UnifiedList { .. } => self.handle_unified_list(action),
                 Screen::IssueDetail { .. } => self.handle_issue_reader(action),
                 Screen::PrDetail { .. } => self.handle_pr_reader(action),
+                Screen::ReviewingPr { .. } => self.handle_reviewing_pr(action),
                 Screen::MergingPr { .. } => self.handle_merging_pr(action),
                 Screen::Detail { .. } => self.handle_detail(action),
                 Screen::DismissingIssue { .. } => self.handle_dismissing(action),
@@ -376,7 +383,66 @@ impl App {
                 self.ui.screen = Screen::MergingPr { parent, pr };
                 vec![]
             }
+            Action::AskAboutPr => {
+                let Screen::PrDetail { pr, .. } = &self.ui.screen else {
+                    return vec![];
+                };
+                let ownership = PrOwnership::from_kind(pr.kind);
+                vec![Effect::AskAboutPr {
+                    repo: pr.repo.to_string(),
+                    number: pr.number,
+                    ownership,
+                    head_branch: pr.head_branch.clone(),
+                }]
+            }
+            Action::OpenReviewPicker => {
+                let Screen::PrDetail { pr, parent, .. } = &self.ui.screen else {
+                    return vec![];
+                };
+                let pr = pr.clone();
+                let parent = parent.clone();
+                self.ui.screen = Screen::ReviewingPr { parent, pr };
+                vec![]
+            }
             Action::Investigate => self.handle_investigate(),
+            _ => unreachable!(),
+        }
+    }
+
+    fn handle_reviewing_pr(&mut self, action: Action) -> Vec<Effect> {
+        match action {
+            Action::CommitReview(skill) => {
+                let Screen::ReviewingPr { pr, parent } = std::mem::take(&mut self.ui.screen) else {
+                    return vec![];
+                };
+                let ownership = PrOwnership::from_kind(pr.kind);
+                let repo = pr.repo.to_string();
+                let number = pr.number;
+                let head_branch = pr.head_branch.clone();
+                self.ui.screen = Screen::PrDetail {
+                    parent,
+                    pr,
+                    scroll: 0,
+                };
+                vec![Effect::ReviewPr {
+                    repo,
+                    number,
+                    ownership,
+                    skill,
+                    head_branch,
+                }]
+            }
+            Action::CancelReview => {
+                let Screen::ReviewingPr { parent, pr } = std::mem::take(&mut self.ui.screen) else {
+                    return vec![];
+                };
+                self.ui.screen = Screen::PrDetail {
+                    parent,
+                    pr,
+                    scroll: 0,
+                };
+                vec![]
+            }
             _ => unreachable!(),
         }
     }
@@ -473,18 +539,15 @@ impl App {
                 repo,
                 number,
                 kind,
-                author,
                 review_decision,
                 head_branch,
-                base_branch,
+                ..
             } => vec![Effect::LaunchPr {
                 repo,
                 number,
                 kind,
-                author,
                 review_decision,
                 head_branch,
-                base_branch,
             }],
             InvestigateAction::LaunchLoki {
                 project,
@@ -611,7 +674,9 @@ impl App {
             Screen::IssueDetail { issue, .. } | Screen::DismissingIssue { issue, .. } => {
                 Some(&issue.url)
             }
-            Screen::PrDetail { pr, .. } | Screen::MergingPr { pr, .. } => Some(&pr.url),
+            Screen::PrDetail { pr, .. }
+            | Screen::ReviewingPr { pr, .. }
+            | Screen::MergingPr { pr, .. } => Some(&pr.url),
         }
     }
 }
@@ -645,6 +710,7 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
         Screen::IssueDetail { .. }
         | Screen::DismissingIssue { .. }
         | Screen::PrDetail { .. }
+        | Screen::ReviewingPr { .. }
         | Screen::MergingPr { .. } => app
             .selected_url()
             .map(|u| EnterAction::OpenUrl(u.to_string()))
@@ -742,6 +808,7 @@ fn refresh_screen_in_place(screen: &mut Screen, raw: &[workflows::status::Status
         }
         Screen::IssueDetail { parent, .. }
         | Screen::PrDetail { parent, .. }
+        | Screen::ReviewingPr { parent, .. }
         | Screen::MergingPr { parent, .. }
         | Screen::DismissingIssue { parent, .. } => {
             let new_items = build_unified(raw.to_vec(), &parent.filter);
@@ -2176,5 +2243,88 @@ mod tests {
             compute_enter_action(&app),
             EnterAction::OpenUrl(_)
         ));
+    }
+
+    // --- AskAboutPr ---
+
+    #[test]
+    fn ask_about_pr_emits_ask_about_pr_effect_with_correct_ownership() {
+        let mut app = app_in_pr_detail();
+        let effects = app.update(Action::AskAboutPr);
+        assert_eq!(effects.len(), 1);
+        let Effect::AskAboutPr {
+            repo,
+            number,
+            ownership,
+            ..
+        } = effects.into_iter().next().unwrap()
+        else {
+            panic!("expected AskAboutPr");
+        };
+        assert_eq!(repo, "ooloth/hub");
+        assert_eq!(number, 7);
+        assert_eq!(ownership, crate::state::PrOwnership::Owned);
+    }
+
+    // --- OpenReviewPicker / ReviewingPr ---
+
+    fn app_in_reviewing() -> App {
+        let mut app = app_in_pr_detail();
+        app.update(Action::OpenReviewPicker);
+        app
+    }
+
+    #[test]
+    fn open_review_picker_transitions_to_reviewing_pr_screen() {
+        let app = app_in_reviewing();
+        assert!(matches!(app.current_screen(), Screen::ReviewingPr { .. }));
+    }
+
+    #[test]
+    fn open_review_picker_preserves_parent_and_pr() {
+        let app = app_in_reviewing();
+        let Screen::ReviewingPr { pr, .. } = app.current_screen() else {
+            panic!("expected ReviewingPr");
+        };
+        assert_eq!(pr.number, 7);
+        assert_eq!(pr.repo.to_string(), "ooloth/hub");
+    }
+
+    #[test]
+    fn commit_review_converge_returns_to_pr_detail_and_emits_review_pr_effect() {
+        let mut app = app_in_reviewing();
+        let effects = app.update(Action::CommitReview(crate::state::ReviewSkill::Converge));
+        assert!(matches!(app.current_screen(), Screen::PrDetail { .. }));
+        assert_eq!(effects.len(), 1);
+        let Effect::ReviewPr {
+            skill, ownership, ..
+        } = effects.into_iter().next().unwrap()
+        else {
+            panic!("expected ReviewPr");
+        };
+        assert_eq!(skill, crate::state::ReviewSkill::Converge);
+        assert_eq!(ownership, crate::state::PrOwnership::Owned);
+    }
+
+    #[test]
+    fn commit_review_pr_comments_returns_to_pr_detail_and_emits_review_pr_effect() {
+        let mut app = app_in_reviewing();
+        let effects = app.update(Action::CommitReview(
+            crate::state::ReviewSkill::PrCommentsConverge,
+        ));
+        assert!(matches!(app.current_screen(), Screen::PrDetail { .. }));
+        assert_eq!(effects.len(), 1);
+        let Effect::ReviewPr { skill, .. } = effects.into_iter().next().unwrap() else {
+            panic!("expected ReviewPr");
+        };
+        assert_eq!(skill, crate::state::ReviewSkill::PrCommentsConverge);
+    }
+
+    #[test]
+    fn cancel_review_returns_to_pr_detail_with_no_effects() {
+        let mut app = app_in_reviewing();
+        let effects = app.update(Action::CancelReview);
+        assert!(matches!(app.current_screen(), Screen::PrDetail { .. }));
+        assert!(effects.is_empty());
     }
 }

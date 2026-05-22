@@ -125,7 +125,8 @@ const KEYBINDS_PR_READER: &[(&str, &str)] = &[
     ("gg / G", "go to top / bottom"),
     ("Ctrl-u / Ctrl-d", "page up / down"),
     ("Enter", "open in browser"),
-    ("i", "investigate"),
+    ("i", "ask about PR"),
+    ("v", "review"),
     ("m", "squash and merge"),
     ("r", "refresh"),
     ("Esc", "back to list"),
@@ -400,6 +401,7 @@ fn position_label(screen: &Screen) -> String {
         Screen::IssueDetail { .. }
         | Screen::DismissingIssue { .. }
         | Screen::PrDetail { .. }
+        | Screen::ReviewingPr { .. }
         | Screen::MergingPr { .. } => String::new(),
     }
 }
@@ -444,7 +446,7 @@ fn status_bar_left(app: &App) -> String {
         return flash.clone();
     }
     if matches!(app.ui.screen, Screen::PrDetail { .. }) {
-        return " [↩] open · [i] investigate · [m] merge · [Esc] back".to_string();
+        return " [↩] open · [i] ask · [v] review · [m] merge · [Esc] back".to_string();
     }
 
     if matches!(app.ui.screen, Screen::IssueDetail { .. }) {
@@ -1006,6 +1008,9 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         Screen::PrDetail { pr, scroll, .. } => {
             render_pr_detail(frame, pr, scroll, content_area);
         }
+        Screen::ReviewingPr { pr, .. } => {
+            render_pr_detail(frame, pr, &mut 0, content_area);
+        }
         Screen::MergingPr { pr, .. } => {
             render_pr_detail(frame, pr, &mut 0, content_area);
         }
@@ -1022,7 +1027,14 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let [bar_left, bar_right] =
         Layout::horizontal([Constraint::Min(0), Constraint::Length(right_width)]).areas(bar_area);
 
-    if let Screen::MergingPr { pr, .. } = &app.ui.screen {
+    if let Screen::ReviewingPr { pr, .. } = &app.ui.screen {
+        let label = format!(" Review #{}", pr.number);
+        let line = Line::from(vec![
+            Span::styled(label, Style::default().fg(YELLOW)),
+            Span::styled("  [c] code · [m] comments · [Esc] cancel", dim()),
+        ]);
+        frame.render_widget(Paragraph::new(line), bar_left);
+    } else if let Screen::MergingPr { pr, .. } = &app.ui.screen {
         let question = format!(" Squash and merge #{} into {}?", pr.number, pr.base_branch);
         let line = Line::from(vec![
             Span::styled(question, Style::default().fg(YELLOW)),
@@ -1044,7 +1056,9 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
             Screen::UnifiedList { .. } => KEYBINDS_LIST,
             Screen::Detail { .. } => KEYBINDS_DETAIL,
             Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } => KEYBINDS_ISSUE_READER,
-            Screen::PrDetail { .. } | Screen::MergingPr { .. } => KEYBINDS_PR_READER,
+            Screen::PrDetail { .. } | Screen::ReviewingPr { .. } | Screen::MergingPr { .. } => {
+                KEYBINDS_PR_READER
+            }
         };
         let text = format_keybinds(keybinds);
         let lines = keybinds.len() as u16;

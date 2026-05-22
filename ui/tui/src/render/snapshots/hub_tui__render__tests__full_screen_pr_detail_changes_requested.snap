@@ -11,4 +11,4 @@ expression: screen_text(&buf)
 │                                                                              │
 │                                                                              │
 ╰ Changes requested ───────────────────────────────────────────── @ooloth · 5h ╯
-  [↩] open · [i] investigate · [m] merge · [Esc] back
+  [↩] open · [i] ask · [v] review · [m] merge · [Esc] back

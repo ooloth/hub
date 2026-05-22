@@ -1,142 +1,143 @@
-use domain::{PrKind, ReviewDecision};
+use crate::state::{PrOwnership, ReviewSkill};
 
 use super::LaunchConfig;
 
-const PROMPT: &str = include_str!("../../../../prompts/pr-review.md");
-
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn config(
-    number: u64,
-    repo: &str,
-    kind: PrKind,
-    author: &str,
-    review_decision: Option<ReviewDecision>,
-    head_branch: &str,
-    base_branch: &str,
-    changed_files: &[String],
-) -> LaunchConfig {
-    let (skill, intent) = route(kind, review_decision, author);
-    let files_summary = match changed_files.len() {
-        0 => String::new(),
-        n => format!(
-            " {} file{} changed: {}.",
-            n,
-            if n == 1 { "" } else { "s" },
-            changed_files.join(", ")
-        ),
-    };
+pub(crate) fn bare_config(number: u64, repo: &str, ownership: PrOwnership) -> LaunchConfig {
     LaunchConfig {
-        system_prompt: PROMPT.to_string(),
-        prompt: format!("{skill} PR #{number} ({repo}), branch {head_branch}, base {base_branch}.{files_summary} {intent}"),
+        system_prompt: system_prompt(number, repo, ownership, None),
+        prompt: String::new(),
         model: "opus".to_string(),
         allowed_tools: "Bash,Read,Edit,Write,Glob,Grep".to_string(),
         env: vec![],
     }
 }
 
-fn route(kind: PrKind, review_decision: Option<ReviewDecision>, author: &str) -> (String, String) {
-    match kind {
-        PrKind::ToReview | PrKind::External => (
-            "/review-code".to_string(),
-            format!("This PR was authored by {author}. Your role is reviewer — do not make local changes."),
-        ),
-        PrKind::Mine | PrKind::MyDraft => {
-            if review_decision == Some(ReviewDecision::ChangesRequested) {
-                (
-                    "/review-pr-comments-converge".to_string(),
-                    "This is your own PR and reviewers have requested changes. Address their feedback by making local changes.".to_string(),
-                )
-            } else {
-                (
-                    "/review-converge".to_string(),
-                    "This is your own PR. Review and improve it by making local changes.".to_string(),
-                )
-            }
-        }
+pub(crate) fn review_config(
+    number: u64,
+    repo: &str,
+    ownership: PrOwnership,
+    skill: ReviewSkill,
+) -> LaunchConfig {
+    LaunchConfig {
+        system_prompt: system_prompt(number, repo, ownership, Some(skill)),
+        prompt: format!("{} PR #{number} ({repo})", skill.slash_command()),
+        model: "opus".to_string(),
+        allowed_tools: "Bash,Read,Edit,Write,Glob,Grep".to_string(),
+        env: vec![],
     }
+}
+
+fn system_prompt(
+    number: u64,
+    repo: &str,
+    ownership: PrOwnership,
+    skill: Option<ReviewSkill>,
+) -> String {
+    let hint = match (ownership, skill) {
+        (PrOwnership::Owned, None) => {
+            "This is your PR. You can make local changes.".to_string()
+        }
+        (PrOwnership::External, None) => {
+            "This PR was authored by someone else. Post comments; do not make local changes."
+                .to_string()
+        }
+        (PrOwnership::Owned, Some(ReviewSkill::Converge)) => {
+            "This is your PR. Review and improve it by making local changes.".to_string()
+        }
+        (PrOwnership::External, Some(ReviewSkill::Converge)) => {
+            "This PR was authored by someone else. Your role is reviewer — write a PR comment."
+                .to_string()
+        }
+        (PrOwnership::Owned, Some(ReviewSkill::PrCommentsConverge)) => {
+            "This is your PR. Reviewers have requested changes. Address their feedback with local changes.".to_string()
+        }
+        (PrOwnership::External, Some(ReviewSkill::PrCommentsConverge)) => {
+            "This PR was authored by someone else. Respond to reviewer feedback with your own review comments.".to_string()
+        }
+    };
+    format!("PR #{number} ({repo}). {hint}")
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{config, route};
-    use domain::{PrKind, ReviewDecision};
+    use super::{bare_config, review_config, system_prompt};
+    use crate::state::{PrOwnership, ReviewSkill};
 
     #[test]
-    fn pr_review_system_prompt_is_loaded() {
-        let cfg = config(
-            1,
-            "ooloth/hub",
-            PrKind::ToReview,
-            "alice",
-            None,
-            "feat/x",
-            "main",
-            &[],
-        );
-        assert!(cfg.system_prompt.contains("## Purpose"));
-        assert!(!cfg.system_prompt.starts_with("---"));
+    fn bare_config_has_empty_prompt() {
+        let cfg = bare_config(42, "ooloth/hub", PrOwnership::Owned);
+        assert_eq!(cfg.prompt, "");
     }
 
     #[test]
-    fn to_review_routes_to_review_code() {
-        let (skill, intent) = route(PrKind::ToReview, None, "alice");
-        assert_eq!(skill, "/review-code");
-        assert!(intent.contains("alice"));
-        assert!(intent.contains("reviewer"));
+    fn bare_owned_system_prompt_contains_pr_number_repo_and_owned_hint() {
+        let cfg = bare_config(42, "ooloth/hub", PrOwnership::Owned);
+        assert!(cfg.system_prompt.contains("42"));
+        assert!(cfg.system_prompt.contains("ooloth/hub"));
+        assert!(cfg.system_prompt.contains("your PR"));
+        assert!(cfg.system_prompt.contains("local changes"));
     }
 
     #[test]
-    fn mine_with_changes_requested_routes_to_review_pr_comments_converge() {
-        let (skill, _) = route(PrKind::Mine, Some(ReviewDecision::ChangesRequested), "me");
-        assert_eq!(skill, "/review-pr-comments-converge");
+    fn bare_external_system_prompt_contains_post_comments_hint() {
+        let cfg = bare_config(42, "ooloth/hub", PrOwnership::External);
+        assert!(cfg.system_prompt.contains("Post comments"));
+        assert!(cfg.system_prompt.contains("do not make local changes"));
     }
 
     #[test]
-    fn my_draft_with_changes_requested_routes_to_review_pr_comments_converge() {
-        let (skill, _) = route(
-            PrKind::MyDraft,
-            Some(ReviewDecision::ChangesRequested),
-            "me",
-        );
-        assert_eq!(skill, "/review-pr-comments-converge");
-    }
-
-    #[test]
-    fn mine_without_changes_requested_routes_to_review_converge() {
-        let (skill, _) = route(PrKind::Mine, None, "me");
-        assert_eq!(skill, "/review-converge");
-    }
-
-    #[test]
-    fn mine_approved_routes_to_review_converge() {
-        let (skill, _) = route(PrKind::Mine, Some(ReviewDecision::Approved), "me");
-        assert_eq!(skill, "/review-converge");
-    }
-
-    #[test]
-    fn external_routes_to_review_code() {
-        let (skill, intent) = route(PrKind::External, None, "stranger");
-        assert_eq!(skill, "/review-code");
-        assert!(intent.contains("stranger"));
-        assert!(intent.contains("reviewer"));
-    }
-
-    #[test]
-    fn prompt_contains_pr_number_repo_and_branch_info() {
-        let cfg = config(
-            42,
-            "ooloth/hub",
-            PrKind::ToReview,
-            "bob",
-            None,
-            "feat/my-branch",
-            "main",
-            &["src/foo.rs".to_string()],
-        );
-        assert!(cfg.prompt.contains("42"));
+    fn review_config_prompt_contains_skill_and_pr_number() {
+        let cfg = review_config(7, "ooloth/hub", PrOwnership::Owned, ReviewSkill::Converge);
+        assert!(cfg.prompt.contains("/review-converge"));
+        assert!(cfg.prompt.contains("7"));
         assert!(cfg.prompt.contains("ooloth/hub"));
-        assert!(cfg.prompt.contains("feat/my-branch"));
-        assert!(cfg.prompt.contains("main"));
-        assert!(cfg.prompt.contains("src/foo.rs"));
+    }
+
+    #[test]
+    fn review_config_pr_comments_prompt_contains_correct_skill() {
+        let cfg = review_config(
+            7,
+            "ooloth/hub",
+            PrOwnership::Owned,
+            ReviewSkill::PrCommentsConverge,
+        );
+        assert!(cfg.prompt.contains("/review-pr-comments-converge"));
+    }
+
+    #[test]
+    fn owned_converge_system_prompt_says_improve() {
+        let s = system_prompt(1, "r", PrOwnership::Owned, Some(ReviewSkill::Converge));
+        assert!(s.contains("your PR"));
+        assert!(s.contains("local changes"));
+    }
+
+    #[test]
+    fn external_converge_system_prompt_says_write_pr_comment() {
+        let s = system_prompt(1, "r", PrOwnership::External, Some(ReviewSkill::Converge));
+        assert!(s.contains("someone else"));
+        assert!(s.contains("PR comment"));
+    }
+
+    #[test]
+    fn owned_pr_comments_system_prompt_says_address_feedback() {
+        let s = system_prompt(
+            1,
+            "r",
+            PrOwnership::Owned,
+            Some(ReviewSkill::PrCommentsConverge),
+        );
+        assert!(s.contains("Reviewers have requested changes"));
+    }
+
+    #[test]
+    fn external_pr_comments_system_prompt_says_respond_to_reviewer() {
+        let s = system_prompt(
+            1,
+            "r",
+            PrOwnership::External,
+            Some(ReviewSkill::PrCommentsConverge),
+        );
+        assert!(s.contains("someone else"));
+        assert!(s.contains("review comments"));
     }
 }

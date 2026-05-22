@@ -14,7 +14,10 @@ use workflows::status::{StatusReport, SCHEMA_VERSION};
 use crate::display::{build_unified, Filter};
 use crate::input::key_to_action;
 use crate::render::render;
-use crate::state::{handle_msg, App, DataState, Effect, Msg, RefreshState, Screen, UiState};
+use crate::state::{
+    handle_msg, App, DataState, Effect, Msg, PrOwnership, RefreshState, ReviewSkill, Screen,
+    UiState,
+};
 
 mod display;
 mod input;
@@ -195,30 +198,6 @@ async fn resolve_pr_worktree(
         .map_err(|e| format!("Failed to create PR worktree: {e}"))
 }
 
-async fn changed_files(cwd: &std::path::Path, base_branch: &str) -> Vec<String> {
-    let Ok(out) = tokio::process::Command::new("git")
-        .args([
-            "-C",
-            &cwd.to_string_lossy(),
-            "diff",
-            &format!("{base_branch}..HEAD"),
-            "--name-only",
-        ])
-        .output()
-        .await
-    else {
-        return vec![];
-    };
-    if !out.status.success() {
-        return vec![];
-    }
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter(|l| !l.is_empty())
-        .map(str::to_owned)
-        .collect()
-}
-
 fn spawn_git_fetch(config: &config::Config) {
     let github_token = config.github_token.clone();
     let projects: Vec<(String, String)> = config
@@ -322,24 +301,55 @@ async fn run_loop(
                     repo,
                     number,
                     kind,
-                    author,
                     review_decision,
                     head_branch,
-                    base_branch,
+                    ..
                 } => match resolve_pr_worktree(config, &repo, number, &head_branch).await {
                     Ok(cwd) => {
-                        let changed_files = changed_files(&cwd, &base_branch).await;
+                        let ownership = PrOwnership::from_kind(kind);
+                        let skill =
+                            if review_decision == Some(domain::ReviewDecision::ChangesRequested) {
+                                ReviewSkill::PrCommentsConverge
+                            } else {
+                                ReviewSkill::Converge
+                            };
                         if let Err(err) = investigations::launch(
-                            investigations::pr::config(
-                                number,
-                                &repo,
-                                kind,
-                                &author,
-                                review_decision,
-                                &head_branch,
-                                &base_branch,
-                                &changed_files,
-                            ),
+                            investigations::pr::review_config(number, &repo, ownership, skill),
+                            &cwd,
+                        ) {
+                            app.ui.flash = Some(err.to_string());
+                        }
+                    }
+                    Err(msg) => app.ui.flash = Some(msg),
+                },
+                Effect::AskAboutPr {
+                    repo,
+                    number,
+                    ownership,
+                    head_branch,
+                    ..
+                } => match resolve_pr_worktree(config, &repo, number, &head_branch).await {
+                    Ok(cwd) => {
+                        if let Err(err) = investigations::launch(
+                            investigations::pr::bare_config(number, &repo, ownership),
+                            &cwd,
+                        ) {
+                            app.ui.flash = Some(err.to_string());
+                        }
+                    }
+                    Err(msg) => app.ui.flash = Some(msg),
+                },
+                Effect::ReviewPr {
+                    repo,
+                    number,
+                    ownership,
+                    skill,
+                    head_branch,
+                    ..
+                } => match resolve_pr_worktree(config, &repo, number, &head_branch).await {
+                    Ok(cwd) => {
+                        if let Err(err) = investigations::launch(
+                            investigations::pr::review_config(number, &repo, ownership, skill),
                             &cwd,
                         ) {
                             app.ui.flash = Some(err.to_string());

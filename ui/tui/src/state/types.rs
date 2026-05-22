@@ -5,6 +5,36 @@ use workflows::status::{StatusItem, StatusReport};
 
 use crate::display::{Category, DisplayItem, Filter, ListSnapshot};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ReviewSkill {
+    Converge,
+    PrCommentsConverge,
+}
+
+impl ReviewSkill {
+    pub(crate) fn slash_command(self) -> &'static str {
+        match self {
+            ReviewSkill::Converge => "/review-converge",
+            ReviewSkill::PrCommentsConverge => "/review-pr-comments-converge",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PrOwnership {
+    Owned,
+    External,
+}
+
+impl PrOwnership {
+    pub(crate) fn from_kind(kind: PrKind) -> Self {
+        match kind {
+            PrKind::Mine | PrKind::MyDraft => PrOwnership::Owned,
+            PrKind::ToReview | PrKind::External => PrOwnership::External,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub(crate) enum RefreshState {
     #[default]
@@ -47,6 +77,10 @@ pub(crate) enum Screen {
         pr: PullRequest,
         scroll: u16,
     },
+    ReviewingPr {
+        parent: ListSnapshot,
+        pr: PullRequest,
+    },
     MergingPr {
         parent: ListSnapshot,
         pr: PullRequest,
@@ -87,9 +121,9 @@ impl Screen {
             Screen::IssueDetail { issue, .. } | Screen::DismissingIssue { issue, .. } => {
                 Some(StatusItem::Issue(issue.clone()))
             }
-            Screen::PrDetail { pr, .. } | Screen::MergingPr { pr, .. } => {
-                Some(StatusItem::Pr(pr.clone()))
-            }
+            Screen::PrDetail { pr, .. }
+            | Screen::ReviewingPr { pr, .. }
+            | Screen::MergingPr { pr, .. } => Some(StatusItem::Pr(pr.clone())),
         }
     }
 }
@@ -154,6 +188,10 @@ pub(crate) enum Action {
     PendingG,
     Enter,
     Investigate,
+    AskAboutPr,
+    OpenReviewPicker,
+    CommitReview(ReviewSkill),
+    CancelReview,
     Refresh,
     ApproveForAgent,
     MergePr,
@@ -210,10 +248,21 @@ pub(crate) enum Effect {
         repo: String,
         number: u64,
         kind: PrKind,
-        author: String,
         review_decision: Option<ReviewDecision>,
         head_branch: String,
-        base_branch: String,
+    },
+    AskAboutPr {
+        repo: String,
+        number: u64,
+        ownership: PrOwnership,
+        head_branch: String,
+    },
+    ReviewPr {
+        repo: String,
+        number: u64,
+        ownership: PrOwnership,
+        skill: ReviewSkill,
+        head_branch: String,
     },
     #[cfg(feature = "private")]
     LaunchMediaBlocked {

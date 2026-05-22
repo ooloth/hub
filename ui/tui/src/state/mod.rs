@@ -7,7 +7,8 @@ mod types;
 mod update;
 
 pub(crate) use types::{
-    Action, DetailView, Effect, EnterAction, InvestigateAction, Msg, RefreshState, Screen,
+    Action, DetailView, Effect, EnterAction, InvestigateAction, Msg, PrOwnership, RefreshState,
+    ReviewSkill, Screen,
 };
 pub(crate) use update::{compute_enter_action, compute_investigate_action, handle_msg};
 
@@ -47,6 +48,7 @@ impl App {
             },
             Screen::IssueDetail { .. }
             | Screen::PrDetail { .. }
+            | Screen::ReviewingPr { .. }
             | Screen::MergingPr { .. }
             | Screen::DismissingIssue { .. } => 0,
         }
@@ -69,6 +71,7 @@ impl App {
             }
             Screen::IssueDetail { .. }
             | Screen::PrDetail { .. }
+            | Screen::ReviewingPr { .. }
             | Screen::MergingPr { .. }
             | Screen::DismissingIssue { .. } => {}
         }
@@ -94,6 +97,7 @@ impl App {
             }
             Screen::IssueDetail { .. }
             | Screen::PrDetail { .. }
+            | Screen::ReviewingPr { .. }
             | Screen::MergingPr { .. }
             | Screen::DismissingIssue { .. } => {}
         }
@@ -105,6 +109,7 @@ impl App {
             Screen::Detail { view, .. } => view.list_state.select(Some(0)),
             Screen::IssueDetail { .. }
             | Screen::PrDetail { .. }
+            | Screen::ReviewingPr { .. }
             | Screen::MergingPr { .. }
             | Screen::DismissingIssue { .. } => {}
         }
@@ -120,6 +125,7 @@ impl App {
             Screen::Detail { view, .. } => view.list_state.select(Some(len - 1)),
             Screen::IssueDetail { .. }
             | Screen::PrDetail { .. }
+            | Screen::ReviewingPr { .. }
             | Screen::MergingPr { .. }
             | Screen::DismissingIssue { .. } => {}
         }
@@ -141,6 +147,7 @@ impl App {
             }
             Screen::IssueDetail { .. }
             | Screen::PrDetail { .. }
+            | Screen::ReviewingPr { .. }
             | Screen::MergingPr { .. }
             | Screen::DismissingIssue { .. } => {}
         }
@@ -166,6 +173,7 @@ impl App {
             }
             Screen::IssueDetail { .. }
             | Screen::PrDetail { .. }
+            | Screen::ReviewingPr { .. }
             | Screen::MergingPr { .. }
             | Screen::DismissingIssue { .. } => {}
         }
