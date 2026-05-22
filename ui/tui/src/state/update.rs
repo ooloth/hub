@@ -28,7 +28,6 @@ impl App {
             }
             Action::Refresh => {
                 if !matches!(self.data.refresh_state, RefreshState::InProgress) {
-                    self.data.refresh_state = RefreshState::InProgress;
                     vec![Effect::StartRefresh]
                 } else {
                     vec![]
@@ -770,7 +769,6 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
         Msg::Action(action) => Ok(app.update(action)),
         Msg::Tick => {
             if !matches!(app.data.refresh_state, RefreshState::InProgress) {
-                app.data.refresh_state = RefreshState::InProgress;
                 Ok(vec![Effect::StartRefresh])
             } else {
                 Ok(vec![])
@@ -1137,7 +1135,6 @@ mod tests {
     fn refresh_action_when_idle_starts_refresh() {
         let mut app = App::default();
         let effects = handle_msg(&mut app, Msg::Action(Action::Refresh)).unwrap();
-        assert!(matches!(app.data.refresh_state, RefreshState::InProgress));
         assert!(matches!(effects.as_slice(), [Effect::StartRefresh]));
     }
 
@@ -1159,7 +1156,6 @@ mod tests {
     fn handle_msg_tick_when_idle_starts_refresh() {
         let mut app = App::default();
         let effects = handle_msg(&mut app, Msg::Tick).unwrap();
-        assert!(matches!(app.data.refresh_state, RefreshState::InProgress));
         assert!(matches!(effects.as_slice(), [Effect::StartRefresh]));
     }
 

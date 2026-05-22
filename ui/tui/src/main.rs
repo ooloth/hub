@@ -233,6 +233,22 @@ fn spawn_git_fetch(config: &config::Config) {
     });
 }
 
+fn request_refresh(
+    app: &mut App,
+    config: &config::Config,
+    tx: &mpsc::Sender<Result<StatusReport>>,
+    include_git_fetch: bool,
+) {
+    if matches!(app.data.refresh_state, RefreshState::InProgress) {
+        return;
+    }
+    app.data.refresh_state = RefreshState::InProgress;
+    spawn_fetch(config, tx.clone());
+    if include_git_fetch {
+        spawn_git_fetch(config);
+    }
+}
+
 async fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
@@ -379,6 +395,7 @@ async fn run_loop(
                     {
                         Ok(()) => {
                             app.ui.flash = Some(format!("Marked #{number} ready for agent"));
+                            request_refresh(app, config, tx, false);
                         }
                         Err(e) => {
                             app.ui.flash =
@@ -392,6 +409,7 @@ async fn run_loop(
                     {
                         Ok(()) => {
                             app.ui.flash = Some(format!("Merged #{number}"));
+                            request_refresh(app, config, tx, true);
                         }
                         Err(e) => {
                             app.ui.flash = Some(format!("Could not merge #{number}: {e}"));
@@ -415,6 +433,7 @@ async fn run_loop(
                     {
                         Ok(()) => {
                             app.ui.flash = Some(format!("Dismissed #{number}"));
+                            request_refresh(app, config, tx, false);
                         }
                         Err(e) => {
                             app.ui.flash = Some(format!("Could not dismiss #{number}: {e}"));
@@ -422,8 +441,7 @@ async fn run_loop(
                     }
                 }
                 Effect::StartRefresh => {
-                    spawn_fetch(config, tx.clone());
-                    spawn_git_fetch(config);
+                    request_refresh(app, config, tx, true);
                 }
                 Effect::WriteCache(json) => {
                     store::status::upsert(conn, &json, SCHEMA_VERSION)
