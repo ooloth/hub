@@ -47,7 +47,7 @@ pub(crate) fn launch(config: LaunchConfig, cwd: &Path, github_token: &str) -> Re
         .arg(format!("HUB_TASK_PROMPT={}", config.prompt));
     cmd.arg("-e").arg("GIT_TERMINAL_PROMPT=0");
     cmd.arg("-e").arg(format!(
-        "GIT_CONFIG_PARAMETERS=url.https://x-access-token:{github_token}@github.com/.insteadOf=https://github.com/"
+        "GIT_CONFIG_PARAMETERS='url.https://x-access-token:{github_token}@github.com/.insteadOf=https://github.com/'"
     ));
     for (k, v) in &config.env {
         cmd.arg("-e").arg(format!("{k}={v}"));

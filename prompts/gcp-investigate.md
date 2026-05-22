@@ -64,9 +64,7 @@ git log --oneline -20 -- <affected-files>
 git diff HEAD~5 -- <affected-files>
 ```
 
-Look for changes in the last few commits that could explain a new or changed error
-pattern. If `git log` fails (e.g. due to a misconfigured `GIT_CONFIG_PARAMETERS`),
-skip this step and note it in the output rather than retrying.
+Look for changes in the last few commits that could explain a new or changed error pattern.
 
 ### 5. Form a hypothesis
 
