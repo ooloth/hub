@@ -37,6 +37,9 @@ pub(crate) fn launch(config: LaunchConfig, cwd: &Path) -> Result<()> {
         .arg(format!("HUB_SYSTEM_PROMPT={}", config.system_prompt));
     cmd.arg("-e")
         .arg(format!("HUB_TASK_PROMPT={}", config.prompt));
+    cmd.arg("-e").arg("GIT_TERMINAL_PROMPT=0");
+    cmd.arg("-e")
+        .arg("GIT_CONFIG_PARAMETERS=credential.helper=!gh auth git-credential");
     for (k, v) in &config.env {
         cmd.arg("-e").arg(format!("{k}={v}"));
     }
