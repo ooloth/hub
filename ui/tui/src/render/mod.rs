@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::display::{
-    flat_row_line, flat_row_urgency, format_age_short, Filter, FlatRow, LineParts,
+    flat_row_line, flat_row_urgency, format_age_short, Filter, FlatRow, LineParts, RowSeparator,
 };
 use crate::state::{
     compute_enter_action, compute_investigate_action, App, EnterAction, InvestigateAction,
@@ -199,10 +199,15 @@ fn build_unified_list_item(
 
     let padding = content_budget.saturating_sub(display_len);
 
-    let mut spans: Vec<Span<'static>> = vec![
-        Span::styled(parts.category, text_style),
-        bullet_span(bullet_color),
-    ];
+    let separator = match parts.separator {
+        RowSeparator::Bullet => bullet_span(bullet_color),
+        RowSeparator::Toggle(expanded) => {
+            let arrow = if expanded { "▾" } else { "▸" };
+            Span::styled(format!(" {} ", arrow), Style::default().fg(bullet_color))
+        }
+        RowSeparator::TreeChild => Span::styled(" │ ", Style::default().fg(bullet_color)),
+    };
+    let mut spans: Vec<Span<'static>> = vec![Span::styled(parts.category, text_style), separator];
     push_segments(
         &mut spans,
         &parts.primary,

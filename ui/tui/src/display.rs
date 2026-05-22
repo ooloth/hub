@@ -131,7 +131,15 @@ pub(crate) struct ListSnapshot {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) enum RowSeparator {
+    Bullet,
+    Toggle(bool),
+    TreeChild,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct LineParts {
+    pub(crate) separator: RowSeparator,
     pub(crate) primary: Vec<String>,
     pub(crate) dim_inline: Vec<String>,
     pub(crate) source: Option<String>,
@@ -301,6 +309,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
                 vec![format!(" #{}", pr.number), pr.author.clone(), review_status]
             };
             LineParts {
+                separator: RowSeparator::Bullet,
                 primary: vec![pr.title.clone()],
                 dim_inline,
                 source: Some(pr.repo.to_string()),
@@ -315,6 +324,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
                 vec![format!(" #{}", i.number), i.labels.join(", ")]
             };
             LineParts {
+                separator: RowSeparator::Bullet,
                 primary: vec![i.title.clone()],
                 dim_inline,
                 source: Some(i.repo.to_string()),
@@ -334,6 +344,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
                 _ => vec!["failed".to_string()],
             };
             LineParts {
+                separator: RowSeparator::Bullet,
                 primary,
                 dim_inline: vec![],
                 source: Some(c.repo.to_string()),
@@ -342,6 +353,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             }
         }
         StatusItem::Linear(l) => LineParts {
+            separator: RowSeparator::Bullet,
             primary: vec![l.title.clone()],
             dim_inline: vec![format!(" ({})", l.identifier)],
             source: None,
@@ -349,6 +361,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             age: format_age_short(l.age),
         },
         StatusItem::Loki(l) => LineParts {
+            separator: RowSeparator::Bullet,
             primary: vec![l.title.clone(), l.message.clone()],
             dim_inline: vec![],
             source: Some(format!("{}:{}", l.project, l.env)),
@@ -356,6 +369,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             age: format_age_short(l.age),
         },
         StatusItem::Gcp(g) => LineParts {
+            separator: RowSeparator::Bullet,
             primary: vec![g.title.clone(), g.message.clone()],
             dim_inline: vec![],
             source: Some(format!("{}:{}", g.project, g.env)),
@@ -364,6 +378,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
         },
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => LineParts {
+            separator: RowSeparator::Bullet,
             primary: vec!["Import blocked".to_string(), b.error.clone()],
             dim_inline: vec![],
             source: Some(b.source.clone()),
@@ -372,6 +387,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
         },
         #[cfg(feature = "private")]
         StatusItem::MediaMissing(m) => LineParts {
+            separator: RowSeparator::Bullet,
             primary: vec![
                 "Not found".to_string(),
                 m.title.clone(),
@@ -384,6 +400,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
         },
         #[cfg(feature = "private")]
         StatusItem::MediaHealth(h) => LineParts {
+            separator: RowSeparator::Bullet,
             primary: vec![h.message.clone()],
             dim_inline: vec![],
             source: Some(h.source.clone()),
@@ -392,6 +409,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
         },
         #[cfg(feature = "private")]
         StatusItem::MediaBacklog { source, count } => LineParts {
+            separator: RowSeparator::Bullet,
             primary: vec![format!("{count} episodes in backlog")],
             dim_inline: vec![],
             source: Some(source.clone()),
@@ -438,19 +456,16 @@ pub(crate) fn flat_row_line(row: &FlatRow) -> LineParts {
             ..
         } => {
             let base = item_line(first_item);
-            let arrow = if *expanded { "▾" } else { "▸" };
             LineParts {
-                primary: vec![format!("{arrow} {}", base.primary.join(" · "))],
+                separator: RowSeparator::Toggle(*expanded),
                 dim_inline: vec![format!(" ({count})")],
                 ..base
             }
         }
         FlatRow::GroupChild { item, .. } => {
-            let base = item_line(item);
-            LineParts {
-                primary: vec![format!("  {}", base.primary.join(" · "))],
-                ..base
-            }
+            let mut parts = item_line(item);
+            parts.separator = RowSeparator::TreeChild;
+            parts
         }
     }
 }
