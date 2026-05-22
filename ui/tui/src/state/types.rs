@@ -155,6 +155,7 @@ pub(crate) enum InvestigateAction {
         line: String,
         url: String,
         lookback: String,
+        gcp_project: String,
     },
     LaunchLoki {
         project: String,
@@ -255,6 +256,7 @@ pub(crate) enum Effect {
         line: String,
         url: String,
         lookback: String,
+        gcp_project: String,
     },
     LaunchLoki {
         project: String,

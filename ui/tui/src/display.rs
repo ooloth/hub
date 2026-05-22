@@ -104,6 +104,7 @@ pub(crate) enum LogDetailView {
         url: String,
         lookback: String,
         lines: Vec<LogLine>,
+        gcp_project: String,
     },
     Loki {
         project: String,
@@ -139,6 +140,7 @@ pub(crate) fn log_detail_view_from_item(item: &StatusItem) -> Option<LogDetailVi
             url: g.url.clone(),
             lookback: g.lookback.clone(),
             lines: vec![LogLine::parse(&g.line)],
+            gcp_project: g.gcp_project.clone(),
         }),
         StatusItem::Loki(l) => Some(LogDetailView::Loki {
             project: l.project.clone(),
@@ -172,6 +174,7 @@ pub(crate) fn log_detail_view_from_group(items: &[StatusItem]) -> Option<LogDeta
                     _ => None,
                 })
                 .collect(),
+            gcp_project: g.gcp_project.clone(),
         }),
         StatusItem::Loki(l) => Some(LogDetailView::Loki {
             project: l.project.clone(),
@@ -320,6 +323,7 @@ pub(crate) enum InvestigationKind {
         line: String,
         url: String,
         lookback: String,
+        gcp_project: String,
     },
     Loki {
         project: String,
@@ -373,6 +377,7 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
             line: lines_to_compact_json(&[LogLine::parse(&g.line)]),
             url: g.url.clone(),
             lookback: g.lookback.clone(),
+            gcp_project: g.gcp_project.clone(),
         }),
         StatusItem::Loki(l) => Some(InvestigationKind::Loki {
             project: l.project.clone(),
@@ -851,6 +856,7 @@ mod tests {
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::High,
             url: "https://console.cloud.google.com/logs/query".to_string(),
+            gcp_project: "mapapp-prod-abc123".to_string(),
         })
     }
 

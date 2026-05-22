@@ -658,6 +658,7 @@ impl App {
                 line,
                 url,
                 lookback,
+                gcp_project,
             } => vec![Effect::LaunchGcp {
                 project,
                 env,
@@ -666,6 +667,7 @@ impl App {
                 line,
                 url,
                 lookback,
+                gcp_project,
             }],
             InvestigateAction::LaunchLoki {
                 project,
@@ -867,6 +869,7 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
                 url,
                 lookback,
                 lines,
+                gcp_project,
             } => InvestigateAction::LaunchGcp {
                 project: project.clone(),
                 env: env.clone(),
@@ -875,6 +878,7 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
                 line: lines_to_compact_json(lines),
                 url: url.clone(),
                 lookback: lookback.clone(),
+                gcp_project: gcp_project.clone(),
             },
             LogDetailView::Loki {
                 project,
@@ -931,6 +935,7 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
             line,
             url,
             lookback,
+            gcp_project,
         }) => InvestigateAction::LaunchGcp {
             project,
             env,
@@ -939,6 +944,7 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
             line,
             url,
             lookback,
+            gcp_project,
         },
         Some(InvestigationKind::Loki {
             project,
@@ -1065,6 +1071,7 @@ mod tests {
             url: "https://example.com".to_string(),
             lookback: "1h".to_string(),
             lines: vec![LogLine::parse("{}")],
+            gcp_project: String::new(),
         });
         let parent = ListSnapshot {
             items: vec![DisplayItem::Single(item)],
@@ -1154,6 +1161,7 @@ mod tests {
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::High,
             url: "https://console.cloud.google.com/logs/query".to_string(),
+            gcp_project: "mapapp-prod-abc123".to_string(),
         });
         let app = app_in_log_detail(gcp);
         assert_eq!(
@@ -1166,6 +1174,7 @@ mod tests {
                 line: r#"[{"message":"something broke"}]"#.to_string(),
                 url: "https://console.cloud.google.com/logs/query".to_string(),
                 lookback: "7d".to_string(),
+                gcp_project: "mapapp-prod-abc123".to_string(),
             }
         );
     }
@@ -1353,6 +1362,7 @@ mod tests {
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::High,
             url: "https://console.cloud.google.com/logs/query".to_string(),
+            gcp_project: "mapapp-prod-abc123".to_string(),
         })
     }
 

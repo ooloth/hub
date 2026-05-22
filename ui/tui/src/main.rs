@@ -408,11 +408,19 @@ async fn run_loop(
                     line,
                     url,
                     lookback,
+                    gcp_project,
                 } => match std::env::current_dir() {
                     Ok(cwd) => {
                         if let Err(err) = investigations::launch(
                             investigations::gcp::config(
-                                &project, &env, &title, &message, &line, &url, &lookback,
+                                &project,
+                                &env,
+                                &title,
+                                &message,
+                                &line,
+                                &url,
+                                &lookback,
+                                &gcp_project,
                             ),
                             &cwd,
                             &config.github_token,

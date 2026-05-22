@@ -277,6 +277,9 @@ pub struct GcpEntry {
     pub age: chrono::Duration,
     pub urgency: Urgency,
     pub url: String,
+    /// GCP cloud project ID (e.g. "rp006-prod-49a893d8"), distinct from the hub project name.
+    #[serde(default)]
+    pub gcp_project: String,
 }
 
 #[cfg(test)]

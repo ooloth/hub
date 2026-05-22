@@ -237,6 +237,7 @@ mod tests {
                         url: String::new(),
                         lookback: "1h".to_string(),
                         lines: vec![crate::display::LogLine::parse("{}")],
+                        gcp_project: String::new(),
                     },
                     scroll: 0,
                 },

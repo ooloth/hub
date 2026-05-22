@@ -9,11 +9,13 @@ Diagnoses a GCP Cloud Logging error by finding where it originates in the codeba
 ## Context
 
 Launched from the hub TUI with:
-- `project` — project name (e.g. "mapapp")
+- `project` — hub project name (e.g. "mapapp")
 - `env` — environment (e.g. "neuro", "prod")
+- `gcp_project` — GCP cloud project ID (e.g. "rp006-prod-49a893d8"); use this as `--project` in `gcloud` commands and as the `project=` param in GCP Console URLs
 - `title` — error category (e.g. "errors")
 - `message` — extracted message label (e.g. "something broke")
 - `lines` — compact JSON array of raw log entries from this alert window; one element for a single occurrence, multiple for a grouped alert
+- `incident_at` — timestamp of the first log entry (ISO 8601); use this to anchor time-range queries (e.g. ±5 s window for traceback assembly)
 - `lookback` — the time window these entries were fetched from (e.g. "1h")
 - `url` — GCP Cloud Logging Console URL with the query and time range pre-encoded; open it to browse additional entries interactively
 
@@ -21,28 +23,26 @@ Launched from the hub TUI with:
 
 ### 1. Fetch more log context
 
-Use the console URL to browse additional entries, or query the API directly. Extract the GCP project ID and filter from the URL's `project=` and `query=` parameters:
+**If `lines` entries have `textPayload` (plain strings rather than structured JSON), do this first.**
+Python/Flask tracebacks emit one stderr log entry per line, so a single exception produces
+10–30 sibling entries within a 0.05s window. Use `incident_at` to anchor the ±5s query:
+
+```bash
+# Substitute pod_name from any entry's resource.labels.pod_name, and incident_at as the anchor:
+gcloud logging read 'resource.labels.pod_name="<pod-name>" AND timestamp>="<incident_at-5s>" AND timestamp<="<incident_at+5s>"' \
+  --project=<gcp_project> \
+  --format=json | jq -r '.[].textPayload // .[].jsonPayload.message' | grep -v '^$'
+```
+
+For structured (`jsonPayload`) entries, fetch recent entries matching the same filter:
 
 ```bash
 # Fetch recent entries matching the same filter (adjust --freshness to match lookback):
 gcloud logging read '<filter-from-url>' \
-  --project=<project-id-from-url> \
+  --project=<gcp_project> \
   --freshness=<lookback> \
   --limit=50 \
   --format=json | jq '.[] | .jsonPayload // .textPayload'
-```
-
-**Python/Flask traceback assembly:** Python tracebacks emit one stderr log entry per
-line, so a single exception produces 10–30 sibling entries within a 0.05s window. If
-your `lines` entries have `textPayload` (plain strings rather than structured JSON),
-fetch a ±5s window from the same `pod_name` to assemble the full traceback before
-tracing to source:
-
-```bash
-# Substitute the pod_name from any entry's resource.labels.pod_name:
-gcloud logging read 'resource.labels.pod_name="<pod-name>" AND timestamp>="<ts-5s>" AND timestamp<="<ts+5s>"' \
-  --project=<project-id-from-url> \
-  --format=json | jq -r '.[].textPayload // .[].jsonPayload.message' | grep -v '^$'
 ```
 
 ### 2. Parse the log lines

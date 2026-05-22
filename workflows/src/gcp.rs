@@ -29,6 +29,7 @@ pub async fn run(env: &GcpEnv) -> Result<Vec<GcpEntry>> {
                 age: age_from_entry(entry),
                 urgency: Urgency::High,
                 url: url.clone(),
+                gcp_project: env.gcp_project.clone(),
             });
         }
     }
