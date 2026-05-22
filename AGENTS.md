@@ -6,7 +6,7 @@ If `../hub-private/CLAUDE.md` exists, read it before writing or editing any file
 
 ## What This Is
 
-Hub is a personal command-line status dashboard that aggregates signals from multiple sources — GitHub PRs, CI status, Loki alerts, Linear tasks, media health — into a single urgency-ranked terminal view. Its two binaries are `hub` (CLI) and `hub-tui` (Ratatui dashboard). The core value is cross-domain triage: signals from different systems are compared in one prioritized list, and a keypress on any item opens the right Claude Code skill pre-loaded with context so investigation starts immediately.
+Hub is a personal command-line status dashboard that aggregates signals from multiple sources — GitHub PRs, CI status, Loki alerts, Linear issues, and more via the `private` feature — into a single urgency-ranked terminal view. Its two binaries are `hub` (CLI) and `hub-tui` (Ratatui dashboard). The core value is cross-domain triage: signals from different systems are compared in one prioritized list, and a keypress on supported items opens the right Claude Code skill pre-loaded with context so investigation starts immediately.
 
 See [README.md](README.md) for the full feature list and value proposition.
 
