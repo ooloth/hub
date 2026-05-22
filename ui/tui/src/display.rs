@@ -153,6 +153,45 @@ pub(crate) fn log_detail_view_from_item(item: &StatusItem) -> Option<LogDetailVi
     }
 }
 
+pub(crate) fn log_detail_view_from_group(items: &[StatusItem]) -> Option<LogDetailView> {
+    let first = items
+        .iter()
+        .find(|i| matches!(i, StatusItem::Gcp(_) | StatusItem::Loki(_)))?;
+    match first {
+        StatusItem::Gcp(g) => Some(LogDetailView::Gcp {
+            project: g.project.clone(),
+            env: g.env.clone(),
+            title: g.title.clone(),
+            message: g.message.clone(),
+            url: g.url.clone(),
+            lookback: g.lookback.clone(),
+            lines: items
+                .iter()
+                .filter_map(|i| match i {
+                    StatusItem::Gcp(entry) => Some(LogLine::parse(&entry.line)),
+                    _ => None,
+                })
+                .collect(),
+        }),
+        StatusItem::Loki(l) => Some(LogDetailView::Loki {
+            project: l.project.clone(),
+            env: l.env.clone(),
+            title: l.title.clone(),
+            message: l.message.clone(),
+            url: l.url.clone(),
+            lookback: l.lookback.clone(),
+            lines: items
+                .iter()
+                .filter_map(|i| match i {
+                    StatusItem::Loki(entry) => Some(LogLine::parse(&entry.line)),
+                    _ => None,
+                })
+                .collect(),
+        }),
+        _ => unreachable!(),
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub(crate) enum Category {
     Prs,

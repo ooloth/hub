@@ -8,7 +8,8 @@ use super::{
 };
 use crate::display::{
     build_unified, flatten, item_investigation, item_url, lines_to_compact_json,
-    log_detail_view_from_item, Filter, FlatRow, InvestigationKind, ListSnapshot, LogDetailView,
+    log_detail_view_from_group, log_detail_view_from_item, DisplayItem, Filter, FlatRow,
+    InvestigationKind, ListSnapshot, LogDetailView,
 };
 
 impl App {
@@ -812,9 +813,19 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
         Screen::UnifiedList {
             flat_rows,
             selected,
+            items,
             ..
         } => match flat_rows.get(*selected) {
-            Some(FlatRow::GroupHeader { .. }) => EnterAction::None,
+            Some(FlatRow::GroupHeader { key, .. }) => {
+                let group_items = items.iter().find_map(|di| match di {
+                    DisplayItem::Group { label, items: gi } if label == key => Some(gi.as_slice()),
+                    _ => None,
+                });
+                group_items
+                    .and_then(log_detail_view_from_group)
+                    .map(EnterAction::OpenLogDetail)
+                    .unwrap_or(EnterAction::None)
+            }
             Some(FlatRow::GroupChild { item, .. }) | Some(FlatRow::Single(item)) => match item {
                 StatusItem::Issue(issue) => EnterAction::OpenIssueDetail(issue.clone()),
                 StatusItem::Pr(pr) => EnterAction::OpenPrDetail(pr.clone()),
@@ -1331,8 +1342,22 @@ mod tests {
         ));
     }
 
+    fn gcp_item() -> StatusItem {
+        StatusItem::Gcp(domain::GcpEntry {
+            title: "errors".to_string(),
+            project: "mapapp".to_string(),
+            env: "neuro".to_string(),
+            message: "something broke".to_string(),
+            line: r#"{"message":"something broke"}"#.to_string(),
+            lookback: "7d".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::High,
+            url: "https://console.cloud.google.com/logs/query".to_string(),
+        })
+    }
+
     #[test]
-    fn enter_on_group_header_is_noop() {
+    fn enter_on_ci_group_header_is_noop() {
         let mut app = app_with_items(vec![DisplayItem::Group {
             label: GroupKey::new("hub".to_string()),
             items: vec![ci_failure(), ci_failure()],
@@ -1343,6 +1368,32 @@ mod tests {
             _ => panic!(),
         };
         assert_eq!(len, 1);
+    }
+
+    #[test]
+    fn enter_on_gcp_group_header_opens_log_detail() {
+        let mut app = app_with_items(vec![DisplayItem::Group {
+            label: GroupKey::new("hub".to_string()),
+            items: vec![gcp_item(), gcp_item()],
+        }]);
+        app.update(Action::Enter);
+        assert!(matches!(app.current_screen(), Screen::LogDetail { .. }));
+    }
+
+    #[test]
+    fn enter_on_gcp_group_header_includes_all_lines() {
+        let mut app = app_with_items(vec![DisplayItem::Group {
+            label: GroupKey::new("hub".to_string()),
+            items: vec![gcp_item(), gcp_item()],
+        }]);
+        app.update(Action::Enter);
+        match app.current_screen() {
+            Screen::LogDetail { view, .. } => match view {
+                LogDetailView::Gcp { lines, .. } => assert_eq!(lines.len(), 2),
+                _ => panic!("expected Gcp view"),
+            },
+            _ => panic!("expected LogDetail"),
+        }
     }
 
     #[test]

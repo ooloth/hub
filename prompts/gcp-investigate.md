@@ -32,9 +32,26 @@ gcloud logging read '<filter-from-url>' \
   --format=json | jq '.[] | .jsonPayload // .textPayload'
 ```
 
+**Python/Flask traceback assembly:** Python tracebacks emit one stderr log entry per
+line, so a single exception produces 10–30 sibling entries within a 0.05s window. If
+your `lines` entries have `textPayload` (plain strings rather than structured JSON),
+fetch a ±5s window from the same `pod_name` to assemble the full traceback before
+tracing to source:
+
+```bash
+# Substitute the pod_name from any entry's resource.labels.pod_name:
+gcloud logging read 'resource.labels.pod_name="<pod-name>" AND timestamp>="<ts-5s>" AND timestamp<="<ts+5s>"' \
+  --project=<project-id-from-url> \
+  --format=json | jq -r '.[].textPayload // .[].jsonPayload.message' | grep -v '^$'
+```
+
 ### 2. Parse the log lines
 
-Read the `lines` array for the full log context of each occurrence: stack trace, request details, jsonPayload, or textPayload. Extract the most specific signal — an exception type, a function name, a message prefix.
+Read the `lines` array for the full log context of each occurrence: stack trace,
+request details, jsonPayload, or textPayload. Extract the most specific signal —
+an exception type, a function name, a message prefix. If `jsonPayload` entries
+include `_module`, `_func`, or `_lineno` fields, surface those first — they
+identify the exact source location without a search.
 
 ### 3. Trace to source
 
@@ -47,7 +64,9 @@ git log --oneline -20 -- <affected-files>
 git diff HEAD~5 -- <affected-files>
 ```
 
-Look for changes in the last few commits that could explain a new or changed error pattern.
+Look for changes in the last few commits that could explain a new or changed error
+pattern. If `git log` fails (e.g. due to a misconfigured `GIT_CONFIG_PARAMETERS`),
+skip this step and note it in the output rather than retrying.
 
 ### 5. Form a hypothesis
 
