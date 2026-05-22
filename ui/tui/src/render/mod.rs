@@ -898,8 +898,24 @@ fn render_log_detail(
 
     let bold = Style::default().add_modifier(Modifier::BOLD);
     let inner_width = area.width.saturating_sub(2) as usize;
-    let wrapped = wrap_text(line, inner_width.max(1));
-    let total_lines = wrapped.len();
+
+    let all_lines: Vec<Line<'static>> = match serde_json::from_str::<serde_json::Value>(line) {
+        Ok(value) => {
+            let pretty = serde_json::to_string_pretty(&value).unwrap_or_else(|_| line.to_string());
+            crate::markdown::highlight_json(&pretty)
+        }
+        Err(_) => {
+            let mut lines = vec![Line::styled("(not valid JSON — showing raw text)", dim())];
+            lines.extend(
+                wrap_text(line, inner_width.max(1))
+                    .into_iter()
+                    .map(Line::from),
+            );
+            lines
+        }
+    };
+
+    let total_lines = all_lines.len();
     let viewport_height = area.height.saturating_sub(2) as usize;
     let max_scroll = total_lines.saturating_sub(viewport_height) as u16;
     *scroll = (*scroll).min(max_scroll);
@@ -911,11 +927,7 @@ fn render_log_detail(
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(FOCUS_COLOR));
 
-    let body: Vec<Line> = wrapped
-        .into_iter()
-        .skip(*scroll as usize)
-        .map(Line::from)
-        .collect();
+    let body: Vec<Line<'static>> = all_lines.into_iter().skip(*scroll as usize).collect();
 
     frame.render_widget(Paragraph::new(Text::from(body)).block(block), area);
 }

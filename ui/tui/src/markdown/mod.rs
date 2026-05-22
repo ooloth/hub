@@ -39,6 +39,18 @@ pub(crate) fn from_str(input: &str) -> Text<'_> {
     from_str_with_options(input, &Options::default())
 }
 
+pub(crate) fn highlight_json(input: &str) -> Vec<Line<'static>> {
+    let syntax = SYNTAX_SET
+        .find_syntax_by_extension("json")
+        .unwrap_or_else(|| SYNTAX_SET.find_syntax_plain_text());
+    let mut h = HighlightLines::new(syntax, &MOCHA_THEME);
+    LinesWithEndings::from(input)
+        .filter_map(|line| h.highlight_line(line, &SYNTAX_SET).ok())
+        .filter_map(|ranges| as_24_bit_terminal_escaped(&ranges, false).into_text().ok())
+        .flat_map(|t| t.lines.into_iter())
+        .collect()
+}
+
 fn from_str_with_options<'a, S>(input: &'a str, options: &Options<S>) -> Text<'a>
 where
     S: StyleSheet,
