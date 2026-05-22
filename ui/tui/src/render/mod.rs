@@ -126,6 +126,7 @@ const KEYBINDS_PR_READER: &[(&str, &str)] = &[
     ("Ctrl-u / Ctrl-d", "page up / down"),
     ("Enter", "open in browser"),
     ("i", "investigate"),
+    ("m", "squash and merge"),
     ("r", "refresh"),
     ("Esc", "back to list"),
     ("q / Ctrl-C", "quit"),
@@ -396,9 +397,10 @@ fn position_label(screen: &Screen) -> String {
                 .map(|i| format!("{}/{count}", i + 1))
                 .unwrap_or_default()
         }
-        Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } | Screen::PrDetail { .. } => {
-            String::new()
-        }
+        Screen::IssueDetail { .. }
+        | Screen::DismissingIssue { .. }
+        | Screen::PrDetail { .. }
+        | Screen::MergingPr { .. } => String::new(),
     }
 }
 
@@ -442,8 +444,9 @@ fn status_bar_left(app: &App) -> String {
         return flash.clone();
     }
     if matches!(app.ui.screen, Screen::PrDetail { .. }) {
-        return " [↩] open · [i] investigate · [Esc] back".to_string();
+        return " [↩] open · [i] investigate · [m] merge · [Esc] back".to_string();
     }
+
     if matches!(app.ui.screen, Screen::IssueDetail { .. }) {
         return " [a] approve · [d] dismiss · [↩] open · [Esc] back".to_string();
     }
@@ -1003,6 +1006,9 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         Screen::PrDetail { pr, scroll, .. } => {
             render_pr_detail(frame, pr, scroll, content_area);
         }
+        Screen::MergingPr { pr, .. } => {
+            render_pr_detail(frame, pr, &mut 0, content_area);
+        }
         Screen::DismissingIssue { issue, input, .. } => {
             render_issue_detail(frame, issue, &mut 0, content_area);
             render_dismiss_modal(frame, input, frame.area());
@@ -1012,12 +1018,22 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let right_status =
         right_status_text(&app.data.refresh_state, app.data.last_updated, Utc::now());
 
-    let left = status_bar_left(app);
-
     let right_width = Span::raw(right_status.as_str()).width() as u16 + 1;
     let [bar_left, bar_right] =
         Layout::horizontal([Constraint::Min(0), Constraint::Length(right_width)]).areas(bar_area);
-    frame.render_widget(Paragraph::new(format!(" {left}")).style(dim()), bar_left);
+
+    if let Screen::MergingPr { pr, .. } = &app.ui.screen {
+        let question = format!(" Squash and merge #{} into {}?", pr.number, pr.base_branch);
+        let line = Line::from(vec![
+            Span::styled(question, Style::default().fg(YELLOW)),
+            Span::styled("  [↩] confirm · [Esc] cancel", dim()),
+        ]);
+        frame.render_widget(Paragraph::new(line), bar_left);
+    } else {
+        let left = status_bar_left(app);
+        frame.render_widget(Paragraph::new(format!(" {left}")).style(dim()), bar_left);
+    }
+
     frame.render_widget(
         Paragraph::new(format!("{right_status} ")).style(dim()),
         bar_right,
@@ -1028,7 +1044,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
             Screen::UnifiedList { .. } => KEYBINDS_LIST,
             Screen::Detail { .. } => KEYBINDS_DETAIL,
             Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } => KEYBINDS_ISSUE_READER,
-            Screen::PrDetail { .. } => KEYBINDS_PR_READER,
+            Screen::PrDetail { .. } | Screen::MergingPr { .. } => KEYBINDS_PR_READER,
         };
         let text = format_keybinds(keybinds);
         let lines = keybinds.len() as u16;
@@ -1951,6 +1967,41 @@ mod tests {
         let mut app = pr_detail_app(pr, 0);
         let buf = draw(&mut app, 80, 10);
         insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    // ── Full-screen MergingPr snapshots ──────────────────────────────────────
+
+    fn merging_pr_app(pr: domain::PullRequest) -> App {
+        App {
+            ui: UiState {
+                screen: Screen::MergingPr {
+                    parent: ListSnapshot {
+                        items: vec![],
+                        selected: 0,
+                        filter: Filter::default(),
+                    },
+                    pr,
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    #[test]
+    fn full_screen_merging_pr() {
+        // M1: Merge confirmation modal open over PR body.
+        let mut app = merging_pr_app(stub_pr_with_body());
+        let buf = draw(&mut app, 120, 30);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn status_bar_in_merging_pr() {
+        // M2: Status bar shows "[↩] confirm · [Esc] cancel".
+        let mut app = merging_pr_app(stub_pr_with_body());
+        let buf = draw(&mut app, 120, 5);
+        insta::assert_snapshot!(status_row(&buf));
     }
 
     // ── PrDetail diff snapshots ───────────────────────────────────────────────

@@ -47,6 +47,7 @@ impl App {
             },
             Screen::IssueDetail { .. }
             | Screen::PrDetail { .. }
+            | Screen::MergingPr { .. }
             | Screen::DismissingIssue { .. } => 0,
         }
     }
@@ -68,6 +69,7 @@ impl App {
             }
             Screen::IssueDetail { .. }
             | Screen::PrDetail { .. }
+            | Screen::MergingPr { .. }
             | Screen::DismissingIssue { .. } => {}
         }
     }
@@ -92,6 +94,7 @@ impl App {
             }
             Screen::IssueDetail { .. }
             | Screen::PrDetail { .. }
+            | Screen::MergingPr { .. }
             | Screen::DismissingIssue { .. } => {}
         }
     }
@@ -102,6 +105,7 @@ impl App {
             Screen::Detail { view, .. } => view.list_state.select(Some(0)),
             Screen::IssueDetail { .. }
             | Screen::PrDetail { .. }
+            | Screen::MergingPr { .. }
             | Screen::DismissingIssue { .. } => {}
         }
     }
@@ -116,6 +120,7 @@ impl App {
             Screen::Detail { view, .. } => view.list_state.select(Some(len - 1)),
             Screen::IssueDetail { .. }
             | Screen::PrDetail { .. }
+            | Screen::MergingPr { .. }
             | Screen::DismissingIssue { .. } => {}
         }
     }
@@ -136,6 +141,7 @@ impl App {
             }
             Screen::IssueDetail { .. }
             | Screen::PrDetail { .. }
+            | Screen::MergingPr { .. }
             | Screen::DismissingIssue { .. } => {}
         }
     }
@@ -160,6 +166,7 @@ impl App {
             }
             Screen::IssueDetail { .. }
             | Screen::PrDetail { .. }
+            | Screen::MergingPr { .. }
             | Screen::DismissingIssue { .. } => {}
         }
     }

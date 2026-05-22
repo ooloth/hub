@@ -47,6 +47,10 @@ pub(crate) enum Screen {
         pr: PullRequest,
         scroll: u16,
     },
+    MergingPr {
+        parent: ListSnapshot,
+        pr: PullRequest,
+    },
     DismissingIssue {
         parent: ListSnapshot,
         issue: Issue,
@@ -83,7 +87,9 @@ impl Screen {
             Screen::IssueDetail { issue, .. } | Screen::DismissingIssue { issue, .. } => {
                 Some(StatusItem::Issue(issue.clone()))
             }
-            Screen::PrDetail { pr, .. } => Some(StatusItem::Pr(pr.clone())),
+            Screen::PrDetail { pr, .. } | Screen::MergingPr { pr, .. } => {
+                Some(StatusItem::Pr(pr.clone()))
+            }
         }
     }
 }
@@ -150,6 +156,9 @@ pub(crate) enum Action {
     Investigate,
     Refresh,
     ApproveForAgent,
+    MergePr,
+    CommitMerge,
+    CancelMerge,
     DismissIssue,
     DismissInput(tui_input::InputRequest),
     CommitDismissal,
@@ -171,6 +180,10 @@ pub(crate) enum Effect {
         repo: String,
         number: u64,
         labels: Vec<String>,
+    },
+    MergePullRequest {
+        repo: String,
+        number: u64,
     },
     DismissIssue {
         repo: String,

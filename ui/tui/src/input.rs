@@ -16,6 +16,11 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
         return dismiss_mode_key(key);
     }
 
+    // Merge confirmation intercepts all keys (Ctrl-C still quits).
+    if matches!(app.ui.screen, Screen::MergingPr { .. }) {
+        return merge_confirm_key(key);
+    }
+
     let can_go_back = matches!(
         app.ui.screen,
         Screen::Detail { .. } | Screen::IssueDetail { .. } | Screen::PrDetail { .. }
@@ -51,6 +56,7 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
         Screen::Detail { .. } => list_keys(key),
         Screen::IssueDetail { .. } => issue_reader_keys(key),
         Screen::PrDetail { .. } => pr_reader_keys(key),
+        Screen::MergingPr { .. } => unreachable!("handled above"),
         Screen::DismissingIssue { .. } => unreachable!("handled above"),
     }
 }
@@ -122,6 +128,7 @@ fn pr_reader_keys(key: KeyEvent) -> Option<Action> {
         (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(Action::MovePageDown),
         (KeyCode::Enter, _) => Some(Action::Enter),
         (KeyCode::Char('i'), _) => Some(Action::Investigate),
+        (KeyCode::Char('m'), _) => Some(Action::MergePr),
         _ => None,
     }
 }
@@ -138,6 +145,20 @@ fn issue_reader_keys(key: KeyEvent) -> Option<Action> {
         (KeyCode::Char('a'), _) => Some(Action::ApproveForAgent),
         (KeyCode::Char('d'), _) => Some(Action::DismissIssue),
         (KeyCode::Char('i'), _) => Some(Action::Investigate),
+        _ => None,
+    }
+}
+
+fn merge_confirm_key(key: KeyEvent) -> Option<Action> {
+    if matches!(
+        (key.code, key.modifiers),
+        (KeyCode::Char('c'), KeyModifiers::CONTROL)
+    ) {
+        return Some(Action::Quit);
+    }
+    match key.code {
+        KeyCode::Esc => Some(Action::CancelMerge),
+        KeyCode::Enter => Some(Action::CommitMerge),
         _ => None,
     }
 }
@@ -544,5 +565,124 @@ mod tests {
             key_to_action(&issue_detail_app(), ch('?')),
             Some(Action::ToggleHelp)
         );
+    }
+
+    fn pr_detail_app() -> App {
+        let parent = ListSnapshot {
+            items: vec![],
+            selected: 0,
+            filter: Filter::default(),
+        };
+        App {
+            ui: UiState {
+                screen: Screen::PrDetail {
+                    parent,
+                    pr: domain::PullRequest {
+                        number: 7,
+                        title: "test pr".to_string(),
+                        repo: domain::RepoSlug::new("ooloth", "hub"),
+                        url: "https://github.com/ooloth/hub/pull/7".to_string(),
+                        age: chrono::Duration::zero(),
+                        urgency: domain::Urgency::Low,
+                        kind: domain::PrKind::Mine,
+                        author: "ooloth".to_string(),
+                        review_decision: None,
+                        approval_count: 0,
+                        comment_count: 0,
+                        head_branch: "feat/thing".to_string(),
+                        base_branch: "main".to_string(),
+                        body: None,
+                        ci_status: None,
+                        changed_files: vec![],
+                        total_changed_files: 0,
+                        review_threads: vec![],
+                        pr_comments: vec![],
+                    },
+                    scroll: 0,
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    fn merging_app() -> App {
+        let parent = ListSnapshot {
+            items: vec![],
+            selected: 0,
+            filter: Filter::default(),
+        };
+        App {
+            ui: UiState {
+                screen: Screen::MergingPr {
+                    parent,
+                    pr: domain::PullRequest {
+                        number: 7,
+                        title: "test pr".to_string(),
+                        repo: domain::RepoSlug::new("ooloth", "hub"),
+                        url: "https://github.com/ooloth/hub/pull/7".to_string(),
+                        age: chrono::Duration::zero(),
+                        urgency: domain::Urgency::Low,
+                        kind: domain::PrKind::Mine,
+                        author: "ooloth".to_string(),
+                        review_decision: None,
+                        approval_count: 0,
+                        comment_count: 0,
+                        head_branch: "feat/thing".to_string(),
+                        base_branch: "main".to_string(),
+                        body: None,
+                        ci_status: None,
+                        changed_files: vec![],
+                        total_changed_files: 0,
+                        review_threads: vec![],
+                        pr_comments: vec![],
+                    },
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    #[rstest]
+    #[case(k(KeyCode::Up), Some(Action::MoveUp))]
+    #[case(ch('k'), Some(Action::MoveUp))]
+    #[case(k(KeyCode::Down), Some(Action::MoveDown))]
+    #[case(ch('j'), Some(Action::MoveDown))]
+    #[case(ch('g'), Some(Action::PendingG))]
+    #[case(ch('G'), Some(Action::MoveToBottom))]
+    #[case(ctrl('u'), Some(Action::MovePageUp))]
+    #[case(ctrl('d'), Some(Action::MovePageDown))]
+    #[case(k(KeyCode::Enter), Some(Action::Enter))]
+    #[case(ch('i'), Some(Action::Investigate))]
+    #[case(ch('m'), Some(Action::MergePr))]
+    #[case(ch('x'), None)]
+    fn pr_detail_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
+        assert_eq!(key_to_action(&pr_detail_app(), key), expected);
+    }
+
+    #[test]
+    fn esc_goes_back_from_pr_detail() {
+        assert_eq!(
+            key_to_action(&pr_detail_app(), k(KeyCode::Esc)),
+            Some(Action::Back)
+        );
+    }
+
+    #[rstest]
+    #[case(k(KeyCode::Esc), Some(Action::CancelMerge))]
+    #[case(k(KeyCode::Enter), Some(Action::CommitMerge))]
+    #[case(ch('j'), None)]
+    #[case(ch('k'), None)]
+    #[case(ch('m'), None)]
+    #[case(ch('q'), None)]
+    #[case(ch('r'), None)]
+    fn merge_confirm_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
+        assert_eq!(key_to_action(&merging_app(), key), expected);
+    }
+
+    #[test]
+    fn ctrl_c_quits_during_merge_confirm() {
+        assert_eq!(key_to_action(&merging_app(), ctrl('c')), Some(Action::Quit));
     }
 }

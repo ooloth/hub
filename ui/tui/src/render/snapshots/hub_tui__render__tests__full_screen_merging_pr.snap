@@ -1,0 +1,34 @@
+---
+source: ui/tui/src/render/mod.rs
+expression: screen_text(&buf)
+---
+╭ Add PrDetail screen ────────────────────────────────────────────────────────────────────────────── ooloth/hub · #102 ╮
+│                                                                                                                      │
+│## Summary                                                                                                            │
+│                                                                                                                      │
+│Adds a detail screen for PRs.                                                                                         │
+│                                                                                                                      │
+│## Why                                                                                                                │
+│                                                                                                                      │
+│Readability from terminal without leaving the TUI.                                                                    │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+╰ No reviews · 2 comments ─────────────────────────────────────────────────────────────────────────────── @ooloth · 1d ╯
+ Squash and merge #102 into main?  [↩] confirm · [Esc] cancel

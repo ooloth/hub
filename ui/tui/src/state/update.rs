@@ -140,6 +140,9 @@ impl App {
             | Action::MovePageDown
             | Action::Enter
             | Action::ApproveForAgent
+            | Action::MergePr
+            | Action::CommitMerge
+            | Action::CancelMerge
             | Action::DismissIssue
             | Action::DismissInput(_)
             | Action::CommitDismissal
@@ -148,6 +151,7 @@ impl App {
                 Screen::UnifiedList { .. } => self.handle_unified_list(action),
                 Screen::IssueDetail { .. } => self.handle_issue_reader(action),
                 Screen::PrDetail { .. } => self.handle_pr_reader(action),
+                Screen::MergingPr { .. } => self.handle_merging_pr(action),
                 Screen::Detail { .. } => self.handle_detail(action),
                 Screen::DismissingIssue { .. } => self.handle_dismissing(action),
             },
@@ -364,7 +368,46 @@ impl App {
                 .selected_url()
                 .map(|u| vec![Effect::OpenUrl(u.to_string())])
                 .unwrap_or_default(),
+            Action::MergePr => {
+                let Screen::PrDetail { pr, parent, .. } = &self.ui.screen else {
+                    return vec![];
+                };
+                let pr = pr.clone();
+                let parent = parent.clone();
+                self.ui.screen = Screen::MergingPr { parent, pr };
+                vec![]
+            }
             Action::Investigate => self.handle_investigate(),
+            _ => unreachable!(),
+        }
+    }
+
+    fn handle_merging_pr(&mut self, action: Action) -> Vec<Effect> {
+        match action {
+            Action::CancelMerge => {
+                let Screen::MergingPr { parent, pr } = std::mem::take(&mut self.ui.screen) else {
+                    return vec![];
+                };
+                self.ui.screen = Screen::PrDetail {
+                    parent,
+                    pr,
+                    scroll: 0,
+                };
+                vec![]
+            }
+            Action::CommitMerge => {
+                let Screen::MergingPr { parent, pr } = std::mem::take(&mut self.ui.screen) else {
+                    return vec![];
+                };
+                let repo = pr.repo.to_string();
+                let number = pr.number;
+                self.ui.screen = Screen::PrDetail {
+                    parent,
+                    pr,
+                    scroll: 0,
+                };
+                vec![Effect::MergePullRequest { repo, number }]
+            }
             _ => unreachable!(),
         }
     }
@@ -569,7 +612,7 @@ impl App {
             Screen::IssueDetail { issue, .. } | Screen::DismissingIssue { issue, .. } => {
                 Some(&issue.url)
             }
-            Screen::PrDetail { pr, .. } => Some(&pr.url),
+            Screen::PrDetail { pr, .. } | Screen::MergingPr { pr, .. } => Some(&pr.url),
         }
     }
 }
@@ -600,11 +643,13 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
             .selected_url()
             .map(|u| EnterAction::OpenUrl(u.to_string()))
             .unwrap_or(EnterAction::None),
-        Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } | Screen::PrDetail { .. } => {
-            app.selected_url()
-                .map(|u| EnterAction::OpenUrl(u.to_string()))
-                .unwrap_or(EnterAction::None)
-        }
+        Screen::IssueDetail { .. }
+        | Screen::DismissingIssue { .. }
+        | Screen::PrDetail { .. }
+        | Screen::MergingPr { .. } => app
+            .selected_url()
+            .map(|u| EnterAction::OpenUrl(u.to_string()))
+            .unwrap_or(EnterAction::None),
     }
 }
 
@@ -698,6 +743,7 @@ fn refresh_screen_in_place(screen: &mut Screen, raw: &[workflows::status::Status
         }
         Screen::IssueDetail { parent, .. }
         | Screen::PrDetail { parent, .. }
+        | Screen::MergingPr { parent, .. }
         | Screen::DismissingIssue { parent, .. } => {
             let new_items = build_unified(raw.to_vec(), &parent.filter);
             parent.selected = parent.selected.min(new_items.len().saturating_sub(1));
@@ -2029,6 +2075,88 @@ mod tests {
         handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
         let Screen::DismissingIssue { parent, .. } = app.current_screen() else {
             panic!("expected DismissingIssue");
+        };
+        assert!(matches!(
+            parent.items[0],
+            DisplayItem::Single(workflows::status::StatusItem::Ci(_))
+        ));
+    }
+
+    // --- MergePr flow ---
+
+    fn app_in_merging() -> App {
+        let mut app = app_in_pr_detail();
+        app.update(Action::MergePr);
+        app
+    }
+
+    #[test]
+    fn merge_pr_transitions_to_merging_screen() {
+        let app = app_in_merging();
+        assert!(matches!(app.current_screen(), Screen::MergingPr { .. }));
+    }
+
+    #[test]
+    fn merge_pr_preserves_parent_and_pr() {
+        let app = app_in_merging();
+        let Screen::MergingPr { pr, .. } = app.current_screen() else {
+            panic!("expected MergingPr");
+        };
+        assert_eq!(pr.number, 7);
+        assert_eq!(pr.repo.to_string(), "ooloth/hub");
+    }
+
+    #[test]
+    fn cancel_merge_returns_to_pr_detail_with_same_pr() {
+        let mut app = app_in_merging();
+        app.update(Action::CancelMerge);
+        let Screen::PrDetail { pr, .. } = app.current_screen() else {
+            panic!("expected PrDetail");
+        };
+        assert_eq!(pr.number, 7);
+    }
+
+    #[test]
+    fn cancel_merge_emits_no_effects() {
+        let mut app = app_in_merging();
+        let effects = app.update(Action::CancelMerge);
+        assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn commit_merge_returns_to_pr_detail() {
+        let mut app = app_in_merging();
+        app.update(Action::CommitMerge);
+        assert!(matches!(app.current_screen(), Screen::PrDetail { .. }));
+    }
+
+    #[test]
+    fn commit_merge_emits_merge_pull_request_effect_with_correct_fields() {
+        let mut app = app_in_merging();
+        let effects = app.update(Action::CommitMerge);
+        assert_eq!(effects.len(), 1);
+        let Effect::MergePullRequest { repo, number } = effects.into_iter().next().unwrap() else {
+            panic!("expected MergePullRequest");
+        };
+        assert_eq!(repo, "ooloth/hub");
+        assert_eq!(number, 7);
+    }
+
+    // --- MergingPr refresh ---
+
+    #[test]
+    fn refresh_in_merging_preserves_screen_variant() {
+        let mut app = app_in_merging();
+        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        assert!(matches!(app.current_screen(), Screen::MergingPr { .. }));
+    }
+
+    #[test]
+    fn refresh_in_merging_updates_parent_items() {
+        let mut app = app_in_merging();
+        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        let Screen::MergingPr { parent, .. } = app.current_screen() else {
+            panic!("expected MergingPr");
         };
         assert!(matches!(
             parent.items[0],

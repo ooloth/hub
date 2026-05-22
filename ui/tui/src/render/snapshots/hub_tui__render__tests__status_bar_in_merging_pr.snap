@@ -2,4 +2,4 @@
 source: ui/tui/src/render/mod.rs
 expression: status_row(&buf)
 ---
-  [↩] open · [i] investigate · [m] merge · [Esc] back
+ Squash and merge #102 into main?  [↩] confirm · [Esc] cancel

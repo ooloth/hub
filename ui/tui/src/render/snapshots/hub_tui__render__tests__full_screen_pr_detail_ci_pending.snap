@@ -11,4 +11,4 @@ expression: screen_text(&buf)
 │## Why                                                                        │
 │                                                                              │
 ╰ 1 approval · 2 comments ─────────────────────────────────────── @ooloth · 1d ╯
-  [↩] open · [i] investigate · [Esc] back
+  [↩] open · [i] investigate · [m] merge · [Esc] back

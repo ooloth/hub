@@ -386,6 +386,18 @@ async fn run_loop(
                         }
                     }
                 }
+                Effect::MergePullRequest { repo, number } => {
+                    match clients::github::merge_pull_request(&config.github_token, &repo, number)
+                        .await
+                    {
+                        Ok(()) => {
+                            app.ui.flash = Some(format!("Merged #{number}"));
+                        }
+                        Err(e) => {
+                            app.ui.flash = Some(format!("Could not merge #{number}: {e}"));
+                        }
+                    }
+                }
                 Effect::DismissIssue {
                     repo,
                     number,
