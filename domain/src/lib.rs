@@ -1,3 +1,6 @@
+pub mod log_entry;
+pub use log_entry::LogEntry;
+
 use serde::{Deserialize, Serialize};
 
 pub mod duration_secs {
