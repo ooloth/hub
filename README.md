@@ -35,7 +35,7 @@ prioritized view with agentic capabilities built in:
 
 - [Vision](docs/vision.md) — what this is, why, and where it's going
 - [Decisions](docs/decisions/) — architectural decisions and their rationale
-- [Conventions](docs/conventions/) — Rust patterns used throughout
+- [Conventions](CLAUDE.md#rust-conventions) — Rust patterns used throughout
 - [Playbooks](docs/playbooks/) — step-by-step guides for common tasks
 - [Contributing](CONTRIBUTING.md) — setup and development instructions
 - [Private Workflows](docs/architecture/private-workflows.md) — `hub-private` wiring, symlinks, and Cargo features
