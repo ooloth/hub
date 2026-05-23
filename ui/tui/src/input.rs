@@ -114,6 +114,7 @@ fn pr_reader_keys(key: KeyEvent) -> Option<Action> {
         (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(Action::MovePageDown),
         (KeyCode::Enter, _) => Some(Action::Enter),
         (KeyCode::Char('i'), _) => Some(Action::AskAboutPr),
+        (KeyCode::Char('o'), _) => Some(Action::OpenInOcto),
         (KeyCode::Char('v'), _) => Some(Action::OpenReviewPicker),
         (KeyCode::Char('m'), _) => Some(Action::MergePr),
         _ => None,
@@ -680,6 +681,7 @@ mod tests {
     #[case(ctrl('d'), Some(Action::MovePageDown))]
     #[case(k(KeyCode::Enter), Some(Action::Enter))]
     #[case(ch('i'), Some(Action::AskAboutPr))]
+    #[case(ch('o'), Some(Action::OpenInOcto))]
     #[case(ch('v'), Some(Action::OpenReviewPicker))]
     #[case(ch('m'), Some(Action::MergePr))]
     #[case(ch('x'), None)]

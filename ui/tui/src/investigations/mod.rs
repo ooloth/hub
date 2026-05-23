@@ -33,6 +33,7 @@ pub(crate) enum WorktreeSpec {
     /// `project` is the directory name under `~/.hub/repos/`.
     Ephemeral { project: String },
     /// Use the process's current directory (MediaBlocked, last-resort fallback).
+    #[allow(dead_code)]
     CurrentDir,
 }
 
@@ -87,6 +88,43 @@ pub(crate) async fn launch(
 
     if !status.success() {
         bail!("tmux split-window failed with {status}");
+    }
+
+    Ok(())
+}
+
+pub(crate) async fn open_in_octo(
+    repo: &str,
+    number: u64,
+    hub_config: &config::Config,
+    github_token: &str,
+) -> Result<()> {
+    if std::env::var("TMUX").is_err() {
+        bail!("not in tmux; opening in neovim requires a tmux session");
+    }
+
+    let (cwd, _) = resolve_worktree(
+        WorktreeSpec::DefaultBranch {
+            repo: repo.to_string(),
+        },
+        hub_config,
+        github_token,
+    )
+    .await?;
+
+    let repo_name = repo.split_once('/').map(|(_, name)| name).unwrap_or(repo);
+    let window_name = format!("{repo_name}#{number}");
+
+    let mut cmd = std::process::Command::new("tmux");
+    cmd.args(["new-window", "-n", &window_name, "-c"])
+        .arg(&cwd)
+        .arg(format!(
+            "NVIM_APPNAME=nvim-ide nvim +'Octo pr edit {number}'"
+        ));
+
+    let status = cmd.status().context("failed to start tmux new-window")?;
+    if !status.success() {
+        bail!("tmux new-window failed with {status}");
     }
 
     Ok(())

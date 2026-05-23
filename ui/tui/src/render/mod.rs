@@ -125,6 +125,7 @@ const KEYBINDS_PR_READER: &[(&str, &str)] = &[
     ("Ctrl-u / Ctrl-d", "page up / down"),
     ("Enter", "open in browser"),
     ("i", "investigate PR"),
+    ("o", "open in neovim"),
     ("v", "review"),
     ("m", "squash and merge"),
     ("r", "refresh"),

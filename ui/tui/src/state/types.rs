@@ -206,6 +206,7 @@ pub(crate) enum Action {
     Refresh,
     ApproveForAgent,
     MergePr,
+    OpenInOcto,
     CommitMerge,
     CancelMerge,
     DismissIssue,
@@ -286,6 +287,10 @@ pub(crate) enum Effect {
         ownership: PrOwnership,
         skill: ReviewSkill,
         head_branch: String,
+    },
+    OpenInOcto {
+        repo: String,
+        number: u64,
     },
     #[cfg(feature = "private")]
     LaunchMediaBlocked {

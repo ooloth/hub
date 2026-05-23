@@ -156,6 +156,7 @@ impl App {
             | Action::CancelDismissal
             | Action::Investigate
             | Action::AskAboutPr
+            | Action::OpenInOcto
             | Action::OpenReviewPicker
             | Action::CommitReview(_)
             | Action::CancelReview => match &self.ui.screen {
@@ -504,6 +505,15 @@ impl App {
                 let parent = parent.clone();
                 self.ui.screen = Screen::ReviewingPr { parent, pr };
                 vec![]
+            }
+            Action::OpenInOcto => {
+                let Screen::PrDetail { pr, .. } = &self.ui.screen else {
+                    return vec![];
+                };
+                vec![Effect::OpenInOcto {
+                    repo: pr.repo.to_string(),
+                    number: pr.number,
+                }]
             }
             Action::Investigate => self.handle_investigate(),
             _ => unreachable!(),
@@ -2404,6 +2414,20 @@ mod tests {
         assert_eq!(repo, "ooloth/hub");
         assert_eq!(number, 7);
         assert_eq!(ownership, crate::state::PrOwnership::Owned);
+    }
+
+    // --- OpenInOcto ---
+
+    #[test]
+    fn open_in_octo_emits_open_in_octo_effect_with_pr_identity() {
+        let mut app = app_in_pr_detail();
+        let effects = app.update(Action::OpenInOcto);
+        assert_eq!(effects.len(), 1);
+        let Effect::OpenInOcto { repo, number } = effects.into_iter().next().unwrap() else {
+            panic!("expected OpenInOcto");
+        };
+        assert_eq!(repo, "ooloth/hub");
+        assert_eq!(number, 7);
     }
 
     // --- OpenReviewPicker / ReviewingPr ---

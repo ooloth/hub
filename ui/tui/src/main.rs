@@ -358,6 +358,14 @@ async fn run_loop(
                         app.ui.flash = Some(err.to_string());
                     }
                 }
+                Effect::OpenInOcto { repo, number } => {
+                    if let Err(err) =
+                        investigations::open_in_octo(&repo, number, config, &config.github_token)
+                            .await
+                    {
+                        app.ui.flash = Some(err.to_string());
+                    }
+                }
                 Effect::LaunchGcp {
                     project,
                     env,
