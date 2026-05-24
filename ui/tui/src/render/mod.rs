@@ -624,7 +624,7 @@ fn render_pr_detail(
             };
             Some(Span::styled(label, Style::default().fg(Color::Green)))
         }
-        None => Some(Span::styled("No reviews", bold)),
+        None => Some(Span::styled("0 reviews", bold)),
     };
     let comment_span = match pr.comment_count {
         0 => None,
@@ -654,10 +654,17 @@ fn render_pr_detail(
         .merge_blocker
         .map(|b| Span::styled(merge_blocker_word(b), Style::default().fg(Color::Red)));
 
-    // Build bottom-left as: [review status ·] [X comments ·] [conflict/behind/blocked ·] [X files · +Y -Z]
+    // Build bottom-left as: [conflict/behind/blocked ·] [review status ·] [X comments ·] [X files · +Y -Z]
     let mut left_spans: Vec<Span> = vec![Span::raw(" ")];
     let mut has_content = false;
+    if let Some(b) = blocker_span {
+        left_spans.push(b);
+        has_content = true;
+    }
     if let Some(s) = review_status_span {
+        if has_content {
+            left_spans.push(Span::styled(" · ".to_string(), bold));
+        }
         left_spans.push(s);
         has_content = true;
     }
@@ -666,13 +673,6 @@ fn render_pr_detail(
             left_spans.push(Span::styled(" · ".to_string(), bold));
         }
         left_spans.push(c);
-        has_content = true;
-    }
-    if let Some(b) = blocker_span {
-        if has_content {
-            left_spans.push(Span::styled(" · ".to_string(), bold));
-        }
-        left_spans.push(b);
         has_content = true;
     }
     if let Some(fs) = files_spans {
