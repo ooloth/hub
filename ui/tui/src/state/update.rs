@@ -514,6 +514,7 @@ impl App {
                 vec![Effect::OpenInOcto {
                     repo: pr.repo.to_string(),
                     number: pr.number,
+                    head_branch: pr.head_branch.clone(),
                 }]
             }
             Action::OpenInLazygit => {
@@ -2438,11 +2439,17 @@ mod tests {
         let mut app = app_in_pr_detail();
         let effects = app.update(Action::OpenInOcto);
         assert_eq!(effects.len(), 1);
-        let Effect::OpenInOcto { repo, number } = effects.into_iter().next().unwrap() else {
+        let Effect::OpenInOcto {
+            repo,
+            number,
+            head_branch,
+        } = effects.into_iter().next().unwrap()
+        else {
             panic!("expected OpenInOcto");
         };
         assert_eq!(repo, "ooloth/hub");
         assert_eq!(number, 7);
+        assert_eq!(head_branch, "feat/thing");
     }
 
     // --- OpenInLazygit ---

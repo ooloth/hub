@@ -292,6 +292,7 @@ pub(crate) enum Effect {
     OpenInOcto {
         repo: String,
         number: u64,
+        head_branch: String,
     },
     OpenInLazygit {
         repo: String,

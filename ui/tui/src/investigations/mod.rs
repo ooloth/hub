@@ -138,6 +138,7 @@ pub(crate) async fn open_in_lazygit(
 pub(crate) async fn open_in_octo(
     repo: &str,
     number: u64,
+    head_branch: &str,
     hub_config: &config::Config,
     github_token: &str,
 ) -> Result<()> {
@@ -145,14 +146,14 @@ pub(crate) async fn open_in_octo(
         bail!("not in tmux; opening in neovim requires a tmux session");
     }
 
-    let (cwd, _) = resolve_worktree(
-        WorktreeSpec::DefaultBranch {
-            repo: repo.to_string(),
-        },
-        hub_config,
-        github_token,
-    )
-    .await?;
+    let name = project_name(hub_config, repo)?;
+    let bare = workflows::fetch::repos_dir().join(name);
+    if !bare.exists() {
+        bail!("Not fetched yet; run hub fetch");
+    }
+    let cwd = workflows::fetch::ensure_pr_worktree(&bare, number, head_branch, github_token)
+        .await
+        .context("Failed to create PR worktree")?;
 
     let repo_name = repo.split_once('/').map(|(_, name)| name).unwrap_or(repo);
     let window_name = format!("{repo_name}#{number}");
