@@ -2,7 +2,7 @@
 source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
-╭ Add PrDetail screen … ──────────────────────────────────── ooloth/hub · #102 ╮
+╭ #102 · Add PrDetail screen … ──────────────────────────────────── ooloth/hub ╮
 │                                                                              │
 │## Summary                                                                    │
 │                                                                              │

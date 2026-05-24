@@ -2,7 +2,7 @@
 source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
-╭ Fix typo in README ──────────────────────────────────────── ooloth/hub · #99 ╮
+╭ #99 · Fix typo in README ──────────────────────────────────────── ooloth/hub ╮
 │                                                                              │
 │(no description)                                                              │
 │                                                                              │

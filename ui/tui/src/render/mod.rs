@@ -595,7 +595,7 @@ fn render_pr_detail(
         None => None,
     };
 
-    let mut title_spans: Vec<Span> = vec![Span::raw(format!(" {} ", pr.title))];
+    let mut title_spans: Vec<Span> = vec![Span::raw(format!(" #{} · {} ", pr.number, pr.title))];
     if let Some(ci) = ci_span {
         title_spans.push(ci);
         title_spans.push(Span::raw(" "));
@@ -604,7 +604,7 @@ fn render_pr_detail(
         title_spans.push(Span::styled("! ", Style::default().fg(Color::Red)));
     }
     let left_title = Line::from(title_spans).style(bold);
-    let right_title = Line::from(format!(" {} · #{} ", pr.repo, pr.number))
+    let right_title = Line::from(format!(" {} ", pr.repo))
         .style(bold)
         .right_aligned();
 
