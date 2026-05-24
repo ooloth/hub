@@ -609,6 +609,7 @@ dependencies = [
  "chrono",
  "rstest 0.25.0",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

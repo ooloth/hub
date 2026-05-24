@@ -115,6 +115,7 @@ fn pr_reader_keys(key: KeyEvent) -> Option<Action> {
         (KeyCode::Enter, _) => Some(Action::Enter),
         (KeyCode::Char('i'), _) => Some(Action::AskAboutPr),
         (KeyCode::Char('o'), _) => Some(Action::OpenInOcto),
+        (KeyCode::Char('l'), _) => Some(Action::OpenInLazygit),
         (KeyCode::Char('v'), _) => Some(Action::OpenReviewPicker),
         (KeyCode::Char('m'), _) => Some(Action::MergePr),
         _ => None,
@@ -622,6 +623,7 @@ mod tests {
                         total_changed_files: 0,
                         review_threads: vec![],
                         pr_comments: vec![],
+                        merge_blocker: None,
                     },
                     scroll: 0,
                 },
@@ -662,6 +664,7 @@ mod tests {
                         total_changed_files: 0,
                         review_threads: vec![],
                         pr_comments: vec![],
+                        merge_blocker: None,
                     },
                 },
                 ..UiState::default()
@@ -682,6 +685,7 @@ mod tests {
     #[case(k(KeyCode::Enter), Some(Action::Enter))]
     #[case(ch('i'), Some(Action::AskAboutPr))]
     #[case(ch('o'), Some(Action::OpenInOcto))]
+    #[case(ch('l'), Some(Action::OpenInLazygit))]
     #[case(ch('v'), Some(Action::OpenReviewPicker))]
     #[case(ch('m'), Some(Action::MergePr))]
     #[case(ch('x'), None)]
@@ -745,6 +749,7 @@ mod tests {
                         total_changed_files: 0,
                         review_threads: vec![],
                         pr_comments: vec![],
+                        merge_blocker: None,
                     },
                 },
                 ..UiState::default()

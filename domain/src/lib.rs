@@ -68,6 +68,17 @@ pub enum CiStatus {
     Neutral,
 }
 
+/// Why a pull request cannot be merged right now.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum MergeBlocker {
+    /// Branch has a merge conflict (mergeStateStatus: DIRTY).
+    Conflict,
+    /// Branch is behind the base branch (mergeStateStatus: BEHIND).
+    Behind,
+    /// Merge is blocked by a branch protection rule (mergeStateStatus: BLOCKED).
+    Blocked,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChangedFile {
     pub path: String,
@@ -121,6 +132,8 @@ pub struct PullRequest {
     pub review_threads: Vec<ReviewThread>,
     #[serde(default)]
     pub pr_comments: Vec<ReviewComment>,
+    #[serde(default)]
+    pub merge_blocker: Option<MergeBlocker>,
 }
 
 pub const NEEDS_HUMAN_REVIEW_LABEL: &str = "status:needs-human-review";
@@ -419,5 +432,27 @@ mod tests {
     #[should_panic(expected = "repo must not be empty")]
     fn repo_slug_new_panics_on_empty_repo() {
         RepoSlug::new("ooloth", "");
+    }
+
+    // ── merge_blocker serde default ───────────────────────────────────────────
+
+    #[rstest::rstest]
+    #[case(Some(r#""Conflict""#), Some(MergeBlocker::Conflict))]
+    #[case(Some(r#""Behind""#), Some(MergeBlocker::Behind))]
+    #[case(Some(r#""Blocked""#), Some(MergeBlocker::Blocked))]
+    #[case(None, None)]
+    fn merge_blocker_deserializes_with_default(
+        #[case] field_value: Option<&str>,
+        #[case] expected: Option<MergeBlocker>,
+    ) {
+        let blocker_field = match field_value {
+            Some(v) => format!(r#","merge_blocker":{v}"#),
+            None => String::new(),
+        };
+        let json = format!(
+            r#"{{"number":1,"title":"t","repo":"o/r","url":"u","age":0,"urgency":"Low","kind":"Mine","author":"a","head_branch":"h","base_branch":"b"{blocker_field}}}"#
+        );
+        let pr: PullRequest = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(pr.merge_blocker, expected);
     }
 }

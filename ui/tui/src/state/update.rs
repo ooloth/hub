@@ -157,6 +157,7 @@ impl App {
             | Action::Investigate
             | Action::AskAboutPr
             | Action::OpenInOcto
+            | Action::OpenInLazygit
             | Action::OpenReviewPicker
             | Action::CommitReview(_)
             | Action::CancelReview => match &self.ui.screen {
@@ -513,6 +514,16 @@ impl App {
                 vec![Effect::OpenInOcto {
                     repo: pr.repo.to_string(),
                     number: pr.number,
+                }]
+            }
+            Action::OpenInLazygit => {
+                let Screen::PrDetail { pr, .. } = &self.ui.screen else {
+                    return vec![];
+                };
+                vec![Effect::OpenInLazygit {
+                    repo: pr.repo.to_string(),
+                    number: pr.number,
+                    head_branch: pr.head_branch.clone(),
                 }]
             }
             Action::Investigate => self.handle_investigate(),
@@ -1236,6 +1247,7 @@ mod tests {
                 total_changed_files: 0,
                 review_threads: vec![],
                 pr_comments: vec![],
+                merge_blocker: None,
             },
         ))]);
         assert_eq!(
@@ -1275,6 +1287,7 @@ mod tests {
                 total_changed_files: 0,
                 review_threads: vec![],
                 pr_comments: vec![],
+                merge_blocker: None,
             },
         ))]);
         assert_eq!(
@@ -1314,6 +1327,7 @@ mod tests {
                 total_changed_files: 0,
                 review_threads: vec![],
                 pr_comments: vec![],
+                merge_blocker: None,
             },
         ))]);
         assert_eq!(
@@ -2162,6 +2176,7 @@ mod tests {
             total_changed_files: 0,
             review_threads: vec![],
             pr_comments: vec![],
+            merge_blocker: None,
         })
     }
 
@@ -2428,6 +2443,26 @@ mod tests {
         };
         assert_eq!(repo, "ooloth/hub");
         assert_eq!(number, 7);
+    }
+
+    // --- OpenInLazygit ---
+
+    #[test]
+    fn open_in_lazygit_emits_effect_with_pr_identity() {
+        let mut app = app_in_pr_detail();
+        let effects = app.update(Action::OpenInLazygit);
+        assert_eq!(effects.len(), 1);
+        let Effect::OpenInLazygit {
+            repo,
+            number,
+            head_branch,
+        } = effects.into_iter().next().unwrap()
+        else {
+            panic!("expected OpenInLazygit");
+        };
+        assert_eq!(repo, "ooloth/hub");
+        assert_eq!(number, 7);
+        assert_eq!(head_branch, "feat/thing");
     }
 
     // --- OpenReviewPicker / ReviewingPr ---

@@ -1,6 +1,15 @@
 use std::collections::HashSet;
 
+use domain::MergeBlocker;
 use workflows::status::StatusItem;
+
+pub(crate) fn merge_blocker_word(b: MergeBlocker) -> &'static str {
+    match b {
+        MergeBlocker::Conflict => "conflict",
+        MergeBlocker::Behind => "behind",
+        MergeBlocker::Blocked => "blocked",
+    }
+}
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct GroupKey(String);
@@ -408,7 +417,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
                 },
                 None => "no reviews".to_string(),
             };
-            let dim_inline = if pr.kind == domain::PrKind::MyDraft {
+            let mut dim_inline = if pr.kind == domain::PrKind::MyDraft {
                 vec![
                     format!(" #{}", pr.number),
                     pr.author.clone(),
@@ -417,6 +426,9 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             } else {
                 vec![format!(" #{}", pr.number), pr.author.clone(), review_status]
             };
+            if let Some(blocker) = pr.merge_blocker {
+                dim_inline.push(merge_blocker_word(blocker).to_string());
+            }
             LineParts {
                 separator: RowSeparator::Bullet,
                 primary: vec![pr.title.clone()],
@@ -776,6 +788,7 @@ mod tests {
             total_changed_files: 0,
             review_threads: vec![],
             pr_comments: vec![],
+            merge_blocker: None,
         })
     }
 
@@ -915,6 +928,14 @@ mod tests {
                 "pr_draft:              {}",
                 item_line(&make_pr(domain::PrKind::MyDraft)).flat()
             ),
+            format!(
+                "pr_conflict:           {}",
+                item_line(&make_pr_conflicting(domain::PrKind::Mine)).flat()
+            ),
+            format!(
+                "pr_draft_conflict:     {}",
+                item_line(&make_pr_conflicting(domain::PrKind::MyDraft)).flat()
+            ),
             format!("issue:       {}", item_line(&issue()).flat()),
             format!("issue_labels:{}", item_line(&issue_with_labels()).flat()),
             format!("ci_bare:     {}", item_line(&ci()).flat()),
@@ -1006,6 +1027,14 @@ mod tests {
         make_pr_with(kind, None, 0)
     }
 
+    fn make_pr_conflicting(kind: domain::PrKind) -> StatusItem {
+        let StatusItem::Pr(mut pr) = make_pr_with(kind, None, 0) else {
+            unreachable!()
+        };
+        pr.merge_blocker = Some(domain::MergeBlocker::Conflict);
+        StatusItem::Pr(pr)
+    }
+
     fn make_pr_with(
         kind: domain::PrKind,
         review_decision: Option<domain::ReviewDecision>,
@@ -1031,6 +1060,7 @@ mod tests {
             total_changed_files: 0,
             review_threads: vec![],
             pr_comments: vec![],
+            merge_blocker: None,
         })
     }
 

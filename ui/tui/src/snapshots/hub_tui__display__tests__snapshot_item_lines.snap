@@ -6,6 +6,8 @@ pr_no_reviews:         Add feature #42 · ooloth · no reviews
 pr_approved:           Add feature #42 · ooloth · 2 approvals
 pr_changes_requested:  Add feature #42 · ooloth · changes requested
 pr_draft:              Add feature #42 · ooloth · draft
+pr_conflict:           Add feature #42 · ooloth · no reviews · conflict
+pr_draft_conflict:     Add feature #42 · ooloth · draft · conflict
 issue:       Fix bug #7
 issue_labels:Fix bug #8 · bug, wontfix
 ci_bare:     failed

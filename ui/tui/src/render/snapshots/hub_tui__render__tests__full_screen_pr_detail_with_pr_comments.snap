@@ -36,4 +36,4 @@ expression: screen_text(&buf)
 │                                                                              │
 │                                                                              │
 ╰ No reviews · 2 comments · 2 files · +3 -1 ───────────────────── @ooloth · 1d ╯
-  [↩] open · [i] investigate · [v] review · [m] merge · [Esc] back
+  [↩] open · [i] investigate · [l] lazygit · [v] review · [m] merge · [Esc] bac

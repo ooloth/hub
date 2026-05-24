@@ -93,6 +93,48 @@ pub(crate) async fn launch(
     Ok(())
 }
 
+pub(crate) async fn open_in_lazygit(
+    repo: &str,
+    number: u64,
+    head_branch: &str,
+    hub_config: &config::Config,
+    github_token: &str,
+) -> Result<()> {
+    if std::env::var("TMUX").is_err() {
+        bail!("not in tmux; opening lazygit requires a tmux session");
+    }
+
+    let name = project_name(hub_config, repo)?;
+    let bare = workflows::fetch::repos_dir().join(name);
+    if !bare.exists() {
+        bail!("Not fetched yet; run hub fetch");
+    }
+    let cwd = workflows::fetch::ensure_pr_worktree(&bare, number, head_branch, github_token)
+        .await
+        .context("Failed to create PR worktree")?;
+
+    let repo_name = repo.split_once('/').map(|(_, name)| name).unwrap_or(repo);
+    let window_name = format!("{repo_name}#{number}-git");
+
+    let mut cmd = std::process::Command::new("tmux");
+    cmd.args(["new-window", "-n", &window_name, "-c"])
+        .arg(&cwd)
+        .arg("-e")
+        .arg("GIT_TERMINAL_PROMPT=0")
+        .arg("-e")
+        .arg(format!(
+            "GIT_CONFIG_PARAMETERS='url.https://x-access-token:{github_token}@github.com/.insteadOf=https://github.com/'"
+        ))
+        .arg("lazygit");
+
+    let status = cmd.status().context("failed to start tmux new-window")?;
+    if !status.success() {
+        bail!("tmux new-window failed with {status}");
+    }
+
+    Ok(())
+}
+
 pub(crate) async fn open_in_octo(
     repo: &str,
     number: u64,

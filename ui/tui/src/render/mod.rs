@@ -7,8 +7,8 @@ use ratatui::{
 };
 
 use crate::display::{
-    flat_row_line, flat_row_urgency, format_age_short, Filter, FlatRow, LineParts, LogDetailView,
-    LogLine, RowSeparator,
+    flat_row_line, flat_row_urgency, format_age_short, merge_blocker_word, Filter, FlatRow,
+    LineParts, LogDetailView, LogLine, RowSeparator,
 };
 use crate::state::{
     compute_enter_action, compute_investigate_action, App, EnterAction, InvestigateAction,
@@ -125,7 +125,8 @@ const KEYBINDS_PR_READER: &[(&str, &str)] = &[
     ("Ctrl-u / Ctrl-d", "page up / down"),
     ("Enter", "open in browser"),
     ("i", "investigate PR"),
-    ("o", "open in neovim"),
+    ("o", "open in octo"),
+    ("l", "open in lazygit"),
     ("v", "review"),
     ("m", "squash and merge"),
     ("r", "refresh"),
@@ -345,7 +346,8 @@ fn status_bar_left(app: &App) -> String {
         return flash.clone();
     }
     if matches!(app.ui.screen, Screen::PrDetail { .. }) {
-        return " [↩] open · [i] investigate · [v] review · [m] merge · [Esc] back".to_string();
+        return " [↩] open · [i] investigate · [l] lazygit · [v] review · [m] merge · [Esc] back"
+            .to_string();
     }
 
     if matches!(app.ui.screen, Screen::IssueDetail { .. }) {
@@ -598,6 +600,9 @@ fn render_pr_detail(
         title_spans.push(ci);
         title_spans.push(Span::raw(" "));
     }
+    if pr.merge_blocker.is_some() {
+        title_spans.push(Span::styled("! ", Style::default().fg(Color::Red)));
+    }
     let left_title = Line::from(title_spans).style(bold);
     let right_title = Line::from(format!(" {} · #{} ", pr.repo, pr.number))
         .style(bold)
@@ -645,7 +650,11 @@ fn render_pr_detail(
         None
     };
 
-    // Build bottom-left as: [review status ·] [X comments ·] [X files · +Y -Z]
+    let blocker_span = pr
+        .merge_blocker
+        .map(|b| Span::styled(merge_blocker_word(b), Style::default().fg(Color::Red)));
+
+    // Build bottom-left as: [review status ·] [X comments ·] [conflict/behind/blocked ·] [X files · +Y -Z]
     let mut left_spans: Vec<Span> = vec![Span::raw(" ")];
     let mut has_content = false;
     if let Some(s) = review_status_span {
@@ -657,6 +666,13 @@ fn render_pr_detail(
             left_spans.push(Span::styled(" · ".to_string(), bold));
         }
         left_spans.push(c);
+        has_content = true;
+    }
+    if let Some(b) = blocker_span {
+        if has_content {
+            left_spans.push(Span::styled(" · ".to_string(), bold));
+        }
+        left_spans.push(b);
         has_content = true;
     }
     if let Some(fs) = files_spans {
@@ -1293,6 +1309,7 @@ mod tests {
             total_changed_files: 0,
             review_threads: vec![],
             pr_comments: vec![],
+            merge_blocker: None,
         })
     }
 
@@ -1841,6 +1858,7 @@ mod tests {
             total_changed_files: 0,
             review_threads: vec![],
             pr_comments: vec![],
+            merge_blocker: None,
         }
     }
 
@@ -1865,6 +1883,7 @@ mod tests {
             total_changed_files: 0,
             review_threads: vec![],
             pr_comments: vec![],
+            merge_blocker: None,
         }
     }
 
@@ -1967,6 +1986,16 @@ mod tests {
         // P9: changes-requested decision shown in bottom-left.
         let mut pr = stub_pr_no_body();
         pr.review_decision = Some(domain::ReviewDecision::ChangesRequested);
+        let mut app = pr_detail_app(pr, 0);
+        let buf = draw(&mut app, 80, 10);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_detail_with_conflict() {
+        // P10: merge conflict shown in bottom-left status row.
+        let mut pr = stub_pr_no_body();
+        pr.merge_blocker = Some(domain::MergeBlocker::Conflict);
         let mut app = pr_detail_app(pr, 0);
         let buf = draw(&mut app, 80, 10);
         insta::assert_snapshot!(screen_text(&buf));

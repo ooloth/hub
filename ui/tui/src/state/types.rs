@@ -207,6 +207,7 @@ pub(crate) enum Action {
     ApproveForAgent,
     MergePr,
     OpenInOcto,
+    OpenInLazygit,
     CommitMerge,
     CancelMerge,
     DismissIssue,
@@ -291,6 +292,11 @@ pub(crate) enum Effect {
     OpenInOcto {
         repo: String,
         number: u64,
+    },
+    OpenInLazygit {
+        repo: String,
+        number: u64,
+        head_branch: String,
     },
     #[cfg(feature = "private")]
     LaunchMediaBlocked {

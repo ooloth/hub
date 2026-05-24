@@ -366,6 +366,23 @@ async fn run_loop(
                         app.ui.flash = Some(err.to_string());
                     }
                 }
+                Effect::OpenInLazygit {
+                    repo,
+                    number,
+                    head_branch,
+                } => {
+                    if let Err(err) = investigations::open_in_lazygit(
+                        &repo,
+                        number,
+                        &head_branch,
+                        config,
+                        &config.github_token,
+                    )
+                    .await
+                    {
+                        app.ui.flash = Some(err.to_string());
+                    }
+                }
                 Effect::LaunchGcp {
                     project,
                     env,

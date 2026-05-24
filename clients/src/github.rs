@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
 use domain::{
-    ChangedFile, CiFailure, CiStatus, GithubPrsRepo, Issue, PrKind, PullRequest, RepoSlug,
-    ReviewComment, ReviewDecision, ReviewThread, Urgency, NEEDS_HUMAN_REVIEW_LABEL,
+    ChangedFile, CiFailure, CiStatus, GithubPrsRepo, Issue, MergeBlocker, PrKind, PullRequest,
+    RepoSlug, ReviewComment, ReviewDecision, ReviewThread, Urgency, NEEDS_HUMAN_REVIEW_LABEL,
 };
 use serde::Deserialize;
 
@@ -86,6 +86,9 @@ struct PrNode {
     review_threads: ReviewThreadConnection,
     #[serde(default)]
     comments: PrCommentConnection,
+    #[serde(default)]
+    #[serde(rename = "mergeStateStatus")]
+    merge_state_status: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -423,6 +426,7 @@ fn nodes_to_prs(
                 comment_count,
                 head_branch: node.head_ref_name,
                 base_branch: node.base_ref_name,
+                merge_blocker: parse_merge_blocker(node.merge_state_status.as_deref()),
             })
         })
         .collect()
@@ -490,6 +494,15 @@ fn parse_ci_state(state: &str) -> Option<CiStatus> {
     }
 }
 
+fn parse_merge_blocker(s: Option<&str>) -> Option<MergeBlocker> {
+    match s? {
+        "DIRTY" => Some(MergeBlocker::Conflict),
+        "BEHIND" => Some(MergeBlocker::Behind),
+        "BLOCKED" => Some(MergeBlocker::Blocked),
+        _ => None,
+    }
+}
+
 fn parse_review_decision(s: Option<&str>) -> Option<ReviewDecision> {
     match s? {
         "APPROVED" => Some(ReviewDecision::Approved),
@@ -509,7 +522,7 @@ async fn graphql_prs(token: &str, base: &str, repos: &[GithubPrsRepo]) -> Result
         r#"{{ search(query: "{q}", type: ISSUE, first: 100) {{ nodes {{ ... on PullRequest {{
             number title url body
             author {{ login }}
-            createdAt isDraft reviewDecision
+            createdAt isDraft reviewDecision mergeStateStatus
             headRefName baseRefName
             reviews(first: 50) {{ nodes {{ state }} }}
             repository {{ nameWithOwner }}
@@ -1398,6 +1411,7 @@ mod tests {
             files: FileConnection::default(),
             review_threads: ReviewThreadConnection::default(),
             comments: PrCommentConnection::default(),
+            merge_state_status: None,
         }
     }
 
@@ -1535,5 +1549,23 @@ mod tests {
     #[test]
     fn parse_review_decision_none_maps_to_none() {
         assert_eq!(parse_review_decision(None), None);
+    }
+
+    // ── parse_merge_blocker ───────────────────────────────────────────────────
+
+    #[rstest::rstest]
+    #[case(Some("DIRTY"), Some(MergeBlocker::Conflict))]
+    #[case(Some("BEHIND"), Some(MergeBlocker::Behind))]
+    #[case(Some("BLOCKED"), Some(MergeBlocker::Blocked))]
+    #[case(Some("CLEAN"), None)]
+    #[case(Some("UNSTABLE"), None)]
+    #[case(Some("UNKNOWN"), None)]
+    #[case(Some(""), None)]
+    #[case(None, None)]
+    fn parse_merge_blocker_cases(
+        #[case] input: Option<&str>,
+        #[case] expected: Option<MergeBlocker>,
+    ) {
+        assert_eq!(parse_merge_blocker(input), expected);
     }
 }
