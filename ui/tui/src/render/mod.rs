@@ -346,7 +346,7 @@ fn status_bar_left(app: &App) -> String {
         return flash.clone();
     }
     if matches!(app.ui.screen, Screen::PrDetail { .. }) {
-        return " [↩] open · [i] investigate · [l] lazygit · [v] review · [m] merge · [Esc] back"
+        return " [↩] open · [i] investigate · [o] octo · [l] lazygit · [v] review · [m] merge · [Esc] back"
             .to_string();
     }
 
