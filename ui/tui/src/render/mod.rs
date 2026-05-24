@@ -604,11 +604,11 @@ fn render_pr_detail(
         title_spans.push(Span::styled("! ", Style::default().fg(Color::Red)));
     }
     let left_title = Line::from(title_spans).style(bold);
-    let right_title = Line::from(format!(" {} ", pr.repo))
+    let right_title = Line::from(format!(" @{} · {} ", pr.author, format_age_short(pr.age),))
         .style(bold)
         .right_aligned();
 
-    let bottom_right = Line::from(format!(" @{} · {} ", pr.author, format_age_short(pr.age),))
+    let bottom_right = Line::from(format!(" {} ", pr.repo))
         .style(bold)
         .right_aligned();
 

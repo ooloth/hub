@@ -2,7 +2,7 @@
 source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
-╭ #102 · Add PrDetail screen ────────────────────────────────────── ooloth/hub ╮
+╭ #102 · Add PrDetail screen ──────────────────────────────────── @ooloth · 1d ╮
 │                                                                              │
 │## Summary                                                                    │
 │                                                                              │
@@ -20,5 +20,5 @@ expression: screen_text(&buf)
 │                                                                              │
 │                                                                              │
 │                                                                              │
-╰ 0 reviews · 2 comments ──────────────────────────────────────── @ooloth · 1d ╯
+╰ 0 reviews · 2 comments ────────────────────────────────────────── ooloth/hub ╯
   [↩] open · [i] investigate · [l] lazygit · [v] review · [m] merge · [Esc] bac

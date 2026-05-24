@@ -2,7 +2,7 @@
 source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
-╭ #102 · Add PrDetail screen ────────────────────────────────────────────────────────────────────────────── ooloth/hub ╮
+╭ #102 · Add PrDetail screen ──────────────────────────────────────────────────────────────────────────── @ooloth · 1d ╮
 │                                                                                                                      │
 │## Summary                                                                                                            │
 │                                                                                                                      │
@@ -30,5 +30,5 @@ expression: screen_text(&buf)
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-╰ 0 reviews · 2 comments ──────────────────────────────────────────────────────────────────────────────── @ooloth · 1d ╯
+╰ 0 reviews · 2 comments ────────────────────────────────────────────────────────────────────────────────── ooloth/hub ╯
  Squash and merge #102 into main?  [↩] confirm · [Esc] cancel

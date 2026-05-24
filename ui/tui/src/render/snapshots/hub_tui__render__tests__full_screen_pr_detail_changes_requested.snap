@@ -2,7 +2,7 @@
 source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
-╭ #99 · Fix typo in README ──────────────────────────────────────── ooloth/hub ╮
+╭ #99 · Fix typo in README ────────────────────────────────────── @ooloth · 5h ╮
 │                                                                              │
 │(no description)                                                              │
 │                                                                              │
@@ -10,5 +10,5 @@ expression: screen_text(&buf)
 │                                                                              │
 │                                                                              │
 │                                                                              │
-╰ Changes requested ───────────────────────────────────────────── @ooloth · 5h ╯
+╰ Changes requested ─────────────────────────────────────────────── ooloth/hub ╯
   [↩] open · [i] investigate · [l] lazygit · [v] review · [m] merge · [Esc] bac
