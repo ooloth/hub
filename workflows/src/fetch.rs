@@ -348,7 +348,25 @@ async fn clean_merged_worktrees(bare_dir: &str) -> Result<()> {
             continue;
         }
 
-        let remote_ref = format!("refs/remotes/origin/{branch}");
+        // PR worktrees use a local name like `pr-N` but track the real head
+        // branch (e.g. `origin/feat/my-pr`). Read branch.<branch>.merge to find
+        // the actual tracked branch rather than assuming it matches the local name.
+        let merge_out = Command::new("git")
+            .args(["-C", bare_dir, "config", &format!("branch.{branch}.merge")])
+            .output()
+            .await
+            .context("git config branch.merge check failed")?;
+        let tracking_branch = if merge_out.status.success() {
+            let raw = String::from_utf8_lossy(&merge_out.stdout);
+            raw.trim()
+                .strip_prefix("refs/heads/")
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| branch.clone())
+        } else {
+            branch.clone()
+        };
+
+        let remote_ref = format!("refs/remotes/origin/{tracking_branch}");
         let ref_gone = !Command::new("git")
             .args(["-C", bare_dir, "rev-parse", "--verify", &remote_ref])
             .output()
@@ -574,6 +592,107 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert_eq!(result[1].0, "/home/user/.hub/repos/hub/fix-ci-456");
         assert_eq!(result[1].1.as_deref(), Some("fix-ci-456"));
+    }
+
+    #[tokio::test]
+    async fn clean_merged_worktrees_preserves_pr_worktree_while_head_branch_alive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (origin, bare) = setup_origin_and_bare(tmp.path()).await;
+        let origin_str = origin.to_string_lossy().into_owned();
+        let bare_str = bare.to_string_lossy().into_owned();
+
+        // Create feat/my-pr on origin and fetch it into the bare repo.
+        run_git(&["-C", &origin_str, "checkout", "-b", "feat/my-pr"]).await;
+        run_git(&["-C", &origin_str, "commit", "--allow-empty", "-m", "pr"]).await;
+        run_git(&["-C", &bare_str, "fetch", "origin"]).await;
+
+        // Simulate the PR worktree setup: local branch pr-42 tracking origin/feat/my-pr.
+        run_git(&[
+            "-C",
+            &bare_str,
+            "branch",
+            "pr-42",
+            "refs/remotes/origin/feat/my-pr",
+        ])
+        .await;
+        let wt = bare.join("pr-42");
+        run_git(&[
+            "-C",
+            &bare_str,
+            "worktree",
+            "add",
+            &wt.to_string_lossy(),
+            "pr-42",
+        ])
+        .await;
+        run_git(&[
+            "-C",
+            &bare_str,
+            "branch",
+            "--set-upstream-to",
+            "origin/feat/my-pr",
+            "pr-42",
+        ])
+        .await;
+
+        clean_merged_worktrees(&bare_str).await.unwrap();
+
+        assert!(
+            wt.is_dir(),
+            "pr worktree must survive while head branch exists on origin"
+        );
+    }
+
+    #[tokio::test]
+    async fn clean_merged_worktrees_removes_pr_worktree_after_head_branch_deleted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (origin, bare) = setup_origin_and_bare(tmp.path()).await;
+        let origin_str = origin.to_string_lossy().into_owned();
+        let bare_str = bare.to_string_lossy().into_owned();
+
+        // Create feat/my-pr on origin, fetch, create PR worktree.
+        run_git(&["-C", &origin_str, "checkout", "-b", "feat/my-pr"]).await;
+        run_git(&["-C", &origin_str, "commit", "--allow-empty", "-m", "pr"]).await;
+        run_git(&["-C", &bare_str, "fetch", "origin"]).await;
+        run_git(&[
+            "-C",
+            &bare_str,
+            "branch",
+            "pr-42",
+            "refs/remotes/origin/feat/my-pr",
+        ])
+        .await;
+        let wt = bare.join("pr-42");
+        run_git(&[
+            "-C",
+            &bare_str,
+            "worktree",
+            "add",
+            &wt.to_string_lossy(),
+            "pr-42",
+        ])
+        .await;
+        run_git(&[
+            "-C",
+            &bare_str,
+            "branch",
+            "--set-upstream-to",
+            "origin/feat/my-pr",
+            "pr-42",
+        ])
+        .await;
+
+        // Merge the PR: delete the head branch on origin and fetch --prune.
+        run_git(&["-C", &origin_str, "checkout", "main"]).await;
+        run_git(&["-C", &origin_str, "branch", "-D", "feat/my-pr"]).await;
+        run_git(&["-C", &bare_str, "fetch", "--prune", "origin"]).await;
+
+        clean_merged_worktrees(&bare_str).await.unwrap();
+
+        assert!(
+            !wt.is_dir(),
+            "pr worktree must be removed after head branch is deleted"
+        );
     }
 
     #[test]
