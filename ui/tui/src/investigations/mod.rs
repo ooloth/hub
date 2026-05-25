@@ -33,7 +33,7 @@ pub(crate) enum WorktreeSpec {
     /// `project` is the directory name under `~/.hub/repos/`.
     Ephemeral { project: String },
     /// Use the process's current directory (MediaBlocked, last-resort fallback).
-    #[allow(dead_code)]
+    #[cfg(feature = "private")]
     CurrentDir,
 }
 
@@ -224,6 +224,7 @@ async fn resolve_worktree(
             );
             Ok((worktree, Some(cleanup)))
         }
+        #[cfg(feature = "private")]
         WorktreeSpec::CurrentDir => {
             let cwd = std::env::current_dir().context("Cannot determine working directory")?;
             Ok((cwd, None))

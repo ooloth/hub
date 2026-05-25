@@ -18,7 +18,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    Sync { slug: Option<String> },
+    Fetch,
     Status,
 }
 
