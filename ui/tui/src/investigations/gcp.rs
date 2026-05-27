@@ -23,10 +23,11 @@ pub(crate) fn config(
         prompt: format!(
             "Investigate GCP error in project {project} (env: {env}, gcp_project: {gcp_project}). \
 Title: {title}. Message: {message}. \
-Log lines (last {lookback}): {line}. \
+Log lines (last {lookback}): {{SUPPORTING_DATA_PATH}} — read with the Read tool. \
 Incident timestamp: {incident_at}. \
 Console URL (pre-filtered): {url}"
         ),
+        supporting_data: Some(line.to_string()),
         model: "opus".to_string(),
         allowed_tools: "Bash,Read".to_string(),
         env: vec![],
@@ -55,12 +56,13 @@ mod tests {
 
     #[test]
     fn gcp_investigation_prompt_contains_all_context() {
+        let line = r#"[{"message":"something broke","timestamp":"2024-01-15T10:30:00Z"}]"#;
         let cfg = config(
             "mapapp",
             "neuro",
             "errors",
             "something broke",
-            r#"[{"message":"something broke","timestamp":"2024-01-15T10:30:00Z"}]"#,
+            line,
             "https://console.cloud.google.com/logs/query",
             "1h",
             "mapapp-prod-abc123",
@@ -72,6 +74,8 @@ mod tests {
         assert!(cfg.prompt.contains("console.cloud.google.com"));
         assert!(cfg.prompt.contains("mapapp-prod-abc123"));
         assert!(cfg.prompt.contains("2024-01-15T10:30:00Z"));
+        assert!(cfg.prompt.contains("{SUPPORTING_DATA_PATH}"));
+        assert_eq!(cfg.supporting_data.as_deref(), Some(line));
     }
 
     #[test]

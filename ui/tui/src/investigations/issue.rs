@@ -6,6 +6,7 @@ pub(crate) fn config(repo: &str, number: u64) -> LaunchConfig {
     LaunchConfig {
         system_prompt: PROMPT.to_string(),
         prompt: format!("Investigate GitHub issue #{number} in repo {repo}"),
+        supporting_data: None,
         model: "opus".to_string(),
         allowed_tools: "Bash,Read".to_string(),
         env: vec![],

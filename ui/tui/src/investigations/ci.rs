@@ -6,6 +6,7 @@ pub(crate) fn config(repo: &str, run_url: &str) -> LaunchConfig {
     LaunchConfig {
         system_prompt: PROMPT.to_string(),
         prompt: format!("Investigate the CI failure for repo {repo}. Run URL: {run_url}"),
+        supporting_data: None,
         model: "opus".to_string(),
         allowed_tools: "Bash".to_string(),
         env: vec![],

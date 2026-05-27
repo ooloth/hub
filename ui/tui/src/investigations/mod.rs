@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(crate) mod ci;
 pub(crate) mod gcp;
@@ -14,6 +15,11 @@ pub(crate) mod media;
 pub(crate) struct LaunchConfig {
     pub(crate) system_prompt: String,
     pub(crate) prompt: String,
+    /// Large supplemental data the agent should read. Written to a temp file
+    /// before launch to avoid hitting OS argument-size limits that would occur
+    /// if the data were inlined directly in `prompt`. The temp file path
+    /// replaces `{SUPPORTING_DATA_PATH}` in `prompt`.
+    pub(crate) supporting_data: Option<String>,
     pub(crate) model: String,
     pub(crate) allowed_tools: String,
     pub(crate) env: Vec<(String, String)>,
@@ -49,7 +55,21 @@ pub(crate) async fn launch(
 
     let (cwd, cleanup) = resolve_worktree(spec, hub_config, github_token).await?;
 
-    let task_arg = if config.prompt.is_empty() {
+    let prompt = match config.supporting_data {
+        Some(ref data) => {
+            let nanos = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            let path = format!("/tmp/hub-supporting-data-{nanos}.json");
+            std::fs::write(&path, data)
+                .with_context(|| format!("failed to write supporting data to {path}"))?;
+            config.prompt.replace("{SUPPORTING_DATA_PATH}", &path)
+        }
+        None => config.prompt,
+    };
+
+    let task_arg = if prompt.is_empty() {
         String::new()
     } else {
         " \"$HUB_TASK_PROMPT\"".to_string()
@@ -73,8 +93,7 @@ pub(crate) async fn launch(
         .arg(&cwd);
     cmd.arg("-e")
         .arg(format!("HUB_SYSTEM_PROMPT={}", config.system_prompt));
-    cmd.arg("-e")
-        .arg(format!("HUB_TASK_PROMPT={}", config.prompt));
+    cmd.arg("-e").arg(format!("HUB_TASK_PROMPT={prompt}"));
     cmd.arg("-e").arg("GIT_TERMINAL_PROMPT=0");
     cmd.arg("-e").arg(format!(
         "GIT_CONFIG_PARAMETERS='url.https://x-access-token:{github_token}@github.com/.insteadOf=https://github.com/'"

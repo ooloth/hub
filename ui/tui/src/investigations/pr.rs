@@ -6,6 +6,7 @@ pub(crate) fn bare_config(number: u64, repo: &str, ownership: PrOwnership) -> La
     LaunchConfig {
         system_prompt: system_prompt(number, repo, ownership, None),
         prompt: String::new(),
+        supporting_data: None,
         model: "opus".to_string(),
         allowed_tools: "Bash,Read,Edit,Write,Glob,Grep".to_string(),
         env: vec![],
@@ -21,6 +22,7 @@ pub(crate) fn review_config(
     LaunchConfig {
         system_prompt: system_prompt(number, repo, ownership, Some(skill)),
         prompt: format!("{} PR #{number} ({repo})", skill.slash_command()),
+        supporting_data: None,
         model: "opus".to_string(),
         allowed_tools: "Bash,Read,Edit,Write,Glob,Grep".to_string(),
         env: vec![],
