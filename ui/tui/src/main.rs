@@ -446,14 +446,19 @@ async fn run_loop(
                 }
                 #[cfg(feature = "private")]
                 Effect::LaunchMediaBlocked { title, error } => {
-                    if let Err(err) = investigations::launch(
-                        investigations::media::config(&title, &error),
-                        investigations::WorktreeSpec::CurrentDir,
-                        config,
-                        &config.github_token,
-                    )
-                    .await
-                    {
+                    let result = match investigations::media::config(&title, &error) {
+                        Ok(cfg) => {
+                            investigations::launch(
+                                cfg,
+                                investigations::WorktreeSpec::CurrentDir,
+                                config,
+                                &config.github_token,
+                            )
+                            .await
+                        }
+                        Err(e) => Err(e),
+                    };
+                    if let Err(err) = result {
                         app.ui.flash = Some(err.to_string());
                     }
                 }
