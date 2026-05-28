@@ -62,9 +62,11 @@ if [[ "$DEVICE" == "home-laptop" ]]; then
        "$HUB_ROOT/ui/tui/src/investigations/media.rs"
 else
   stub "$HUB_ROOT/ui/tui/src/investigations/media.rs" \
-    'use super::LaunchConfig;
+    'use anyhow::Result;
 
-pub(crate) fn config(_title: &str, _error: &str) -> LaunchConfig {
+use super::LaunchConfig;
+
+pub(crate) fn config(_title: &str, _error: &str) -> Result<LaunchConfig> {
     unreachable!("media investigation not available on this device")
 }'
 fi
