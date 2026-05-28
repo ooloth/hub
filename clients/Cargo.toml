@@ -19,3 +19,4 @@
 
 [dev-dependencies]
   rstest = "0.25"
+  wiremock = "0.6"
