@@ -46,12 +46,14 @@ pub enum WorkflowConfig {
         title: String,
         query: String,
         lookback: Option<String>,
+        message_field: Option<String>,
     },
     #[serde(rename = "loki-logs")]
     LokiLogs {
         title: String,
         query: String,
         lookback: Option<String>,
+        message_field: Option<String>,
     },
 }
 
@@ -190,6 +192,7 @@ mod tests {
                 title: "app errors".into(),
                 query: "{app=\"myapp\"} | logfmt | level=\"error\"".into(),
                 lookback: None,
+                message_field: None,
             }]
         );
     }
@@ -220,6 +223,7 @@ mod tests {
                 title: "worker panics".into(),
                 query: r#"{app="myapp",component="worker"} |= "panic""#.into(),
                 lookback: Some("30m".into()),
+                message_field: None,
             }]
         );
     }
@@ -251,6 +255,7 @@ mod tests {
                 title: "errors".into(),
                 query: "resource.type=\"cloud_run_revision\" AND severity>=ERROR".into(),
                 lookback: None,
+                message_field: None,
             }]
         );
     }
@@ -282,6 +287,7 @@ mod tests {
                 title: "errors".into(),
                 query: "resource.type=\"cloud_run_revision\" AND severity>=ERROR".into(),
                 lookback: Some("30m".into()),
+                message_field: None,
             }]
         );
     }

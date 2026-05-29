@@ -33,6 +33,7 @@ HubToml {
                             lookback: Some(
                                 "1h",
                             ),
+                            message_field: None,
                         },
                     ],
                 },
@@ -51,6 +52,7 @@ HubToml {
                             title: "errors",
                             query: "resource.type=\"cloud_run_revision\" AND severity>=ERROR",
                             lookback: None,
+                            message_field: None,
                         },
                         GcpLogs {
                             title: "errors (external)",
@@ -58,6 +60,7 @@ HubToml {
                             lookback: Some(
                                 "30m",
                             ),
+                            message_field: None,
                         },
                     ],
                 },

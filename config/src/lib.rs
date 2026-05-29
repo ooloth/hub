@@ -99,12 +99,16 @@ impl Config {
                                 title,
                                 query,
                                 lookback,
+                                message_field,
                             } = w
                             {
                                 Some(domain::LokiQuery {
                                     title: title.clone(),
                                     query: query.clone(),
                                     lookback: lookback.clone().unwrap_or_else(|| "1h".into()),
+                                    message_field: message_field
+                                        .clone()
+                                        .unwrap_or_else(|| "message".into()),
                                 })
                             } else {
                                 None
@@ -143,12 +147,16 @@ impl Config {
                                 title,
                                 query,
                                 lookback,
+                                message_field,
                             } = w
                             {
                                 Some(domain::GcpQuery {
                                     title: title.clone(),
                                     query: query.clone(),
                                     lookback: lookback.clone().unwrap_or_else(|| "1h".into()),
+                                    message_field: message_field
+                                        .clone()
+                                        .unwrap_or_else(|| "message".into()),
                                 })
                             } else {
                                 None
@@ -423,6 +431,7 @@ mod tests {
                     title: "errors".into(),
                     query: "{app=\"myapp\"}".into(),
                     lookback: Some("30m".into()),
+                    message_field: None,
                 }],
             )],
         )]);
@@ -446,6 +455,7 @@ mod tests {
                     title: "errors".into(),
                     query: "{app=\"myapp\"}".into(),
                     lookback: None,
+                    message_field: None,
                 }],
             )],
         )]);
@@ -461,6 +471,7 @@ mod tests {
                 title: "errors".into(),
                 query: "{app=\"myapp\"}".into(),
                 lookback: None,
+                message_field: None,
             }])],
         )]);
         assert!(cfg.loki_envs().is_empty());
@@ -490,6 +501,7 @@ mod tests {
                     title: "errors".into(),
                     query: "severity>=ERROR".into(),
                     lookback: Some("30m".into()),
+                    message_field: None,
                 }],
             )],
         )]);
@@ -514,6 +526,7 @@ mod tests {
                     title: "errors".into(),
                     query: "severity>=ERROR".into(),
                     lookback: None,
+                    message_field: None,
                 }],
             )],
         )]);
@@ -532,6 +545,7 @@ mod tests {
                     title: "errors".into(),
                     query: "severity>=ERROR".into(),
                     lookback: None,
+                    message_field: None,
                 }],
             )],
         )]);
@@ -547,6 +561,7 @@ mod tests {
                 title: "errors".into(),
                 query: "severity>=ERROR".into(),
                 lookback: None,
+                message_field: None,
             }])],
         )]);
         assert!(cfg.gcp_envs().is_empty());
@@ -575,11 +590,13 @@ mod tests {
                         title: "errors".into(),
                         query: "severity>=ERROR".into(),
                         lookback: None,
+                        message_field: None,
                     },
                     toml::WorkflowConfig::GcpLogs {
                         title: "errors (external)".into(),
                         query: "severity>=ERROR AND labels.user_type=\"external\"".into(),
                         lookback: Some("30m".into()),
+                        message_field: None,
                     },
                 ],
             )],

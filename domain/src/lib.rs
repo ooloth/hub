@@ -215,6 +215,9 @@ pub struct LokiQuery {
     pub title: String,
     pub query: String,
     pub lookback: String,
+    /// Stream label key used to extract a human-readable message from each entry.
+    /// Falls back to the raw log line when absent. Defaults to `"message"`.
+    pub message_field: String,
 }
 
 /// A GitHub repository configured for the github-prs workflow, with the PR authors to exclude.
@@ -260,6 +263,9 @@ pub struct GcpQuery {
     /// Raw GCP Logging filter string, fully user-controlled.
     pub query: String,
     pub lookback: String,
+    /// JSON payload key used to extract a human-readable message from each entry.
+    /// Falls back to text_payload first line, then the raw log line. Defaults to `"message"`.
+    pub message_field: String,
 }
 
 /// All GCP Cloud Logging queries configured for one deployment environment.
