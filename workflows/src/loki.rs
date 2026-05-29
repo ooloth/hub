@@ -17,11 +17,7 @@ pub async fn run(env: &LokiEnv) -> Result<Vec<LokiEntry>> {
         let url = grafana_explore_url(env.grafana_url.as_deref(), &query.query, &query.lookback);
 
         for entry in &entries {
-            let message = entry
-                .labels
-                .get("message")
-                .cloned()
-                .unwrap_or_else(|| "unknown error".to_string());
+            let message = message_for_entry(entry);
 
             results.push(LokiEntry {
                 title: query.title.clone(),
@@ -38,6 +34,14 @@ pub async fn run(env: &LokiEnv) -> Result<Vec<LokiEntry>> {
     }
 
     Ok(results)
+}
+
+fn message_for_entry(entry: &clients::loki::LogEntry) -> String {
+    entry
+        .labels
+        .get("message")
+        .cloned()
+        .unwrap_or_else(|| "unknown error".to_string())
 }
 
 fn grafana_explore_url(grafana_url: Option<&str>, query: &str, lookback: &str) -> String {
@@ -76,6 +80,30 @@ fn age_from_entry(entry: &clients::loki::LogEntry) -> chrono::Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+
+    fn make_entry(labels: &[(&str, &str)]) -> clients::loki::LogEntry {
+        clients::loki::LogEntry {
+            timestamp_ns: 0,
+            line: String::new(),
+            labels: labels
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect::<HashMap<_, _>>(),
+        }
+    }
+
+    #[test]
+    fn message_returns_message_label_when_present() {
+        let entry = make_entry(&[("message", "something broke"), ("app", "myapp")]);
+        assert_eq!(message_for_entry(&entry), "something broke");
+    }
+
+    #[test]
+    fn message_falls_back_to_unknown_error_when_label_absent() {
+        let entry = make_entry(&[("app", "myapp")]);
+        assert_eq!(message_for_entry(&entry), "unknown error");
+    }
 
     #[test]
     fn grafana_url_none_when_no_grafana_base() {
