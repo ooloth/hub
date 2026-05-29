@@ -37,11 +37,24 @@ pub async fn run(env: &LokiEnv) -> Result<Vec<LokiEntry>> {
 }
 
 fn message_for_entry(entry: &clients::loki::LogEntry, message_field: &str) -> String {
-    entry
-        .labels
-        .get(message_field)
-        .cloned()
-        .unwrap_or_else(|| entry.line.clone())
+    // 1. Stream label — works when message_field is a Loki selector label
+    if let Some(msg) = entry.labels.get(message_field) {
+        return msg.clone();
+    }
+    // 2. JSON log line — parses the line as JSON and extracts message_field
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&entry.line) {
+        if let Some(msg) = json.get(message_field).and_then(|v| v.as_str()) {
+            return msg.to_string();
+        }
+    }
+    // 3. Structlog console format — extracts text after the "[level] " bracket
+    if let Some(pos) = entry.line.find("] ") {
+        let after = entry.line[pos + 2..].trim_start();
+        if !after.is_empty() {
+            return after.to_string();
+        }
+    }
+    entry.line.clone()
 }
 
 fn grafana_explore_url(grafana_url: Option<&str>, query: &str, lookback: &str) -> String {
@@ -114,6 +127,36 @@ mod tests {
     fn message_uses_custom_field_name() {
         let entry = make_entry(&[("msg", "custom field value"), ("app", "myapp")]);
         assert_eq!(message_for_entry(&entry, "msg"), "custom field value");
+    }
+
+    #[test]
+    fn message_extracts_field_from_json_line() {
+        let entry = make_entry_with_line(
+            &[("app", "myapp")],
+            r#"{"message":"connection refused","level":"error","status":500}"#,
+        );
+        assert_eq!(message_for_entry(&entry, "message"), "connection refused");
+    }
+
+    #[test]
+    fn message_respects_message_field_when_parsing_json_line() {
+        let entry = make_entry_with_line(
+            &[("app", "myapp")],
+            r#"{"event":"connection refused","level":"error"}"#,
+        );
+        assert_eq!(message_for_entry(&entry, "event"), "connection refused");
+    }
+
+    #[test]
+    fn message_extracts_text_after_level_bracket_in_structlog_console_format() {
+        let entry = make_entry_with_line(
+            &[("app", "myapp")],
+            r#"pod_name="mypod" 2026-05-29 13:25:21 [warning  ] Error: connection refused   url="https://example.com""#,
+        );
+        assert_eq!(
+            message_for_entry(&entry, "message"),
+            r#"Error: connection refused   url="https://example.com""#
+        );
     }
 
     #[test]
