@@ -17,7 +17,7 @@ pub async fn run(env: &LokiEnv) -> Result<Vec<LokiEntry>> {
         let url = grafana_explore_url(env.grafana_url.as_deref(), &query.query, &query.lookback);
 
         for entry in &entries {
-            let message = message_for_entry(entry);
+            let message = message_for_entry(entry, &query.message_field);
 
             results.push(LokiEntry {
                 title: query.title.clone(),
@@ -36,12 +36,12 @@ pub async fn run(env: &LokiEnv) -> Result<Vec<LokiEntry>> {
     Ok(results)
 }
 
-fn message_for_entry(entry: &clients::loki::LogEntry) -> String {
+fn message_for_entry(entry: &clients::loki::LogEntry, message_field: &str) -> String {
     entry
         .labels
-        .get("message")
+        .get(message_field)
         .cloned()
-        .unwrap_or_else(|| "unknown error".to_string())
+        .unwrap_or_else(|| entry.line.clone())
 }
 
 fn grafana_explore_url(grafana_url: Option<&str>, query: &str, lookback: &str) -> String {
@@ -93,16 +93,33 @@ mod tests {
         }
     }
 
-    #[test]
-    fn message_returns_message_label_when_present() {
-        let entry = make_entry(&[("message", "something broke"), ("app", "myapp")]);
-        assert_eq!(message_for_entry(&entry), "something broke");
+    fn make_entry_with_line(labels: &[(&str, &str)], line: &str) -> clients::loki::LogEntry {
+        clients::loki::LogEntry {
+            timestamp_ns: 0,
+            line: line.to_string(),
+            labels: labels
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect::<HashMap<_, _>>(),
+        }
     }
 
     #[test]
-    fn message_falls_back_to_unknown_error_when_label_absent() {
-        let entry = make_entry(&[("app", "myapp")]);
-        assert_eq!(message_for_entry(&entry), "unknown error");
+    fn message_returns_configured_label_when_present() {
+        let entry = make_entry(&[("message", "something broke"), ("app", "myapp")]);
+        assert_eq!(message_for_entry(&entry, "message"), "something broke");
+    }
+
+    #[test]
+    fn message_uses_custom_field_name() {
+        let entry = make_entry(&[("msg", "custom field value"), ("app", "myapp")]);
+        assert_eq!(message_for_entry(&entry, "msg"), "custom field value");
+    }
+
+    #[test]
+    fn message_falls_back_to_raw_line_when_label_absent() {
+        let entry = make_entry_with_line(&[("app", "myapp")], "raw log line content");
+        assert_eq!(message_for_entry(&entry, "message"), "raw log line content");
     }
 
     #[test]

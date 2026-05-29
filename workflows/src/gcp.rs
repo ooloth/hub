@@ -17,7 +17,7 @@ pub async fn run(env: &GcpEnv) -> Result<Vec<GcpEntry>> {
         );
 
         for entry in &entries {
-            let message = message_for_entry(entry);
+            let message = message_for_entry(entry, &query.message_field);
 
             results.push(GcpEntry {
                 title: query.title.clone(),
@@ -37,9 +37,9 @@ pub async fn run(env: &GcpEnv) -> Result<Vec<GcpEntry>> {
     Ok(results)
 }
 
-fn message_for_entry(entry: &clients::gcp::LogEntry) -> String {
+fn message_for_entry(entry: &clients::gcp::LogEntry, message_field: &str) -> String {
     if let Some(payload) = &entry.json_payload {
-        if let Some(msg) = payload.get("message").and_then(|v| v.as_str()) {
+        if let Some(msg) = payload.get(message_field).and_then(|v| v.as_str()) {
             return msg.to_string();
         }
     }
@@ -47,7 +47,7 @@ fn message_for_entry(entry: &clients::gcp::LogEntry) -> String {
         let first_line = text.lines().next().unwrap_or(text);
         return first_line.to_string();
     }
-    "unknown error".to_string()
+    entry.raw.clone()
 }
 
 fn console_url(
@@ -130,30 +130,52 @@ mod tests {
         }
     }
 
+    fn make_entry_with_raw(
+        json_payload: Option<serde_json::Value>,
+        text_payload: Option<&str>,
+        raw: &str,
+    ) -> clients::gcp::LogEntry {
+        clients::gcp::LogEntry {
+            timestamp: Utc::now(),
+            severity: None,
+            text_payload: text_payload.map(|s| s.to_string()),
+            json_payload,
+            resource_labels: HashMap::new(),
+            raw: raw.to_string(),
+        }
+    }
+
     #[test]
-    fn message_prefers_json_payload_message() {
+    fn message_prefers_json_payload_field() {
         let payload = serde_json::json!({"message": "something broke", "code": 500});
         let entry = make_entry(Some(payload), Some("text fallback"));
-        assert_eq!(message_for_entry(&entry), "something broke");
+        assert_eq!(message_for_entry(&entry, "message"), "something broke");
+    }
+
+    #[test]
+    fn message_uses_custom_field_name() {
+        let payload = serde_json::json!({"msg": "custom field value", "code": 500});
+        let entry = make_entry(Some(payload), None);
+        assert_eq!(message_for_entry(&entry, "msg"), "custom field value");
     }
 
     #[test]
     fn message_falls_back_to_text_payload_first_line() {
         let entry = make_entry(None, Some("line one\nline two"));
-        assert_eq!(message_for_entry(&entry), "line one");
+        assert_eq!(message_for_entry(&entry, "message"), "line one");
     }
 
     #[test]
-    fn message_falls_back_to_unknown_error() {
-        let entry = make_entry(None, None);
-        assert_eq!(message_for_entry(&entry), "unknown error");
+    fn message_falls_back_to_raw_when_no_payload() {
+        let entry = make_entry_with_raw(None, None, "raw log line content");
+        assert_eq!(message_for_entry(&entry, "message"), "raw log line content");
     }
 
     #[test]
-    fn message_json_payload_without_message_key_falls_back_to_text() {
+    fn message_json_payload_without_configured_key_falls_back_to_text() {
         let payload = serde_json::json!({"code": 500});
         let entry = make_entry(Some(payload), Some("text fallback"));
-        assert_eq!(message_for_entry(&entry), "text fallback");
+        assert_eq!(message_for_entry(&entry, "message"), "text fallback");
     }
 
     #[test]
