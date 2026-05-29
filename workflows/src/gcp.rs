@@ -47,6 +47,13 @@ fn message_for_entry(entry: &clients::gcp::LogEntry, message_field: &str) -> Str
         let first_line = text.lines().next().unwrap_or(text);
         return first_line.to_string();
     }
+    if let Some(req) = &entry.http_request {
+        let status = req.get("status").and_then(|v| v.as_u64());
+        let url = req.get("requestUrl").and_then(|v| v.as_str());
+        if let (Some(s), Some(u)) = (status, url) {
+            return format!("HTTP {s} {u}");
+        }
+    }
     entry.raw.clone()
 }
 
@@ -125,6 +132,7 @@ mod tests {
             severity: None,
             text_payload: text_payload.map(|s| s.to_string()),
             json_payload,
+            http_request: None,
             resource_labels: HashMap::new(),
             raw: String::new(),
         }
@@ -140,8 +148,21 @@ mod tests {
             severity: None,
             text_payload: text_payload.map(|s| s.to_string()),
             json_payload,
+            http_request: None,
             resource_labels: HashMap::new(),
             raw: raw.to_string(),
+        }
+    }
+
+    fn make_entry_with_http_request(status: u64, url: &str) -> clients::gcp::LogEntry {
+        clients::gcp::LogEntry {
+            timestamp: Utc::now(),
+            severity: None,
+            text_payload: None,
+            json_payload: None,
+            http_request: Some(serde_json::json!({"status": status, "requestUrl": url})),
+            resource_labels: HashMap::new(),
+            raw: String::new(),
         }
     }
 
@@ -169,6 +190,15 @@ mod tests {
     fn message_falls_back_to_raw_when_no_payload() {
         let entry = make_entry_with_raw(None, None, "raw log line content");
         assert_eq!(message_for_entry(&entry, "message"), "raw log line content");
+    }
+
+    #[test]
+    fn message_falls_back_to_http_request_status_and_url() {
+        let entry = make_entry_with_http_request(503, "https://example.com/ingest");
+        assert_eq!(
+            message_for_entry(&entry, "message"),
+            "HTTP 503 https://example.com/ingest"
+        );
     }
 
     #[test]

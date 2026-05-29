@@ -7,6 +7,7 @@ pub struct LogEntry {
     pub severity: Option<String>,
     pub text_payload: Option<String>,
     pub json_payload: Option<serde_json::Value>,
+    pub http_request: Option<serde_json::Value>,
     pub resource_labels: HashMap<String, String>,
     pub raw: String,
 }
@@ -67,6 +68,8 @@ fn parse_entries(json: &str) -> Result<Vec<LogEntry>> {
 
             let json_payload = v.get("jsonPayload").cloned();
 
+            let http_request = v.get("httpRequest").cloned();
+
             let resource_labels = v
                 .get("resource")
                 .and_then(|r| r.get("labels"))
@@ -83,6 +86,7 @@ fn parse_entries(json: &str) -> Result<Vec<LogEntry>> {
                 severity,
                 text_payload,
                 json_payload,
+                http_request,
                 resource_labels,
                 raw,
             }
@@ -192,6 +196,28 @@ mod tests {
         assert_eq!(entries.len(), 1);
         let raw: serde_json::Value = serde_json::from_str(&entries[0].raw).unwrap();
         assert_eq!(raw.get("severity").and_then(|v| v.as_str()), Some("ERROR"));
+    }
+
+    #[test]
+    fn parse_entries_http_request_entry() {
+        let json = r#"[{
+            "timestamp": "2024-01-15T10:30:00Z",
+            "severity": "ERROR",
+            "httpRequest": {"status": 503, "requestUrl": "https://example.com/ingest", "latency": "54s"}
+        }]"#;
+        let entries = parse_entries(json).unwrap();
+        assert_eq!(entries.len(), 1);
+        let e = &entries[0];
+        assert!(e.json_payload.is_none());
+        assert!(e.text_payload.is_none());
+        assert_eq!(
+            e.http_request
+                .as_ref()
+                .unwrap()
+                .get("status")
+                .and_then(|v| v.as_u64()),
+            Some(503)
+        );
     }
 
     #[test]
