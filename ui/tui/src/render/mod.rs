@@ -1,4 +1,4 @@
-mod pr_card;
+pub(crate) mod pr_card;
 mod pr_split_detail;
 
 use chrono::Utc;
@@ -951,26 +951,55 @@ fn render_dismiss_modal(frame: &mut ratatui::Frame, input: &tui_input::Input, ar
     ));
 }
 
+fn pr_split_title(query: Option<&str>, query_input: Option<&str>) -> String {
+    match query_input.or(query).filter(|s| !s.is_empty()) {
+        None => " PRs ".to_string(),
+        Some(q) => format!(" PRs · \"{q}\" "),
+    }
+}
+
+fn pr_split_chrome(query: Option<&str>, query_input: Option<&str>) -> Style {
+    if query_input.is_some() {
+        Style::default().fg(Color::Yellow)
+    } else if query.is_some() {
+        Style::default().fg(FOCUS_COLOR)
+    } else {
+        dim()
+    }
+}
+
 fn render_pr_split(
     frame: &mut ratatui::Frame,
     items: &[domain::PullRequest],
     selected: usize,
+    query: Option<&str>,
+    query_input: Option<&str>,
     area: Rect,
 ) {
+    let title_text = pr_split_title(query, query_input);
+    let chrome = pr_split_chrome(query, query_input);
+    let title = Span::styled(
+        title_text,
+        chrome
+            .add_modifier(Modifier::BOLD)
+            .remove_modifier(Modifier::DIM),
+    );
+
     if items.is_empty() {
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .title(" PRs · 0 · split (v1) ");
-        let paragraph = Paragraph::new("No PRs available.").block(block);
+            .border_style(chrome)
+            .title(title);
+        let paragraph = Paragraph::new("No PRs.").block(block);
         frame.render_widget(paragraph, area);
         return;
     }
 
-    let title = format!(" PRs · {} · split (v1) ", items.len());
     let outer_block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
+        .border_style(chrome)
         .title(title);
     let inner = outer_block.inner(area);
     frame.render_widget(outer_block, area);
@@ -1152,9 +1181,19 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
             render_dismiss_modal(frame, input, frame.area());
         }
         Screen::PrSplit {
-            items, selected, ..
+            items,
+            selected,
+            query,
+            ..
         } => {
-            render_pr_split(frame, items, *selected, content_area);
+            render_pr_split(
+                frame,
+                items,
+                *selected,
+                query.as_deref(),
+                app.ui.query_input.as_deref(),
+                content_area,
+            );
         }
     }
 
@@ -2375,8 +2414,10 @@ mod tests {
                         filter: Filter::default(),
                         expanded_groups: HashSet::new(),
                     },
+                    all_items: items.clone(),
                     items,
                     selected,
+                    query: None,
                 },
                 ..UiState::default()
             },

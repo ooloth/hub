@@ -136,6 +136,7 @@ fn pr_split_keys(key: KeyEvent) -> Option<Action> {
         (KeyCode::Char('G'), _) => Some(Action::MoveToBottom),
         (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Action::MovePageUp),
         (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(Action::MovePageDown),
+        (KeyCode::Char('/'), _) => Some(Action::StartQuery),
         (KeyCode::Char('i'), _) => Some(Action::AskAboutPr),
         (KeyCode::Char('o'), _) => Some(Action::OpenInOcto),
         (KeyCode::Char('l'), _) => Some(Action::OpenInLazygit),
@@ -817,8 +818,10 @@ mod tests {
             ui: UiState {
                 screen: Screen::PrSplit {
                     parent,
+                    all_items: vec![],
                     items: vec![],
                     selected: 0,
+                    query: None,
                 },
                 ..UiState::default()
             },
@@ -840,12 +843,12 @@ mod tests {
     #[case(ch('l'), Some(Action::OpenInLazygit))]
     #[case(ch('v'), Some(Action::OpenReviewPicker))]
     #[case(ch('m'), Some(Action::MergePr))]
+    #[case(ch('/'), Some(Action::StartQuery))]
     // Enter is reserved for v2 (ooloth/hub#240).
     #[case(k(KeyCode::Enter), None)]
     #[case(ch('h'), None)]
     #[case(ch('p'), None)]
     #[case(ch('P'), None)]
-    #[case(ch('/'), None)]
     #[case(ch('x'), None)]
     fn pr_split_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
         assert_eq!(key_to_action(&pr_split_app(), key), expected);

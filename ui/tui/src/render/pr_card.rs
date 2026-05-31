@@ -63,10 +63,28 @@ fn review_info(pr: &PullRequest) -> (String, Style) {
     } else {
         let text = match pr.review_decision {
             Some(ReviewDecision::ChangesRequested) => "changes requested".to_string(),
-            _ => "no reviews".to_string(),
+            _ => "0 reviews".to_string(),
         };
         (text, dim())
     }
+}
+
+/// All text visible in a PR card, for use as filter match text.
+///
+/// Calls `pr_card_lines` at a very wide width (no wrapping) and joins
+/// every span from every line with a space. Any change to the card
+/// layout automatically updates what is searchable.
+pub(crate) fn pr_card_text(pr: &PullRequest) -> String {
+    pr_card_lines(pr, usize::MAX)
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|s| s.content.as_ref())
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// The most informative single-word status for a PR.
@@ -84,7 +102,7 @@ pub(super) fn pr_status_text(pr: &PullRequest) -> String {
             n => format!("{n} approvals"),
         },
         Some(ReviewDecision::ChangesRequested) => "changes requested".to_string(),
-        None => "no reviews".to_string(),
+        None => "0 reviews".to_string(),
     }
 }
 
@@ -128,7 +146,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::no_reviews(None, 0, None, "no reviews")]
+    #[case::no_reviews(None, 0, None, "0 reviews")]
     #[case::changes_requested(Some(ReviewDecision::ChangesRequested), 0, None, "changes requested")]
     #[case::one_approval(Some(ReviewDecision::Approved), 1, None, "1 approval")]
     #[case::three_approvals(Some(ReviewDecision::Approved), 3, None, "3 approvals")]
@@ -177,7 +195,7 @@ mod tests {
         );
         assert!(meta.contains("ooloth/hub · #159"), "got: {meta:?}");
         assert!(meta.contains("@ooloth"), "got: {meta:?}");
-        assert!(meta.contains("no reviews"), "got: {meta:?}");
+        assert!(meta.contains("0 reviews"), "got: {meta:?}");
     }
 
     #[test]
@@ -224,7 +242,7 @@ mod tests {
         let meta = line_text(lines.last().unwrap());
         assert!(meta.contains("ooloth/hub"), "meta missing repo: {meta:?}");
         assert!(
-            meta.contains("no reviews"),
+            meta.contains("0 reviews"),
             "meta missing review info: {meta:?}"
         );
     }
@@ -250,6 +268,6 @@ mod tests {
     #[test]
     fn review_info_shows_no_reviews_by_default() {
         let (text, _) = review_info(&pr());
-        assert_eq!(text, "no reviews");
+        assert_eq!(text, "0 reviews");
     }
 }

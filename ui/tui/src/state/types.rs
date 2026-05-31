@@ -81,8 +81,10 @@ pub(crate) enum Screen {
     },
     PrSplit {
         parent: ListSnapshot,
+        all_items: Vec<PullRequest>,
         items: Vec<PullRequest>,
         selected: usize,
+        query: Option<String>,
     },
     ReviewingPr {
         parent: ListSnapshot,
@@ -113,8 +115,10 @@ pub(crate) enum PrPrevScreen {
     /// behaviour before this enum was introduced).
     PrDetail,
     PrSplit {
+        all_items: Vec<PullRequest>,
         items: Vec<PullRequest>,
         selected: usize,
+        query: Option<String>,
     },
 }
 

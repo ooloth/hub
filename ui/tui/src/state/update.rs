@@ -105,8 +105,10 @@ impl App {
                     .collect();
                 self.ui.screen = Screen::PrSplit {
                     parent: snapshot,
+                    all_items: prs.clone(),
                     items: prs,
                     selected: 0,
+                    query: None,
                 };
                 vec![]
             }
@@ -134,6 +136,7 @@ impl App {
                 // rather than forcing them to retype. Esc still clears everything.
                 let existing = match &self.ui.screen {
                     Screen::UnifiedList { filter, .. } => filter.query.clone().unwrap_or_default(),
+                    Screen::PrSplit { query, .. } => query.clone().unwrap_or_default(),
                     _ => String::new(),
                 };
                 self.ui.query_input = Some(existing);
@@ -154,19 +157,35 @@ impl App {
                 vec![]
             }
             Action::CommitQuery => {
-                self.ui.query_input = None;
+                let committed = self.ui.query_input.take().filter(|q| !q.is_empty());
+                if let Screen::PrSplit { query, .. } = &mut self.ui.screen {
+                    *query = committed;
+                }
                 vec![]
             }
             Action::CancelQuery => {
                 self.ui.query_input = None;
-                let cat = match &self.ui.screen {
-                    Screen::UnifiedList { filter, .. } => filter.category,
-                    _ => return vec![],
-                };
-                self.rebuild_unified(Filter {
-                    category: cat,
-                    query: None,
-                });
+                match &mut self.ui.screen {
+                    Screen::PrSplit {
+                        all_items,
+                        items,
+                        selected,
+                        query,
+                        ..
+                    } => {
+                        *items = all_items.clone();
+                        *selected = 0;
+                        *query = None;
+                    }
+                    Screen::UnifiedList { filter, .. } => {
+                        let cat = filter.category;
+                        self.rebuild_unified(Filter {
+                            category: cat,
+                            query: None,
+                        });
+                    }
+                    _ => {}
+                }
                 vec![]
             }
             Action::PendingG => {
@@ -228,14 +247,25 @@ impl App {
 
     fn sync_query_to_filter(&mut self) {
         let query_text = self.ui.query_input.clone().filter(|q| !q.is_empty());
-        let cat = match &self.ui.screen {
-            Screen::UnifiedList { filter, .. } => filter.category,
-            _ => return,
-        };
-        self.rebuild_unified(Filter {
-            category: cat,
-            query: query_text,
-        });
+        match &mut self.ui.screen {
+            Screen::UnifiedList { filter, .. } => {
+                let cat = filter.category;
+                self.rebuild_unified(Filter {
+                    category: cat,
+                    query: query_text,
+                });
+            }
+            Screen::PrSplit {
+                all_items,
+                items,
+                selected,
+                ..
+            } => {
+                *items = filter_prs(all_items, query_text.as_deref());
+                *selected = 0;
+            }
+            _ => {}
+        }
     }
 
     fn handle_unified_list(&mut self, action: Action) -> Vec<Effect> {
@@ -640,8 +670,10 @@ impl App {
     fn open_pr_action_picker(&mut self, kind: PrAction) -> Vec<Effect> {
         let Screen::PrSplit {
             items,
+            all_items,
             selected,
             parent,
+            query,
         } = std::mem::take(&mut self.ui.screen)
         else {
             return vec![];
@@ -649,13 +681,20 @@ impl App {
         let Some(pr) = items.get(selected).cloned() else {
             // Empty PrSplit (no selectable PR). Restore the screen as-is.
             self.ui.screen = Screen::PrSplit {
+                all_items,
                 items,
                 selected,
                 parent,
+                query,
             };
             return vec![];
         };
-        let prev = PrPrevScreen::PrSplit { items, selected };
+        let prev = PrPrevScreen::PrSplit {
+            all_items,
+            items,
+            selected,
+            query,
+        };
         self.ui.screen = match kind {
             PrAction::Review => Screen::ReviewingPr { parent, pr, prev },
             PrAction::Merge => Screen::MergingPr { parent, pr, prev },
@@ -976,6 +1015,18 @@ enum PrAction {
 /// the PR being acted on; `prev` records whether it was entered from
 /// PrDetail or PrSplit and carries the data needed to faithfully rebuild
 /// the source screen.
+fn filter_prs(all: &[domain::PullRequest], query: Option<&str>) -> Vec<domain::PullRequest> {
+    let q = match query.filter(|s| !s.is_empty()) {
+        Some(q) => q,
+        None => return all.to_vec(),
+    };
+    let terms = crate::display::QueryTerms::parse(q);
+    all.iter()
+        .filter(|pr| terms.matches(&crate::render::pr_card::pr_card_text(pr).to_lowercase()))
+        .cloned()
+        .collect()
+}
+
 fn restore_after_pr_action(
     parent: ListSnapshot,
     pr: domain::PullRequest,
@@ -987,10 +1038,17 @@ fn restore_after_pr_action(
             pr,
             scroll: 0,
         },
-        PrPrevScreen::PrSplit { items, selected } => Screen::PrSplit {
-            parent,
+        PrPrevScreen::PrSplit {
+            all_items,
             items,
             selected,
+            query,
+        } => Screen::PrSplit {
+            parent,
+            all_items,
+            items,
+            selected,
+            query,
         },
     }
 }
@@ -1185,23 +1243,27 @@ fn refresh_screen_in_place(screen: &mut Screen, raw: &[workflows::status::Status
         }
         Screen::PrSplit {
             parent,
+            all_items,
             items,
             selected,
+            query,
         } => {
             let new_parent_items = build_unified(raw.to_vec(), &parent.filter);
             parent.selected = parent
                 .selected
                 .min(new_parent_items.len().saturating_sub(1));
             parent.items = new_parent_items;
-            let new_prs: Vec<_> = raw
+            let new_all: Vec<_> = raw
                 .iter()
                 .filter_map(|item| match item {
                     StatusItem::Pr(pr) => Some(pr.clone()),
                     _ => None,
                 })
                 .collect();
-            *selected = (*selected).min(new_prs.len().saturating_sub(1));
-            *items = new_prs;
+            let new_items = filter_prs(&new_all, query.as_deref());
+            *selected = (*selected).min(new_items.len().saturating_sub(1));
+            *all_items = new_all;
+            *items = new_items;
         }
     }
 }

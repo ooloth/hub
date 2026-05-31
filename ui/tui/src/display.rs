@@ -669,13 +669,13 @@ impl Filter {
     }
 }
 
-struct QueryTerms {
+pub(crate) struct QueryTerms {
     positives: Vec<String>,
     negatives: Vec<String>,
 }
 
 impl QueryTerms {
-    fn parse(q: &str) -> Self {
+    pub(crate) fn parse(q: &str) -> Self {
         let mut positives = Vec::new();
         let mut negatives = Vec::new();
         for token in q.split_whitespace() {
@@ -691,7 +691,7 @@ impl QueryTerms {
         }
     }
 
-    fn matches(&self, lowercased_text: &str) -> bool {
+    pub(crate) fn matches(&self, lowercased_text: &str) -> bool {
         self.positives
             .iter()
             .all(|p| lowercased_text.contains(p.as_str()))

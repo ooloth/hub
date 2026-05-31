@@ -2,12 +2,12 @@
 source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
-╭ PRs · 1 · split (v1) ───────────────────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭ PRs ────────────────────────────────────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ ●  filter claude stderr                                                     │ PR #159 · ooloth/hub                                                                                              │
-│    ooloth/hub · #159 · @ooloth · no reviews                                 │                                                                                                                   │
+│    ooloth/hub · #159 · @ooloth · 0 reviews                                  │                                                                                                                   │
 │                                                                             │ filter claude stderr                                                                                              │
 │                                                                             │                                                                                                                   │
-│                                                                             │   status  ●  no reviews                                                                                           │
+│                                                                             │   status  ●  0 reviews                                                                                            │
 │                                                                             │   checks     ✓ passing                                                                                            │
 │                                                                             │   diff       +43 −3 in 3 files                                                                                    │
 │                                                                             │   branch     fix/stderr-filter                                                                                    │
