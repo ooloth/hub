@@ -145,6 +145,8 @@ const KEYBINDS_PR_SPLIT: &[(&str, &str)] = &[
     ("i", "investigate PR"),
     ("o", "open in octo"),
     ("l", "open in lazygit"),
+    ("v", "review"),
+    ("m", "squash and merge"),
     ("r", "refresh"),
     ("Esc", "back to list"),
     ("q / Ctrl-C", "quit"),
@@ -383,9 +385,9 @@ fn status_bar_left(app: &App) -> String {
         if items.is_empty() {
             return " [Esc] back".to_string();
         }
-        // v / m land in slice 4.5; Enter (focus-shift) lands in v2 (#240).
+        // Enter (focus-shift) lands in v2 (#240).
         return format!(
-            " {}/{} · [i] investigate · [o] octo · [l] lazygit · [Esc] back",
+            " {}/{} · [i] investigate · [o] octo · [l] lazygit · [v] review · [m] merge · [Esc] back",
             selected + 1,
             items.len()
         );
@@ -2118,6 +2120,7 @@ mod tests {
                         expanded_groups: HashSet::new(),
                     },
                     pr,
+                    prev: crate::state::PrPrevScreen::PrDetail,
                 },
                 ..UiState::default()
             },

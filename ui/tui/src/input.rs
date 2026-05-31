@@ -128,9 +128,7 @@ fn pr_reader_keys(key: KeyEvent) -> Option<Action> {
 }
 
 fn pr_split_keys(key: KeyEvent) -> Option<Action> {
-    // Enter is reserved for v2 focus-shift (ooloth/hub#240). v and m
-    // (review picker / merge) land in slice 4.5 once Screen::ReviewingPr
-    // and Screen::MergingPr can return to PrSplit.
+    // Enter is reserved for v2 focus-shift (ooloth/hub#240).
     match (key.code, key.modifiers) {
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => Some(Action::MoveUp),
         (KeyCode::Down, _) | (KeyCode::Char('j'), _) => Some(Action::MoveDown),
@@ -141,6 +139,8 @@ fn pr_split_keys(key: KeyEvent) -> Option<Action> {
         (KeyCode::Char('i'), _) => Some(Action::AskAboutPr),
         (KeyCode::Char('o'), _) => Some(Action::OpenInOcto),
         (KeyCode::Char('l'), _) => Some(Action::OpenInLazygit),
+        (KeyCode::Char('v'), _) => Some(Action::OpenReviewPicker),
+        (KeyCode::Char('m'), _) => Some(Action::MergePr),
         _ => None,
     }
 }
@@ -227,7 +227,7 @@ fn dismiss_mode_key(key: KeyEvent) -> Option<Action> {
 mod tests {
     use super::key_to_action;
     use crate::display::{Category, Filter, ListSnapshot};
-    use crate::state::{Action, App, ReviewSkill, Screen, UiState};
+    use crate::state::{Action, App, PrPrevScreen, ReviewSkill, Screen, UiState};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use rstest::rstest;
 
@@ -690,6 +690,7 @@ mod tests {
                         pr_comments: vec![],
                         merge_blocker: None,
                     },
+                    prev: PrPrevScreen::PrDetail,
                 },
                 ..UiState::default()
             },
@@ -775,6 +776,7 @@ mod tests {
                         pr_comments: vec![],
                         merge_blocker: None,
                     },
+                    prev: PrPrevScreen::PrDetail,
                 },
                 ..UiState::default()
             },
@@ -836,10 +838,10 @@ mod tests {
     #[case(ch('i'), Some(Action::AskAboutPr))]
     #[case(ch('o'), Some(Action::OpenInOcto))]
     #[case(ch('l'), Some(Action::OpenInLazygit))]
-    // Enter is reserved for v2 (ooloth/hub#240); v / m land in slice 4.5.
+    #[case(ch('v'), Some(Action::OpenReviewPicker))]
+    #[case(ch('m'), Some(Action::MergePr))]
+    // Enter is reserved for v2 (ooloth/hub#240).
     #[case(k(KeyCode::Enter), None)]
-    #[case(ch('v'), None)]
-    #[case(ch('m'), None)]
     #[case(ch('h'), None)]
     #[case(ch('p'), None)]
     #[case(ch('P'), None)]

@@ -5,8 +5,8 @@ mod types;
 mod update;
 
 pub(crate) use types::{
-    Action, Effect, EnterAction, InvestigateAction, Msg, PrOwnership, RefreshState, ReviewSkill,
-    Screen,
+    Action, Effect, EnterAction, InvestigateAction, Msg, PrOwnership, PrPrevScreen, RefreshState,
+    ReviewSkill, Screen,
 };
 pub(crate) use update::{compute_enter_action, compute_investigate_action, handle_msg};
 

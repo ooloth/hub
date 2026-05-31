@@ -4,7 +4,8 @@ use chrono::Utc;
 use domain::{agent_ready_labels, dismissed_labels};
 
 use super::{
-    Action, App, Effect, EnterAction, InvestigateAction, Msg, PrOwnership, RefreshState, Screen,
+    Action, App, Effect, EnterAction, InvestigateAction, Msg, PrOwnership, PrPrevScreen,
+    RefreshState, Screen,
 };
 use crate::display::{
     build_unified, flatten, item_investigation, item_url, lines_to_compact_json,
@@ -519,7 +520,11 @@ impl App {
                 };
                 let pr = pr.clone();
                 let parent = parent.clone();
-                self.ui.screen = Screen::MergingPr { parent, pr };
+                self.ui.screen = Screen::MergingPr {
+                    parent,
+                    pr,
+                    prev: PrPrevScreen::PrDetail,
+                };
                 vec![]
             }
             Action::AskAboutPr => {
@@ -540,7 +545,11 @@ impl App {
                 };
                 let pr = pr.clone();
                 let parent = parent.clone();
-                self.ui.screen = Screen::ReviewingPr { parent, pr };
+                self.ui.screen = Screen::ReviewingPr {
+                    parent,
+                    pr,
+                    prev: PrPrevScreen::PrDetail,
+                };
                 vec![]
             }
             Action::OpenInOcto => {
@@ -617,10 +626,41 @@ impl App {
                     head_branch: pr.head_branch.clone(),
                 }]
             }),
-            // Enter is reserved for v2 (focus-shift to right pane, tracked in
-            // ooloth/hub#240). v / m (review picker / merge) land in slice 4.5.
+            Action::OpenReviewPicker => self.open_pr_action_picker(PrAction::Review),
+            Action::MergePr => self.open_pr_action_picker(PrAction::Merge),
+            // Enter is reserved for v2 (focus-shift to right pane, tracked
+            // in ooloth/hub#240).
             _ => vec![],
         }
+    }
+
+    /// Transition PrSplit → ReviewingPr or MergingPr for the selected PR,
+    /// capturing the current items + selected so Cancel/Commit can restore
+    /// the same PrSplit view.
+    fn open_pr_action_picker(&mut self, kind: PrAction) -> Vec<Effect> {
+        let Screen::PrSplit {
+            items,
+            selected,
+            parent,
+        } = std::mem::take(&mut self.ui.screen)
+        else {
+            return vec![];
+        };
+        let Some(pr) = items.get(selected).cloned() else {
+            // Empty PrSplit (no selectable PR). Restore the screen as-is.
+            self.ui.screen = Screen::PrSplit {
+                items,
+                selected,
+                parent,
+            };
+            return vec![];
+        };
+        let prev = PrPrevScreen::PrSplit { items, selected };
+        self.ui.screen = match kind {
+            PrAction::Review => Screen::ReviewingPr { parent, pr, prev },
+            PrAction::Merge => Screen::MergingPr { parent, pr, prev },
+        };
+        vec![]
     }
 
     fn pr_split_selected(&self) -> Option<&domain::PullRequest> {
@@ -636,18 +676,15 @@ impl App {
     fn handle_reviewing_pr(&mut self, action: Action) -> Vec<Effect> {
         match action {
             Action::CommitReview(skill) => {
-                let Screen::ReviewingPr { pr, parent } = std::mem::take(&mut self.ui.screen) else {
+                let Screen::ReviewingPr { pr, parent, prev } = std::mem::take(&mut self.ui.screen)
+                else {
                     return vec![];
                 };
                 let ownership = PrOwnership::from_kind(pr.kind);
                 let repo = pr.repo.to_string();
                 let number = pr.number;
                 let head_branch = pr.head_branch.clone();
-                self.ui.screen = Screen::PrDetail {
-                    parent,
-                    pr,
-                    scroll: 0,
-                };
+                self.ui.screen = restore_after_pr_action(parent, pr, prev);
                 vec![Effect::ReviewPr {
                     repo,
                     number,
@@ -657,14 +694,11 @@ impl App {
                 }]
             }
             Action::CancelReview => {
-                let Screen::ReviewingPr { parent, pr } = std::mem::take(&mut self.ui.screen) else {
+                let Screen::ReviewingPr { parent, pr, prev } = std::mem::take(&mut self.ui.screen)
+                else {
                     return vec![];
                 };
-                self.ui.screen = Screen::PrDetail {
-                    parent,
-                    pr,
-                    scroll: 0,
-                };
+                self.ui.screen = restore_after_pr_action(parent, pr, prev);
                 vec![]
             }
             _ => unreachable!(),
@@ -674,27 +708,21 @@ impl App {
     fn handle_merging_pr(&mut self, action: Action) -> Vec<Effect> {
         match action {
             Action::CancelMerge => {
-                let Screen::MergingPr { parent, pr } = std::mem::take(&mut self.ui.screen) else {
+                let Screen::MergingPr { parent, pr, prev } = std::mem::take(&mut self.ui.screen)
+                else {
                     return vec![];
                 };
-                self.ui.screen = Screen::PrDetail {
-                    parent,
-                    pr,
-                    scroll: 0,
-                };
+                self.ui.screen = restore_after_pr_action(parent, pr, prev);
                 vec![]
             }
             Action::CommitMerge => {
-                let Screen::MergingPr { parent, pr } = std::mem::take(&mut self.ui.screen) else {
+                let Screen::MergingPr { parent, pr, prev } = std::mem::take(&mut self.ui.screen)
+                else {
                     return vec![];
                 };
                 let repo = pr.repo.to_string();
                 let number = pr.number;
-                self.ui.screen = Screen::PrDetail {
-                    parent,
-                    pr,
-                    scroll: 0,
-                };
+                self.ui.screen = restore_after_pr_action(parent, pr, prev);
                 vec![Effect::MergePullRequest { repo, number }]
             }
             _ => unreachable!(),
@@ -932,6 +960,38 @@ impl App {
                 items, selected, ..
             } => items.get(*selected).map(|pr| pr.url.as_str()),
         }
+    }
+}
+
+/// Which transient picker to enter from PrSplit.
+#[derive(Clone, Copy)]
+enum PrAction {
+    Review,
+    Merge,
+}
+
+/// Restore the screen a Review/Merge picker came from.
+///
+/// The picker preserves the parent (UnifiedList back-nav address) and
+/// the PR being acted on; `prev` records whether it was entered from
+/// PrDetail or PrSplit and carries the data needed to faithfully rebuild
+/// the source screen.
+fn restore_after_pr_action(
+    parent: ListSnapshot,
+    pr: domain::PullRequest,
+    prev: PrPrevScreen,
+) -> Screen {
+    match prev {
+        PrPrevScreen::PrDetail => Screen::PrDetail {
+            parent,
+            pr,
+            scroll: 0,
+        },
+        PrPrevScreen::PrSplit { items, selected } => Screen::PrSplit {
+            parent,
+            items,
+            selected,
+        },
     }
 }
 
@@ -2934,5 +2994,107 @@ mod tests {
         assert!(app.update(Action::OpenInOcto).is_empty());
         assert!(app.update(Action::OpenInLazygit).is_empty());
         assert!(app.update(Action::AskAboutPr).is_empty());
+    }
+
+    // --- Review / merge pickers from PrSplit (slice 4.5) ---
+
+    use crate::state::PrPrevScreen;
+
+    #[test]
+    fn open_review_picker_from_pr_split_transitions_to_reviewing_pr() {
+        let mut app = app_in_pr_split_with_two_prs();
+        app.update(Action::MoveDown); // select PR #8
+        let effects = app.update(Action::OpenReviewPicker);
+        assert!(effects.is_empty());
+        let Screen::ReviewingPr { pr, prev, .. } = app.current_screen() else {
+            panic!("expected ReviewingPr");
+        };
+        assert_eq!(pr.number, 8);
+        assert!(matches!(prev, PrPrevScreen::PrSplit { selected: 1, .. }));
+    }
+
+    #[test]
+    fn cancel_review_from_pr_split_source_restores_pr_split_with_selection() {
+        let mut app = app_in_pr_split_with_two_prs();
+        app.update(Action::MoveDown);
+        app.update(Action::OpenReviewPicker);
+        app.update(Action::CancelReview);
+        let Screen::PrSplit {
+            items, selected, ..
+        } = app.current_screen()
+        else {
+            panic!("expected PrSplit");
+        };
+        assert_eq!(items.len(), 2);
+        assert_eq!(*selected, 1);
+    }
+
+    #[test]
+    fn commit_review_from_pr_split_source_restores_pr_split_and_emits_effect() {
+        let mut app = app_in_pr_split_with_two_prs();
+        app.update(Action::OpenReviewPicker);
+        let effects = app.update(Action::CommitReview(crate::state::ReviewSkill::Converge));
+        assert!(matches!(app.current_screen(), Screen::PrSplit { .. }));
+        assert_eq!(effects.len(), 1);
+        assert!(matches!(effects[0], Effect::ReviewPr { .. }));
+    }
+
+    #[test]
+    fn merge_pr_from_pr_split_transitions_to_merging_pr() {
+        let mut app = app_in_pr_split_with_two_prs();
+        let effects = app.update(Action::MergePr);
+        assert!(effects.is_empty());
+        let Screen::MergingPr { pr, prev, .. } = app.current_screen() else {
+            panic!("expected MergingPr");
+        };
+        assert_eq!(pr.number, 7);
+        assert!(matches!(prev, PrPrevScreen::PrSplit { selected: 0, .. }));
+    }
+
+    #[test]
+    fn cancel_merge_from_pr_split_source_restores_pr_split() {
+        let mut app = app_in_pr_split_with_two_prs();
+        app.update(Action::MergePr);
+        app.update(Action::CancelMerge);
+        assert!(matches!(app.current_screen(), Screen::PrSplit { .. }));
+    }
+
+    #[test]
+    fn commit_merge_from_pr_split_source_restores_pr_split_and_emits_effect() {
+        let mut app = app_in_pr_split_with_two_prs();
+        app.update(Action::MergePr);
+        let effects = app.update(Action::CommitMerge);
+        assert!(matches!(app.current_screen(), Screen::PrSplit { .. }));
+        assert_eq!(effects.len(), 1);
+        assert!(matches!(effects[0], Effect::MergePullRequest { .. }));
+    }
+
+    #[test]
+    fn open_review_picker_from_empty_pr_split_is_noop() {
+        let mut app = app_with_raw(vec![]);
+        app.update(Action::EnterPrSplit);
+        let effects = app.update(Action::OpenReviewPicker);
+        assert!(effects.is_empty());
+        // Should still be on PrSplit (no panic, no transition).
+        assert!(matches!(app.current_screen(), Screen::PrSplit { .. }));
+    }
+
+    #[test]
+    fn merge_pr_from_empty_pr_split_is_noop() {
+        let mut app = app_with_raw(vec![]);
+        app.update(Action::EnterPrSplit);
+        let effects = app.update(Action::MergePr);
+        assert!(effects.is_empty());
+        assert!(matches!(app.current_screen(), Screen::PrSplit { .. }));
+    }
+
+    #[test]
+    fn cancel_review_from_pr_detail_source_still_restores_pr_detail() {
+        // Regression guard: the PrDetail → ReviewingPr → cancel flow must
+        // still restore PrDetail, not accidentally route to PrSplit.
+        let mut app = app_in_pr_detail();
+        app.update(Action::OpenReviewPicker);
+        app.update(Action::CancelReview);
+        assert!(matches!(app.current_screen(), Screen::PrDetail { .. }));
     }
 }

@@ -87,15 +87,34 @@ pub(crate) enum Screen {
     ReviewingPr {
         parent: ListSnapshot,
         pr: PullRequest,
+        prev: PrPrevScreen,
     },
     MergingPr {
         parent: ListSnapshot,
         pr: PullRequest,
+        prev: PrPrevScreen,
     },
     DismissingIssue {
         parent: ListSnapshot,
         issue: Issue,
         input: tui_input::Input,
+    },
+}
+
+/// The screen a Review/Merge picker should restore on commit or cancel.
+///
+/// Pickers are always entered from either PrDetail or PrSplit. The
+/// variant records just enough to rebuild the source screen — for
+/// PrSplit, the full PR list and selection so the user lands back on
+/// the same card they were viewing.
+#[derive(Clone, Debug)]
+pub(crate) enum PrPrevScreen {
+    /// Restore Screen::PrDetail with scroll = 0 (matches the prior
+    /// behaviour before this enum was introduced).
+    PrDetail,
+    PrSplit {
+        items: Vec<PullRequest>,
+        selected: usize,
     },
 }
 
