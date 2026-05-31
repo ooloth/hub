@@ -82,11 +82,11 @@ from each. Press a letter to enter that category in full.
 │   ●  no reviews    gmail TLS in STARTTLS         10d        │   ●  working    /implement-issue · hub #66       12m         │   ⚠ CRITICAL                         │
 │   ●  conflict      Add project overview           9d        │   ●  working    /github-ci-investigate · 1284     4m         │     Dependabot error                 │
 │   ●  no reviews    Fix variable name in docs      9d        │   ◐  paused     /review-pr-comments · hub #159    1h         │     gatsbytutorials.com   23h ↑      │
-│   ●  no reviews    cli: broken import & doc       8d        │   ✓  done       /media-investigate              22m         │                                      │
-│   ●  no reviews    workflows: filter stderr       8d        │   ✓  done       /refactor media.rs               1d         │   ⚠ WARNING                          │
-│   ●  no reviews    docs: cargo-nextest            4d        │   ✗  failed     /review-code · hub #160           2d         │     Media · '.scr' invalid  ×3 now  │
-│   ●  no reviews    pilots: SENDGRID validation    2d        │                                                              │     Media · '.exe' invalid  ×2 now  │
-│   …+6 more                                                  │                                                              │     Media · matched by ID   ×1 now  │
+│   ●  no reviews    cli: broken import & doc       8d        │   ✓  done       /media-investigate              22m          │                                      │
+│   ●  no reviews    workflows: filter stderr       8d        │   ✓  done       /refactor media.rs               1d          │   ⚠ WARNING                          │
+│   ●  no reviews    docs: cargo-nextest            4d        │   ✗  failed     /review-code · hub #160           2d         │     Media · '.scr' invalid  ×3 now   │
+│   ●  no reviews    pilots: SENDGRID validation    2d        │                                                              │     Media · '.exe' invalid  ×2 now   │
+│   …+6 more                                                  │                                                              │     Media · matched by ID   ×1 now   │
 │                                                             │                                                              │     Loki · error rate up    ×12 3h   │
 │   press  p  to enter                                        │   press  a  to enter                                         │                                      │
 │                                                             │                                                              │   press  e  to enter                 │
@@ -96,13 +96,13 @@ from each. Press a letter to enter that category in full.
 │  ─────────────────────────────────────────────────────      │  ──────────────────────────────────────────────────────      │  ────────────────────────────────    │
 │                                                             │                                                              │                                      │
 │   ◉  security    GitHub token in clone error    11d         │   14:18  ✓  finished  /implement-issue · #66                 │    ✓  3 agent runs completed         │
-│   ◉  security    Validate MEDIA_URL scheme     11d         │   14:11  ▴  PR #248 opened by claude                         │    ✓  1 PR merged · #247             │
+│   ◉  security    Validate MEDIA_URL scheme      11d         │   14:11  ▴  PR #248 opened by claude                         │    ✓  1 PR merged · #247             │
 │   ◉  security    GraphQL injection in slugs     11d         │   13:58  ●  started   /github-ci-investigate                 │    ✗  1 failed · /review-code 160    │
-│   ◉  privacy     Linear error body leak         11d         │   13:47  ⚠  Media × 3                                       │    ⚠  4 new critical signals         │
+│   ◉  privacy     Linear error body leak         11d         │   13:47  ⚠  Media × 3                                        │    ⚠  4 new critical signals         │
 │   ◉  config      env vars scattered in code     11d         │   13:31  ⚠  CI fail · gatsbytutorials                        │                                      │
-│   ◉  config      .env.example missing keys      11d         │   13:14  ✓  finished  /media-investigate                    │   pulse  ▂▃▅▇▇▆▅▃▂                   │
+│   ◉  config      .env.example missing keys      11d         │   13:14  ✓  finished  /media-investigate                     │   pulse  ▂▃▅▇▇▆▅▃▂                   │
 │   ◉  agent       document observability signals 12d         │   13:02  ▾  PR #247 merged · gmail TLS                       │   today  47 runs · 41 ✓  6 ✗         │
-│   …+269 more                                                │   12:48  ●  started   /media-investigate                    │                                      │
+│   …+269 more                                                │   12:48  ●  started   /media-investigate                     │                                      │
 │                                                             │                                                              │   yesterday  8 runs · 6 ✓  2 ✗       │
 │   press  t  to enter                                        │                                                              │                                      │
 │                                                             │                                                              │   press  T  to enter                 │
@@ -188,36 +188,36 @@ panels on right showing what each active session is doing _right now_.
 
 ```
 ╭───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  hub  ›  Agents                                                  6 sessions  ·  ● 2 working  ·  ◐ 1 paused  ·  ✓ 2 done  ·  ✗ 1 failed  ·  today: 47 runs        │
+│  hub  ›  Agents                                                         6 sessions  ·  ● 2 working  ·  ◐ 1 paused  ·  ✓ 2 done  ·  ✗ 1 failed  ·  today: 47 runs  │
 ├───────────────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                   │ ╭ ● working ─ /implement-issue · hub #66 ── 12m ── 14¢ ─ 117 tools ─────────────────────────────────────────╮│
+│                                                   │ ╭ ● working ─ /implement-issue · hub #66 ── 12m ── 14¢ ─ 117 tools ──────────────────────────────────────────╮│
 │   Sessions                                        │ │  ✓ cloned    ✓ tests written    ▸ implementing    ○ open PR                                                ││
-│                                                   │ │                                                                                                              ││
-│ ▸ ●  working   implement #66        12m   14¢     │ │  14:22:03  write   added test for strip_secrets() — expected None for token line                          ││
+│                                                   │ │                                                                                                            ││
+│ ▸ ●  working   implement #66        12m   14¢     │ │  14:22:03  write   added test for strip_secrets() — expected None for token line                           ││
 │                                                   │ │  14:22:11  write   added test for strip_secrets() — pass through plain line                                ││
 │   ●  working   investigate CI        4m    6¢     │ │  14:22:14  shell   cargo test --package workflows                                                          ││
-│                                                   │ │  14:22:17    test result: FAILED · 3 passed · 3 failed · 0 ignored                                          ││
+│                                                   │ │  14:22:17    test result: FAILED · 3 passed · 3 failed · 0 ignored                                         ││
 │   ◐  paused    review #159           1h   22¢     │ │  14:22:18  write   implementing strip_secrets() using TOKEN_PATTERN regex                                  ││
-│                                                   │ │  14:22:24  ⠋       running cargo test...                                                                    ││
-│   ✓  done      media investigate   22m   18¢     │ ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯│
-│                                                   │ ╭ ● working ─ /github-ci-investigate · gatsbytutorials #1284 ── 4m ── 6¢ ──────────────────────────────────╮│
-│   ✓  done      refactor media      1d    31¢     │ │  ✓ fetched workflow    ▸ analyzing logs    ○ root cause    ○ propose fix                                  ││
-│                                                   │ │                                                                                                              ││
-│   ✗  failed    review #160          2d   47¢      │ │  14:21:34  shell   gh run view 1284 --log                                                                   ││
-│                                                   │ │  14:21:48  read    extracted 1,247 log lines                                                                ││
-│   ──────────────────────────────────              │ │  14:21:55  shell   grep -i "error\|fail" → 23 matches                                                       ││
-│                                                   │ │  14:22:01  ⠋       analyzing dependency resolution failures...                                              ││
+│                                                   │ │  14:22:24  ⠋       running cargo test...                                                                   ││
+│   ✓  done      media investigate    22m   18¢     │ ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯│
+│                                                   │ ╭ ● working ─ /github-ci-investigate · gatsbytutorials #1284 ── 4m ── 6¢ ────────────────────────────────────╮│
+│   ✓  done      refactor media       1d    31¢     │ │  ✓ fetched workflow    ▸ analyzing logs    ○ root cause    ○ propose fix                                   ││
+│                                                   │ │                                                                                                            ││
+│   ✗  failed    review #160          2d   47¢      │ │  14:21:34  shell   gh run view 1284 --log                                                                  ││
+│                                                   │ │  14:21:48  read    extracted 1,247 log lines                                                               ││
+│   ──────────────────────────────────              │ │  14:21:55  shell   grep -i "error\|fail" → 23 matches                                                      ││
+│                                                   │ │  14:22:01  ⠋       analyzing dependency resolution failures...                                             ││
 │   today  ▇▇▇▇▇▆▅▃▂  47 runs                       │ ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯│
-│         41 ✓  ·  6 ✗  ·  cost $4.18               │ ╭ ◐ paused ── /review-pr-comments-converge · hub #159 ── 1h ago ── 22¢ ─────────────────────────────────────╮│
+│         41 ✓  ·  6 ✗  ·  cost $4.18               │ ╭ ◐ paused ── /review-pr-comments-converge · hub #159 ── 1h ago ── 22¢ ──────────────────────────────────────╮│
 │                                                   │ │  ✓ comments fetched    ✓ 2/3 addressed    ▸ awaiting confirmation                                          ││
-│   this week                                       │ │                                                                                                              ││
+│   this week                                       │ │                                                                                                            ││
 │   ▇▇▇▆▅▃ 312 runs · 287 ✓ · 25 ✗                  │ │  13:18:22  ask     "Should this also handle the case where stderr is empty?                                ││
-│                                                   │ │                     See @ooloth's comment on line 47."                                                       ││
-│                                                   │ │  ─ waiting for human ─                                                                                       ││
+│                                                   │ │                     See @ooloth's comment on line 47."                                                     ││
+│                                                   │ │  ─ waiting for human ─                                                                                     ││
 │                                                   │ ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯│
-│                                                   │                                                                                                              │
+│                                                   │                                                                                                               │
 ├───────────────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│  1 of 6   ↑↓ session   [↩] focus selected   [j/k] scroll stream   [r] resume   [k] kill   [n] new session   [esc] home                                          │
+│  1 of 6   ↑↓ session   [↩] focus selected   [j/k] scroll stream   [r] resume   [k] kill   [n] new session   [esc] home                                            │
 ╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
@@ -243,41 +243,41 @@ task, progress checklist, live stream, workspace state, cost, related runs.
 │  hub  ›  Agents  ›  implement-issue #66                                                       ●  working  ·  12m elapsed  ·  14¢  ·  ws: implement-issue-66       │
 ├───────────────────────────────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                   │                                                                                               │
-│   Task                                                            │   Stream  ·  follow on  ·  ⠋ live                                                              │
+│   Task                                                            │   Stream  ·  follow on  ·  ⠋ live                                                             │
 │                                                                   │                                                                                               │
 │   Document observability signals so agents can diagnose           │   14:10:08  start   workspace cloned · branch agent/implement-66                              │
-│   failures without reading source code                            │   14:10:14  read    CLAUDE.md · workflows/src/agent.rs · workflows/src/lib.rs                  │
-│                                                                   │   14:11:02  plan    write tests first for strip_secrets()                                      │
-│   ooloth/hub  ·  Issue #66                                        │   14:12:18  write   tests/agent_test.rs  +18 lines                                             │
-│                                                                   │   14:14:50  shell   cargo test                                                                 │
-│   ─────────────────────────────────────────────────────           │   14:14:53     test failed (expected — no impl yet)                                            │
-│                                                                   │   14:15:20  write   workflows/src/agent.rs strip_secrets() helper                              │
-│   Progress                                                        │   14:15:31  write   workflows/src/lib.rs routing stderr through helper                         │
-│                                                                   │   14:21:48  read    tests/agent_test.rs                                                         │
-│   ✓  cloned ooloth/hub into workspace            ↗  2m            │   14:21:52  read    workflows/src/agent.rs                                                      │
-│   ✓  identified affected modules                 ↗  4m            │   14:22:03  write   added test for strip_secrets() · None for token line                       │
-│   ✓  wrote 3 failing tests for strip_secrets()   ↗  7m            │   14:22:11  write   added test for strip_secrets() · pass through plain line                   │
-│   ▸  implementing strip_secrets()                                 │   14:22:14  shell   cargo test --package workflows                                              │
-│   ○  open PR                                                      │   14:22:17     test result: FAILED · 3 passed · 3 failed · 0 ignored                            │
-│                                                                   │   14:22:18  write   implementing strip_secrets() using TOKEN_PATTERN regex                     │
-│   ─────────────────────────────────────────────────────           │   14:22:24  ⠋       running cargo test...                                                       │
+│   failures without reading source code                            │   14:10:14  read    CLAUDE.md · workflows/src/agent.rs · workflows/src/lib.rs                 │
+│                                                                   │   14:11:02  plan    write tests first for strip_secrets()                                     │
+│   ooloth/hub  ·  Issue #66                                        │   14:12:18  write   tests/agent_test.rs  +18 lines                                            │
+│                                                                   │   14:14:50  shell   cargo test                                                                │
+│   ─────────────────────────────────────────────────────           │   14:14:53     test failed (expected — no impl yet)                                           │
+│                                                                   │   14:15:20  write   workflows/src/agent.rs strip_secrets() helper                             │
+│   Progress                                                        │   14:15:31  write   workflows/src/lib.rs routing stderr through helper                        │
+│                                                                   │   14:21:48  read    tests/agent_test.rs                                                       │
+│   ✓  cloned ooloth/hub into workspace            ↗  2m            │   14:21:52  read    workflows/src/agent.rs                                                    │
+│   ✓  identified affected modules                 ↗  4m            │   14:22:03  write   added test for strip_secrets() · None for token line                      │
+│   ✓  wrote 3 failing tests for strip_secrets()   ↗  7m            │   14:22:11  write   added test for strip_secrets() · pass through plain line                  │
+│   ▸  implementing strip_secrets()                                 │   14:22:14  shell   cargo test --package workflows                                            │
+│   ○  open PR                                                      │   14:22:17     test result: FAILED · 3 passed · 3 failed · 0 ignored                          │
+│                                                                   │   14:22:18  write   implementing strip_secrets() using TOKEN_PATTERN regex                    │
+│   ─────────────────────────────────────────────────────           │   14:22:24  ⠋       running cargo test...                                                     │
 │                                                                   │                                                                                               │
-│   Workspace                                                       │   ────────────────────────────────────────────────────────────────────                         │
+│   Workspace                                                       │   ────────────────────────────────────────────────────────────────────                        │
 │     ~/.hub/workspaces/implement-issue-66                          │                                                                                               │
 │     branch     agent/implement-66                                 │   Artifacts                                                                                   │
 │     diff       +42 −3 in 3 files                                  │                                                                                               │
-│     staged     3 changes                                          │     report.md           ⌛ will write at completion                                            │
-│                                                                   │     diff.patch          ⌛ will write at completion                                            │
-│   Cost                                                            │     pr-description.md   ⌛ will write at completion                                            │
+│     staged     3 changes                                          │     report.md           ⌛ will write at completion                                           │
+│                                                                   │     diff.patch          ⌛ will write at completion                                           │
+│   Cost                                                            │     pr-description.md   ⌛ will write at completion                                           │
 │     14¢  ·  117 tool calls  ·  88K input · 12K output             │                                                                                               │
 │                                                                   │   Related runs                                                                                │
 │   Skill                                                           │                                                                                               │
-│     /implement-issue  ·  v3                                       │     ✗ /review-code · hub #160       2d   same author, related changes                          │
-│     ~/.claude/skills/implement-issue.md                           │     ✓ /implement-issue · hub #58    4d   similar pattern (stdout filtering)                    │
+│     /implement-issue  ·  v3                                       │     ✗ /review-code · hub #160       2d   same author, related changes                         │
+│     ~/.claude/skills/implement-issue.md                           │     ✓ /implement-issue · hub #58    4d   similar pattern (stdout filtering)                   │
 │                                                                   │     ✓ /media-investigate           22m  finished, no overlap                                  │
 │                                                                   │                                                                                               │
 ├───────────────────────────────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────┤
-│  [t] open transcript    [w] open workspace    [d] diff in lazygit    [k] kill session    [s] silence notifications    [esc] back                                 │
+│  [t] open transcript    [w] open workspace    [d] diff in lazygit    [k] kill session    [s] silence notifications    [esc] back                                  │
 ╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
@@ -303,34 +303,34 @@ ranked here. Trending indicators show which problems are growing.
 │  hub  ›  Today                                            43 attention items  ·  4 critical  ·  18 high  ·  21 medium  ·  pulse ▂▃▅▇▆▅▃▂ trending down 12%        │
 ├───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                                                                                                   │
-│   CRITICAL  ·  4  ·  needs action now                                                                                                                            │
-│   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────       │
+│   CRITICAL  ·  4  ·  needs action now                                                                                                                             │
+│   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────        │
 │                                                                                                                                                                   │
-│   ⚠  prod error    gatsbytutorials.com   Dependabot encountered error                          23h   ↑ growing  ·  3 occurrences  ·  blocks weekly deploy        │
-│   ⚠  home server   media drive            Media — import blocked × 6                            now   ↑ new      ·  6 in 12 min  ·  possible worm                │
+│   ⚠  prod error    gatsbytutorials.com   Dependabot encountered error                           23h   ↑ growing  ·  3 occurrences  ·  blocks weekly deploy        │
+│   ⚠  home server   media drive            Media — import blocked × 6                            now   ↑ new      ·  6 in 12 min  ·  possible worm                 │
 │   ⚠  security      ooloth/hub             GitHub token in clone error output                    11d   ⏸ stable  ·  agent task open #74  ·  needs human review     │
 │   ✗  agent failed  ooloth/hub             /review-code · #160 errored                            2d    ⏸ stale   ·  not retried since failure                     │
 │                                                                                                                                                                   │
-│   HIGH  ·  18  ·  needs action this week                                                                                                                         │
-│   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────       │
+│   HIGH  ·  18  ·  needs action this week                                                                                                                          │
+│   ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────        │
 │                                                                                                                                                                   │
 │   ●  PR review     ooloth/media-tools     gmail: enforce TLS cert in STARTTLS                  10d   ⏸ stale   ·  no reviewers responded                          │
 │   ●  PR review     ooloth/hub             workflows: filter claude stderr                       8d   ⏸ stale   ·  conflict-free  ·  related to task #78           │
 │   ◉  security      ooloth/hub             Validate repo slugs before GraphQL embedding         11d   ↑ similar ·  same root cause as #77                          │
-│   ◉  security      hub-private            Validate MEDIA_URL scheme                            11d   ⏸ stable                                                    │
+│   ◉  security      hub-private            Validate MEDIA_URL scheme                            11d   ⏸ stable                                                     │
 │   ◉  security      ooloth/hub             Path traversal in repo slug REST URL                 11d   ↑ similar ·  same root cause as #76                          │
-│   ◉  privacy       ooloth/hub             Linear error body propagates to caller                11d                                                                │
-│   ◉  privacy       ooloth/hub             Strip raw API response body from Linear errors        11d                                                                │
-│   ●  PR review     michaeluloth.com       Add project overview, integrations                     9d   ⚠ conflict ·  3 merge conflicts                            │
-│   ⚠  media        media drive            Found series via grab history but matched by ID      now   ⏸ stable                                                    │
-│   ◉  agent-harness ooloth/scripts         Document observability signals for agents             12d                                                                │
-│   ◉  config        ooloth/hub             env vars scattered in workflow code                   11d                                                                │
+│   ◉  privacy       ooloth/hub             Linear error body propagates to caller               11d                                                                │
+│   ◉  privacy       ooloth/hub             Strip raw API response body from Linear errors       11d                                                                │
+│   ●  PR review     michaeluloth.com       Add project overview, integrations                    9d   ⚠ conflict ·  3 merge conflicts                              │
+│   ⚠  media        media drive            Found series via grab history but matched by ID       now   ⏸ stable                                                     │
+│   ◉  agent-harness ooloth/scripts         Document observability signals for agents            12d                                                                │
+│   ◉  config        ooloth/hub             env vars scattered in workflow code                  11d                                                                │
 │   …+7 more                                                                                                                                                        │
 │                                                                                                                                                                   │
-│   MEDIUM  ·  21  ·  press  m  to expand                                                                                                                          │
+│   MEDIUM  ·  21  ·  press  m  to expand                                                                                                                           │
 │                                                                                                                                                                   │
 ├───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
-│  cross-domain ranking · workflows classify · hub aggregates    [↩] enter item   [g] group   [s] sort   [/] search   [esc] home                                  │
+│  cross-domain ranking · workflows classify · hub aggregates    [↩] enter item   [g] group   [s] sort   [/] search   [esc] home                                    │
 ╰───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
