@@ -123,6 +123,27 @@ async fn fetch_project(name: &str, repo: &str, github_token: &str, repos_dir: &P
     Ok(())
 }
 
+/// Runs `git worktree add <worktree> <branch>` in `bare_str`. If the add fails
+/// but the worktree directory now exists, treats it as success — another
+/// process won the race between our pre-check and our add. Otherwise surfaces
+/// the original git error.
+async fn add_worktree_or_recover(bare_str: &str, worktree: &Path, branch: &str) -> Result<()> {
+    let worktree_str = worktree.to_string_lossy();
+    let add = Command::new("git")
+        .args(["-C", bare_str, "worktree", "add", &worktree_str, branch])
+        .output()
+        .await
+        .context("git worktree add invocation failed")?;
+    if add.status.success() {
+        return Ok(());
+    }
+    if worktree.is_dir() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&add.stderr);
+    anyhow::bail!("git worktree add failed: {stderr}")
+}
+
 /// Creates a linked worktree for a PR at `<bare>/pr-<number>/` and returns its path.
 ///
 /// Always fetches all remote tracking refs first so the agent sees the current
@@ -140,7 +161,6 @@ pub async fn ensure_pr_worktree(
     let bare_str = bare.to_string_lossy().into_owned();
     let branch = format!("pr-{number}");
     let worktree = bare.join(&branch);
-    let worktree_str = worktree.to_string_lossy().into_owned();
     let rewrite = format!(
         "url.https://x-access-token:{github_token}@github.com/.insteadOf=https://github.com/"
     );
@@ -184,15 +204,9 @@ pub async fn ensure_pr_worktree(
         anyhow::bail!("git fetch PR ref failed for #{number}: {stderr}");
     }
 
-    let add = Command::new("git")
-        .args(["-C", &bare_str, "worktree", "add", &worktree_str, &branch])
-        .output()
+    add_worktree_or_recover(&bare_str, &worktree, &branch)
         .await
-        .context("git worktree add failed for PR")?;
-    if !add.status.success() {
-        let stderr = String::from_utf8_lossy(&add.stderr);
-        anyhow::bail!("git worktree add failed for PR #{number}: {stderr}");
-    }
+        .with_context(|| format!("git worktree add failed for PR #{number}"))?;
 
     // Set upstream so `git push` targets the real PR branch, not origin/pr-<number>.
     let upstream = format!("origin/{head_branch}");
@@ -474,6 +488,62 @@ mod tests {
     }
 
     // --- failing tests (pass after changes) ---
+
+    #[tokio::test]
+    async fn add_worktree_or_recover_succeeds_on_fresh_bare() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (origin, bare) = setup_origin_and_bare(tmp.path()).await;
+        let origin_str = origin.to_string_lossy().into_owned();
+        let bare_str = bare.to_string_lossy().into_owned();
+
+        run_git(&["-C", &origin_str, "checkout", "-b", "feat/x"]).await;
+        run_git(&["-C", &origin_str, "commit", "--allow-empty", "-m", "x"]).await;
+        run_git(&["-C", &bare_str, "fetch", "origin"]).await;
+        run_git(&[
+            "-C",
+            &bare_str,
+            "branch",
+            "pr-9",
+            "refs/remotes/origin/feat/x",
+        ])
+        .await;
+
+        let worktree = bare.join("pr-9");
+        add_worktree_or_recover(&bare_str, &worktree, "pr-9")
+            .await
+            .unwrap();
+        assert!(worktree.is_dir(), "worktree must be created");
+    }
+
+    #[tokio::test]
+    async fn add_worktree_or_recover_returns_ok_when_directory_already_exists() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_origin, bare) = setup_origin_and_bare(tmp.path()).await;
+        let bare_str = bare.to_string_lossy().into_owned();
+
+        // Simulate another instance having already created the worktree
+        // directory between our pre-check and our worktree add call.
+        let worktree = bare.join("pr-7");
+        std::fs::create_dir(&worktree).unwrap();
+
+        // pr-7 branch doesn't exist; add would fail with "fatal: invalid
+        // reference: pr-7". The recovery branch must swallow it because the
+        // directory exists (other instance's success state).
+        let result = add_worktree_or_recover(&bare_str, &worktree, "pr-7").await;
+        assert!(result.is_ok(), "expected Ok, got {result:?}");
+    }
+
+    #[tokio::test]
+    async fn add_worktree_or_recover_propagates_error_when_directory_absent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_origin, bare) = setup_origin_and_bare(tmp.path()).await;
+        let bare_str = bare.to_string_lossy().into_owned();
+
+        // Branch doesn't exist; directory doesn't exist; recovery must not fire.
+        let worktree = bare.join("pr-nope");
+        let result = add_worktree_or_recover(&bare_str, &worktree, "nonexistent-branch").await;
+        assert!(result.is_err(), "expected Err, got {result:?}");
+    }
 
     #[tokio::test]
     async fn ensure_pr_worktree_reentry_fetches_remote_tracking_refs() {
