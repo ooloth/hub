@@ -79,6 +79,11 @@ pub(crate) enum Screen {
         pr: PullRequest,
         scroll: u16,
     },
+    PrSplit {
+        parent: ListSnapshot,
+        items: Vec<PullRequest>,
+        selected: usize,
+    },
     ReviewingPr {
         parent: ListSnapshot,
         pr: PullRequest,
@@ -125,6 +130,9 @@ impl Screen {
             Screen::PrDetail { pr, .. }
             | Screen::ReviewingPr { pr, .. }
             | Screen::MergingPr { pr, .. } => Some(StatusItem::Pr(pr.clone())),
+            Screen::PrSplit {
+                items, selected, ..
+            } => items.get(*selected).cloned().map(StatusItem::Pr),
         }
     }
 }
@@ -217,6 +225,7 @@ pub(crate) enum Action {
     CancelDismissal,
     // Filter actions — only take effect from UnifiedList in normal mode.
     FilterCategory(Category),
+    EnterPrSplit,
     ClearFilter,
     StartQuery,
     AppendQuery(char),

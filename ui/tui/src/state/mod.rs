@@ -46,12 +46,13 @@ impl App {
             | Screen::ReviewingPr { .. }
             | Screen::MergingPr { .. }
             | Screen::DismissingIssue { .. } => 0,
+            Screen::PrSplit { items, .. } => items.len(),
         }
     }
 
     pub(crate) fn move_up(&mut self) {
         match &mut self.ui.screen {
-            Screen::UnifiedList { selected, .. } => {
+            Screen::UnifiedList { selected, .. } | Screen::PrSplit { selected, .. } => {
                 *selected = selected.saturating_sub(1);
             }
             Screen::LogDetail { .. }
@@ -66,7 +67,7 @@ impl App {
     pub(crate) fn move_down(&mut self) {
         let len = self.active_list_len();
         match &mut self.ui.screen {
-            Screen::UnifiedList { selected, .. } => {
+            Screen::UnifiedList { selected, .. } | Screen::PrSplit { selected, .. } => {
                 if len > 0 && *selected < len - 1 {
                     *selected += 1;
                 }
@@ -82,7 +83,9 @@ impl App {
 
     pub(crate) fn move_to_top(&mut self) {
         match &mut self.ui.screen {
-            Screen::UnifiedList { selected, .. } => *selected = 0,
+            Screen::UnifiedList { selected, .. } | Screen::PrSplit { selected, .. } => {
+                *selected = 0;
+            }
             Screen::LogDetail { .. }
             | Screen::IssueDetail { .. }
             | Screen::PrDetail { .. }
@@ -98,7 +101,9 @@ impl App {
             return;
         }
         match &mut self.ui.screen {
-            Screen::UnifiedList { selected, .. } => *selected = len - 1,
+            Screen::UnifiedList { selected, .. } | Screen::PrSplit { selected, .. } => {
+                *selected = len - 1;
+            }
             Screen::LogDetail { .. }
             | Screen::IssueDetail { .. }
             | Screen::PrDetail { .. }
@@ -111,7 +116,7 @@ impl App {
     pub(crate) fn move_page_up(&mut self) {
         const PAGE: usize = 10;
         match &mut self.ui.screen {
-            Screen::UnifiedList { selected, .. } => {
+            Screen::UnifiedList { selected, .. } | Screen::PrSplit { selected, .. } => {
                 *selected = selected.saturating_sub(PAGE);
             }
             Screen::LogDetail { .. }
@@ -130,7 +135,7 @@ impl App {
             return;
         }
         match &mut self.ui.screen {
-            Screen::UnifiedList { selected, .. } => {
+            Screen::UnifiedList { selected, .. } | Screen::PrSplit { selected, .. } => {
                 *selected = (*selected + PAGE).min(len - 1);
             }
             Screen::LogDetail { .. }

@@ -134,6 +134,16 @@ const KEYBINDS_PR_READER: &[(&str, &str)] = &[
     ("q / Ctrl-C", "quit"),
 ];
 
+const KEYBINDS_PR_SPLIT: &[(&str, &str)] = &[
+    ("?", "toggle help"),
+    ("k / j", "select prev / next PR"),
+    ("gg / G", "first / last PR"),
+    ("Ctrl-u / Ctrl-d", "page up / down"),
+    ("r", "refresh"),
+    ("Esc", "back to list"),
+    ("q / Ctrl-C", "quit"),
+];
+
 const KEYBINDS_ISSUE_READER: &[(&str, &str)] = &[
     ("?", "toggle help"),
     ("k / j", "scroll up / down"),
@@ -291,6 +301,16 @@ fn wrap_text(text: &str, width: usize) -> Vec<String> {
 fn position_label(screen: &Screen) -> String {
     match screen {
         Screen::UnifiedList {
+            items, selected, ..
+        } => {
+            let n = items.len();
+            if n == 0 {
+                String::new()
+            } else {
+                format!("{}/{n}", selected + 1)
+            }
+        }
+        Screen::PrSplit {
             items, selected, ..
         } => {
             let n = items.len();
@@ -909,6 +929,30 @@ fn render_dismiss_modal(frame: &mut ratatui::Frame, input: &tui_input::Input, ar
     ));
 }
 
+fn render_pr_split(
+    frame: &mut ratatui::Frame,
+    items: &[domain::PullRequest],
+    selected: usize,
+    area: Rect,
+) {
+    let title = format!(" PRs · {} · split (v1) ", items.len());
+    let body = if items.is_empty() {
+        "No PRs available.".to_string()
+    } else {
+        let pr = &items[selected];
+        format!(
+            "Slice 1 placeholder. Selected: #{} · {} (left/right panes land in slice 3)",
+            pr.number, pr.title
+        )
+    };
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(title);
+    let paragraph = Paragraph::new(body).block(block);
+    frame.render_widget(paragraph, area);
+}
+
 fn render_log_detail(
     frame: &mut ratatui::Frame,
     view: &LogDetailView,
@@ -1018,6 +1062,11 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
             render_issue_detail(frame, issue, &mut 0, content_area);
             render_dismiss_modal(frame, input, frame.area());
         }
+        Screen::PrSplit {
+            items, selected, ..
+        } => {
+            render_pr_split(frame, items, *selected, content_area);
+        }
     }
 
     let right_status =
@@ -1059,6 +1108,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
             Screen::PrDetail { .. } | Screen::ReviewingPr { .. } | Screen::MergingPr { .. } => {
                 KEYBINDS_PR_READER
             }
+            Screen::PrSplit { .. } => KEYBINDS_PR_SPLIT,
         };
         let text = format_keybinds(keybinds);
         let lines = keybinds.len() as u16;

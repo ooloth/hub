@@ -11,6 +11,7 @@ use crate::display::{
     log_detail_view_from_group, log_detail_view_from_item, DisplayItem, Filter, FlatRow,
     InvestigationKind, ListSnapshot, LogDetailView,
 };
+use workflows::status::StatusItem;
 
 impl App {
     pub(crate) fn update(&mut self, action: Action) -> Vec<Effect> {
@@ -38,6 +39,7 @@ impl App {
                     Screen::LogDetail { parent, .. }
                     | Screen::IssueDetail { parent, .. }
                     | Screen::PrDetail { parent, .. }
+                    | Screen::PrSplit { parent, .. }
                     | Screen::ReviewingPr { parent, .. } => {
                         let flat_rows = flatten(&parent.items, &parent.expanded_groups);
                         Screen::UnifiedList {
@@ -72,6 +74,39 @@ impl App {
                     category: new_cat,
                     query,
                 });
+                vec![]
+            }
+            Action::EnterPrSplit => {
+                let Screen::UnifiedList {
+                    items,
+                    selected,
+                    filter,
+                    expanded_groups,
+                    ..
+                } = &self.ui.screen
+                else {
+                    return vec![];
+                };
+                let snapshot = ListSnapshot {
+                    items: items.clone(),
+                    selected: *selected,
+                    filter: filter.clone(),
+                    expanded_groups: expanded_groups.clone(),
+                };
+                let prs: Vec<_> = self
+                    .data
+                    .raw_items
+                    .iter()
+                    .filter_map(|item| match item {
+                        StatusItem::Pr(pr) => Some(pr.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                self.ui.screen = Screen::PrSplit {
+                    parent: snapshot,
+                    items: prs,
+                    selected: 0,
+                };
                 vec![]
             }
             Action::ClearFilter => {
@@ -165,6 +200,7 @@ impl App {
                 Screen::LogDetail { .. } => self.handle_log_detail(action),
                 Screen::IssueDetail { .. } => self.handle_issue_reader(action),
                 Screen::PrDetail { .. } => self.handle_pr_reader(action),
+                Screen::PrSplit { .. } => self.handle_pr_split(action),
                 Screen::ReviewingPr { .. } => self.handle_reviewing_pr(action),
                 Screen::MergingPr { .. } => self.handle_merging_pr(action),
                 Screen::DismissingIssue { .. } => self.handle_dismissing(action),
@@ -532,6 +568,38 @@ impl App {
         }
     }
 
+    fn handle_pr_split(&mut self, action: Action) -> Vec<Effect> {
+        match action {
+            Action::MoveUp => {
+                self.move_up();
+                vec![]
+            }
+            Action::MoveDown => {
+                self.move_down();
+                vec![]
+            }
+            Action::MoveToTop => {
+                self.move_to_top();
+                vec![]
+            }
+            Action::MoveToBottom => {
+                self.move_to_bottom();
+                vec![]
+            }
+            Action::MovePageUp => {
+                self.move_page_up();
+                vec![]
+            }
+            Action::MovePageDown => {
+                self.move_page_down();
+                vec![]
+            }
+            // Enter is reserved for v2 (focus-shift to right pane, tracked in
+            // ooloth/hub#240). Other actions are not yet wired for PrSplit.
+            _ => vec![],
+        }
+    }
+
     fn handle_reviewing_pr(&mut self, action: Action) -> Vec<Effect> {
         match action {
             Action::CommitReview(skill) => {
@@ -827,12 +895,14 @@ impl App {
             Screen::PrDetail { pr, .. }
             | Screen::ReviewingPr { pr, .. }
             | Screen::MergingPr { pr, .. } => Some(&pr.url),
+            Screen::PrSplit {
+                items, selected, ..
+            } => items.get(*selected).map(|pr| pr.url.as_str()),
         }
     }
 }
 
 pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
-    use workflows::status::StatusItem;
     match app.current_screen() {
         Screen::UnifiedList {
             flat_rows,
@@ -876,6 +946,9 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
             .selected_url()
             .map(|u| EnterAction::OpenUrl(u.to_string()))
             .unwrap_or(EnterAction::None),
+        // PrSplit: Enter is reserved for v2 (focus-shift to right pane,
+        // tracked in ooloth/hub#240). For v1 it does nothing.
+        Screen::PrSplit { .. } => EnterAction::None,
     }
 }
 
@@ -1016,6 +1089,26 @@ fn refresh_screen_in_place(screen: &mut Screen, raw: &[workflows::status::Status
             let new_items = build_unified(raw.to_vec(), &parent.filter);
             parent.selected = parent.selected.min(new_items.len().saturating_sub(1));
             parent.items = new_items;
+        }
+        Screen::PrSplit {
+            parent,
+            items,
+            selected,
+        } => {
+            let new_parent_items = build_unified(raw.to_vec(), &parent.filter);
+            parent.selected = parent
+                .selected
+                .min(new_parent_items.len().saturating_sub(1));
+            parent.items = new_parent_items;
+            let new_prs: Vec<_> = raw
+                .iter()
+                .filter_map(|item| match item {
+                    StatusItem::Pr(pr) => Some(pr.clone()),
+                    _ => None,
+                })
+                .collect();
+            *selected = (*selected).min(new_prs.len().saturating_sub(1));
+            *items = new_prs;
         }
     }
 }
@@ -2595,5 +2688,146 @@ mod tests {
         let effects = app.update(Action::CancelReview);
         assert!(matches!(app.current_screen(), Screen::PrDetail { .. }));
         assert!(effects.is_empty());
+    }
+
+    // --- EnterPrSplit / Screen::PrSplit ---
+
+    fn stub_pr_numbered(number: u64, title: &str) -> StatusItem {
+        let StatusItem::Pr(mut pr) = stub_pr() else {
+            unreachable!()
+        };
+        pr.number = number;
+        pr.title = title.to_string();
+        pr.url = format!("https://github.com/ooloth/hub/pull/{number}");
+        StatusItem::Pr(pr)
+    }
+
+    fn app_with_raw(items: Vec<StatusItem>) -> App {
+        let mut app = app_with_items(
+            items
+                .iter()
+                .cloned()
+                .map(DisplayItem::Single)
+                .collect::<Vec<_>>(),
+        );
+        app.data.raw_items = items;
+        app
+    }
+
+    #[test]
+    fn enter_pr_split_from_unified_list_with_prs_pushes_pr_split_screen() {
+        let mut app = app_with_raw(vec![
+            stub_pr_numbered(1, "first"),
+            ci_failure(),
+            stub_pr_numbered(2, "second"),
+        ]);
+        app.update(Action::EnterPrSplit);
+        let Screen::PrSplit {
+            items, selected, ..
+        } = app.current_screen()
+        else {
+            panic!("expected PrSplit");
+        };
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].number, 1);
+        assert_eq!(items[1].number, 2);
+        assert_eq!(*selected, 0);
+    }
+
+    #[test]
+    fn enter_pr_split_from_unified_list_with_no_prs_pushes_empty_pr_split() {
+        let mut app = app_with_raw(vec![ci_failure()]);
+        app.update(Action::EnterPrSplit);
+        let Screen::PrSplit {
+            items, selected, ..
+        } = app.current_screen()
+        else {
+            panic!("expected PrSplit");
+        };
+        assert!(items.is_empty());
+        assert_eq!(*selected, 0);
+    }
+
+    #[test]
+    fn enter_pr_split_captures_unified_list_parent_for_back_nav() {
+        let mut app = app_with_raw(vec![stub_pr_numbered(1, "first")]);
+        // Filter to PRs first so we can verify the snapshot preserves it.
+        app.update(Action::FilterCategory(Category::Prs));
+        app.update(Action::EnterPrSplit);
+        let Screen::PrSplit { parent, .. } = app.current_screen() else {
+            panic!("expected PrSplit");
+        };
+        assert_eq!(parent.filter.category, Some(Category::Prs));
+    }
+
+    #[test]
+    fn enter_pr_split_from_non_unified_list_does_nothing() {
+        let mut app = app_in_pr_detail();
+        app.update(Action::EnterPrSplit);
+        assert!(matches!(app.current_screen(), Screen::PrDetail { .. }));
+    }
+
+    #[test]
+    fn back_from_pr_split_restores_unified_list_with_filter() {
+        let mut app = app_with_raw(vec![stub_pr_numbered(1, "first")]);
+        app.update(Action::FilterCategory(Category::Prs));
+        app.update(Action::EnterPrSplit);
+        app.update(Action::Back);
+        let Screen::UnifiedList { filter, .. } = app.current_screen() else {
+            panic!("expected UnifiedList");
+        };
+        assert_eq!(filter.category, Some(Category::Prs));
+    }
+
+    #[test]
+    fn move_down_in_pr_split_advances_selection() {
+        let mut app = app_with_raw(vec![
+            stub_pr_numbered(1, "first"),
+            stub_pr_numbered(2, "second"),
+            stub_pr_numbered(3, "third"),
+        ]);
+        app.update(Action::EnterPrSplit);
+        app.update(Action::MoveDown);
+        let Screen::PrSplit { selected, .. } = app.current_screen() else {
+            panic!();
+        };
+        assert_eq!(*selected, 1);
+    }
+
+    #[test]
+    fn move_down_at_end_of_pr_split_stays_at_last() {
+        let mut app = app_with_raw(vec![
+            stub_pr_numbered(1, "first"),
+            stub_pr_numbered(2, "second"),
+        ]);
+        app.update(Action::EnterPrSplit);
+        app.update(Action::MoveDown);
+        app.update(Action::MoveDown);
+        app.update(Action::MoveDown);
+        let Screen::PrSplit { selected, .. } = app.current_screen() else {
+            panic!();
+        };
+        assert_eq!(*selected, 1);
+    }
+
+    #[test]
+    fn move_up_in_pr_split_at_zero_stays_at_zero() {
+        let mut app = app_with_raw(vec![stub_pr_numbered(1, "first")]);
+        app.update(Action::EnterPrSplit);
+        app.update(Action::MoveUp);
+        let Screen::PrSplit { selected, .. } = app.current_screen() else {
+            panic!();
+        };
+        assert_eq!(*selected, 0);
+    }
+
+    #[test]
+    fn enter_in_pr_split_is_a_noop_in_v1() {
+        // Reserved for v2 (focus-shift, tracked in ooloth/hub#240).
+        let mut app = app_with_raw(vec![stub_pr_numbered(1, "first")]);
+        app.update(Action::EnterPrSplit);
+        let effects = app.update(Action::Enter);
+        assert!(effects.is_empty());
+        assert!(matches!(app.current_screen(), Screen::PrSplit { .. }));
     }
 }
