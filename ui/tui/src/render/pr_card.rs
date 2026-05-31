@@ -11,13 +11,11 @@ use super::{dim, urgency_color, wrap_text};
 /// Card for one PR in the split view's left list.
 ///
 /// Layout (each item is one terminal row):
-///   bullet + status + age
 ///   title (indented; wraps across rows when wider than `content_width`)
-///   repo + #number (indented, dim)
+///   bullet + status + age + repo + #number (merged metadata line)
 ///
-/// `content_width` is the pane's interior width — the width available
-/// to a row inside the bordered block. Title wrapping uses this minus
-/// the 4-space indent.
+/// `content_width` is the pane's interior width. Title wrapping uses
+/// this minus the 4-space indent.
 ///
 /// Pure — no I/O, no terminal access. Style decisions live here;
 /// inter-card layout (selection highlight, divider between cards) is
@@ -25,12 +23,6 @@ use super::{dim, urgency_color, wrap_text};
 pub(crate) fn pr_card_lines(pr: &PullRequest, content_width: usize) -> Vec<Line<'static>> {
     let status = pr_status_text(pr);
     let age = format_age_short(pr.age);
-    let line_status = Line::from(vec![
-        Span::raw(" "),
-        Span::styled("●", Style::default().fg(urgency_color(pr.urgency))),
-        Span::raw(format!("  {status}")),
-        Span::styled(format!(" · {age}"), dim()),
-    ]);
 
     let title_width = content_width.saturating_sub(4).max(1);
     let title_lines: Vec<Line<'static>> = wrap_text(&pr.title, title_width)
@@ -43,15 +35,17 @@ pub(crate) fn pr_card_lines(pr: &PullRequest, content_width: usize) -> Vec<Line<
         })
         .collect();
 
-    let line_repo = Line::from(Span::styled(
-        format!("    {} · #{}", pr.repo, pr.number),
-        dim(),
-    ));
+    let line_meta = Line::from(vec![
+        Span::raw(" "),
+        Span::styled("●", Style::default().fg(urgency_color(pr.urgency))),
+        Span::raw(format!("  {status}")),
+        Span::styled(format!(" · {age}"), dim()),
+        Span::styled(format!("  ·  {} · #{}", pr.repo, pr.number), dim()),
+    ]);
 
-    let mut lines = Vec::with_capacity(2 + title_lines.len());
-    lines.push(line_status);
+    let mut lines = Vec::with_capacity(1 + title_lines.len());
     lines.extend(title_lines);
-    lines.push(line_repo);
+    lines.push(line_meta);
     lines
 }
 
@@ -140,25 +134,20 @@ mod tests {
     }
 
     #[test]
-    fn card_status_line_has_bullet_status_and_age() {
+    fn card_meta_line_has_bullet_status_age_and_repo() {
         let lines = pr_card_lines(&pr(), WIDE);
-        assert_eq!(line_text(&lines[0]), " ●  no reviews · 8d");
-    }
-
-    #[test]
-    fn card_repo_line_is_indented_repo_and_number() {
-        let lines = pr_card_lines(&pr(), WIDE);
-        let last = lines.last().unwrap();
-        assert_eq!(line_text(last), "    ooloth/hub · #159");
+        let meta = line_text(lines.last().unwrap());
+        assert!(meta.contains(" ●  no reviews · 8d"), "got: {meta:?}");
+        assert!(meta.contains("ooloth/hub · #159"), "got: {meta:?}");
     }
 
     #[test]
     fn card_title_fits_on_one_line_at_wide_widths() {
         let lines = pr_card_lines(&pr(), WIDE);
-        // 3 lines = status + 1 title + repo
-        assert_eq!(lines.len(), 3);
+        // 2 lines = 1 title + 1 meta
+        assert_eq!(lines.len(), 2);
         assert_eq!(
-            line_text(&lines[1]),
+            line_text(&lines[0]),
             "    workflows/implement: filter claude stderr"
         );
     }
@@ -167,17 +156,15 @@ mod tests {
     fn card_title_wraps_when_narrower_than_title() {
         // Width 20 leaves 16 cols for title text after the 4-space indent.
         // "workflows/implement: filter claude stderr" must split across
-        // multiple title rows; the status and repo rows are unaffected.
+        // multiple title rows; the meta row is unaffected.
         let lines = pr_card_lines(&pr(), 20);
         assert!(
-            lines.len() > 3,
-            "expected wrapped title to produce more than 3 lines, got {}",
+            lines.len() > 2,
+            "expected wrapped title to produce more than 2 lines, got {}",
             lines.len()
         );
-        // Status row unchanged
-        assert_eq!(line_text(&lines[0]), " ●  no reviews · 8d");
-        // Every middle line is the indented title (no piece exceeds 16 chars).
-        for line in &lines[1..lines.len() - 1] {
+        // Every line except the last is an indented title piece.
+        for line in &lines[..lines.len() - 1] {
             let text = line_text(line);
             assert!(
                 text.starts_with("    "),
@@ -188,8 +175,10 @@ mod tests {
                 "title row {text:?} exceeds indented width budget"
             );
         }
-        // Last line is still the repo row
-        assert_eq!(line_text(lines.last().unwrap()), "    ooloth/hub · #159");
+        // Last line is the merged meta row
+        let meta = line_text(lines.last().unwrap());
+        assert!(meta.contains("no reviews"), "meta missing status: {meta:?}");
+        assert!(meta.contains("ooloth/hub"), "meta missing repo: {meta:?}");
     }
 
     #[rstest]
@@ -197,13 +186,14 @@ mod tests {
     #[case::minutes(Duration::minutes(45), "45m")]
     #[case::hours(Duration::hours(3), "3h")]
     #[case::days(Duration::days(8), "8d")]
-    fn card_status_line_age_format(#[case] age: Duration, #[case] expected_age: &str) {
+    fn card_meta_line_age_format(#[case] age: Duration, #[case] expected_age: &str) {
         let mut p = pr();
         p.age = age;
         let lines = pr_card_lines(&p, WIDE);
+        let meta = line_text(lines.last().unwrap());
         assert!(
-            line_text(&lines[0]).ends_with(expected_age),
-            "expected status line to end with {expected_age:?}"
+            meta.contains(expected_age),
+            "expected meta line to contain {expected_age:?}, got: {meta:?}"
         );
     }
 
@@ -212,6 +202,6 @@ mod tests {
         let mut p = pr();
         p.merge_blocker = Some(MergeBlocker::Conflict);
         let lines = pr_card_lines(&p, WIDE);
-        assert!(line_text(&lines[0]).contains("conflict"));
+        assert!(line_text(lines.last().unwrap()).contains("conflict"));
     }
 }

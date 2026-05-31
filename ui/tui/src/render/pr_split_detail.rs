@@ -3,7 +3,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::Paragraph,
 };
 
 use crate::display::format_age_short;
@@ -12,29 +12,31 @@ use super::{dim, pr_card::pr_status_text, urgency_color, wrap_text};
 
 /// Right-pane detail view for `Screen::PrSplit`.
 ///
-/// Layout (top to bottom): bold title (wrapped), structured fields
-/// block, separator, Description section, Files changed section.
+/// Renders directly into `area` with no block — the caller is
+/// responsible for providing a padded area inside the shared outer border.
+///
+/// Layout (top to bottom): PR identifier, blank, bold title (wrapped),
+/// structured fields, separator, Description section, Files changed section.
 ///
 /// When the rendered content exceeds the visible pane height, the tail
 /// is clipped and replaced with a dim "+N more lines" hint pointing at
 /// vim-scroll (tracked in #240).
 pub(super) fn render_pr_split_detail(frame: &mut ratatui::Frame, pr: &PullRequest, area: Rect) {
-    let title = format!(" PR #{} · {} ", pr.number, pr.repo);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .title(title);
-    let inner_area = block.inner(area);
-    frame.render_widget(block, area);
-
-    let content_width = inner_area.width as usize;
-    let visible_height = inner_area.height as usize;
+    let content_width = area.width as usize;
+    let visible_height = area.height as usize;
     let lines = build_detail_lines(pr, content_width, visible_height);
-    frame.render_widget(Paragraph::new(lines), inner_area);
+    frame.render_widget(Paragraph::new(lines), area);
 }
 
 fn build_detail_lines(pr: &PullRequest, width: usize, visible_height: usize) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
+
+    // PR identifier (replaces the removed block title)
+    lines.push(Line::from(Span::styled(
+        format!("PR #{} · {}", pr.number, pr.repo),
+        Style::default().add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(""));
 
     // Title (bold, wrapped)
     for piece in wrap_text(&pr.title, width.max(1)) {

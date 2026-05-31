@@ -966,10 +966,46 @@ fn render_pr_split(
         frame.render_widget(paragraph, area);
         return;
     }
-    let [left_area, right_area] =
-        Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)]).areas(area);
-    render_pr_card_list(frame, items, selected, left_area);
-    pr_split_detail::render_pr_split_detail(frame, &items[selected], right_area);
+
+    let title = format!(" PRs · {} · split (v1) ", items.len());
+    let outer_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .title(title);
+    let inner = outer_block.inner(area);
+    frame.render_widget(outer_block, area);
+
+    let [left_inner, divider_inner, right_raw] = Layout::horizontal([
+        Constraint::Percentage(40),
+        Constraint::Length(1),
+        Constraint::Fill(1),
+    ])
+    .areas(inner);
+
+    // Vertical divider and top/bottom junctions
+    {
+        let buf = frame.buffer_mut();
+        for y in inner.y..inner.y + inner.height {
+            buf.set_string(divider_inner.x, y, "│", Style::default());
+        }
+        buf.set_string(divider_inner.x, area.y, "┬", Style::default());
+        buf.set_string(
+            divider_inner.x,
+            area.y + area.height - 1,
+            "┴",
+            Style::default(),
+        );
+    }
+
+    // 1-char left padding for the right pane
+    let right_inner = Rect {
+        x: right_raw.x + 1,
+        width: right_raw.width.saturating_sub(1),
+        ..right_raw
+    };
+
+    render_pr_card_list(frame, items, selected, left_inner);
+    pr_split_detail::render_pr_split_detail(frame, &items[selected], right_inner);
 }
 
 fn render_pr_card_list(
@@ -978,12 +1014,7 @@ fn render_pr_card_list(
     selected: usize,
     area: Rect,
 ) {
-    let title = format!(" PRs · {} · split (v1) ", items.len());
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .title(title);
-    let inner_width = area.width.saturating_sub(2) as usize;
+    let inner_width = area.width as usize;
     let last_idx = items.len().saturating_sub(1);
     let list_items: Vec<ListItem> = items
         .iter()
@@ -998,9 +1029,7 @@ fn render_pr_card_list(
         .collect();
     let mut state = ListState::default();
     state.select(Some(selected));
-    let list = List::new(list_items)
-        .block(block)
-        .highlight_style(list_highlight());
+    let list = List::new(list_items).highlight_style(list_highlight());
     frame.render_stateful_widget(list, area, &mut state);
 }
 
