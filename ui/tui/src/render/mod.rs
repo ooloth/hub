@@ -937,20 +937,44 @@ fn render_pr_split(
     selected: usize,
     area: Rect,
 ) {
+    if items.is_empty() {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .title(" PRs · 0 · split (v1) ");
+        let paragraph = Paragraph::new("No PRs available.").block(block);
+        frame.render_widget(paragraph, area);
+        return;
+    }
+    let [left_area, right_area] =
+        Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)]).areas(area);
+    render_pr_card_list(frame, items, selected, left_area);
+    // Right pane scroll = 0 in v1. Vim-motion scrolling inside the detail
+    // pane is tracked in ooloth/hub#240 (v2 follow-up).
+    render_pr_detail(frame, &items[selected], &mut 0, right_area);
+}
+
+fn render_pr_card_list(
+    frame: &mut ratatui::Frame,
+    items: &[domain::PullRequest],
+    selected: usize,
+    area: Rect,
+) {
     let title = format!(" PRs · {} · split (v1) ", items.len());
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title(title);
-    if items.is_empty() {
-        let paragraph = Paragraph::new("No PRs available.").block(block);
-        frame.render_widget(paragraph, area);
-        return;
-    }
-    let pr = &items[selected];
-    let lines = pr_card::pr_card_lines(pr);
-    let paragraph = Paragraph::new(Text::from(lines.to_vec())).block(block);
-    frame.render_widget(paragraph, area);
+    let list_items: Vec<ListItem> = items
+        .iter()
+        .map(|pr| ListItem::new(pr_card::pr_card_lines(pr).to_vec()))
+        .collect();
+    let mut state = ListState::default();
+    state.select(Some(selected));
+    let list = List::new(list_items)
+        .block(block)
+        .highlight_style(list_highlight());
+    frame.render_stateful_widget(list, area, &mut state);
 }
 
 fn render_log_detail(
@@ -2246,5 +2270,109 @@ mod tests {
             wrap_text("alpha beta gamma", 10),
             vec!["alpha beta", "gamma"]
         );
+    }
+
+    // ── PrSplit ───────────────────────────────────────────────────────────────
+
+    fn pr_split_pr(number: u64, title: &str, urgency: domain::Urgency) -> domain::PullRequest {
+        domain::PullRequest {
+            number,
+            title: title.to_string(),
+            repo: domain::RepoSlug::new("ooloth", "hub"),
+            url: format!("https://github.com/ooloth/hub/pull/{number}"),
+            age: chrono::Duration::days(2),
+            urgency,
+            kind: domain::PrKind::Mine,
+            author: "ooloth".to_string(),
+            review_decision: None,
+            approval_count: 0,
+            comment_count: 0,
+            head_branch: format!("feat/{number}"),
+            base_branch: "main".to_string(),
+            body: Some(format!("Body of PR #{number}.")),
+            ci_status: None,
+            changed_files: vec![],
+            total_changed_files: 0,
+            review_threads: vec![],
+            pr_comments: vec![],
+            merge_blocker: None,
+        }
+    }
+
+    fn pr_split_app(items: Vec<domain::PullRequest>, selected: usize) -> App {
+        App {
+            ui: UiState {
+                screen: Screen::PrSplit {
+                    parent: ListSnapshot {
+                        items: vec![],
+                        selected: 0,
+                        filter: Filter::default(),
+                        expanded_groups: HashSet::new(),
+                    },
+                    items,
+                    selected,
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    #[test]
+    fn full_screen_pr_split_empty() {
+        // S1: No PRs — full-width fallback block with "No PRs available."
+        let mut app = pr_split_app(vec![], 0);
+        let buf = draw(&mut app, 195, 40);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_split_first_selected() {
+        // S2: 3 PRs, first selected — left card list (selection highlighted on
+        // PR #1) + right detail pane for PR #1.
+        let mut app = pr_split_app(
+            vec![
+                pr_split_pr(1, "first PR with conflict marker", domain::Urgency::High),
+                pr_split_pr(2, "second PR awaiting reviews", domain::Urgency::Medium),
+                pr_split_pr(3, "third PR fresh", domain::Urgency::Low),
+            ],
+            0,
+        );
+        let buf = draw(&mut app, 195, 40);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_split_last_selected() {
+        // S3: Same 3 PRs, last selected — right pane swaps to PR #3 detail.
+        let mut app = pr_split_app(
+            vec![
+                pr_split_pr(1, "first PR with conflict marker", domain::Urgency::High),
+                pr_split_pr(2, "second PR awaiting reviews", domain::Urgency::Medium),
+                pr_split_pr(3, "third PR fresh", domain::Urgency::Low),
+            ],
+            2,
+        );
+        let buf = draw(&mut app, 195, 40);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_split_narrow_terminal() {
+        // S4: 100 cols (cramped) — both panes still render per the
+        // "always split" decision; titles wrap.
+        let mut app = pr_split_app(
+            vec![
+                pr_split_pr(
+                    1,
+                    "first PR title that is long enough to wrap",
+                    domain::Urgency::High,
+                ),
+                pr_split_pr(2, "second PR", domain::Urgency::Low),
+            ],
+            0,
+        );
+        let buf = draw(&mut app, 100, 20);
+        insta::assert_snapshot!(screen_text(&buf));
     }
 }
