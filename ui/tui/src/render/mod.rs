@@ -1,4 +1,5 @@
 mod pr_card;
+mod pr_split_detail;
 
 use chrono::Utc;
 use ratatui::{
@@ -949,9 +950,7 @@ fn render_pr_split(
     let [left_area, right_area] =
         Layout::horizontal([Constraint::Percentage(45), Constraint::Percentage(55)]).areas(area);
     render_pr_card_list(frame, items, selected, left_area);
-    // Right pane scroll = 0 in v1. Vim-motion scrolling inside the detail
-    // pane is tracked in ooloth/hub#240 (v2 follow-up).
-    render_pr_detail(frame, &items[selected], &mut 0, right_area);
+    pr_split_detail::render_pr_split_detail(frame, &items[selected], right_area);
 }
 
 fn render_pr_card_list(
@@ -2374,7 +2373,8 @@ mod tests {
     #[test]
     fn full_screen_pr_split_narrow_terminal() {
         // S4: 100 cols (cramped) — both panes still render per the
-        // "always split" decision; titles wrap.
+        // "always split" decision; titles wrap and the right pane shows
+        // the H1 overflow hint when content exceeds the visible height.
         let mut app = pr_split_app(
             vec![
                 pr_split_pr(
@@ -2387,6 +2387,44 @@ mod tests {
             0,
         );
         let buf = draw(&mut app, 100, 20);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_pr_split_detail_populated() {
+        // S5: Selected PR has body content, files-changed list, CI status,
+        // and a merge blocker — exercises every section of the right pane.
+        let mut pr = pr_split_pr(159, "filter claude stderr", domain::Urgency::Medium);
+        pr.body = Some(
+            "The agent invocation path forwards stderr verbatim, which has\n\
+             leaked token-bearing lines into committed transcripts."
+                .to_string(),
+        );
+        pr.head_branch = "fix/stderr-filter".to_string();
+        pr.ci_status = Some(domain::CiStatus::Success);
+        pr.changed_files = vec![
+            domain::ChangedFile {
+                path: "workflows/src/agent.rs".to_string(),
+                additions: 24,
+                deletions: 3,
+                patch: None,
+            },
+            domain::ChangedFile {
+                path: "workflows/src/lib.rs".to_string(),
+                additions: 1,
+                deletions: 0,
+                patch: None,
+            },
+            domain::ChangedFile {
+                path: "tests/agent_test.rs".to_string(),
+                additions: 18,
+                deletions: 0,
+                patch: None,
+            },
+        ];
+        pr.total_changed_files = 3;
+        let mut app = pr_split_app(vec![pr], 0);
+        let buf = draw(&mut app, 195, 40);
         insta::assert_snapshot!(screen_text(&buf));
     }
 }

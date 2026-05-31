@@ -2,28 +2,28 @@
 source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
-╭ PRs · 3 · split (v1) ────────────────────────────────────────────────────────────────╮╭ PR #1 · ooloth/hub ─────────────────────────────────────────────────────────────────────────────────────╮
-│ ●  no reviews · 2d                                                                   ││first PR with conflict marker                                                                            │
-│    first PR with conflict marker                                                     ││                                                                                                         │
-│    ooloth/hub · #1                                                                   ││  status  ●  no reviews                                                                                  │
-│ ─────────────────────────────────────────────────────────────────────────────────────││  checks     (none)                                                                                      │
-│ ●  no reviews · 2d                                                                   ││  diff       +0 −0 in 0 files                                                                            │
-│    second PR awaiting reviews                                                        ││  branch     feat/1                                                                                      │
-│    ooloth/hub · #2                                                                   ││  author     @ooloth                                                                                     │
-│ ─────────────────────────────────────────────────────────────────────────────────────││  updated    2d ago                                                                                      │
-│ ●  no reviews · 2d                                                                   ││                                                                                                         │
-│    third PR fresh                                                                    ││Files changed                                                                                            │
-│    ooloth/hub · #3                                                                   ││                                                                                                         │
-│                                                                                      ││  (no files)                                                                                             │
+╭ PRs · 1 · split (v1) ────────────────────────────────────────────────────────────────╮╭ PR #159 · ooloth/hub ───────────────────────────────────────────────────────────────────────────────────╮
+│ ●  no reviews · 2d                                                                   ││filter claude stderr                                                                                     │
+│    filter claude stderr                                                              ││                                                                                                         │
+│    ooloth/hub · #159                                                                 ││  status  ●  no reviews                                                                                  │
+│                                                                                      ││  checks     ✓ passing                                                                                   │
+│                                                                                      ││  diff       +43 −3 in 3 files                                                                           │
+│                                                                                      ││  branch     fix/stderr-filter                                                                           │
+│                                                                                      ││  author     @ooloth                                                                                     │
+│                                                                                      ││  updated    2d ago                                                                                      │
+│                                                                                      ││                                                                                                         │
+│                                                                                      ││Files changed                                                                                            │
+│                                                                                      ││                                                                                                         │
+│                                                                                      ││  workflows/src/agent.rs  +24 −3                                                                         │
+│                                                                                      ││  workflows/src/lib.rs    +1 −0                                                                          │
+│                                                                                      ││  tests/agent_test.rs     +18 −0                                                                         │
 │                                                                                      ││                                                                                                         │
 │                                                                                      ││─────────────────────────────────────────────────────────────────────────────────────────────────────────│
 │                                                                                      ││                                                                                                         │
 │                                                                                      ││Description                                                                                              │
 │                                                                                      ││                                                                                                         │
-│                                                                                      ││  Body of PR #1.                                                                                         │
-│                                                                                      ││                                                                                                         │
-│                                                                                      ││                                                                                                         │
-│                                                                                      ││                                                                                                         │
+│                                                                                      ││  The agent invocation path forwards stderr verbatim, which has                                          │
+│                                                                                      ││  leaked token-bearing lines into committed transcripts.                                                 │
 │                                                                                      ││                                                                                                         │
 │                                                                                      ││                                                                                                         │
 │                                                                                      ││                                                                                                         │
@@ -41,4 +41,4 @@ expression: screen_text(&buf)
 │                                                                                      ││                                                                                                         │
 │                                                                                      ││                                                                                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────╯╰─────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- 1/3 · [i] investigate
+ 1/1 · [i] investigate

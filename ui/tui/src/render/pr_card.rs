@@ -60,7 +60,7 @@ pub(crate) fn pr_card_lines(pr: &PullRequest, content_width: usize) -> Vec<Line<
 /// A merge blocker wins over review state because it's the more
 /// pressing signal — the brainstorm cards lead with "conflict" even
 /// when the PR also has no reviews yet.
-fn pr_status_text(pr: &PullRequest) -> String {
+pub(super) fn pr_status_text(pr: &PullRequest) -> String {
     if let Some(blocker) = pr.merge_blocker {
         return merge_blocker_word(blocker).to_string();
     }
