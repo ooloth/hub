@@ -1020,16 +1020,24 @@ fn refresh_screen_in_place(screen: &mut Screen, raw: &[workflows::status::Status
     }
 }
 
-fn apply_refresh(app: &mut App, report: workflows::status::StatusReport) -> Result<Vec<Effect>> {
-    let json = serde_json::to_string(&report).context("failed to serialize status report")?;
-    app.data.raw_items = report.items.clone();
-    app.data.last_updated = Some(Utc::now());
+fn apply_report(
+    app: &mut App,
+    report: workflows::status::StatusReport,
+    refreshed_at: chrono::DateTime<Utc>,
+) {
+    app.data.last_updated = Some(refreshed_at);
     app.data.refresh_state = if report.errors.is_empty() {
         RefreshState::Idle
     } else {
         RefreshState::Partial(report.errors)
     };
+    app.data.raw_items = report.items;
     refresh_screen_in_place(&mut app.ui.screen, &app.data.raw_items);
+}
+
+fn apply_refresh(app: &mut App, report: workflows::status::StatusReport) -> Result<Vec<Effect>> {
+    let json = serde_json::to_string(&report).context("failed to serialize status report")?;
+    apply_report(app, report, Utc::now());
     Ok(vec![Effect::WriteCache(json)])
 }
 
@@ -1046,6 +1054,13 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
         Msg::FetchResult(Ok(report)) => apply_refresh(app, report),
         Msg::FetchResult(Err(e)) => {
             app.data.refresh_state = RefreshState::Failed(e.to_string());
+            Ok(vec![])
+        }
+        Msg::AppliedFromCache {
+            report,
+            refreshed_at,
+        } => {
+            apply_report(app, report, refreshed_at);
             Ok(vec![])
         }
     }
@@ -1613,6 +1628,54 @@ mod tests {
         let effects =
             handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci_and_errors()))).unwrap();
         assert!(matches!(effects.as_slice(), [Effect::WriteCache(_)]));
+    }
+
+    #[test]
+    fn handle_msg_applied_from_cache_sets_idle_and_uses_cache_timestamp() {
+        use chrono::{Duration, Utc};
+        let mut app = App {
+            data: DataState {
+                refresh_state: RefreshState::InProgress,
+                ..DataState::default()
+            },
+            ..App::default()
+        };
+        let cache_ts = Utc::now() - Duration::minutes(5);
+        let effects = handle_msg(
+            &mut app,
+            Msg::AppliedFromCache {
+                report: report_with_ci(),
+                refreshed_at: cache_ts,
+            },
+        )
+        .unwrap();
+        assert!(matches!(app.data.refresh_state, RefreshState::Idle));
+        assert_eq!(app.data.last_updated, Some(cache_ts));
+        assert!(matches!(
+            app.current_screen(),
+            Screen::UnifiedList { items, .. } if !items.is_empty()
+        ));
+        assert!(
+            effects.is_empty(),
+            "AppliedFromCache must not emit effects (e.g. no WriteCache)"
+        );
+    }
+
+    #[test]
+    fn handle_msg_applied_from_cache_with_errors_sets_partial_state() {
+        use chrono::Utc;
+        let mut app = App::default();
+        handle_msg(
+            &mut app,
+            Msg::AppliedFromCache {
+                report: report_with_ci_and_errors(),
+                refreshed_at: Utc::now(),
+            },
+        )
+        .unwrap();
+        assert!(
+            matches!(&app.data.refresh_state, RefreshState::Partial(sources) if sources == &["media", "linear issues"])
+        );
     }
 
     #[test]

@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use domain::{Issue, PrKind, PullRequest, ReviewDecision};
 use workflows::status::{StatusItem, StatusReport};
 
@@ -312,4 +313,8 @@ pub(crate) enum Msg {
     Action(Action),
     Tick,
     FetchResult(Result<StatusReport>),
+    AppliedFromCache {
+        report: StatusReport,
+        refreshed_at: DateTime<Utc>,
+    },
 }

@@ -30,6 +30,12 @@ mod state;
 #[cfg(feature = "private")]
 mod private;
 
+const REFRESH_INTERVAL_SECS: u64 = 30 * 60;
+
+fn refresh_interval_chrono() -> chrono::Duration {
+    chrono::Duration::seconds(REFRESH_INTERVAL_SECS as i64)
+}
+
 struct TerminalSession {
     terminal: Terminal<CrosstermBackend<io::Stdout>>,
 }
@@ -81,7 +87,7 @@ async fn main() -> Result<()> {
         match store::status::read(&conn).context("failed to read status cache")? {
             Some(cached)
                 if cached.schema_version == SCHEMA_VERSION
-                    && (Utc::now() - cached.refreshed_at).num_minutes() <= 30 =>
+                    && (Utc::now() - cached.refreshed_at) < refresh_interval_chrono() =>
             {
                 let report: StatusReport = serde_json::from_str(&cached.payload)
                     .context("failed to deserialize cached status")?;
@@ -225,7 +231,8 @@ async fn run_loop(
     rx: &mut mpsc::Receiver<Result<StatusReport>>,
 ) -> Result<()> {
     let mut events = EventStream::new();
-    let mut refresh_interval = tokio::time::interval(tokio::time::Duration::from_secs(30 * 60));
+    let mut refresh_interval =
+        tokio::time::interval(tokio::time::Duration::from_secs(REFRESH_INTERVAL_SECS));
     refresh_interval.tick().await;
     // Wakes the loop every minute so the "updated Xm ago" timestamp
     // advances without requiring a keypress.
@@ -248,7 +255,18 @@ async fn run_loop(
                     vec![]
                 }
             }
-            _ = refresh_interval.tick() => handle_msg(app, Msg::Tick)?,
+            _ = refresh_interval.tick() => {
+                let cached = store::status::read_if_fresh(conn, refresh_interval_chrono())
+                    .context("failed to read status cache on tick")?;
+                match cached {
+                    Some(cached) if cached.schema_version == SCHEMA_VERSION => {
+                        let report: StatusReport = serde_json::from_str(&cached.payload)
+                            .context("failed to deserialize cached status on tick")?;
+                        handle_msg(app, Msg::AppliedFromCache { report, refreshed_at: cached.refreshed_at })?
+                    }
+                    _ => handle_msg(app, Msg::Tick)?,
+                }
+            }
             _ = display_interval.tick() => vec![], // redraw only; no state change
             Some(result) = rx.recv() => handle_msg(app, Msg::FetchResult(result))?,
         };

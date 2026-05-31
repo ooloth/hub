@@ -2728,6 +2728,7 @@ dependencies = [
  "chrono",
  "dirs",
  "domain",
+ "rstest 0.25.0",
  "rusqlite",
  "tempfile",
 ]
