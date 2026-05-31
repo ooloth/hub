@@ -128,8 +128,9 @@ fn pr_reader_keys(key: KeyEvent) -> Option<Action> {
 }
 
 fn pr_split_keys(key: KeyEvent) -> Option<Action> {
-    // v1 navigation only. Enter is reserved for v2 focus-shift (ooloth/hub#240).
-    // Per-item actions (o, i, l, v, m) wire in slice 4.
+    // Enter is reserved for v2 focus-shift (ooloth/hub#240). v and m
+    // (review picker / merge) land in slice 4.5 once Screen::ReviewingPr
+    // and Screen::MergingPr can return to PrSplit.
     match (key.code, key.modifiers) {
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => Some(Action::MoveUp),
         (KeyCode::Down, _) | (KeyCode::Char('j'), _) => Some(Action::MoveDown),
@@ -137,6 +138,9 @@ fn pr_split_keys(key: KeyEvent) -> Option<Action> {
         (KeyCode::Char('G'), _) => Some(Action::MoveToBottom),
         (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Action::MovePageUp),
         (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(Action::MovePageDown),
+        (KeyCode::Char('i'), _) => Some(Action::AskAboutPr),
+        (KeyCode::Char('o'), _) => Some(Action::OpenInOcto),
+        (KeyCode::Char('l'), _) => Some(Action::OpenInLazygit),
         _ => None,
     }
 }
@@ -829,11 +833,11 @@ mod tests {
     #[case(ch('G'), Some(Action::MoveToBottom))]
     #[case(ctrl('u'), Some(Action::MovePageUp))]
     #[case(ctrl('d'), Some(Action::MovePageDown))]
-    // Reserved for v2 (ooloth/hub#240) — must stay unbound in v1.
+    #[case(ch('i'), Some(Action::AskAboutPr))]
+    #[case(ch('o'), Some(Action::OpenInOcto))]
+    #[case(ch('l'), Some(Action::OpenInLazygit))]
+    // Enter is reserved for v2 (ooloth/hub#240); v / m land in slice 4.5.
     #[case(k(KeyCode::Enter), None)]
-    #[case(ch('o'), None)]
-    #[case(ch('i'), None)]
-    #[case(ch('l'), None)]
     #[case(ch('v'), None)]
     #[case(ch('m'), None)]
     #[case(ch('h'), None)]

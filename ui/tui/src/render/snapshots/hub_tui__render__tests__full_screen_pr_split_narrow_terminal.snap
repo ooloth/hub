@@ -21,4 +21,4 @@ expression: screen_text(&buf)
 │                                           ││Description                                          │
 │                                           ││  +2 more lines · vim-scroll coming in v2 (#240)     │
 ╰───────────────────────────────────────────╯╰─────────────────────────────────────────────────────╯
- 1/2 · [i] investigate
+  1/2 · [i] investigate · [o] octo · [l] lazygit · [Esc] back

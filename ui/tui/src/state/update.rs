@@ -594,10 +594,43 @@ impl App {
                 self.move_page_down();
                 vec![]
             }
+            Action::OpenInOcto => self.pr_split_selected().map_or(vec![], |pr| {
+                vec![Effect::OpenInOcto {
+                    repo: pr.repo.to_string(),
+                    number: pr.number,
+                    head_branch: pr.head_branch.clone(),
+                }]
+            }),
+            Action::OpenInLazygit => self.pr_split_selected().map_or(vec![], |pr| {
+                vec![Effect::OpenInLazygit {
+                    repo: pr.repo.to_string(),
+                    number: pr.number,
+                    head_branch: pr.head_branch.clone(),
+                }]
+            }),
+            Action::AskAboutPr => self.pr_split_selected().map_or(vec![], |pr| {
+                let ownership = PrOwnership::from_kind(pr.kind);
+                vec![Effect::AskAboutPr {
+                    repo: pr.repo.to_string(),
+                    number: pr.number,
+                    ownership,
+                    head_branch: pr.head_branch.clone(),
+                }]
+            }),
             // Enter is reserved for v2 (focus-shift to right pane, tracked in
-            // ooloth/hub#240). Other actions are not yet wired for PrSplit.
+            // ooloth/hub#240). v / m (review picker / merge) land in slice 4.5.
             _ => vec![],
         }
+    }
+
+    fn pr_split_selected(&self) -> Option<&domain::PullRequest> {
+        let Screen::PrSplit {
+            items, selected, ..
+        } = &self.ui.screen
+        else {
+            return None;
+        };
+        items.get(*selected)
     }
 
     fn handle_reviewing_pr(&mut self, action: Action) -> Vec<Effect> {
@@ -2829,5 +2862,77 @@ mod tests {
         let effects = app.update(Action::Enter);
         assert!(effects.is_empty());
         assert!(matches!(app.current_screen(), Screen::PrSplit { .. }));
+    }
+
+    // --- Per-PR actions from PrSplit (slice 4) ---
+
+    fn app_in_pr_split_with_two_prs() -> App {
+        let mut app = app_with_raw(vec![
+            stub_pr_numbered(7, "first"),
+            stub_pr_numbered(8, "second"),
+        ]);
+        app.update(Action::EnterPrSplit);
+        app
+    }
+
+    #[test]
+    fn open_in_octo_from_pr_split_emits_effect_for_selected_pr() {
+        let mut app = app_in_pr_split_with_two_prs();
+        app.update(Action::MoveDown); // select PR #8
+        let effects = app.update(Action::OpenInOcto);
+        assert_eq!(effects.len(), 1);
+        let Effect::OpenInOcto {
+            repo,
+            number,
+            head_branch,
+        } = effects.into_iter().next().unwrap()
+        else {
+            panic!("expected OpenInOcto");
+        };
+        assert_eq!(repo, "ooloth/hub");
+        assert_eq!(number, 8);
+        assert_eq!(head_branch, "feat/thing");
+    }
+
+    #[test]
+    fn open_in_lazygit_from_pr_split_emits_effect_for_selected_pr() {
+        let mut app = app_in_pr_split_with_two_prs();
+        let effects = app.update(Action::OpenInLazygit);
+        assert_eq!(effects.len(), 1);
+        let Effect::OpenInLazygit { number, .. } = effects.into_iter().next().unwrap() else {
+            panic!("expected OpenInLazygit");
+        };
+        assert_eq!(number, 7);
+    }
+
+    #[test]
+    fn ask_about_pr_from_pr_split_emits_effect_with_ownership() {
+        let mut app = app_in_pr_split_with_two_prs();
+        let effects = app.update(Action::AskAboutPr);
+        assert_eq!(effects.len(), 1);
+        let Effect::AskAboutPr {
+            repo,
+            number,
+            ownership,
+            ..
+        } = effects.into_iter().next().unwrap()
+        else {
+            panic!("expected AskAboutPr");
+        };
+        assert_eq!(repo, "ooloth/hub");
+        assert_eq!(number, 7);
+        // stub_pr is PrKind::Mine → Owned
+        assert_eq!(ownership, crate::state::PrOwnership::Owned);
+    }
+
+    #[test]
+    fn per_pr_actions_in_empty_pr_split_emit_no_effects() {
+        // Defensive: a PrSplit pushed with no PRs (empty cache) must not panic
+        // when the user presses an action key.
+        let mut app = app_with_raw(vec![]);
+        app.update(Action::EnterPrSplit);
+        assert!(app.update(Action::OpenInOcto).is_empty());
+        assert!(app.update(Action::OpenInLazygit).is_empty());
+        assert!(app.update(Action::AskAboutPr).is_empty());
     }
 }

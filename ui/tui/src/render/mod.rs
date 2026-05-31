@@ -142,6 +142,9 @@ const KEYBINDS_PR_SPLIT: &[(&str, &str)] = &[
     ("k / j", "select prev / next PR"),
     ("gg / G", "first / last PR"),
     ("Ctrl-u / Ctrl-d", "page up / down"),
+    ("i", "investigate PR"),
+    ("o", "open in octo"),
+    ("l", "open in lazygit"),
     ("r", "refresh"),
     ("Esc", "back to list"),
     ("q / Ctrl-C", "quit"),
@@ -372,7 +375,21 @@ fn status_bar_left(app: &App) -> String {
         return " [↩] open · [i] investigate · [o] octo · [l] lazygit · [v] review · [m] merge · [Esc] back"
             .to_string();
     }
-
+    if let Screen::PrSplit {
+        items, selected, ..
+    } = &app.ui.screen
+    {
+        // No PRs → only Esc is meaningful (per-PR actions need a selection).
+        if items.is_empty() {
+            return " [Esc] back".to_string();
+        }
+        // v / m land in slice 4.5; Enter (focus-shift) lands in v2 (#240).
+        return format!(
+            " {}/{} · [i] investigate · [o] octo · [l] lazygit · [Esc] back",
+            selected + 1,
+            items.len()
+        );
+    }
     if matches!(app.ui.screen, Screen::IssueDetail { .. }) {
         return " [a] approve · [d] dismiss · [↩] open · [Esc] back".to_string();
     }
