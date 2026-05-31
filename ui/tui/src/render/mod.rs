@@ -258,7 +258,7 @@ fn build_unified_list_item(
     ListItem::new(Line::from(spans))
 }
 
-fn wrap_text(text: &str, width: usize) -> Vec<String> {
+pub(super) fn wrap_text(text: &str, width: usize) -> Vec<String> {
     let width = width.max(1);
     let chars: Vec<char> = text.chars().collect();
     let total = chars.len();
@@ -965,9 +965,18 @@ fn render_pr_card_list(
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title(title);
+    let inner_width = area.width.saturating_sub(2) as usize;
+    let last_idx = items.len().saturating_sub(1);
     let list_items: Vec<ListItem> = items
         .iter()
-        .map(|pr| ListItem::new(pr_card::pr_card_lines(pr).to_vec()))
+        .enumerate()
+        .map(|(i, pr)| {
+            let mut lines = pr_card::pr_card_lines(pr, inner_width);
+            if i < last_idx {
+                lines.push(card_divider(inner_width));
+            }
+            ListItem::new(lines)
+        })
         .collect();
     let mut state = ListState::default();
     state.select(Some(selected));
@@ -975,6 +984,11 @@ fn render_pr_card_list(
         .block(block)
         .highlight_style(list_highlight());
     frame.render_stateful_widget(list, area, &mut state);
+}
+
+fn card_divider(inner_width: usize) -> Line<'static> {
+    let dashes = "─".repeat(inner_width.saturating_sub(1));
+    Line::from(Span::styled(format!(" {dashes}"), dim()))
 }
 
 fn render_log_detail(

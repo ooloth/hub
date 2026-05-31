@@ -4,13 +4,13 @@ expression: screen_text(&buf)
 ---
 ╭ PRs · 2 · split (v1) ─────────────────────╮╭ #1 · first PR title that is long enoug @ooloth · 2d ╮
 │ ●  no reviews · 2d                        ││                                                     │
-│    first PR title that is long enough to w││Body of PR #1.                                       │
+│    first PR title that is long enough to  ││Body of PR #1.                                       │
+│    wrap                                   ││                                                     │
 │    ooloth/hub · #1                        ││                                                     │
+│ ──────────────────────────────────────────││                                                     │
 │ ●  no reviews · 2d                        ││                                                     │
 │    second PR                              ││                                                     │
 │    ooloth/hub · #2                        ││                                                     │
-│                                           ││                                                     │
-│                                           ││                                                     │
 │                                           ││                                                     │
 │                                           ││                                                     │
 │                                           ││                                                     │
