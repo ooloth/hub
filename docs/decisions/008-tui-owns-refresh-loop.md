@@ -1,10 +1,5 @@
 # 008 — TUI owns the refresh loop; no separate daemon
 
-> **Superseded by [Decision 010](010-hubd-daemon-owns-backend-state.md).**
-> Supervisory agent sessions, per-source refresh cadences, and persistent
-> cross-instance state require a backend that outlives any UI process. The
-> reasoning below is preserved for the historical record.
-
 ## Context
 
 Hub's status data comes from live network calls (GitHub, Linear, private
