@@ -3,12 +3,12 @@ source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
 ╭ PRs · 2 · split (v1) ─────────────────┬──────────────────────────────────────────────────────────╮
-│    first PR title that is long enough │ PR #1 · ooloth/hub                                       │
+│ ●  first PR title that is long enough │ PR #1 · ooloth/hub                                       │
 │    to wrap                            │                                                          │
-│ ●  no reviews · 2d  ·  ooloth/hub · #1│ first PR title that is long enough to wrap               │
-│ ──────────────────────────────────────│                                                          │
-│    second PR                          │   status  ●  no reviews                                  │
-│ ●  no reviews · 2d  ·  ooloth/hub · #2│   checks     (none)                                      │
+│    no reviews · 2d  ·  ooloth/hub · #1│ first PR title that is long enough to wrap               │
+│ ●  second PR                          │                                                          │
+│    no reviews · 2d  ·  ooloth/hub · #2│   status  ●  no reviews                                  │
+│                                       │   checks     (none)                                      │
 │                                       │   diff       +0 −0 in 0 files                            │
 │                                       │   branch     feat/1                                      │
 │                                       │   author     @ooloth                                     │

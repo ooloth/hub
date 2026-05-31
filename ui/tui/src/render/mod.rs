@@ -1015,27 +1015,14 @@ fn render_pr_card_list(
     area: Rect,
 ) {
     let inner_width = area.width as usize;
-    let last_idx = items.len().saturating_sub(1);
     let list_items: Vec<ListItem> = items
         .iter()
-        .enumerate()
-        .map(|(i, pr)| {
-            let mut lines = pr_card::pr_card_lines(pr, inner_width);
-            if i < last_idx {
-                lines.push(card_divider(inner_width));
-            }
-            ListItem::new(lines)
-        })
+        .map(|pr| ListItem::new(pr_card::pr_card_lines(pr, inner_width)))
         .collect();
     let mut state = ListState::default();
     state.select(Some(selected));
     let list = List::new(list_items).highlight_style(list_highlight());
     frame.render_stateful_widget(list, area, &mut state);
-}
-
-fn card_divider(inner_width: usize) -> Line<'static> {
-    let dashes = "─".repeat(inner_width.saturating_sub(1));
-    Line::from(Span::styled(format!(" {dashes}"), dim()))
 }
 
 fn render_log_detail(
