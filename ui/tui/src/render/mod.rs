@@ -1015,14 +1015,31 @@ fn render_pr_card_list(
     area: Rect,
 ) {
     let inner_width = area.width as usize;
+    let last_idx = items.len().saturating_sub(1);
+    // Dividers are separate ListItems so they are never part of the
+    // selection highlight. Card i is at list index i*2; dividers occupy
+    // the odd indices between them.
     let list_items: Vec<ListItem> = items
         .iter()
-        .map(|pr| ListItem::new(pr_card::pr_card_lines(pr, inner_width)))
+        .enumerate()
+        .flat_map(|(i, pr)| {
+            let card = ListItem::new(pr_card::pr_card_lines(pr, inner_width));
+            if i < last_idx {
+                vec![card, ListItem::new(card_divider(inner_width))]
+            } else {
+                vec![card]
+            }
+        })
         .collect();
     let mut state = ListState::default();
-    state.select(Some(selected));
+    state.select(Some(selected * 2));
     let list = List::new(list_items).highlight_style(list_highlight());
     frame.render_stateful_widget(list, area, &mut state);
+}
+
+fn card_divider(inner_width: usize) -> Line<'static> {
+    let dashes = "─".repeat(inner_width.saturating_sub(1));
+    Line::from(Span::styled(format!(" {dashes}"), dim()))
 }
 
 fn render_log_detail(

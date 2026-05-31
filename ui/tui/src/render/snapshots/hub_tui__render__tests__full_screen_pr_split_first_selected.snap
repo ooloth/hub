@@ -5,12 +5,12 @@ expression: screen_text(&buf)
 ╭ PRs · 3 · split (v1) ───────────────────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ ●  first PR with conflict marker                                            │ PR #1 · ooloth/hub                                                                                                │
 │    no reviews · 2d  ·  ooloth/hub · #1                                      │                                                                                                                   │
-│ ●  second PR awaiting reviews                                               │ first PR with conflict marker                                                                                     │
-│    no reviews · 2d  ·  ooloth/hub · #2                                      │                                                                                                                   │
-│ ●  third PR fresh                                                           │   status  ●  no reviews                                                                                           │
-│    no reviews · 2d  ·  ooloth/hub · #3                                      │   checks     (none)                                                                                               │
-│                                                                             │   diff       +0 −0 in 0 files                                                                                     │
-│                                                                             │   branch     feat/1                                                                                               │
+│ ────────────────────────────────────────────────────────────────────────────│ first PR with conflict marker                                                                                     │
+│ ●  second PR awaiting reviews                                               │                                                                                                                   │
+│    no reviews · 2d  ·  ooloth/hub · #2                                      │   status  ●  no reviews                                                                                           │
+│ ────────────────────────────────────────────────────────────────────────────│   checks     (none)                                                                                               │
+│ ●  third PR fresh                                                           │   diff       +0 −0 in 0 files                                                                                     │
+│    no reviews · 2d  ·  ooloth/hub · #3                                      │   branch     feat/1                                                                                               │
 │                                                                             │   author     @ooloth                                                                                              │
 │                                                                             │   updated    2d ago                                                                                               │
 │                                                                             │                                                                                                                   │
