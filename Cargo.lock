@@ -2729,6 +2729,7 @@ dependencies = [
  "dirs",
  "domain",
  "rusqlite",
+ "tempfile",
 ]
 
 [[package]]
