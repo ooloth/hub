@@ -1,10 +1,10 @@
-use domain::{MergeBlocker, PullRequest, ReviewDecision};
+use domain::{PullRequest, ReviewDecision};
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
 };
 
-use crate::display::{format_age_short, merge_blocker_word};
+use crate::display::merge_blocker_word;
 
 use super::{dim, urgency_color, wrap_text};
 
@@ -12,7 +12,7 @@ use super::{dim, urgency_color, wrap_text};
 ///
 /// Layout (each item is one terminal row):
 ///   bullet + title (first line; wraps with 4-space indent on continuations)
-///   status + age + repo + #number (dim metadata line; status colored for approvals/conflict)
+///   repo · #number · @author · review info (dim metadata; approvals colored green)
 ///
 /// `content_width` is the pane's interior width. Title wrapping uses
 /// this minus the 4-char bullet prefix.
@@ -20,9 +20,6 @@ use super::{dim, urgency_color, wrap_text};
 /// Pure — no I/O, no terminal access. Style decisions live here;
 /// inter-card layout (selection highlight) is the caller's job.
 pub(crate) fn pr_card_lines(pr: &PullRequest, content_width: usize) -> Vec<Line<'static>> {
-    let status = pr_status_text(pr);
-    let age = format_age_short(pr.age);
-
     // First title line has the bullet; continuations indent to align.
     let title_width = content_width.saturating_sub(4).max(1);
     let pieces = wrap_text(&pr.title, title_width);
@@ -46,24 +43,30 @@ pub(crate) fn pr_card_lines(pr: &PullRequest, content_width: usize) -> Vec<Line<
         })
         .collect();
 
-    // Metadata line: all dim; status text overrides to green/red where meaningful.
-    let status_style = status_text_style(pr);
+    let (review_text, review_style) = review_info(pr);
     lines.push(Line::from(vec![
-        Span::styled(format!("    {status}"), status_style),
-        Span::styled(format!(" · {age}  ·  {} · #{}", pr.repo, pr.number), dim()),
+        Span::styled(format!("    {} · #{}", pr.repo, pr.number), dim()),
+        Span::styled(format!(" · @{}", pr.author), dim()),
+        Span::styled(format!(" · {review_text}"), review_style),
     ]));
 
     lines
 }
 
-fn status_text_style(pr: &PullRequest) -> Style {
-    if pr.merge_blocker == Some(MergeBlocker::Conflict) {
-        return Style::default().fg(Color::Red);
+fn review_info(pr: &PullRequest) -> (String, Style) {
+    if pr.approval_count > 0 {
+        let text = match pr.approval_count {
+            1 => "1 approval".to_string(),
+            n => format!("{n} approvals"),
+        };
+        (text, Style::default().fg(Color::Green))
+    } else {
+        let text = match pr.review_decision {
+            Some(ReviewDecision::ChangesRequested) => "changes requested".to_string(),
+            _ => "no reviews".to_string(),
+        };
+        (text, dim())
     }
-    if matches!(pr.review_decision, Some(ReviewDecision::Approved)) && pr.approval_count > 0 {
-        return Style::default().fg(Color::Green);
-    }
-    dim()
 }
 
 /// The most informative single-word status for a PR.
@@ -87,7 +90,7 @@ pub(super) fn pr_status_text(pr: &PullRequest) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{pr_card_lines, pr_status_text, status_text_style};
+    use super::{pr_card_lines, pr_status_text, review_info};
     use chrono::Duration;
     use domain::{MergeBlocker, PrKind, PullRequest, RepoSlug, ReviewDecision, Urgency};
     use rstest::rstest;
@@ -165,16 +168,16 @@ mod tests {
     }
 
     #[test]
-    fn card_meta_line_has_status_age_and_repo_without_bullet() {
+    fn card_meta_line_has_repo_number_author_and_review_info() {
         let lines = pr_card_lines(&pr(), WIDE);
         let meta = line_text(lines.last().unwrap());
         assert!(
             !meta.contains("●"),
             "meta should not have bullet, got: {meta:?}"
         );
-        assert!(meta.contains("no reviews"), "got: {meta:?}");
-        assert!(meta.contains("8d"), "got: {meta:?}");
         assert!(meta.contains("ooloth/hub · #159"), "got: {meta:?}");
+        assert!(meta.contains("@ooloth"), "got: {meta:?}");
+        assert!(meta.contains("no reviews"), "got: {meta:?}");
     }
 
     #[test]
@@ -219,53 +222,34 @@ mod tests {
         }
         // Last line is the meta row.
         let meta = line_text(lines.last().unwrap());
-        assert!(meta.contains("no reviews"), "meta missing status: {meta:?}");
         assert!(meta.contains("ooloth/hub"), "meta missing repo: {meta:?}");
-    }
-
-    #[rstest]
-    #[case::seconds(Duration::seconds(30), "now")]
-    #[case::minutes(Duration::minutes(45), "45m")]
-    #[case::hours(Duration::hours(3), "3h")]
-    #[case::days(Duration::days(8), "8d")]
-    fn card_meta_line_age_format(#[case] age: Duration, #[case] expected_age: &str) {
-        let mut p = pr();
-        p.age = age;
-        let lines = pr_card_lines(&p, WIDE);
-        let meta = line_text(lines.last().unwrap());
         assert!(
-            meta.contains(expected_age),
-            "expected meta line to contain {expected_age:?}, got: {meta:?}"
+            meta.contains("no reviews"),
+            "meta missing review info: {meta:?}"
         );
     }
 
     #[test]
-    fn card_with_conflict_shows_conflict_status() {
-        let mut p = pr();
-        p.merge_blocker = Some(MergeBlocker::Conflict);
-        let lines = pr_card_lines(&p, WIDE);
-        assert!(line_text(lines.last().unwrap()).contains("conflict"));
-    }
-
-    #[test]
-    fn status_text_style_is_green_for_approvals() {
+    fn review_info_shows_approval_count_when_any_approvals() {
         let mut p = pr();
         p.review_decision = Some(ReviewDecision::Approved);
-        p.approval_count = 1;
-        assert_eq!(status_text_style(&p).fg, Some(ratatui::style::Color::Green));
+        p.approval_count = 2;
+        let (text, style) = review_info(&p);
+        assert_eq!(text, "2 approvals");
+        assert_eq!(style.fg, Some(ratatui::style::Color::Green));
     }
 
     #[test]
-    fn status_text_style_is_red_for_conflict() {
+    fn review_info_shows_changes_requested_text() {
         let mut p = pr();
-        p.merge_blocker = Some(MergeBlocker::Conflict);
-        assert_eq!(status_text_style(&p).fg, Some(ratatui::style::Color::Red));
+        p.review_decision = Some(ReviewDecision::ChangesRequested);
+        let (text, _) = review_info(&p);
+        assert_eq!(text, "changes requested");
     }
 
     #[test]
-    fn status_text_style_is_dim_otherwise() {
-        let lines = pr_card_lines(&pr(), WIDE);
-        // Verify it compiles and runs without panic for the default case.
-        assert!(lines.len() >= 2);
+    fn review_info_shows_no_reviews_by_default() {
+        let (text, _) = review_info(&pr());
+        assert_eq!(text, "no reviews");
     }
 }

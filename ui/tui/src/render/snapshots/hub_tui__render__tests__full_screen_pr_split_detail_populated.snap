@@ -4,7 +4,7 @@ expression: screen_text(&buf)
 ---
 ╭ PRs · 1 · split (v1) ───────────────────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ ●  filter claude stderr                                                     │ PR #159 · ooloth/hub                                                                                              │
-│    no reviews · 2d  ·  ooloth/hub · #159                                    │                                                                                                                   │
+│    ooloth/hub · #159 · @ooloth · no reviews                                 │                                                                                                                   │
 │                                                                             │ filter claude stderr                                                                                              │
 │                                                                             │                                                                                                                   │
 │                                                                             │   status  ●  no reviews                                                                                           │

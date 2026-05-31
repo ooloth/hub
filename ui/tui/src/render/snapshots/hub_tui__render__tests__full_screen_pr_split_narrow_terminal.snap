@@ -5,10 +5,10 @@ expression: screen_text(&buf)
 ╭ PRs · 2 · split (v1) ─────────────────┬──────────────────────────────────────────────────────────╮
 │ ●  first PR title that is long enough │ PR #1 · ooloth/hub                                       │
 │    to wrap                            │                                                          │
-│    no reviews · 2d  ·  ooloth/hub · #1│ first PR title that is long enough to wrap               │
+│    ooloth/hub · #1 · @ooloth · no revi│ first PR title that is long enough to wrap               │
 │ ──────────────────────────────────────│                                                          │
 │ ●  second PR                          │   status  ●  no reviews                                  │
-│    no reviews · 2d  ·  ooloth/hub · #2│   checks     (none)                                      │
+│    ooloth/hub · #2 · @ooloth · no revi│   checks     (none)                                      │
 │                                       │   diff       +0 −0 in 0 files                            │
 │                                       │   branch     feat/1                                      │
 │                                       │   author     @ooloth                                     │

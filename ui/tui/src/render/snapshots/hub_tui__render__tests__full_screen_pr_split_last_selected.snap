@@ -4,13 +4,13 @@ expression: screen_text(&buf)
 ---
 ╭ PRs · 3 · split (v1) ───────────────────────────────────────────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ ●  first PR with conflict marker                                            │ PR #3 · ooloth/hub                                                                                                │
-│    no reviews · 2d  ·  ooloth/hub · #1                                      │                                                                                                                   │
+│    ooloth/hub · #1 · @ooloth · no reviews                                   │                                                                                                                   │
 │ ────────────────────────────────────────────────────────────────────────────│ third PR fresh                                                                                                    │
 │ ●  second PR awaiting reviews                                               │                                                                                                                   │
-│    no reviews · 2d  ·  ooloth/hub · #2                                      │   status  ●  no reviews                                                                                           │
+│    ooloth/hub · #2 · @ooloth · no reviews                                   │   status  ●  no reviews                                                                                           │
 │ ────────────────────────────────────────────────────────────────────────────│   checks     (none)                                                                                               │
 │ ●  third PR fresh                                                           │   diff       +0 −0 in 0 files                                                                                     │
-│    no reviews · 2d  ·  ooloth/hub · #3                                      │   branch     feat/3                                                                                               │
+│    ooloth/hub · #3 · @ooloth · no reviews                                   │   branch     feat/3                                                                                               │
 │                                                                             │   author     @ooloth                                                                                              │
 │                                                                             │   updated    2d ago                                                                                               │
 │                                                                             │                                                                                                                   │
