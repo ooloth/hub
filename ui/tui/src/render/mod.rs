@@ -1,3 +1,5 @@
+mod pr_card;
+
 use chrono::Utc;
 use ratatui::{
     layout::{Constraint, Layout, Rect},
@@ -936,20 +938,18 @@ fn render_pr_split(
     area: Rect,
 ) {
     let title = format!(" PRs · {} · split (v1) ", items.len());
-    let body = if items.is_empty() {
-        "No PRs available.".to_string()
-    } else {
-        let pr = &items[selected];
-        format!(
-            "Slice 1 placeholder. Selected: #{} · {} (left/right panes land in slice 3)",
-            pr.number, pr.title
-        )
-    };
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .title(title);
-    let paragraph = Paragraph::new(body).block(block);
+    if items.is_empty() {
+        let paragraph = Paragraph::new("No PRs available.").block(block);
+        frame.render_widget(paragraph, area);
+        return;
+    }
+    let pr = &items[selected];
+    let lines = pr_card::pr_card_lines(pr);
+    let paragraph = Paragraph::new(Text::from(lines.to_vec())).block(block);
     frame.render_widget(paragraph, area);
 }
 
