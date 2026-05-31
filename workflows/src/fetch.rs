@@ -225,13 +225,43 @@ pub async fn ensure_pr_worktree(
     Ok(worktree)
 }
 
+/// Fetches the latest remote refs, then creates a fresh detached-HEAD investigation
+/// worktree under `bare`. Returns the worktree path. The caller is responsible for
+/// removing it via `git worktree remove --force` when done.
+///
+/// Use this at investigation launch time (CI, Issue) where the agent needs a
+/// stable, isolated worktree starting from the latest trunk state. Prefer this over
+/// opening the default-branch worktree directly — that worktree is reset
+/// unconditionally every 30 minutes and at every investigation launch, so it is not
+/// safe for any agent that runs longer than the refresh interval.
+pub async fn fetch_and_create_investigation_worktree(
+    bare: &Path,
+    github_token: &str,
+) -> Result<PathBuf> {
+    let bare_str = bare.to_string_lossy().into_owned();
+    let rewrite = format!(
+        "url.https://x-access-token:{github_token}@github.com/.insteadOf=https://github.com/"
+    );
+
+    let fetch = Command::new("git")
+        .args(["-C", &bare_str, "-c", &rewrite, "fetch", "origin"])
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .output()
+        .await
+        .context("git fetch origin failed")?;
+    if !fetch.status.success() {
+        let stderr = String::from_utf8_lossy(&fetch.stderr);
+        anyhow::bail!("git fetch origin failed: {stderr}");
+    }
+
+    create_investigation_worktree(bare).await
+}
+
 /// Fetches the latest remote refs and syncs the default-branch worktree to them.
 ///
 /// Unlike `ensure_default_branch_worktree` (which skips the fetch), this always
 /// runs `git fetch origin` first so the subsequent reset lands on the actual
-/// latest commit. Use this at investigation launch time; use
-/// `ensure_default_branch_worktree` from the background fetch path where the
-/// fetch has already happened.
+/// latest commit. Called only by the background fetch path (not investigations).
 pub async fn sync_default_branch_worktree(bare: &Path, github_token: &str) -> Result<()> {
     let bare_str = bare.to_string_lossy().into_owned();
     let rewrite = format!(

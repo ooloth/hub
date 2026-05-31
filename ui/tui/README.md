@@ -139,6 +139,35 @@ and tool/model settings.
 See the [add-an-investigation playbook](../../docs/playbooks/add-an-investigation.md)
 for the full step-by-step.
 
+### Worktree routing
+
+Each investigation type declares a `WorktreeSpec` variant that controls which git
+worktree the agent session opens in. The right choice depends on whether the agent
+needs a fresh fetch, whether it may run longer than 30 minutes, and whether the work
+is PR-specific.
+
+| Variant         | When to use                                                    | Examples       |
+| --------------- | -------------------------------------------------------------- | -------------- |
+| `EphemeralFresh`| Needs latest trunk state; session may exceed 30-min refresh    | CI, Issue      |
+| `PullRequest`   | PR-specific branch; persistent across re-opens                 | All PR types   |
+| `Ephemeral`     | Read-only, stateless; recent background fetch is fresh enough  | GCP, Loki      |
+| `CurrentDir`    | Non-git context; no worktree setup needed                      | MediaBlocked   |
+
+**Do not route investigations to the default-branch worktree directly.**
+
+`~/.hub/repos/<project>/<branch>/` is reset unconditionally with
+`git reset --hard origin/<branch>` in two places:
+
+1. The background fetch loop fires every 30 minutes while the TUI is open.
+2. `sync_default_branch_worktree` runs at the start of every `EphemeralFresh`
+   worktree creation (it fetches latest refs before spawning the investigation).
+
+An agent working directly in that directory is reset mid-session whenever either
+trigger fires — silently discarding scratch changes, checked-out branches, or local
+commits that haven't been pushed yet. `EphemeralFresh` and `Ephemeral` are immune
+because each investigation gets its own detached-HEAD worktree that the refresh loop
+never touches, and that is cleaned up on exit.
+
 ### PR investigation routing
 
 Pressing `i` on a PR auto-selects the skill based on the PR's kind and review state,

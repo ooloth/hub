@@ -280,7 +280,7 @@ async fn run_loop(
                 Effect::LaunchCi { repo, run_url } => {
                     if let Err(err) = investigations::launch(
                         investigations::ci::config(&repo, &run_url),
-                        investigations::WorktreeSpec::DefaultBranch { repo },
+                        investigations::WorktreeSpec::EphemeralFresh { repo },
                         config,
                         &config.github_token,
                     )
@@ -292,7 +292,7 @@ async fn run_loop(
                 Effect::LaunchIssue { repo, number } => {
                     if let Err(err) = investigations::launch(
                         investigations::issue::config(&repo, number),
-                        investigations::WorktreeSpec::DefaultBranch { repo },
+                        investigations::WorktreeSpec::EphemeralFresh { repo },
                         config,
                         &config.github_token,
                     )

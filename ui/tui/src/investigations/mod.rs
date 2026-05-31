@@ -26,16 +26,36 @@ pub(crate) struct LaunchConfig {
 }
 
 /// Describes the git worktree context an investigation agent runs in.
+///
+/// # Choosing the right variant
+///
+/// **Never route an investigation to the default-branch worktree directly.**
+/// That worktree (`~/.hub/repos/<project>/<branch>/`) is reset unconditionally
+/// to `origin/<branch>` every 30 minutes by the background fetch loop *and* again
+/// at every investigation launch. Any agent working there longer than the refresh
+/// interval — or running concurrently with another launch — will have its working
+/// tree silently wiped mid-session.
+///
+/// | Scenario                                   | Variant to use   |
+/// |--------------------------------------------|------------------|
+/// | Read trunk state, may run >30 min (CI, Issue) | `EphemeralFresh` |
+/// | PR-specific code (review, fix, ask)        | `PullRequest`    |
+/// | Read-only log/infra investigation (GCP, Loki) | `Ephemeral`   |
+/// | Non-git local process (media blocked)      | `CurrentDir`     |
 pub(crate) enum WorktreeSpec {
-    /// Sync and use the default-branch worktree for a GitHub repo (CI, Issue).
-    DefaultBranch { repo: String },
+    /// Fetch latest refs, then create a fresh detached-HEAD worktree from trunk.
+    /// Cleaned up when the session exits. Use for investigations that need current
+    /// trunk state but must not be disrupted by the background refresh (CI, Issue).
+    EphemeralFresh { repo: String },
     /// Create or reuse a persistent PR worktree.
     PullRequest {
         repo: String,
         number: u64,
         head_branch: String,
     },
-    /// Create a fresh detached-HEAD worktree, cleaned up when the session exits (GCP, Loki).
+    /// Create a fresh detached-HEAD worktree from the most recently fetched trunk
+    /// state, cleaned up when the session exits. Use for read-only log/infra
+    /// investigations where a fresh fetch is not critical (GCP, Loki).
     /// `project` is the directory name under `~/.hub/repos/`.
     Ephemeral { project: String },
     /// Use the process's current directory (MediaBlocked, last-resort fallback).
@@ -198,19 +218,22 @@ async fn resolve_worktree(
     github_token: &str,
 ) -> Result<(PathBuf, Option<String>)> {
     match spec {
-        WorktreeSpec::DefaultBranch { repo } => {
+        WorktreeSpec::EphemeralFresh { repo } => {
             let name = project_name(hub_config, &repo)?;
-            let repos = workflows::fetch::repos_dir();
-            let bare = repos.join(name);
+            let bare = workflows::fetch::repos_dir().join(name);
             if !bare.exists() {
                 bail!("repo not synced; open the TUI to fetch it");
             }
-            workflows::fetch::sync_default_branch_worktree(&bare, github_token)
-                .await
-                .context("Failed to sync worktree")?;
-            let cwd = workflows::fetch::default_branch_worktree(&repos, name)
-                .ok_or_else(|| anyhow::anyhow!("Worktree sync succeeded but path not found"))?;
-            Ok((cwd, None))
+            let worktree =
+                workflows::fetch::fetch_and_create_investigation_worktree(&bare, github_token)
+                    .await
+                    .context("Failed to create investigation worktree")?;
+            let cleanup = format!(
+                "cd ~ && git -C '{}' worktree remove --force '{}' 2>/dev/null || true",
+                bare.display(),
+                worktree.display()
+            );
+            Ok((worktree, Some(cleanup)))
         }
         WorktreeSpec::PullRequest {
             repo,
