@@ -126,7 +126,7 @@ pub(crate) async fn open_in_lazygit(
     let name = project_name(hub_config, repo)?;
     let bare = workflows::fetch::repos_dir().join(name);
     if !bare.exists() {
-        bail!("Not fetched yet; run hub fetch");
+        bail!("repo not synced; open the TUI to fetch it");
     }
     let cwd = workflows::fetch::ensure_pr_worktree(&bare, number, head_branch, github_token)
         .await
@@ -168,7 +168,7 @@ pub(crate) async fn open_in_octo(
     let name = project_name(hub_config, repo)?;
     let bare = workflows::fetch::repos_dir().join(name);
     if !bare.exists() {
-        bail!("Not fetched yet; run hub fetch");
+        bail!("repo not synced; open the TUI to fetch it");
     }
     let cwd = workflows::fetch::ensure_pr_worktree(&bare, number, head_branch, github_token)
         .await
@@ -203,7 +203,7 @@ async fn resolve_worktree(
             let repos = workflows::fetch::repos_dir();
             let bare = repos.join(name);
             if !bare.exists() {
-                bail!("Not fetched yet; run hub fetch");
+                bail!("repo not synced; open the TUI to fetch it");
             }
             workflows::fetch::sync_default_branch_worktree(&bare, github_token)
                 .await
@@ -220,7 +220,7 @@ async fn resolve_worktree(
             let name = project_name(hub_config, &repo)?;
             let bare = workflows::fetch::repos_dir().join(name);
             if !bare.exists() {
-                bail!("Not fetched yet; run hub fetch");
+                bail!("repo not synced; open the TUI to fetch it");
             }
             let cwd =
                 workflows::fetch::ensure_pr_worktree(&bare, number, &head_branch, github_token)
@@ -231,7 +231,7 @@ async fn resolve_worktree(
         WorktreeSpec::Ephemeral { project } => {
             let bare = workflows::fetch::repos_dir().join(&project);
             if !bare.exists() {
-                bail!("No repo at {}; run hub fetch", bare.display());
+                bail!("no repo at {}; open the TUI to fetch it", bare.display());
             }
             let worktree = workflows::fetch::create_investigation_worktree(&bare)
                 .await

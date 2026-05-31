@@ -1,30 +1,12 @@
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::Parser;
 
-mod commands;
-
-#[cfg(feature = "private")]
-mod private;
 #[derive(Parser)]
-#[command(version, about = "Personal command center")]
-struct Cli {
-    #[command(subcommand)]
-    command: Commands,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    Fetch,
-    Status,
-}
+#[command(version, about = "Agent toolkit for hub project-conditional logic")]
+struct Cli {}
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let cli = Cli::parse();
-    let config = config::Config::load()?;
-    match cli.command {
-        Commands::Fetch => commands::fetch::run(&config).await?,
-        Commands::Status => commands::status::run(&config).await?,
-    }
+    Cli::parse();
     Ok(())
 }
