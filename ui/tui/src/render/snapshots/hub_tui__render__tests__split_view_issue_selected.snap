@@ -1,0 +1,34 @@
+---
+source: ui/tui/src/render/mod.rs
+expression: screen_text(&buf)
+---
+╭ All ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│Issue · Fix logging in production #42 · status:needs-human-review                                     ooloth/hub · now│
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭ Fix logging in production ───────────────────────────────────────────────────────────────────────── ooloth/hub · #42 ╮
+│                                                                                                                      │
+│This is the issue body.                                                                                               │
+│                                                                                                                      │
+│It has multiple paragraphs.                                                                                           │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+╰ status:needs-human-review ───────────────────────────────────────────────────────────────────────────── @agent · now ╯
+ 1/1 · [↩] read · [i] investigate

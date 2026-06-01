@@ -2,4 +2,4 @@
 source: ui/tui/src/render/mod.rs
 expression: status_row(&buf)
 ---
- 2/1 · [↩] open · [i] investigate · [h] collapse
+ 2/1 · [i] investigate · [h] collapse
