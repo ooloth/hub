@@ -15,8 +15,8 @@ use crate::display::{build_unified, flatten, Filter};
 use crate::input::key_to_action;
 use crate::render::render;
 use crate::state::{
-    handle_msg, App, DataState, Effect, Msg, PrOwnership, RefreshState, ReviewSkill, Screen,
-    UiState,
+    handle_msg, App, DataState, DetailMode, Effect, Msg, PrOwnership, RefreshState, ReviewSkill,
+    Screen, UiState,
 };
 use std::collections::HashSet;
 
@@ -116,6 +116,7 @@ async fn main() -> Result<()> {
                 selected: 0,
                 filter: initial_filter,
                 expanded_groups: HashSet::new(),
+                detail_mode: DetailMode::Hidden,
             },
             ..UiState::default()
         },

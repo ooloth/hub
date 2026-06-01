@@ -10,12 +10,13 @@ use ratatui::{
 };
 
 use crate::display::{
-    flat_row_line, flat_row_urgency, format_age_short, merge_blocker_word, Filter, FlatRow,
-    LineParts, LogDetailView, LogLine, RowSeparator,
+    flat_row_line, flat_row_urgency, format_age_short, log_detail_view_from_group,
+    log_detail_view_from_item, merge_blocker_word, DisplayItem, Filter, FlatRow, LineParts,
+    LogDetailView, LogLine, RowSeparator,
 };
 use crate::state::{
-    compute_enter_action, compute_investigate_action, App, EnterAction, InvestigateAction,
-    RefreshState, Screen,
+    compute_enter_action, compute_investigate_action, App, DetailMode, EnterAction,
+    InvestigateAction, RefreshState, Screen,
 };
 
 pub(super) const FOCUS_COLOR: Color = Color::Rgb(203, 166, 247); // Catppuccin Mocha Mauve
@@ -339,8 +340,8 @@ fn position_label(screen: &Screen) -> String {
 
 fn action_hints(enter: &EnterAction, investigate: &InvestigateAction) -> String {
     let enter_hint = match enter {
-        EnterAction::OpenUrl(_) | EnterAction::OpenLogDetail(_) => " · [↩] open".to_string(),
-        EnterAction::OpenIssueDetail(_) | EnterAction::OpenPrDetail(_) => " · [↩] read".to_string(),
+        EnterAction::OpenLogDetail => " · [↩] open".to_string(),
+        EnterAction::OpenIssueDetail | EnterAction::OpenPrDetail => " · [↩] read".to_string(),
         EnterAction::None => String::new(),
     };
     let inv_hint = if matches!(investigate, InvestigateAction::None) {
@@ -1141,6 +1142,57 @@ fn render_log_detail(
     frame.render_widget(Paragraph::new(Text::from(body)).block(block), area);
 }
 
+fn render_split_detail_pane(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    items: &[DisplayItem],
+    selected_row: Option<&FlatRow>,
+    detail_scroll: u16,
+) {
+    let mut scroll = detail_scroll;
+    match selected_row {
+        Some(FlatRow::Single(item)) | Some(FlatRow::GroupChild { item, .. }) => match item {
+            workflows::status::StatusItem::Pr(pr) => {
+                render_pr_detail(frame, pr, &mut scroll, area);
+            }
+            workflows::status::StatusItem::Issue(issue) => {
+                render_issue_detail(frame, issue, &mut scroll, area);
+            }
+            workflows::status::StatusItem::Gcp(_) | workflows::status::StatusItem::Loki(_) => {
+                if let Some(view) = log_detail_view_from_item(item) {
+                    render_log_detail(frame, &view, &mut scroll, area);
+                } else {
+                    render_detail_placeholder(frame, area);
+                }
+            }
+            _ => render_detail_placeholder(frame, area),
+        },
+        Some(FlatRow::GroupHeader { key, .. }) => {
+            let group_items = items.iter().find_map(|di| match di {
+                DisplayItem::Group { label, items: gi } if label == key => Some(gi.as_slice()),
+                _ => None,
+            });
+            if let Some(view) = group_items.and_then(log_detail_view_from_group) {
+                render_log_detail(frame, &view, &mut scroll, area);
+            } else {
+                render_detail_placeholder(frame, area);
+            }
+        }
+        None => render_detail_placeholder(frame, area),
+    }
+}
+
+fn render_detail_placeholder(frame: &mut ratatui::Frame, area: Rect) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let paragraph = Paragraph::new("No detail view available.")
+        .block(block)
+        .style(Style::default().fg(Color::DarkGray));
+    frame.render_widget(paragraph, area);
+}
+
 pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let [content_area, bar_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
@@ -1150,17 +1202,37 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
             flat_rows,
             selected,
             filter,
+            items,
+            detail_mode,
             ..
-        } => {
-            render_unified(
-                frame,
-                flat_rows,
-                *selected,
-                filter,
-                app.ui.query_input.as_deref(),
-                content_area,
-            );
-        }
+        } => match detail_mode {
+            DetailMode::Hidden => {
+                render_unified(
+                    frame,
+                    flat_rows,
+                    *selected,
+                    filter,
+                    app.ui.query_input.as_deref(),
+                    content_area,
+                );
+            }
+            DetailMode::Visible { detail_scroll } => {
+                let [list_area, detail_area] =
+                    Layout::vertical([Constraint::Percentage(30), Constraint::Min(0)])
+                        .areas(content_area);
+                render_unified(
+                    frame,
+                    flat_rows,
+                    *selected,
+                    filter,
+                    app.ui.query_input.as_deref(),
+                    list_area,
+                );
+                frame.render_widget(Clear, detail_area);
+                let selected_row = flat_rows.get(*selected);
+                render_split_detail_pane(frame, detail_area, items, selected_row, *detail_scroll);
+            }
+        },
         Screen::LogDetail { view, scroll, .. } => {
             render_log_detail(frame, view, scroll, content_area);
         }
@@ -1258,7 +1330,7 @@ mod tests {
     };
     use crate::display::{flatten, Category, DisplayItem, Filter, GroupKey, ListSnapshot};
     use crate::state::{
-        App, DataState, EnterAction, InvestigateAction, RefreshState, Screen, UiState,
+        App, DataState, DetailMode, EnterAction, InvestigateAction, RefreshState, Screen, UiState,
     };
     use chrono::Utc;
     use ratatui::backend::TestBackend;
@@ -1502,6 +1574,7 @@ mod tests {
                     selected: 0,
                     filter: Filter::default(),
                     expanded_groups: expanded,
+                    detail_mode: DetailMode::Hidden,
                 },
                 ..UiState::default()
             },
@@ -1518,6 +1591,7 @@ mod tests {
             selected,
             filter,
             expanded_groups: expanded,
+            detail_mode: DetailMode::Hidden,
         }
     }
 
@@ -1539,6 +1613,7 @@ mod tests {
                     selected,
                     filter: Filter::default(),
                     expanded_groups: expanded,
+                    detail_mode: DetailMode::Hidden,
                 },
                 ..UiState::default()
             },
@@ -1573,15 +1648,23 @@ mod tests {
             selected: 1,
             filter: Filter::default(),
             expanded_groups: expanded,
+            detail_mode: DetailMode::Hidden,
         };
         assert_eq!(position_label(&screen), "2/3");
     }
 
     #[test]
-    fn action_hints_open_url() {
-        let enter = EnterAction::OpenUrl("https://example.com".to_string());
+    fn action_hints_open_log_detail() {
+        let enter = EnterAction::OpenLogDetail;
         let inv = InvestigateAction::None;
         assert_eq!(action_hints(&enter, &inv), " · [↩] open");
+    }
+
+    #[test]
+    fn action_hints_read_pr() {
+        let enter = EnterAction::OpenPrDetail;
+        let inv = InvestigateAction::None;
+        assert_eq!(action_hints(&enter, &inv), " · [↩] read");
     }
 
     #[test]
@@ -1607,12 +1690,12 @@ mod tests {
 
     #[test]
     fn action_hints_combined() {
-        let enter = EnterAction::OpenUrl("https://example.com".to_string());
+        let enter = EnterAction::OpenPrDetail;
         let inv = InvestigateAction::LaunchCi {
             repo: "owner/repo".to_string(),
             run_url: "https://example.com".to_string(),
         };
-        assert_eq!(action_hints(&enter, &inv), " · [↩] open · [i] investigate");
+        assert_eq!(action_hints(&enter, &inv), " · [↩] read · [i] investigate");
     }
 
     #[test]
@@ -2519,6 +2602,90 @@ mod tests {
         pr.total_changed_files = 3;
         let mut app = pr_split_app(vec![pr], 0);
         let buf = draw(&mut app, 195, 40);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    // ── Split view snapshot tests ─────────────────────────────────────────────
+
+    fn split_view_app(items: Vec<DisplayItem>, selected: usize, detail_scroll: u16) -> App {
+        let expanded = HashSet::new();
+        let flat_rows = flatten(&items, &expanded);
+        App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    flat_rows,
+                    items,
+                    selected,
+                    filter: Filter::default(),
+                    expanded_groups: expanded,
+                    detail_mode: DetailMode::Visible { detail_scroll },
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    fn issue_item() -> StatusItem {
+        StatusItem::Issue(domain::Issue {
+            number: 42,
+            title: "Fix logging in production".to_string(),
+            repo: domain::RepoSlug::new("ooloth", "hub"),
+            url: "https://github.com/ooloth/hub/issues/42".to_string(),
+            author: "agent".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+            labels: vec!["status:needs-human-review".to_string()],
+            body: Some("This is the issue body.\n\nIt has multiple paragraphs.".to_string()),
+        })
+    }
+
+    // SV1: Split view with a PR selected, scroll 0.
+    #[test]
+    fn split_view_pr_selected() {
+        let mut app = split_view_app(vec![DisplayItem::Single(pr())], 0, 0);
+        let buf = draw(&mut app, 120, 30);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    // SV2: Split view with an issue selected.
+    #[test]
+    fn split_view_issue_selected() {
+        let mut app = split_view_app(vec![DisplayItem::Single(issue_item())], 0, 0);
+        let buf = draw(&mut app, 120, 30);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    // SV3: Split view with a CI item selected (no detail view → placeholder).
+    #[test]
+    fn split_view_placeholder_for_ci_item() {
+        let mut app = split_view_app(vec![DisplayItem::Single(ci_item())], 0, 0);
+        let buf = draw(&mut app, 120, 30);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    // SV4: Split view with detail_scroll > 0.
+    #[test]
+    fn split_view_pr_scrolled() {
+        let mut app = split_view_app(vec![DisplayItem::Single(pr())], 0, 5);
+        let buf = draw(&mut app, 120, 30);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    // SV5: Split view on a narrow terminal (80 cols).
+    #[test]
+    fn split_view_narrow_terminal() {
+        let mut app = split_view_app(vec![DisplayItem::Single(pr())], 0, 0);
+        let buf = draw(&mut app, 80, 30);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    // SV6: Fullscreen list after Esc (regression — Hidden mode unchanged).
+    #[test]
+    fn fullscreen_list_after_esc_from_split_view() {
+        let items = vec![DisplayItem::Single(pr()), DisplayItem::Single(ci_item())];
+        let mut app = unified_list_app(items);
+        let buf = draw(&mut app, 120, 20);
         insta::assert_snapshot!(screen_text(&buf));
     }
 }

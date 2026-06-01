@@ -4,8 +4,8 @@ use chrono::Utc;
 use domain::{agent_ready_labels, dismissed_labels};
 
 use super::{
-    Action, App, Effect, EnterAction, InvestigateAction, Msg, PrOwnership, PrPrevScreen,
-    RefreshState, Screen,
+    Action, App, DetailMode, Effect, EnterAction, InvestigateAction, Msg, PrOwnership,
+    PrPrevScreen, RefreshState, Screen,
 };
 use crate::display::{
     build_unified, flatten, item_investigation, item_url, lines_to_compact_json,
@@ -36,6 +36,20 @@ impl App {
                 }
             }
             Action::Back => {
+                // Collapse the detail pane before any deeper back navigation.
+                let is_split_visible = matches!(
+                    &self.ui.screen,
+                    Screen::UnifiedList {
+                        detail_mode: DetailMode::Visible { .. },
+                        ..
+                    }
+                );
+                if is_split_visible {
+                    if let Screen::UnifiedList { detail_mode, .. } = &mut self.ui.screen {
+                        *detail_mode = DetailMode::Hidden;
+                    }
+                    return vec![];
+                }
                 self.ui.screen = match std::mem::take(&mut self.ui.screen) {
                     Screen::LogDetail { parent, .. }
                     | Screen::IssueDetail { parent, .. }
@@ -49,6 +63,7 @@ impl App {
                             selected: parent.selected,
                             filter: parent.filter,
                             expanded_groups: parent.expanded_groups,
+                            detail_mode: DetailMode::Hidden,
                         }
                     }
                     // Already at top level — no-op.
@@ -192,6 +207,13 @@ impl App {
                 self.ui.pending_g = true;
                 vec![]
             }
+            Action::ScrollDetailDown | Action::ScrollDetailUp => {
+                // Handled in handle_unified_list when detail_mode is Visible.
+                match &self.ui.screen {
+                    Screen::UnifiedList { .. } => self.handle_unified_list(action),
+                    _ => vec![],
+                }
+            }
             Action::MoveUp
             | Action::MoveDown
             | Action::MoveToTop
@@ -236,6 +258,7 @@ impl App {
             selected: ref mut s,
             filter: ref mut f,
             expanded_groups: ref eg,
+            ..
         } = self.ui.screen
         {
             *fr = flatten(&items, eg);
@@ -268,35 +291,82 @@ impl App {
         }
     }
 
+    fn reset_detail_scroll(&mut self) {
+        if let Screen::UnifiedList {
+            detail_mode: DetailMode::Visible { detail_scroll },
+            ..
+        } = &mut self.ui.screen
+        {
+            *detail_scroll = 0;
+        }
+    }
+
     fn handle_unified_list(&mut self, action: Action) -> Vec<Effect> {
         match action {
             Action::MoveUp => {
                 self.move_up();
+                self.reset_detail_scroll();
                 vec![]
             }
             Action::MoveDown => {
                 self.move_down();
+                self.reset_detail_scroll();
                 vec![]
             }
             Action::MoveToTop => {
                 self.move_to_top();
+                self.reset_detail_scroll();
                 vec![]
             }
             Action::MoveToBottom => {
                 self.move_to_bottom();
+                self.reset_detail_scroll();
                 vec![]
             }
             Action::MovePageUp => {
                 self.move_page_up();
+                self.reset_detail_scroll();
                 vec![]
             }
             Action::MovePageDown => {
                 self.move_page_down();
+                self.reset_detail_scroll();
                 vec![]
             }
             Action::Enter => {
-                let ea = compute_enter_action(self);
-                self.apply_enter_action(ea)
+                let is_hidden = matches!(
+                    &self.ui.screen,
+                    Screen::UnifiedList {
+                        detail_mode: DetailMode::Hidden,
+                        ..
+                    }
+                );
+                if is_hidden {
+                    if let Screen::UnifiedList { detail_mode, .. } = &mut self.ui.screen {
+                        *detail_mode = DetailMode::Visible { detail_scroll: 0 };
+                    }
+                }
+                vec![]
+            }
+            Action::ScrollDetailDown => {
+                if let Screen::UnifiedList {
+                    detail_mode: DetailMode::Visible { detail_scroll },
+                    ..
+                } = &mut self.ui.screen
+                {
+                    *detail_scroll = detail_scroll.saturating_add(1);
+                }
+                vec![]
+            }
+            Action::ScrollDetailUp => {
+                if let Screen::UnifiedList {
+                    detail_mode: DetailMode::Visible { detail_scroll },
+                    ..
+                } = &mut self.ui.screen
+                {
+                    *detail_scroll = detail_scroll.saturating_sub(1);
+                }
+                vec![]
             }
             Action::ExpandGroup => {
                 let to_expand = {
@@ -887,85 +957,6 @@ impl App {
         }
     }
 
-    fn apply_enter_action(&mut self, ea: EnterAction) -> Vec<Effect> {
-        match ea {
-            EnterAction::None => vec![],
-            EnterAction::OpenUrl(url) => vec![Effect::OpenUrl(url)],
-            EnterAction::OpenLogDetail(view) => {
-                let Screen::UnifiedList {
-                    items,
-                    selected,
-                    filter,
-                    expanded_groups,
-                    ..
-                } = &self.ui.screen
-                else {
-                    return vec![];
-                };
-                let snapshot = ListSnapshot {
-                    items: items.clone(),
-                    selected: *selected,
-                    filter: filter.clone(),
-                    expanded_groups: expanded_groups.clone(),
-                };
-                self.ui.screen = Screen::LogDetail {
-                    parent: snapshot,
-                    view,
-                    scroll: 0,
-                };
-                vec![]
-            }
-            EnterAction::OpenIssueDetail(issue) => {
-                let Screen::UnifiedList {
-                    items,
-                    selected,
-                    filter,
-                    expanded_groups,
-                    ..
-                } = &self.ui.screen
-                else {
-                    return vec![];
-                };
-                let snapshot = ListSnapshot {
-                    items: items.clone(),
-                    selected: *selected,
-                    filter: filter.clone(),
-                    expanded_groups: expanded_groups.clone(),
-                };
-                self.ui.screen = Screen::IssueDetail {
-                    parent: snapshot,
-                    issue,
-                    scroll: 0,
-                };
-                vec![]
-            }
-            EnterAction::OpenPrDetail(pr) => {
-                let Screen::UnifiedList {
-                    items,
-                    selected,
-                    filter,
-                    expanded_groups,
-                    ..
-                } = &self.ui.screen
-                else {
-                    return vec![];
-                };
-                let snapshot = ListSnapshot {
-                    items: items.clone(),
-                    selected: *selected,
-                    filter: filter.clone(),
-                    expanded_groups: expanded_groups.clone(),
-                };
-                self.ui.screen = Screen::PrDetail {
-                    parent: snapshot,
-                    pr,
-                    scroll: 0,
-                };
-                vec![]
-            }
-        }
-    }
-
     pub(crate) fn selected_url(&self) -> Option<&str> {
         match &self.ui.screen {
             Screen::UnifiedList {
@@ -1066,25 +1057,23 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
                     DisplayItem::Group { label, items: gi } if label == key => Some(gi.as_slice()),
                     _ => None,
                 });
-                group_items
-                    .and_then(log_detail_view_from_group)
-                    .map(EnterAction::OpenLogDetail)
-                    .unwrap_or(EnterAction::None)
+                if group_items.and_then(log_detail_view_from_group).is_some() {
+                    EnterAction::OpenLogDetail
+                } else {
+                    EnterAction::None
+                }
             }
             Some(FlatRow::GroupChild { item, .. }) | Some(FlatRow::Single(item)) => match item {
-                StatusItem::Issue(issue) => EnterAction::OpenIssueDetail(issue.clone()),
-                StatusItem::Pr(pr) => EnterAction::OpenPrDetail(pr.clone()),
+                StatusItem::Issue(_) => EnterAction::OpenIssueDetail,
+                StatusItem::Pr(_) => EnterAction::OpenPrDetail,
                 StatusItem::Gcp(_) | StatusItem::Loki(_) => {
-                    if let Some(view) = log_detail_view_from_item(item) {
-                        EnterAction::OpenLogDetail(view)
+                    if log_detail_view_from_item(item).is_some() {
+                        EnterAction::OpenLogDetail
                     } else {
                         EnterAction::None
                     }
                 }
-                _ => app
-                    .selected_url()
-                    .map(|u| EnterAction::OpenUrl(u.to_string()))
-                    .unwrap_or(EnterAction::None),
+                _ => EnterAction::None,
             },
             None => EnterAction::None,
         },
@@ -1093,10 +1082,7 @@ pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
         | Screen::DismissingIssue { .. }
         | Screen::PrDetail { .. }
         | Screen::ReviewingPr { .. }
-        | Screen::MergingPr { .. } => app
-            .selected_url()
-            .map(|u| EnterAction::OpenUrl(u.to_string()))
-            .unwrap_or(EnterAction::None),
+        | Screen::MergingPr { .. } => EnterAction::None,
         // PrSplit: Enter is reserved for v2 (focus-shift to right pane,
         // tracked in ooloth/hub#240). For v1 it does nothing.
         Screen::PrSplit { .. } => EnterAction::None,
@@ -1225,6 +1211,7 @@ fn refresh_screen_in_place(screen: &mut Screen, raw: &[workflows::status::Status
             selected,
             filter,
             expanded_groups,
+            ..
         } => {
             let new_items = build_unified(raw.to_vec(), filter);
             *selected = (*selected).min(new_items.len().saturating_sub(1));
@@ -1319,8 +1306,8 @@ mod tests {
     use std::collections::HashSet;
 
     use super::{
-        compute_enter_action, compute_investigate_action, handle_msg, Action, App, Effect,
-        EnterAction, InvestigateAction, Msg, RefreshState, Screen,
+        compute_enter_action, compute_investigate_action, handle_msg, Action, App, DetailMode,
+        Effect, EnterAction, InvestigateAction, Msg, RefreshState, Screen,
     };
     use crate::display::{
         flatten, log_detail_view_from_item, Category, DisplayItem, Filter, GroupKey, ListSnapshot,
@@ -1340,6 +1327,7 @@ mod tests {
                     selected: 0,
                     filter: Filter::default(),
                     expanded_groups: expanded,
+                    detail_mode: DetailMode::Hidden,
                 },
                 ..UiState::default()
             },
@@ -1669,28 +1657,17 @@ mod tests {
     }
 
     #[test]
-    fn enter_on_gcp_group_header_opens_log_detail() {
-        let mut app = app_with_items(vec![DisplayItem::Group {
-            label: GroupKey::new("hub".to_string()),
-            items: vec![gcp_item(), gcp_item()],
-        }]);
-        app.update(Action::Enter);
-        assert!(matches!(app.current_screen(), Screen::LogDetail { .. }));
-    }
-
-    #[test]
-    fn enter_on_gcp_group_header_includes_all_lines() {
+    fn enter_on_gcp_group_header_activates_split_view() {
         let mut app = app_with_items(vec![DisplayItem::Group {
             label: GroupKey::new("hub".to_string()),
             items: vec![gcp_item(), gcp_item()],
         }]);
         app.update(Action::Enter);
         match app.current_screen() {
-            Screen::LogDetail { view, .. } => match view {
-                LogDetailView::Gcp { lines, .. } => assert_eq!(lines.len(), 2),
-                _ => panic!("expected Gcp view"),
-            },
-            _ => panic!("expected LogDetail"),
+            Screen::UnifiedList { detail_mode, .. } => {
+                assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 0 });
+            }
+            _ => panic!("expected UnifiedList"),
         }
     }
 
@@ -2158,18 +2135,27 @@ mod tests {
     }
 
     #[test]
-    fn enter_on_issue_in_unified_list_opens_issue_detail() {
+    fn enter_on_issue_in_unified_list_activates_split_view() {
         let mut app = app_with_items(vec![DisplayItem::Single(stub_issue())]);
         app.update(Action::Enter);
-        assert!(matches!(app.current_screen(), Screen::IssueDetail { .. }));
+        match app.current_screen() {
+            Screen::UnifiedList { detail_mode, .. } => {
+                assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 0 });
+            }
+            _ => panic!("expected UnifiedList"),
+        }
     }
 
     #[test]
-    fn enter_on_ci_in_unified_list_opens_url() {
+    fn enter_on_ci_in_unified_list_activates_split_view() {
         let mut app = app_with_items(vec![DisplayItem::Single(ci_failure())]);
-        let effects = app.update(Action::Enter);
-        assert!(matches!(effects.as_slice(), [Effect::OpenUrl(_)]));
-        assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
+        app.update(Action::Enter);
+        match app.current_screen() {
+            Screen::UnifiedList { detail_mode, .. } => {
+                assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 0 });
+            }
+            _ => panic!("expected UnifiedList"),
+        }
     }
 
     #[test]
@@ -2451,6 +2437,7 @@ mod tests {
                         query: None,
                     },
                     expanded_groups: HashSet::new(),
+                    detail_mode: DetailMode::Hidden,
                 },
                 ..UiState::default()
             },
@@ -2709,17 +2696,14 @@ mod tests {
         let app = app_with_items(vec![DisplayItem::Single(stub_issue())]);
         assert!(matches!(
             compute_enter_action(&app),
-            EnterAction::OpenIssueDetail(_)
+            EnterAction::OpenIssueDetail
         ));
     }
 
     #[test]
-    fn compute_enter_action_in_issue_detail_returns_open_url() {
+    fn compute_enter_action_in_issue_detail_returns_none() {
         let app = app_in_issue_detail();
-        assert!(matches!(
-            compute_enter_action(&app),
-            EnterAction::OpenUrl(_)
-        ));
+        assert!(matches!(compute_enter_action(&app), EnterAction::None));
     }
 
     // --- AskAboutPr ---
@@ -3158,5 +3142,183 @@ mod tests {
         app.update(Action::OpenReviewPicker);
         app.update(Action::CancelReview);
         assert!(matches!(app.current_screen(), Screen::PrDetail { .. }));
+    }
+
+    // --- Split view state transitions ---
+
+    fn app_in_split_view() -> App {
+        app_with_items(vec![DisplayItem::Single(ci_failure())])
+    }
+
+    fn app_in_split_view_with_scroll(detail_scroll: u16) -> App {
+        let item = DisplayItem::Single(ci_failure());
+        let expanded = HashSet::new();
+        let flat_rows = flatten(&[item.clone()], &expanded);
+        App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    items: vec![item],
+                    flat_rows,
+                    selected: 0,
+                    filter: Filter::default(),
+                    expanded_groups: expanded,
+                    detail_mode: DetailMode::Visible { detail_scroll },
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    // ST1: Enter from Hidden activates split view with scroll reset to 0.
+    #[test]
+    fn enter_from_hidden_activates_split_view() {
+        let mut app = app_in_split_view();
+        app.update(Action::Enter);
+        match app.current_screen() {
+            Screen::UnifiedList { detail_mode, .. } => {
+                assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 0 });
+            }
+            _ => panic!("expected UnifiedList"),
+        }
+    }
+
+    // ST2: Enter while split view is already active is a no-op.
+    #[test]
+    fn enter_while_split_view_active_is_noop() {
+        let mut app = app_in_split_view_with_scroll(3);
+        app.update(Action::Enter);
+        match app.current_screen() {
+            Screen::UnifiedList { detail_mode, .. } => {
+                assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 3 });
+            }
+            _ => panic!("expected UnifiedList"),
+        }
+    }
+
+    // ST3: Back from Visible collapses to Hidden.
+    #[test]
+    fn back_from_split_view_collapses_to_fullscreen_list() {
+        let mut app = app_in_split_view_with_scroll(2);
+        app.update(Action::Back);
+        match app.current_screen() {
+            Screen::UnifiedList { detail_mode, .. } => {
+                assert_eq!(detail_mode, &DetailMode::Hidden);
+            }
+            _ => panic!("expected UnifiedList"),
+        }
+    }
+
+    // ST4: ClearFilter while Hidden with active filter clears filter, detail_mode stays Hidden.
+    #[test]
+    fn clear_filter_while_hidden_clears_filter_and_leaves_detail_hidden() {
+        let item = DisplayItem::Single(ci_failure());
+        let expanded = HashSet::new();
+        let flat_rows = flatten(&[item.clone()], &expanded);
+        let mut app = App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    items: vec![item],
+                    flat_rows,
+                    selected: 0,
+                    filter: Filter {
+                        category: Some(Category::Prs),
+                        query: None,
+                    },
+                    expanded_groups: expanded,
+                    detail_mode: DetailMode::Hidden,
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        };
+        app.update(Action::ClearFilter);
+        match app.current_screen() {
+            Screen::UnifiedList {
+                filter,
+                detail_mode,
+                ..
+            } => {
+                assert!(filter.is_empty());
+                assert_eq!(detail_mode, &DetailMode::Hidden);
+            }
+            _ => panic!("expected UnifiedList"),
+        }
+    }
+
+    // ST5: List navigation while Visible resets detail_scroll to 0.
+    #[test]
+    fn move_down_while_split_view_active_resets_detail_scroll() {
+        let items = vec![
+            DisplayItem::Single(ci_failure()),
+            DisplayItem::Single(ci_failure()),
+        ];
+        let expanded = HashSet::new();
+        let flat_rows = flatten(&items, &expanded);
+        let mut app = App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    items,
+                    flat_rows,
+                    selected: 0,
+                    filter: Filter::default(),
+                    expanded_groups: expanded,
+                    detail_mode: DetailMode::Visible { detail_scroll: 7 },
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        };
+        app.update(Action::MoveDown);
+        match app.current_screen() {
+            Screen::UnifiedList {
+                detail_mode,
+                selected,
+                ..
+            } => {
+                assert_eq!(*selected, 1);
+                assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 0 });
+            }
+            _ => panic!("expected UnifiedList"),
+        }
+    }
+
+    // ST6: ScrollDetailDown while Visible increments detail_scroll.
+    #[test]
+    fn scroll_detail_down_while_split_view_active_increments_scroll() {
+        let mut app = app_in_split_view_with_scroll(0);
+        app.update(Action::ScrollDetailDown);
+        match app.current_screen() {
+            Screen::UnifiedList { detail_mode, .. } => {
+                assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 1 });
+            }
+            _ => panic!("expected UnifiedList"),
+        }
+    }
+
+    // ST7: ScrollDetailDown while Hidden is a no-op (no panic, no state change).
+    #[test]
+    fn scroll_detail_down_while_hidden_is_noop() {
+        let mut app = app_in_split_view();
+        app.update(Action::ScrollDetailDown);
+        match app.current_screen() {
+            Screen::UnifiedList { detail_mode, .. } => {
+                assert_eq!(detail_mode, &DetailMode::Hidden);
+            }
+            _ => panic!("expected UnifiedList"),
+        }
+    }
+
+    // ST8: ScrollDetailUp while Visible decrements detail_scroll (saturating at 0).
+    #[test]
+    fn scroll_detail_up_while_split_view_active_decrements_scroll() {
+        let mut app = app_in_split_view_with_scroll(3);
+        app.update(Action::ScrollDetailUp);
+        match app.current_screen() {
+            Screen::UnifiedList { detail_mode, .. } => {
+                assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 2 });
+            }
+            _ => panic!("expected UnifiedList"),
+        }
     }
 }

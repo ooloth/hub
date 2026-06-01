@@ -49,6 +49,18 @@ pub(crate) enum RefreshState {
     Failed(String),
 }
 
+/// Whether the UnifiedList is showing a split detail pane below the list.
+/// `detail_scroll` only exists inside `Visible` — a hidden pane cannot have
+/// a stale scroll offset.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) enum DetailMode {
+    #[default]
+    Hidden,
+    Visible {
+        detail_scroll: u16,
+    },
+}
+
 // Flat enum encoding the valid navigation graph in the type system.
 // UnifiedList is the default (top-level) screen. Detail screens carry a
 // ListSnapshot as their return address — pressing Back restores the list
@@ -63,12 +75,16 @@ pub(crate) enum Screen {
         selected: usize,
         filter: Filter,
         expanded_groups: HashSet<GroupKey>,
+        detail_mode: DetailMode,
     },
     IssueDetail {
         parent: ListSnapshot,
         issue: Issue,
         scroll: u16,
     },
+    // Entry point removed in #244 (split view replaced full-screen navigation).
+    // Kept for potential future use (e.g. deeper drill-in from split detail pane).
+    #[allow(dead_code)]
     LogDetail {
         parent: ListSnapshot,
         view: LogDetailView,
@@ -130,6 +146,7 @@ impl Default for Screen {
             selected: 0,
             filter: Filter::default(),
             expanded_groups: HashSet::new(),
+            detail_mode: DetailMode::Hidden,
         }
     }
 }
@@ -162,10 +179,9 @@ impl Screen {
 
 pub(crate) enum EnterAction {
     None,
-    OpenUrl(String),
-    OpenLogDetail(LogDetailView),
-    OpenIssueDetail(Issue),
-    OpenPrDetail(PullRequest),
+    OpenLogDetail,
+    OpenIssueDetail,
+    OpenPrDetail,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -246,6 +262,8 @@ pub(crate) enum Action {
     DismissInput(tui_input::InputRequest),
     CommitDismissal,
     CancelDismissal,
+    ScrollDetailDown,
+    ScrollDetailUp,
     // Filter actions — only take effect from UnifiedList in normal mode.
     FilterCategory(Category),
     EnterPrSplit,

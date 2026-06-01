@@ -32,6 +32,12 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
             | Screen::IssueDetail { .. }
             | Screen::PrDetail { .. }
             | Screen::PrSplit { .. }
+    ) || matches!(
+        &app.ui.screen,
+        Screen::UnifiedList {
+            detail_mode: crate::state::DetailMode::Visible { .. },
+            ..
+        }
     );
     let has_filter = match &app.ui.screen {
         Screen::UnifiedList { filter, .. } => !filter.is_empty(),
@@ -60,7 +66,7 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
     }
 
     match app.current_screen() {
-        Screen::UnifiedList { .. } => unified_list_keys(key),
+        Screen::UnifiedList { detail_mode, .. } => unified_list_keys(key, detail_mode),
         Screen::LogDetail { .. } => log_detail_keys(key),
         Screen::IssueDetail { .. } => issue_reader_keys(key),
         Screen::PrDetail { .. } => pr_reader_keys(key),
@@ -87,10 +93,13 @@ fn query_mode_key(key: KeyEvent) -> Option<Action> {
     }
 }
 
-fn unified_list_keys(key: KeyEvent) -> Option<Action> {
+fn unified_list_keys(key: KeyEvent, detail_mode: &crate::state::DetailMode) -> Option<Action> {
+    let split_active = matches!(detail_mode, crate::state::DetailMode::Visible { .. });
     match (key.code, key.modifiers) {
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => Some(Action::MoveUp),
         (KeyCode::Down, _) | (KeyCode::Char('j'), _) => Some(Action::MoveDown),
+        (KeyCode::Char('J'), _) if split_active => Some(Action::ScrollDetailDown),
+        (KeyCode::Char('K'), _) if split_active => Some(Action::ScrollDetailUp),
         (KeyCode::Char('h'), _) => Some(Action::CollapseGroup),
         (KeyCode::Char('l'), _) => Some(Action::ExpandGroup),
         (KeyCode::Char('g'), _) => Some(Action::PendingG),
@@ -228,7 +237,7 @@ fn dismiss_mode_key(key: KeyEvent) -> Option<Action> {
 mod tests {
     use super::key_to_action;
     use crate::display::{Category, Filter, ListSnapshot};
-    use crate::state::{Action, App, PrPrevScreen, ReviewSkill, Screen, UiState};
+    use crate::state::{Action, App, DetailMode, PrPrevScreen, ReviewSkill, Screen, UiState};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use rstest::rstest;
 
@@ -285,6 +294,7 @@ mod tests {
                         query: None,
                     },
                     expanded_groups: std::collections::HashSet::new(),
+                    detail_mode: DetailMode::Hidden,
                 },
                 ..UiState::default()
             },
