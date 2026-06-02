@@ -3,19 +3,18 @@ source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
 ╭───────────────────────────────────────────────┬──────────────────────────────╮
-│                                               │   checks     (none)          │
-│## Summary                                     │   status     0 reviews       │
-│                                               │   comments   2 comments      │
-│Adds a detail screen for PRs.                  │   diff       +3 −1 in 2 files│
-│                                               │   author     @ooloth         │
-│## Why                                         │   updated    1d ago          │
-│                                               │   repo       ooloth/hub      │
-│Readability from terminal without leaving the  │   branch     feat/pr-detail  │
-│TUI.                                           │                              │
+│## Summary                                     │   checks     (none)          │
+│                                               │   status     0 reviews       │
+│Adds a detail screen for PRs.                  │   comments   2 comments      │
+│                                               │   diff       +3 −1 in 2 files│
+│## Why                                         │   author     @ooloth         │
+│                                               │   updated    1d ago          │
+│Readability from terminal without leaving the  │   repo       ooloth/hub      │
+│TUI.                                           │   branch     feat/pr-detail  │
 │                                               │                              │
-│── src/main.rs ───────────────────────── +3 -1 │                              │
-│                                               │                              │
-│@@ -10,7 +10,9 @@                              │                              │
+│── src/main.rs ───────────────────────── +3 -1 │ ─────────────────────────────│
+│                                               │   src/main.rs      +3 −1     │
+│@@ -10,7 +10,9 @@                              │   assets/logo.png  +0 −0     │
 │ context                                       │                              │
 │-old line                                      │                              │
 │+new line                                      │                              │
@@ -32,6 +31,7 @@ expression: screen_text(&buf)
 │                                               │                              │
 │── assets/logo.png ───────────────────── +0 -0 │                              │
 │ (binary)                                      │                              │
+│                                               │                              │
 │                                               │                              │
 │                                               │                              │
 │                                               │                              │

@@ -3,19 +3,18 @@ source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
 ╭───────────────────────────────────────────────┬──────────────────────────────╮
-│                                               │   checks     (none)          │
-│## Summary                                     │   status     0 reviews       │
-│                                               │   comments   2 comments      │
-│Adds a detail screen for PRs.                  │   diff       +3 −1 in 2 files│
-│                                               │   author     @ooloth         │
-│## Why                                         │   updated    1d ago          │
-│                                               │   repo       ooloth/hub      │
-│Readability from terminal without leaving the  │   branch     feat/pr-detail  │
-│TUI.                                           │                              │
+│## Summary                                     │   checks     (none)          │
+│                                               │   status     0 reviews       │
+│Adds a detail screen for PRs.                  │   comments   2 comments      │
+│                                               │   diff       +3 −1 in 2 files│
+│## Why                                         │   author     @ooloth         │
+│                                               │   updated    1d ago          │
+│Readability from terminal without leaving the  │   repo       ooloth/hub      │
+│TUI.                                           │   branch     feat/pr-detail  │
 │                                               │                              │
-│── top-level comments ─────────────────────────│                              │
-│                                               │                              │
-│ @reviewer · 1d                                │                              │
+│── top-level comments ─────────────────────────│ ─────────────────────────────│
+│                                               │   src/main.rs      +3 −1     │
+│ @reviewer · 1d                                │   assets/logo.png  +0 −0     │
 │ Looks good overall, a few nits below.         │                              │
 │                                               │                              │
 │ @reviewer2 · 6h                               │                              │
@@ -32,6 +31,7 @@ expression: screen_text(&buf)
 │                                               │                              │
 │── assets/logo.png ───────────────────── +0 -0 │                              │
 │ (binary)                                      │                              │
+│                                               │                              │
 │                                               │                              │
 │                                               │                              │
 │                                               │                              │

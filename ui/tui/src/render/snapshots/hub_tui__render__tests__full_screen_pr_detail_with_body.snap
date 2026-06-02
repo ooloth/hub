@@ -3,15 +3,15 @@ source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
 ╭───────────────────────────────────────────────┬──────────────────────────────╮
-│                                               │   checks     (none)          │
-│## Summary                                     │   status     0 reviews       │
-│                                               │   comments   2 comments      │
-│Adds a detail screen for PRs.                  │   diff       +0 −0 in 0 files│
-│                                               │   author     @ooloth         │
-│## Why                                         │   updated    1d ago          │
-│                                               │   repo       ooloth/hub      │
-│Readability from terminal without leaving the  │   branch     feat/pr-detail  │
-│TUI.                                           │                              │
+│## Summary                                     │   checks     (none)          │
+│                                               │   status     0 reviews       │
+│Adds a detail screen for PRs.                  │   comments   2 comments      │
+│                                               │   diff       +0 −0 in 0 files│
+│## Why                                         │   author     @ooloth         │
+│                                               │   updated    1d ago          │
+│Readability from terminal without leaving the  │   repo       ooloth/hub      │
+│TUI.                                           │   branch     feat/pr-detail  │
+│                                               │                              │
 │                                               │                              │
 │                                               │                              │
 │                                               │                              │

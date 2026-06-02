@@ -12,9 +12,9 @@ expression: screen_text(&buf)
 │                                               │   repo       ooloth/hub      │
 │@@ -10,7 +10,9 @@                              │   branch     feat/pr-detail  │
 │ context                                       │                              │
-│-old line                                      │                              │
-│+new line                                      │                              │
-│+another new                                   │                              │
+│-old line                                      │ ─────────────────────────────│
+│+new line                                      │   src/main.rs      +3 −1     │
+│+another new                                   │   assets/logo.png  +0 −0     │
 │+third new                                     │                              │
 │                                               │                              │
 │── assets/logo.png ───────────────────── +0 -0 │                              │

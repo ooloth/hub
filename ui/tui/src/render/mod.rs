@@ -680,7 +680,6 @@ fn render_pr_detail(
         .unwrap_or("(no description)");
 
     let mut content = crate::markdown::from_str(raw_body);
-    content.lines.insert(0, Line::from(""));
     content.lines.push(Line::from(""));
 
     if !pr.pr_comments.is_empty() {
@@ -718,7 +717,11 @@ fn render_pr_detail(
     );
 
     frame.render_widget(
-        Paragraph::new(pr_split_detail::pr_right_column_lines(pr)),
+        Paragraph::new(pr_split_detail::pr_right_column_lines(
+            pr,
+            meta_area.width as usize,
+            meta_area.height as usize,
+        )),
         meta_area,
     );
 }

@@ -3,8 +3,8 @@ source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
 ╭───────────────────────────────────────────────┬──────────────────────────────╮
-│                                               │   checks     (none)          │
-│(no description)                               │   status     Changes requeste│
+│(no description)                               │   checks     (none)          │
+│                                               │   status     Changes requeste│
 │                                               │   comments   0 comments      │
 │                                               │   diff       +0 −0 in 0 files│
 │                                               │   author     @ooloth         │

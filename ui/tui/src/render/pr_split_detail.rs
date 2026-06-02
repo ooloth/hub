@@ -202,8 +202,14 @@ fn truncate(s: &str, max: usize) -> String {
 /// Metadata lines for the right column of the two-column PR detail pane.
 ///
 /// Returned in display order: checks, status, reviews (if any), comments,
-/// blocker (if any), diff, author, updated, repo, branch.
-pub(super) fn pr_right_column_lines(pr: &PullRequest) -> Vec<Line<'static>> {
+/// blocker (if any), diff, author, updated, repo, branch — then a separator
+/// and the per-file list. Files that don't fit within `available_height` are
+/// clipped with a "+N more…" hint.
+pub(super) fn pr_right_column_lines(
+    pr: &PullRequest,
+    width: usize,
+    available_height: usize,
+) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     lines.push(field_row_spans("checks", check_status_spans(pr.ci_status)));
@@ -250,6 +256,28 @@ pub(super) fn pr_right_column_lines(pr: &PullRequest) -> Vec<Line<'static>> {
     ));
     lines.push(field_row_plain("repo", &pr.repo.to_string()));
     lines.push(field_row_plain("branch", &pr.head_branch));
+
+    // Separator + per-file list, clipped to available space.
+    let separator_overhead = 2; // blank line + separator line
+    let used = lines.len() + separator_overhead;
+    let space_for_files = available_height.saturating_sub(used);
+    if space_for_files > 0 && !pr.changed_files.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(separator_line(width));
+        let all_files = file_lines(&pr.changed_files, width);
+        let total = all_files.len();
+        if total <= space_for_files {
+            lines.extend(all_files);
+        } else {
+            let visible = space_for_files.saturating_sub(1).max(1);
+            lines.extend(all_files.into_iter().take(visible));
+            let hidden = total - visible;
+            lines.push(Line::from(Span::styled(
+                format!("  +{hidden} more…"),
+                dim(),
+            )));
+        }
+    }
 
     lines
 }
@@ -546,9 +574,12 @@ mod tests {
         }
     }
 
+    const W: usize = 40;
+    const H: usize = 40;
+
     #[test]
     fn pr_right_column_lines_snapshot_fully_populated_pr() {
-        let lines = pr_right_column_lines(&pr_with_all_fields());
+        let lines = pr_right_column_lines(&pr_with_all_fields(), W, H);
         let text: Vec<String> = lines.iter().map(line_text).collect();
         insta::assert_snapshot!(text.join("\n"));
     }
@@ -558,7 +589,7 @@ mod tests {
         let mut p = pr_with_all_fields();
         p.approval_count = 0;
         p.review_decision = None;
-        let lines = pr_right_column_lines(&p);
+        let lines = pr_right_column_lines(&p, W, H);
         let has_reviews_row = lines.iter().any(|l| line_text(l).contains("reviews "));
         assert!(!has_reviews_row, "expected no reviews row");
     }
@@ -572,7 +603,7 @@ mod tests {
     ) {
         let mut p = pr_with_all_fields();
         p.approval_count = count;
-        let lines = pr_right_column_lines(&p);
+        let lines = pr_right_column_lines(&p, W, H);
         let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(
             all_text.contains(expected),
@@ -584,7 +615,7 @@ mod tests {
     fn pr_right_column_lines_omits_blocker_row_when_merge_blocker_is_none() {
         let mut p = pr_with_all_fields();
         p.merge_blocker = None;
-        let lines = pr_right_column_lines(&p);
+        let lines = pr_right_column_lines(&p, W, H);
         let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(
             !all_text.contains("blocker"),
@@ -602,11 +633,54 @@ mod tests {
     ) {
         let mut p = pr_with_all_fields();
         p.merge_blocker = Some(blocker);
-        let lines = pr_right_column_lines(&p);
+        let lines = pr_right_column_lines(&p, W, H);
         let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(
             all_text.contains(expected_word),
             "expected '{expected_word}' in:\n{all_text}"
+        );
+    }
+
+    #[test]
+    fn pr_right_column_lines_shows_file_section_separator_when_space_allows() {
+        let lines = pr_right_column_lines(&pr_with_all_fields(), W, H);
+        let has_separator = lines.iter().any(|l| line_text(l).contains('─'));
+        assert!(
+            has_separator,
+            "expected separator line indicating file section"
+        );
+    }
+
+    #[test]
+    fn pr_right_column_lines_omits_file_list_when_no_space() {
+        let lines = pr_right_column_lines(&pr_with_all_fields(), W, 5);
+        let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(
+            !all_text.contains("mod.rs"),
+            "expected no file list when height is tiny:\n{all_text}"
+        );
+    }
+
+    #[test]
+    fn pr_right_column_lines_clips_file_list_with_more_hint_when_overflow() {
+        let mut p = pr_with_all_fields();
+        p.changed_files = (0..10)
+            .map(|i| ChangedFile {
+                path: format!("file{i}.rs"),
+                additions: 1,
+                deletions: 0,
+                patch: None,
+            })
+            .collect();
+        p.total_changed_files = 10;
+        // Available height just enough for fields + separator + 3 files
+        let field_count = 12; // approx: 10 fields + 1 blocker + 1 reviews
+        let height = field_count + 2 + 3; // fields + sep overhead + 3 file slots
+        let lines = pr_right_column_lines(&p, W, height);
+        let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(
+            all_text.contains("more…"),
+            "expected overflow hint:\n{all_text}"
         );
     }
 }
