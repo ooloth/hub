@@ -632,6 +632,73 @@ Auto-unsnooze is **event-driven, not TTL-based** — a PR can stay snoozed indef
   - Config: `[calendar] ical_url = "..."`, `blocking_event_patterns = ["call", "meeting", "stand-up"]`
   - Skip: ML prediction, two-way sync, meeting prep checklists — juice not worth the squeeze
 
+### Notes / Knowledge Base
+
+The notes system is a personal knowledge base integrated into the dashboard — date-organized, tag/type/person-linked, markdown-rendered, with weekly export. It's kept completely separate from tasks.
+
+**Schema:**
+```sql
+notes (id UUID PK, title, body, type, date YYYY-MM-DD, tags JSON-array, project_id FK, created_at, updated_at, deleted_at)
+people (id UUID PK, name UNIQUE)
+projects (id UUID PK, name UNIQUE)
+note_people (note_id FK, person_id FK, PK on both)  -- many-to-many
+```
+Tags stored as a JSON array in a TEXT column — not normalized. People are a proper join table. Projects are a direct FK (one project per note). Soft deletes via `deleted_at`.
+
+**Navigation sidebar structure:**
+```
+Today [3] / Yesterday / This Week / Last Week
+─────────────────────────────────────────
+1-2-1s
+  ├─ Alice [4]
+  └─ Bob   [2]
+Weekly Log
+  ├─ 2024-06-03 [7]
+  └─ 2024-05-27 [8]
+By Type  / By Project / By Tag / By Person
+```
+Weekly Log entries are keyed by Monday date. All filtering is client-side — the full note list is fetched once, filtered by category in JS.
+
+**Category filter patterns** (URL-style keys):
+```
+"today"            → note.date == today
+"this-week"        → monday ≤ date ≤ today
+"week:2024-06-03"  → specific week by monday date
+"type:standup"     → note.type == "standup"
+"project:{id}"     → note.project_id == id
+"tag:architecture" → note.tags.includes("architecture")
+"person:{id}"      → note has this person in note_people
+"121:{id}"         → note.type=="1-2-1" AND has this person
+```
+
+**Search:** client-side, live as you type, full-text across title + body both, overrides category filter when active.
+
+**Draft persistence:** `localStorage` keyed as `"notes-draft"`. Auto-saves on every field change. Restored on page reload. Cleared on save or cancel. Creating a note pre-fills type/project/tags/people from the current category (e.g. opening "new note" while viewing person:Alice pre-fills that person).
+
+**Inline editing:** click title → `TextInput`; click body → `Textarea` (monospace, markdown). Saves on blur. No modal needed for existing notes. New notes use a top-of-list form.
+
+**Note card display:**
+```
+┌───────────────────────────────────────────┐
+│ Note Title                           ⋮    │
+│ [standup] [ProjectA] [architecture]       │  ← type (purple), project (blue),
+│                                           │    tags (orange outline), people (teal)
+│ Note body rendered as markdown...         │
+│ Click to edit body inline                 │
+└───────────────────────────────────────────┘
+```
+
+**Weekly export** — bulk export to markdown files organized by year:
+```
+export_path/
+└── 2024/
+    ├── 2024-06-03.md   ← week starting Monday
+    └── 2024-05-27.md
+```
+Each file groups notes by date under `## Monday (3 Jun 2024)` headings, with `### Note Title` sub-headings, a `*type, project, tags, people*` metadata line, and the markdown body. Notes within a week are grouped by date, dates ordered chronologically.
+
+**For hub:** The date-based weekly grouping and export pattern is directly applicable to agent task logs — agents already write per-task markdown files, and a "weekly log of agent activity" export (grouped by week, with task key, PR links, outcomes) would be a natural complement. The `localStorage` draft pattern translates to hub's TUI as "unsaved note in state, survives screen switches." The sidebar category system maps naturally to TUI filter modes.
+
 ### Repo Management
 
 - Three support tiers derived at runtime from two boolean fields (never stored as a tier column):
@@ -826,6 +893,80 @@ Backend reads this and returns `{model, cost_usd, duration_s, context_pct}` alon
 - Task status is the handoff signal: agent sets `review`, human checks, human sets `done` or adds a comment and agent resumes
 - Agent creates a markdown log file per task, links it back via `doc_links` — human-readable record of decisions and gotchas
 
+### Human-Agent Collaboration Reference
+
+**Agent reads the task on every resume** — `kwc tasks get TASK-XXXX` returns full JSON including `comments` array (chronological, ASC) and `activity` array. The agent scans comments by `created_at` to detect human feedback added since the last session.
+
+**Exact `kwc tasks get` response shape:**
+```json
+{
+  "id": 42, "task_key": "TASK-0042", "title": "Fix scoring bug",
+  "status": "in-progress", "type": "implement",
+  "agent_session_id": "550e8400-...",
+  "jira_tickets": "DWO-123,DWO-124",
+  "pr_links": "https://...",
+  "doc_links": "agent/task-logs/TASK-0042-scoring-fix.md",
+  "created_at": "...", "updated_at": "...",
+  "comments": [
+    {"id": 1, "author": "human", "content": "Here's the problem...", "created_at": "..."},
+    {"id": 2, "author": "agent", "content": "I've identified the issue...", "created_at": "..."}
+  ],
+  "activity": [
+    {"id": 1, "actor": "human", "action": "created", "created_at": "..."},
+    {"id": 2, "actor": "agent", "action": "status_change",
+     "detail": {"from": "ready", "to": "in-progress"}, "created_at": "..."}
+  ]
+}
+```
+
+Comments are **flat, chronological, no threading**. `author` field distinguishes human from agent. Content is plain-text markdown. The `activity` table is a parallel immutable audit log — comment creation also logs to activity with `action: "comment"` and `detail: comment_id`.
+
+**Complete agent task completion sequence** (exact ordering matters):
+```bash
+# 1. Commit and push (all quality checks passed)
+echo "Fix scoring timeout" | kwc workspace commit-push \
+  workspaces/TASK-0042/repos/service-a --branch fix-timeout -- src/scoring.py
+
+# 2. Wait for CI
+kwc bitbucket pipeline-status latest --repo org/service-a --branch fix-timeout
+kwc bitbucket wait-pipeline --repo org/service-a --build 12345 --poll-interval 20
+
+# 3. Create PR
+kwc bitbucket pr create --repo org/service-a --title "Fix scoring timeout" \
+  --source fix-timeout --dest main
+
+# 4. Link artefacts to task (PR first, then doc, then status, then comment)
+kwc tasks add-pr  TASK-0042 --url "https://...pull-requests/42" --actor agent
+kwc tasks add-doc TASK-0042 --path "agent/task-logs/TASK-0042-scoring-fix.md" --actor agent
+kwc tasks update  TASK-0042 --status review --actor agent
+kwc tasks comment TASK-0042 --author agent \
+  --content "Optimized scoring loop. See PR for details."
+  # NOTE: do NOT include PR URL in comment — it's already linked via add-pr
+```
+
+**Escalation sequence** (blocked, can't continue):
+```bash
+kwc tasks comment TASK-0042 --author agent \
+  --content "BLOCKED: {situation}\n- Tried: {attempts}\n- Why stuck: {reason}"
+kwc tasks update  TASK-0042 --status review --actor agent
+# STOP — leave workspace intact for resumption
+```
+
+**Human-side comment** (via dashboard POST or direct CLI):
+```bash
+kwc tasks comment TASK-0042 --author human \
+  --content "Per review: fix line 42, add test case Z"
+```
+
+**Activity `detail` field JSON shapes:**
+```json
+{"from": "ready", "to": "in-progress"}          // status_change
+{"field": "pr_links", "added": "https://..."}    // field update
+"42"                                              // comment (comment_id as string)
+```
+
+**Review state UX on the dashboard:** task shows status badge "review", PR link is highlighted, latest agent comment is visible. Human can: add a comment (which agent reads on next resume), approve PR on the git host, or directly update task status to `done`. Agent on resume fetches the task, checks comment timestamps since last session start, reads PR review comments separately if a PR exists.
+
 ### Workspace Management
 
 - Two-tier directory structure: permanent read-only reference + ephemeral task working copies:
@@ -915,3 +1056,62 @@ Backend reads this and returns `{model, cost_usd, duration_s, context_pct}` alon
 - CI failure diagnosis for GitHub Actions: `gh run view --log-failed` + grep for `error[` / `^Error` patterns — same pattern, different provider
 - "Find last success, diff to first failure" pattern for regression hunting: list recent runs → find boundary → compare changed files between the two commits
 - No real-time CI badge in the dashboard — CI monitoring is agent-driven via blocking CLI tools, not ambient display
+
+### GitHub Actions CI Reference
+
+The inspiration project has minimal GitHub Actions tooling (only `kwc github create-pr` and `kwc github list-my-prs`) — no GitHub-equivalent of the Bitbucket pipeline commands. GitHub CI monitoring is handled directly via the `gh` CLI, using the patterns in a `ci-investigate` investigation skill.
+
+**GitHub Actions failure detection** (from hub's Rust client `clients/src/github.rs`):
+```rust
+// Per repo: fetch recent runs, keep latest per workflow, report failing ones
+GET /repos/{repo}/actions/runs?status=completed&per_page=30
+→ filter to default branch only
+→ deduplicate: one entry per workflow_path (keep latest)
+→ keep runs with conclusion in ["failure", "timed_out", "startup_failure", "action_required"]
+→ a successful run for a workflow clears prior failures
+→ return CiFailure { repo, workflow_name, job_name, step_name, error, age, url }
+```
+
+**Failure detail extraction** — GitHub provides structured check-run annotations (unlike Bitbucket's raw logs):
+```bash
+GET /repos/{repo}/check-runs/{job_id}/annotations
+→ find first annotation where annotation_level == "failure"
+→ take first line of its message field
+```
+This gives a concise, structured error description without log parsing.
+
+**Investigation skill sequence** for diagnosing a GitHub Actions failure:
+```bash
+# 1. Identify the failed step
+gh run view <run_id> --repo <repo> \
+  --json name,conclusion,headBranch,headSha,createdAt,jobs \
+  --jq '[.jobs[] | select(.conclusion=="failure") | {name, steps: [.steps[] | select(.conclusion=="failure") | .name]}]'
+
+# 2. Extract error lines (grep filters out boilerplate)
+gh run view <run_id> --repo <repo> --log-failed 2>&1 \
+  | grep -E 'error\[|^Error|error:' | head -20
+
+# 3. Find the regression boundary
+gh run list --repo <repo> --branch <branch> --limit 30 \
+  --json databaseId,conclusion,createdAt,headSha \
+  --jq '.[] | "\(.databaseId) \(.conclusion) \(.createdAt) \(.headSha[0:8])"'
+# → scan for last success before first failure
+
+# 4. Diff changed files between boundary commits
+gh api "repos/<repo>/compare/<last-success-sha>...<first-failure-sha>" \
+  --jq '[.files[] | .filename] | join("\n")'
+```
+
+**GitHub PR activity** (used in PR detail drawer) — fetched via:
+```bash
+gh api repos/{repo}/issues/{pr_number}/timeline --paginate
+```
+Returns comments, commits, reviews, approvals in a unified timeline. Activity types are normalized to the same `{type, author, content, created_on}` shape as Bitbucket activity.
+
+**GitHub PR list** — uses GraphQL (not REST) for richer filtering:
+```bash
+gh api graphql -f query='{ viewer { pullRequests(...) { nodes { ... } } } }'
+```
+Fetches review requests and assignees in one query. Output emitted as `GH_PRS {...}` marker line for subprocess parsing.
+
+**For hub:** Hub already uses GitHub Actions and the Rust client already implements `ci_failures()`. The patterns above are what hub agents should use for investigation. The annotation-based error extraction is cleaner than log grep for most failures; the log grep is the fallback for cases where annotations aren't populated. The "last success / first failure diff" pattern is universally applicable regardless of CI provider.
