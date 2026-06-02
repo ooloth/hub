@@ -85,13 +85,16 @@ This doc covers everything else.
 - CLI is the single source of truth for business logic — dashboard backend calls CLI via subprocess, never reimplements the logic
 - Structured single-line output for machine parsing: `TASK_CREATED TASK-0042`, `DISPATCHED TASK-0042 <id>`, `NO_READY_TASKS`, `AT_CAPACITY`, `RESUMED TASK-0042 <id>`
 - Errors to stderr, exit code 1, actionable message: `ERROR: task TASK-0042 status is 'in-progress', expected 'ready'`
-- Dry-run mode: `DRY_RUN TASK-0042` — same output shape, no side effects
+- Dry-run mode: `DRY_RUN VERB RESOURCE [key=value ...]` — same output shape, no side effects, exit 0
+- `AT_CAPACITY` and `NO_READY_TASKS` exit 0 — expected states, not errors; callers branch on the verb, not the exit code
+- `--format=json` flag for scripting — same data, structured as JSON object or array
 - Commands accept both human-friendly (`TASK-0042`) and machine-friendly (integer ID) references
 - Commands designed for subprocess consumption by the dispatch loop and dashboard backend, not just human use
 - Dashboard calls CLI via `asyncio.create_subprocess_exec()`, parses stdout, raises on non-zero exit — never swallows errors
 - API field pruning via `?fields=a,b,c` query param — fetch only what's needed, reduce payload
 - Parallel repo/API discovery with bounded thread pool (20 workers) — fast enough without overwhelming rate limits
 - Agent instructions explicitly state "use the CLI, don't call APIs directly, don't attempt workarounds if a command fails" — prevents agents from diverging from canonical tool behavior
+- Hub's CLI is currently a skeleton (per decision #010 it becomes agent-facing) — task management commands are the right first surface to build out: `hub tasks create/ready/dispatch/get/list/update/comment`
 
 ### Testing
 
@@ -99,6 +102,19 @@ This doc covers everything else.
 - Test both success and precondition-failure paths (e.g. claiming a task that isn't `ready`)
 - Test deduplication: adding a duplicate ticket/PR/doc → same state, no duplicate
 - CLI tested via `CliRunner` equivalent — invoke handler directly with test DB path
+- Autouse fixtures for cross-cutting concerns (`@pytest.fixture(autouse=True)`) — inject temp cache dir or DB path into every test in a module without explicit parameter passing
+- Inline schema in test fixtures via raw SQL (`executescript`) rather than running migration files — faster setup, no file I/O per test
+- Patch module-level functions at test time (`monkeypatch.setattr("routes.tasks.get_connection", ...)`) rather than parameterizing constructors — simpler test code
+- `TestClient(app)` end-to-end through HTTP routing, not mocking the handler directly — ensures middleware, serialization, and error handling are exercised
+- Always assert HTTP status code before drilling into response body
+- Mock subprocess at the `asyncio.create_subprocess_exec` layer, not the CLI boundary — mock returns what the tool would return (raw text), the route parses it
+- `AsyncMock` with `communicate.return_value = (stdout.encode(), b"")` for subprocess mocks; smart mock routing via `async def fake_exec(*args)` that switches on command args for multi-tool workflows
+- `asyncio.get_event_loop().run_until_complete()` to drive async code synchronously in tests
+- Call counter pattern (nonlocal variable) to verify caching without mocking time — first call hits the source, second serves cache, assert `call_count == 1`
+- Pre-populate cache with `file_cache.set(key, data)` before the request; verify route uses it
+- Class-based test grouping (`class TestFoo:`) for related cases; inline assertions for small input sets rather than `@pytest.mark.parametrize`
+- Override `datetime.now()` for date-dependent tests by monkeypatching a subclass at module level — not a global mock
+- Coverage philosophy: test all public routes (success + common error cases + deduplication); don't test third-party library internals or exhaustively cover every edge case in helpers
 
 ---
 
@@ -252,6 +268,25 @@ This doc covers everything else.
 - "Also check" cross-signal grouping: combine two related signals into one card — communicates "fix these together"
 - Pending counter for coordinated multi-source refresh: each source increments on start, decrements on finish; spinner clears only when counter hits zero
 - Time-horizon bucketing for personal work: "today" vs "this week" vs "backlog" — urgency encoded in the category, not just a priority field
+- Hub-specific home layout sketch — two-tier architecture: cards for glanceable summary (top), urgency list for ranked detail (bottom-right), agent card (bottom-left):
+  ```
+  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐
+  │ PULL REQUESTS │  │ GITHUB CI     │  │ LINEAR ISSUES │  │ LOKI ALERTS   │
+  │      7        │  │      0        │  │      3        │  │      2        │
+  │ ON TRACK      │  │ ALL PASSING   │  │ ON TRACK      │  │ FIRING (HIGH) │
+  │ 2 rev/3 my    │  │               │  │ 2 mine/1 unasn│  │ prod-api (2)  │
+  └───────────────┘  └───────────────┘  └───────────────┘  └───────────────┘
+  ┌───────────────┐  ┌────────────────────────────────────────────────────────┐
+  │ AGENT TASKS   │  │ URGENCY RANKING                                        │
+  │      1        │  │ 1. [CRITICAL] PR#42 · alice/feature · 23m ago          │
+  │ IN PROGRESS   │  │ 2. [HIGH] CI · cargo check · owner/repo · 45m ago      │
+  │ 1 task active │  │ 3. [HIGH] Loki (3) · OOM killed · prod-api · 1m ago    │
+  └───────────────┘  │ ↓ scroll  p=PRs  e=Errors  i=Issues  /=search         │
+                     └────────────────────────────────────────────────────────┘
+  ```
+- All-clear state: all cards green, urgency list shows celebratory message + countdown to next refresh
+- Card spec per signal type: primary count (large, red if nonzero urgent), status text (reinforces color in words), secondary detail line (breakdown: "2 review / 3 mine / 2 draft")
+- Ratatui layout: `Constraint::Length(29)` per card, `Constraint::Min(0)` for urgency list pane
 
 ### PRs
 
@@ -383,6 +418,25 @@ This doc covers everything else.
 - Timezone-aware parsing server-side, display as HH:MM strings — no client-side timezone math
 - Recurring event expansion (RRULE) done server-side — consumer sees a flat list of single-day occurrences
 - **Gap worth filling**: calendar and tasks are completely separate silos in this project — no cross-reference between meeting load and task commitments. A TUI could show task deadlines relative to calendar, warn about over-scheduling, or surface free blocks for deep work
+- Hub-specific calendar integration ideas (opinionated priority order):
+  - Phase 1 — "Next meeting" footer: always-visible single line; dims when no meetings within 8h; yellow < 15min, red < 5min; updates locally every 30s:
+    ```
+    Next: Design Sync in 1h 23m | 6h 45m free today | c) free blocks
+    ```
+  - Phase 2 — Inline conflict badge on items with deadlines: "⏰ Client call 3pm" next to the item if a blocking meeting falls before its deadline
+  - Phase 3 — Free blocks modal on `c`: gap detection between events, filter slots < 30min, show total:
+    ```
+    ┌─ Free blocks today ──────────────────┐
+    │ Now — 2:15pm      (2h 15m)           │
+    │ 3:45pm — 5:00pm   (1h 15m)          │
+    │ Total available: 3h 30m              │
+    └──────────────────────────────────────┘
+    ```
+  - Phase 4 — Time pressure visual hint: if < 2h free, dim indicator on High items (not urgency change — urgency is the workflow's job)
+  - iCalendar client in Rust: `icalendar` crate, per-date fetch, cache in SQLite alongside status data, 30min TTL
+  - `FreeBlock { start, end, duration }` pre-computed at fetch time, stored in `StatusReport`
+  - Config: `[calendar] ical_url = "..."`, `blocking_event_patterns = ["call", "meeting", "stand-up"]`
+  - Skip: ML prediction, two-way sync, meeting prep checklists — juice not worth the squeeze
 
 ### Repo Management
 
@@ -450,6 +504,22 @@ This doc covers everything else.
 - `NO_READY_TASKS` and `AT_CAPACITY` are expected non-error states, not failures
 - `RESUMED` output code when re-dispatching a task that already has a session — no new session created
 - Dispatch supports multiple launch targets (different terminal apps) with graceful fallback
+- Hub TUI dispatch surface — split panel: no agents running → full-width urgency list; agents running → 50/50 split:
+  ```
+  ┌─ Urgency List ──────────────┬─ Running Agents ──────────┐
+  │ CRITICAL                    │ ⊛ Issue#123  ooloth/hub   │
+  │  • PR#42 · auth refactor    │   Implementing…  18m 42s  │
+  │ HIGH                        │   Bash · Edit x2 · Read   │
+  │  • Issue#78 · docs update   │   Cost: $0.14  Ctx: 42%   │
+  └─────────────────────────────┴───────────────────────────┘
+  ```
+- Per-job display: status icon (⊛ running, ◌ queued, ✗ blocked, ✓ done) + title + elapsed + last 3 tools + cost/context meter
+- Dispatch flow: `d` on a ready item → confirmation modal (model, worktree mode) → ENTER → spawn subprocess → immediately show agent detail view
+- Review flow: agent sets status to `review` → TUI changes icon to ⏸ → user presses `y` (approve, agent resumes) or `x` (reject, prompted for feedback)
+- Resume flow: blocked agent → agent detail view → `y` to resume from saved session ID (`--resume-from-session`)
+- New domain type: `AgentSession { session_id, status, started_at, cost_usd, context_metrics, turns, activity_feed }`
+- New TUI screens: `AgentDetail`, `AgentDispatchModal`, `AgentReviewModal`
+- Key bindings: `d` dispatch, `y`/`n` approve/reject, `v` view transcript, `m` view diff, `i` interrupt, `Esc` back
 
 ### Agent Session Observability
 
@@ -462,6 +532,29 @@ This doc covers everything else.
 - Session stats surfaced in task detail view: model used, cost, duration, context remaining
 - Context % rendered as a color-coded horizontal bar: green <75%, yellow 75–90%, red >90%
 - If stats file is missing, show nothing — graceful degradation
+- JSONL event types to handle when parsing a live session stream:
+  - `{"type":"system","subtype":"init"}` → "🎯 Session initialized (model)"
+  - `{"type":"assistant","content":[{"type":"text"}]}` → "💬 Agent: …"
+  - `{"type":"assistant","content":[{"type":"tool_use","name":"Edit"}]}` → "✏️ Edit /path (N lines changed)"
+  - `{"type":"user","content":[{"type":"tool_result","is_error":false}]}` → "✓ succeeded"
+  - `{"type":"user","content":[{"type":"tool_result","is_error":true}]}` → "✗ error: …"
+  - `{"type":"result","total_cost_usd":0.287,"num_turns":8}` → "🏁 Done: turns=8 cost=$0.287"
+- Activity feed icons: 🎯 init, 💬 message, ⚙️ tool call, ✓ success, ✗ error, ✏️ edit, 🔄 transition, 🏁 complete
+- Agent detail view layout — metadata + metrics + scrollable activity feed + actions:
+  ```
+  ┌─ Issue#123 ooloth/hub: auth refactor ─ Agent Session ───────────────┐
+  │ Issue: #123  Status: READY → IN_PROGRESS  Session: agent-2024-06-02 │
+  │ Elapsed: 18m 42s  Cost: $0.287  Context: 68%  Turns: 8             │
+  ├──────────────────────────────────────────────────────────────────────┤
+  │ Activity Feed                                                        │
+  │ 14:39  ✏️  Edit /src/auth.rs  (128 chars modified)                  │
+  │ 14:38  ✓   Bash: cargo test — 42 passed (3.2s)                     │
+  │ 14:36  💬  "Now implementing OAuth integration…"                    │
+  │ 14:35  ⚙️  Read /docs/oauth-setup.md  (3.4k bytes)                 │
+  ├──────────────────────────────────────────────────────────────────────┤
+  │ v) transcript  m) diff  i) interrupt  y) approve  x) reject  Esc)  │
+  └──────────────────────────────────────────────────────────────────────┘
+  ```
 
 ### Human-Agent Collaboration
 
