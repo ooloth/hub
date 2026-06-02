@@ -116,9 +116,121 @@ This doc covers everything else.
 - Override `datetime.now()` for date-dependent tests by monkeypatching a subclass at module level — not a global mock
 - Coverage philosophy: test all public routes (success + common error cases + deduplication); don't test third-party library internals or exhaustively cover every edge case in helpers
 
+### Task Schema Reference (full migration history)
+
+The tasks table evolved through 14 migrations. The key inflection points:
+
+- **Migration 004** — initial schema: `id TEXT PRIMARY KEY` (ULID), plus `title`, `description`, `status`, `priority`, `assignee`, `created_by`, `parent_id`, `jira_tickets`, `pr_links`, `tags`, `created_at`, `updated_at` + `task_comments` + `task_activity`
+- **Migration 005** — switched from TEXT (ULID) to `INTEGER PRIMARY KEY AUTOINCREMENT` — required full table recreate (SQLite can't alter PK type)
+- **Migration 006** — added `task_key TEXT GENERATED ALWAYS AS ('TASK-' || SUBSTR('0000' || id, -4)) STORED` — zero-padded 4-digit key, computed at insert, indexed with `CREATE UNIQUE INDEX`
+- **Migration 007** — added `doc_links TEXT`
+- **Migration 010** — added `agent_session_id TEXT`
+- **Migration 011** — removed `priority`, `assignee`, `created_by`, `tags` — these were over-engineered; the final schema is leaner
+- **Migration 012** — added `type TEXT` (nullable, e.g. `'implement'`, `'debug'`, `'general'`)
+
+**Final tasks table** (after migration 011 + 012):
+```sql
+CREATE TABLE tasks (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    title            TEXT    NOT NULL,
+    description      TEXT,
+    status           TEXT    NOT NULL DEFAULT 'backlog',
+    parent_id        INTEGER REFERENCES tasks(id) ON DELETE SET NULL,
+    jira_tickets     TEXT,   -- comma-separated: "DWO-123,DWO-456"
+    pr_links         TEXT,   -- comma-separated URLs
+    doc_links        TEXT,   -- comma-separated relative paths
+    created_at       TEXT    NOT NULL,
+    updated_at       TEXT    NOT NULL,
+    task_key         TEXT    GENERATED ALWAYS AS ('TASK-' || SUBSTR('0000' || id, -4)) STORED,
+    agent_session_id TEXT,
+    type             TEXT
+);
+
+CREATE UNIQUE INDEX idx_tasks_task_key ON tasks(task_key);
+CREATE INDEX idx_tasks_status        ON tasks(status);
+CREATE INDEX idx_tasks_parent_id     ON tasks(parent_id);
+```
+
+**task_comments table:**
+```sql
+CREATE TABLE task_comments (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    author     TEXT    NOT NULL,   -- "human" or "agent"
+    content    TEXT    NOT NULL,
+    created_at TEXT    NOT NULL
+);
+
+CREATE INDEX idx_task_comments_task_id ON task_comments(task_id);
+```
+
+**task_activity table** (immutable audit log):
+```sql
+CREATE TABLE task_activity (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    actor      TEXT    NOT NULL,   -- "human", "agent", "system"
+    action     TEXT    NOT NULL,   -- "created", "status_change", "updated", "comment"
+    detail     TEXT,               -- JSON: {"from": "ready", "to": "in-progress"}
+    created_at TEXT    NOT NULL
+);
+
+CREATE INDEX idx_task_activity_task_id ON task_activity(task_id);
+```
+
+**SQLite PRAGMAs on every connection:**
+```python
+conn.execute("PRAGMA journal_mode=WAL")
+conn.execute("PRAGMA foreign_keys=ON")
+```
+
+**Migration runner** auto-applies on connection, splits each `.sql` file on `;`, strips comment lines, commits each migration individually, tracks applied versions in `schema_version` table.
+
+**`Task` dataclass** mirrors the table with `TABLE_COLUMNS` tuple + `from_row()` + `to_dict()`. `to_dict()` omits `None` fields (sparse output). The `detail` field in `TaskActivity.to_dict()` attempts `json.loads()` before falling back to raw string — so JSON detail is always returned parsed, never double-encoded.
+
+**Design decisions worth noting:** Priority, assignee, and tags were added and then removed (migrations 004 → 011). The final design is intentionally minimal — status + type + linked resources. The `parent_id` self-reference supports subtasks but was never heavily used in practice.
+
 ---
 
 ## Part 2: UI/UX Patterns
+
+### Screen and Navigation Architecture Reference
+
+The web dashboard is a single React app with a persistent 220px left sidebar and a main content area. Every page lives under a shared `Layout` component (Mantine `AppShell`). There are 18 nav items in 5 groups separated by dividers:
+
+```
+Overview
+─────────────────────
+To Do | Notes | Projects | Docs
+─────────────────────
+Agents | Agent Config
+─────────────────────
+Chemist Config | Flux Errors | Flux E2E Tests | Pull Requests | DTS Tickets | DWO Tickets
+─────────────────────
+Links | Documents | Books | People
+─────────────────────
+Settings
+```
+
+**Three page architectures exist:**
+
+1. **Full-page** (most pages) — the route fills the main area. No persistent sub-navigation. Examples: PRs (table + right drawer), Tickets (table), E2E Tests (table + chart).
+
+2. **Nested routes with left sub-nav** — page has its own sidebar + right content area; URLs are `/parent/child`. Examples: Settings (`/settings/general`, `/settings/data-sources`, `/settings/repositories`), Chemist Config (`/centaur-config/flux-models`, `/centaur-config/argocd`, etc.), Links (dynamic sub-pages from API).
+
+3. **Three-column** — left list + center detail + right content. Only the Agents page uses this. Left: agent card list (280px). Center: task info pane (360–500px). Right: chat/JSONL display (flex 2).
+
+**Overview page** is architecturally distinct from all others: it's a grid of independent `StatusBox` components, each fetching its own endpoint. A shared `refreshKey` counter triggers all boxes to re-fetch simultaneously. Each box calls `onRefreshStart()` / `onRefreshEnd()` callbacks so a global spinner knows when the last one finishes.
+
+**Navigation state:**
+- Active sidebar item: `location.pathname.startsWith(item.path)`
+- Sub-page state (selected tab, active item): `useSearchParams()` — survives refresh, shareable URLs
+- Cross-navigation state: **not preserved** (lost on page change) except draft notes in `localStorage`
+- Auto-refresh intervals vary widely per page: Agents (10s polling), E2E (5min), nav badges (5min), most pages (manual only)
+
+**Badge system:** A `useNavBadges()` hook fetches all badge counts every 5 minutes and listens for a `refresh-badges` window event. Any page can fire that event after a mutation to keep the sidebar in sync without knowing about nav internals.
+
+**For hub's TUI:** The key insight is that hub already has a TUI analogue of this: a unified list (home screen) + detail screens. The three-column Agents layout maps naturally to hub's planned split panel (urgency list + running agents). The nested-routes pattern maps to hub's modal/popup layers. The `refreshKey` broadcast pattern maps to hub's existing `refresh_key` or equivalent event loop signal.
 
 ### Layout and Navigation
 
@@ -288,6 +400,39 @@ This doc covers everything else.
 - Card spec per signal type: primary count (large, red if nonzero urgent), status text (reinforces color in words), secondary detail line (breakdown: "2 review / 3 mine / 2 draft")
 - Ratatui layout: `Constraint::Length(29)` per card, `Constraint::Min(0)` for urgency list pane
 
+### Status Card Urgency Thresholds Reference
+
+Each card has a specific primary count, urgency threshold, and secondary detail. These are the exact rules from the inspiration project, useful as a reference when designing hub's equivalent:
+
+| Card | Primary count | Red (urgent) | Orange (attention) | Green (clear) | Secondary detail |
+|---|---|---|---|---|---|
+| **Flux Errors** | Unresolved runs | `unresolved > 0` | — | `== 0` | `N total failures` |
+| **Flux Models** | Versions behind | `versions_behind > 0` | `untagged_commits > 0` (only) | both == 0 | Version transition `old → new` |
+| **E2E Tests** | Failure count | `result != SUCCESSFUL` (and not snoozed) | — | `SUCCESSFUL` | Test date YYYY-MM-DD |
+| **DTS Tickets** | Assigned to me | `mine > 0` | — | `== 0` | Unassigned count (red if > 0) |
+| **PRs to Review** | Non-draft, non-snoozed | `count > 0` | — | `== 0` | Draft count |
+| **Agent Tasks** | Tasks in `review` | `review > 0` | — | `== 0` | `N ready · N in-progress` |
+| **To Do (today)** | `status == "today"` | — | `today > 0` | `== 0` | `N this week · N backlog` |
+| **ArgoCD** | Out-of-sync resources (prod only) | — | `oos > 0` | `== 0` | Unhealthy count (red if > 0) |
+| **DWO Sprint** | Unassigned in sprint | `unassigned > 0` | — | `== 0` | Mine count (blue) |
+| **My PRs** | All authored | informational only | — | — | — |
+| **Approved PRs** | Awaiting merge | informational only | — | — | — |
+| **Gmail** | Unread | informational only | — | `== 0` | Total in inbox |
+| **Bookmarks** | Unread links | informational only | — | `== 0` | Link to service |
+
+**Sidebar badge rules** (derived from the same data, shown as nav badges):
+- RED badge: Flux Errors (unresolved > 0), E2E Tests (failing + not snoozed), DTS Tickets (mine > 0), DWO Tickets (unassigned > 0), Agent Tasks (review > 0), PRs (non-draft non-snoozed > 0), Chemist Config (argocd oos > 0 OR versions_behind > 0)
+- ORANGE badge: To Do (today > 0), Chemist Config (untagged_commits > 0 only, no other issues)
+- No badge: My PRs, Approved PRs, Gmail, Bookmarks, Books, Calendar
+
+**For hub's equivalent thresholds:**
+- **PRs to review** → red if any non-draft, non-snoozed PRs need review; secondary: draft count
+- **GitHub CI** → red if any monitored workflow is failing; secondary: failed repo names
+- **Linear** → red if any assigned issue is overdue or urgent; orange if unassigned in cycle; secondary: mine vs unassigned counts
+- **Loki alerts** → red if any critical/high alerts firing; orange if medium; secondary: alert names with counts
+- **Agent tasks** → orange if any in `review` (human action needed); secondary: in-progress + ready counts
+- The "informational only / blue" distinction is worth preserving — not every count needs to be an alarm
+
 ### PRs
 
 - Four sections in the PR list, each independently scrollable:
@@ -302,6 +447,55 @@ This doc covers everything else.
 - Post-snooze activity highlighted (see Detail Views section)
 - Parallel source aggregation: multiple git hosting providers merged by URL, "approved pending" takes precedence over "needs review" if same PR appears in both — no duplicates, no ghost PRs
 - Discover mode for PR scanning: scan all repos updated in last 14d, union with whitelist, subtract blacklist — cached separately at longer TTL than core repos
+
+### Snooze Persistence Reference
+
+Snooze state lives in a JSON sidecar file (`data/pr-snoozes.json`, path configurable via env var). It is **not** in the database — too ephemeral, but does need to survive restarts.
+
+**Sidecar file structure** (keyed by PR URL):
+```json
+{
+  "https://github.com/owner/repo/pull/123": {
+    "snoozed_at": "2026-05-19T10:00:00+00:00",
+    "updated_on": "2026-05-18",
+    "comments": 5,
+    "source_hash": "abc1234def567..."
+  }
+}
+```
+
+- `snoozed_at` — when the user clicked snooze (ISO 8601 with timezone)
+- `updated_on` — snapshot of the PR's `updated_on` field at snooze time
+- `comments` — snapshot of PR's comment count at snooze time
+- `source_hash` — snapshot of source commit hash at snooze time
+
+**Auto-unsnooze logic** — runs on every PR list fetch, checks three fields:
+```python
+if (
+    pr.get("updated_on") != entry.get("updated_on")  # PR was updated
+    or pr.get("comments") != entry.get("comments")   # New comments
+    or pr.get("source_hash") != entry.get("source_hash")  # New commits
+):
+    del snoozes[url]  # Auto-unsnooze
+```
+
+Auto-unsnooze is **event-driven, not TTL-based** — a PR can stay snoozed indefinitely if nothing changes. The `dirty` flag triggers a file write only when at least one snooze was cleared, avoiding writes on every fetch.
+
+**API endpoints:**
+- `POST /api/prs/snooze {"url": "..."}` — snapshots current PR state, writes to sidecar, returns updated PR list
+- `DELETE /api/prs/snooze {"url": "..."}` — removes from sidecar, returns updated PR list
+- Both endpoints respond with the full updated PR data, so the frontend doesn't need a follow-up GET
+
+**Badge count filtering:** `needs_review.filter(pr => !pr.draft && !pr.snoozed).length` — both drafts and snoozed items excluded from the urgent count. Snoozed items remain in the list at 45% opacity with a purple badge.
+
+**"Since snooze" delta:** Frontend passes `snoozed_at` as a query param to the activity endpoint. Backend tags each activity item with `since_snooze: bool` by comparing `item.created_on > snoozed_at`. Items after the snooze time get a violet left border + "New" badge + footnote.
+
+**Edge cases:**
+- PR merged while snoozed → snooze entry becomes orphaned in the file; harmless since the URL won't match any live PR
+- Legacy format (bare timestamp string) → auto-migrated to new structure on read; bare `updated_on` triggers immediate auto-unsnooze
+- `source_hash` comparison is stored but currently behaves as always-different (field rarely populated) — effectively dead code or a future feature
+
+**For hub:** Hub's signals (PRs, CI runs, Linear issues, Loki alerts) would each benefit from snooze. The sidecar file approach works well — one file per signal type, keyed by whatever uniquely identifies the item (PR URL, run ID, alert fingerprint). The auto-unsnooze trigger fields would differ per signal type (e.g. for a CI run: re-triggered? for a Loki alert: resolved? for a Linear issue: status changed?).
 
 ### Tickets / Issues
 
@@ -532,6 +726,76 @@ This doc covers everything else.
 - Session stats surfaced in task detail view: model used, cost, duration, context remaining
 - Context % rendered as a color-coded horizontal bar: green <75%, yellow 75–90%, red >90%
 - If stats file is missing, show nothing — graceful degradation
+
+### Agent Session Data Flow Reference
+
+**File paths written by Claude Code:**
+```
+Session JSONL:   ~/.claude/projects/{URL_ENCODED_PROJECT_PATH}/{SESSION_UUID}.jsonl
+Session stats:   ~/.claude/session-stats/{SESSION_UUID}.json
+```
+
+The project path is URL-encoded (slashes become `-`), e.g. `/Users/alice/Repos/hub` → `-Users-alice-Repos-hub`. The backend hardcodes the project path for its specific machine — a real implementation would read it from config.
+
+**JSONL event schema** — every line is one of these types:
+
+```json
+// Session init metadata
+{"type": "mode", "mode": "normal", "sessionId": "..."}
+{"type": "permission-mode", "permissionMode": "bypassPermissions", "sessionId": "..."}
+
+// File snapshot (for undo/redo, can be ignored for activity feed)
+{"type": "file-history-snapshot", "messageId": "...", "snapshot": {...}}
+
+// User turn (human message or tool result)
+{
+  "type": "user",
+  "message": {"role": "user", "content": "..."},
+  "uuid": "...", "timestamp": "2026-06-02T19:31:11.260Z",
+  "cwd": "/path/to/project", "sessionId": "...", "version": "2.1.160", "gitBranch": "main"
+}
+
+// Assistant turn (text or tool_use)
+{
+  "type": "assistant",
+  "message": {
+    "role": "assistant",
+    "content": [
+      {"type": "tool_use", "id": "...", "name": "Read", "input": {"file_path": "..."}},
+      {"type": "text", "text": "I'll analyze..."}
+    ],
+    "usage": {
+      "input_tokens": 1,
+      "cache_creation_input_tokens": 4020,
+      "cache_read_input_tokens": 53318,
+      "output_tokens": 170
+    }
+  },
+  "uuid": "...", "timestamp": "..."
+}
+```
+
+**Backend parsing logic** (key decisions):
+- Line-by-line iteration, skips blank lines and JSON errors
+- Only processes `type: "user"` and `type: "assistant"` — ignores `mode`, `permission-mode`, `file-history-snapshot`
+- Filters system messages: skips if text starts with `<command-message>`, `Base directory for this skill:`, `<system-reminder>`
+- Truncates to last 200 messages
+- Extracts tool calls into typed blocks:
+  - `Edit` → `{type: "edit", file_path, old_string, new_string}`
+  - `Bash` → `{type: "bash", command}`
+  - `Write` → `{type: "write", file_path, content}` (truncated to 50 lines, `truncated: true` flag set)
+  - `Read` and all others → not extracted as special blocks (treated as text or omitted)
+
+**Session stats file** written by a statusline hook at session end:
+```json
+{"model": "claude-opus-4-6", "cost_usd": 0.125, "duration_ms": 45000, "context_pct": 65.5}
+```
+Backend reads this and returns `{model, cost_usd, duration_s, context_pct}` alongside task data. Null values handled with `or 0` fallbacks.
+
+**Frontend polling:** 10-second interval, plain HTTP GET (not SSE/WebSocket). Fetches `/api/agents` (task list + stats) and `/api/agents/{session_id}/messages` (parsed JSONL) independently. Uses `useRef` to track currently selected agent across the polling closure.
+
+**For hub:** The session JSONL path template and event schema are stable Claude Code internals. The backend parsing approach (line-by-line, filter by type, extract tool blocks) is the right pattern. The 10s polling interval is reasonable for a live activity feed. The session stats file requires the statusline hook to be configured — hub already has this setup via its statusline configuration.
+
 - JSONL event types to handle when parsing a live session stream:
   - `{"type":"system","subtype":"init"}` → "🎯 Session initialized (model)"
   - `{"type":"assistant","content":[{"type":"text"}]}` → "💬 Agent: …"
