@@ -199,22 +199,6 @@ pub async fn run_one(name: &str, repo: &str, issue: u64) -> Result<()> {
         anyhow::bail!("git worktree add failed for {branch}: {stderr}");
     }
 
-    let cred = Command::new("git")
-        .args([
-            "-C",
-            &worktree_str,
-            "config",
-            "credential.helper",
-            "!gh auth git-credential",
-        ])
-        .output()
-        .await
-        .with_context(|| format!("git config credential.helper failed for {branch}"))?;
-    if !cred.status.success() {
-        let stderr = String::from_utf8_lossy(&cred.stderr);
-        anyhow::bail!("git config credential.helper failed for {branch}: {stderr}");
-    }
-
     setup_private_in_worktree(&worktree).await;
 
     let task = format!(
@@ -253,7 +237,6 @@ pub async fn run_one(name: &str, repo: &str, issue: u64) -> Result<()> {
             &task,
         ])
         .current_dir(&worktree)
-        .env("GIT_TERMINAL_PROMPT", "0")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

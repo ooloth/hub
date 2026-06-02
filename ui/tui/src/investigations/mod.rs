@@ -67,13 +67,12 @@ pub(crate) async fn launch(
     config: LaunchConfig,
     spec: WorktreeSpec,
     hub_config: &config::Config,
-    github_token: &str,
 ) -> Result<()> {
     if std::env::var("TMUX").is_err() {
         bail!("not in tmux; investigation requires a tmux session");
     }
 
-    let (cwd, cleanup) = resolve_worktree(spec, hub_config, github_token).await?;
+    let (cwd, cleanup) = resolve_worktree(spec, hub_config).await?;
 
     let prompt = match config.supporting_data {
         Some(ref data) => {
@@ -114,10 +113,6 @@ pub(crate) async fn launch(
     cmd.arg("-e")
         .arg(format!("HUB_SYSTEM_PROMPT={}", config.system_prompt));
     cmd.arg("-e").arg(format!("HUB_TASK_PROMPT={prompt}"));
-    cmd.arg("-e").arg("GIT_TERMINAL_PROMPT=0");
-    cmd.arg("-e").arg(format!(
-        "GIT_CONFIG_PARAMETERS='url.https://x-access-token:{github_token}@github.com/.insteadOf=https://github.com/'"
-    ));
     for (k, v) in &config.env {
         cmd.arg("-e").arg(format!("{k}={v}"));
     }
@@ -137,7 +132,6 @@ pub(crate) async fn open_in_lazygit(
     number: u64,
     head_branch: &str,
     hub_config: &config::Config,
-    github_token: &str,
 ) -> Result<()> {
     if std::env::var("TMUX").is_err() {
         bail!("not in tmux; opening lazygit requires a tmux session");
@@ -148,7 +142,7 @@ pub(crate) async fn open_in_lazygit(
     if !bare.exists() {
         bail!("repo not synced; open the TUI to fetch it");
     }
-    let cwd = workflows::fetch::ensure_pr_worktree(&bare, number, head_branch, github_token)
+    let cwd = workflows::fetch::ensure_pr_worktree(&bare, number, head_branch)
         .await
         .context("Failed to create PR worktree")?;
 
@@ -158,12 +152,6 @@ pub(crate) async fn open_in_lazygit(
     let mut cmd = std::process::Command::new("tmux");
     cmd.args(["new-window", "-n", &window_name, "-c"])
         .arg(&cwd)
-        .arg("-e")
-        .arg("GIT_TERMINAL_PROMPT=0")
-        .arg("-e")
-        .arg(format!(
-            "GIT_CONFIG_PARAMETERS='url.https://x-access-token:{github_token}@github.com/.insteadOf=https://github.com/'"
-        ))
         .arg("lazygit");
 
     let status = cmd.status().context("failed to start tmux new-window")?;
@@ -179,7 +167,6 @@ pub(crate) async fn open_in_octo(
     number: u64,
     head_branch: &str,
     hub_config: &config::Config,
-    github_token: &str,
 ) -> Result<()> {
     if std::env::var("TMUX").is_err() {
         bail!("not in tmux; opening in neovim requires a tmux session");
@@ -190,7 +177,7 @@ pub(crate) async fn open_in_octo(
     if !bare.exists() {
         bail!("repo not synced; open the TUI to fetch it");
     }
-    let cwd = workflows::fetch::ensure_pr_worktree(&bare, number, head_branch, github_token)
+    let cwd = workflows::fetch::ensure_pr_worktree(&bare, number, head_branch)
         .await
         .context("Failed to create PR worktree")?;
 
@@ -215,7 +202,6 @@ pub(crate) async fn open_in_octo(
 async fn resolve_worktree(
     spec: WorktreeSpec,
     hub_config: &config::Config,
-    github_token: &str,
 ) -> Result<(PathBuf, Option<String>)> {
     match spec {
         WorktreeSpec::EphemeralFresh { repo } => {
@@ -224,10 +210,9 @@ async fn resolve_worktree(
             if !bare.exists() {
                 bail!("repo not synced; open the TUI to fetch it");
             }
-            let worktree =
-                workflows::fetch::fetch_and_create_investigation_worktree(&bare, github_token)
-                    .await
-                    .context("Failed to create investigation worktree")?;
+            let worktree = workflows::fetch::fetch_and_create_investigation_worktree(&bare)
+                .await
+                .context("Failed to create investigation worktree")?;
             let cleanup = format!(
                 "cd ~ && git -C '{}' worktree remove --force '{}' 2>/dev/null || true",
                 bare.display(),
@@ -245,10 +230,9 @@ async fn resolve_worktree(
             if !bare.exists() {
                 bail!("repo not synced; open the TUI to fetch it");
             }
-            let cwd =
-                workflows::fetch::ensure_pr_worktree(&bare, number, &head_branch, github_token)
-                    .await
-                    .context("Failed to create PR worktree")?;
+            let cwd = workflows::fetch::ensure_pr_worktree(&bare, number, &head_branch)
+                .await
+                .context("Failed to create PR worktree")?;
             Ok((cwd, None))
         }
         WorktreeSpec::Ephemeral { project } => {

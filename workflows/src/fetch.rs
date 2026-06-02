@@ -30,33 +30,26 @@ fn read_default_branch(bare: &Path) -> Option<String> {
 ///
 /// # Errors
 /// Returns an error if any git operation fails.
-pub async fn run(projects: &[(String, String)], github_token: &str) -> Result<()> {
+pub async fn run(projects: &[(String, String)]) -> Result<()> {
     let dir = repos_dir();
     tokio::fs::create_dir_all(&dir)
         .await
         .context("failed to create ~/.hub/repos")?;
 
     for (name, repo) in projects {
-        fetch_project(name, repo, github_token, &dir).await?;
+        fetch_project(name, repo, &dir).await?;
     }
 
     Ok(())
 }
 
-async fn fetch_project(name: &str, repo: &str, github_token: &str, repos_dir: &Path) -> Result<()> {
+async fn fetch_project(name: &str, repo: &str, repos_dir: &Path) -> Result<()> {
     let dir = repos_dir.join(name);
     let dir_str = dir.to_string_lossy().into_owned();
-    let clean_url = format!("https://github.com/{repo}.git");
-    // url.insteadOf rewrites the clean URL to an authenticated one at call time
-    // without persisting the token in the stored remote config.
-    let rewrite = format!(
-        "url.https://x-access-token:{github_token}@github.com/.insteadOf=https://github.com/"
-    );
 
     if dir.exists() {
         let out = Command::new("git")
-            .args(["-C", &dir_str, "-c", &rewrite, "fetch", "--prune", "origin"])
-            .env("GIT_TERMINAL_PROMPT", "0")
+            .args(["-C", &dir_str, "fetch", "--prune", "origin"])
             .output()
             .await
             .with_context(|| format!("git fetch failed for {name}"))?;
@@ -67,26 +60,15 @@ async fn fetch_project(name: &str, repo: &str, github_token: &str, repos_dir: &P
         clean_merged_worktrees(&dir_str).await?;
         ensure_default_branch_worktree(&dir).await?;
     } else {
-        let authed_url = format!("https://x-access-token:{github_token}@github.com/{repo}.git");
+        let ssh_url = format!("git@github.com:{repo}.git");
         let out = Command::new("git")
-            .args(["clone", "--bare", &authed_url, &dir_str])
-            .env("GIT_TERMINAL_PROMPT", "0")
+            .args(["clone", "--bare", &ssh_url, &dir_str])
             .output()
             .await
             .with_context(|| format!("git clone failed for {name}"))?;
         if !out.status.success() {
             let stderr = String::from_utf8_lossy(&out.stderr);
             anyhow::bail!("git clone failed for {name}: {stderr}");
-        }
-        // Reset the stored remote URL to the clean (token-free) form.
-        let reset = Command::new("git")
-            .args(["-C", &dir_str, "remote", "set-url", "origin", &clean_url])
-            .output()
-            .await
-            .with_context(|| format!("git remote set-url failed for {name}"))?;
-        if !reset.status.success() {
-            let stderr = String::from_utf8_lossy(&reset.stderr);
-            anyhow::bail!("git remote set-url failed for {name}: {stderr}");
         }
         // Reconfigure the refspec so subsequent fetches go into refs/remotes/origin/*
         // rather than refs/heads/*. This avoids git refusing to update a branch that
@@ -108,8 +90,7 @@ async fn fetch_project(name: &str, repo: &str, github_token: &str, repos_dir: &P
         }
         // Populate refs/remotes/origin/* with the new refspec.
         let fetch = Command::new("git")
-            .args(["-C", &dir_str, "-c", &rewrite, "fetch", "origin"])
-            .env("GIT_TERMINAL_PROMPT", "0")
+            .args(["-C", &dir_str, "fetch", "origin"])
             .output()
             .await
             .with_context(|| format!("initial git fetch failed for {name}"))?;
@@ -152,26 +133,17 @@ async fn add_worktree_or_recover(bare_str: &str, worktree: &Path, branch: &str) 
 /// On first creation the fetch is required; it is followed by a PR-specific fetch
 /// (`pull/<number>/head`), a `git worktree add`, and setting the upstream tracking
 /// branch so `git push` targets the real PR branch, not a phantom `origin/pr-<number>`.
-pub async fn ensure_pr_worktree(
-    bare: &Path,
-    number: u64,
-    head_branch: &str,
-    github_token: &str,
-) -> Result<PathBuf> {
+pub async fn ensure_pr_worktree(bare: &Path, number: u64, head_branch: &str) -> Result<PathBuf> {
     let bare_str = bare.to_string_lossy().into_owned();
     let branch = format!("pr-{number}");
     let worktree = bare.join(&branch);
-    let rewrite = format!(
-        "url.https://x-access-token:{github_token}@github.com/.insteadOf=https://github.com/"
-    );
 
     let worktree_exists = worktree.is_dir();
 
     // Update all remote tracking refs. Non-fatal on re-entry so a network hiccup
     // does not block access to an already-created worktree.
     let fetch_all_ok = Command::new("git")
-        .args(["-C", &bare_str, "-c", &rewrite, "fetch", "origin"])
-        .env("GIT_TERMINAL_PROMPT", "0")
+        .args(["-C", &bare_str, "fetch", "origin"])
         .output()
         .await
         .map(|o| o.status.success())
@@ -189,13 +161,10 @@ pub async fn ensure_pr_worktree(
         .args([
             "-C",
             &bare_str,
-            "-c",
-            &rewrite,
             "fetch",
             "origin",
             &format!("pull/{number}/head:{branch}"),
         ])
-        .env("GIT_TERMINAL_PROMPT", "0")
         .output()
         .await
         .context("git fetch PR ref failed")?;
@@ -234,18 +203,11 @@ pub async fn ensure_pr_worktree(
 /// opening the default-branch worktree directly — that worktree is reset
 /// unconditionally every 30 minutes and at every investigation launch, so it is not
 /// safe for any agent that runs longer than the refresh interval.
-pub async fn fetch_and_create_investigation_worktree(
-    bare: &Path,
-    github_token: &str,
-) -> Result<PathBuf> {
+pub async fn fetch_and_create_investigation_worktree(bare: &Path) -> Result<PathBuf> {
     let bare_str = bare.to_string_lossy().into_owned();
-    let rewrite = format!(
-        "url.https://x-access-token:{github_token}@github.com/.insteadOf=https://github.com/"
-    );
 
     let fetch = Command::new("git")
-        .args(["-C", &bare_str, "-c", &rewrite, "fetch", "origin"])
-        .env("GIT_TERMINAL_PROMPT", "0")
+        .args(["-C", &bare_str, "fetch", "origin"])
         .output()
         .await
         .context("git fetch origin failed")?;
@@ -262,15 +224,11 @@ pub async fn fetch_and_create_investigation_worktree(
 /// Unlike `ensure_default_branch_worktree` (which skips the fetch), this always
 /// runs `git fetch origin` first so the subsequent reset lands on the actual
 /// latest commit. Called only by the background fetch path (not investigations).
-pub async fn sync_default_branch_worktree(bare: &Path, github_token: &str) -> Result<()> {
+pub async fn sync_default_branch_worktree(bare: &Path) -> Result<()> {
     let bare_str = bare.to_string_lossy().into_owned();
-    let rewrite = format!(
-        "url.https://x-access-token:{github_token}@github.com/.insteadOf=https://github.com/"
-    );
 
     let fetch = Command::new("git")
-        .args(["-C", &bare_str, "-c", &rewrite, "fetch", "origin"])
-        .env("GIT_TERMINAL_PROMPT", "0")
+        .args(["-C", &bare_str, "fetch", "origin"])
         .output()
         .await
         .context("git fetch origin failed")?;
@@ -591,9 +549,7 @@ mod tests {
             "setup: bare should be stale before the call"
         );
 
-        ensure_pr_worktree(&bare, 42, "feat/test", "")
-            .await
-            .unwrap();
+        ensure_pr_worktree(&bare, 42, "feat/test").await.unwrap();
 
         let after = git_rev_parse(&bare, "refs/remotes/origin/main").await;
         assert_eq!(
@@ -619,7 +575,7 @@ mod tests {
         let wt_before = git_rev_parse(&worktree, "HEAD").await;
         assert_ne!(wt_before, new_sha, "setup: worktree should be stale");
 
-        sync_default_branch_worktree(&bare, "").await.unwrap();
+        sync_default_branch_worktree(&bare).await.unwrap();
 
         // After sync: both the remote tracking ref and the worktree HEAD are current.
         let remote_after = git_rev_parse(&bare, "refs/remotes/origin/main").await;

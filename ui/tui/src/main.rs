@@ -162,14 +162,13 @@ fn spawn_fetch(config: &config::Config, tx: mpsc::Sender<Result<StatusReport>>) 
 }
 
 fn spawn_git_fetch(config: &config::Config) {
-    let github_token = config.github_token.clone();
     let projects: Vec<(String, String)> = config
         .projects
         .iter()
         .map(|p| (p.name.clone(), p.repo.clone()))
         .collect();
     tokio::spawn(async move {
-        if let Err(e) = workflows::fetch::run(&projects, github_token.expose_secret()).await {
+        if let Err(e) = workflows::fetch::run(&projects).await {
             eprintln!("hub fetch: {e}");
         }
     });
@@ -196,20 +195,18 @@ fn request_refresh(
             extra_credentials: config.extra_credentials.clone(),
         };
         let git_params = include_git_fetch.then(|| {
-            let token = config.github_token.clone();
-            let projects: Vec<(String, String)> = config
+            config
                 .projects
                 .iter()
                 .map(|p| (p.name.clone(), p.repo.clone()))
-                .collect();
-            (token, projects)
+                .collect::<Vec<(String, String)>>()
         });
         let tx = tx.clone();
         tokio::spawn(async move {
             tokio::time::sleep(d).await;
             let _ = tx.send(workflows::status::run(params).await).await;
-            if let Some((token, projects)) = git_params {
-                if let Err(e) = workflows::fetch::run(&projects, token.expose_secret()).await {
+            if let Some(projects) = git_params {
+                if let Err(e) = workflows::fetch::run(&projects).await {
                     eprintln!("hub fetch: {e}");
                 }
             }
@@ -293,7 +290,6 @@ async fn run_loop(
                         investigations::ci::config(&repo, &run_url),
                         investigations::WorktreeSpec::EphemeralFresh { repo },
                         config,
-                        config.github_token.expose_secret(),
                     )
                     .await
                     {
@@ -305,7 +301,6 @@ async fn run_loop(
                         investigations::issue::config(&repo, number),
                         investigations::WorktreeSpec::EphemeralFresh { repo },
                         config,
-                        config.github_token.expose_secret(),
                     )
                     .await
                     {
@@ -335,7 +330,6 @@ async fn run_loop(
                             head_branch,
                         },
                         config,
-                        config.github_token.expose_secret(),
                     )
                     .await
                     {
@@ -357,7 +351,6 @@ async fn run_loop(
                             head_branch,
                         },
                         config,
-                        config.github_token.expose_secret(),
                     )
                     .await
                     {
@@ -380,7 +373,6 @@ async fn run_loop(
                             head_branch,
                         },
                         config,
-                        config.github_token.expose_secret(),
                     )
                     .await
                     {
@@ -392,14 +384,8 @@ async fn run_loop(
                     number,
                     head_branch,
                 } => {
-                    if let Err(err) = investigations::open_in_octo(
-                        &repo,
-                        number,
-                        &head_branch,
-                        config,
-                        config.github_token.expose_secret(),
-                    )
-                    .await
+                    if let Err(err) =
+                        investigations::open_in_octo(&repo, number, &head_branch, config).await
                     {
                         app.ui.flash = Some(err.to_string());
                     }
@@ -409,14 +395,8 @@ async fn run_loop(
                     number,
                     head_branch,
                 } => {
-                    if let Err(err) = investigations::open_in_lazygit(
-                        &repo,
-                        number,
-                        &head_branch,
-                        config,
-                        config.github_token.expose_secret(),
-                    )
-                    .await
+                    if let Err(err) =
+                        investigations::open_in_lazygit(&repo, number, &head_branch, config).await
                     {
                         app.ui.flash = Some(err.to_string());
                     }
@@ -444,7 +424,6 @@ async fn run_loop(
                         ),
                         investigations::WorktreeSpec::Ephemeral { project },
                         config,
-                        config.github_token.expose_secret(),
                     )
                     .await
                     {
@@ -466,7 +445,6 @@ async fn run_loop(
                         ),
                         investigations::WorktreeSpec::Ephemeral { project },
                         config,
-                        config.github_token.expose_secret(),
                     )
                     .await
                     {
@@ -485,7 +463,6 @@ async fn run_loop(
                                 cfg,
                                 investigations::WorktreeSpec::CurrentDir,
                                 config,
-                                config.github_token.expose_secret(),
                             )
                             .await
                         }
