@@ -52,11 +52,11 @@ exclude_users = ["bot@my-org.com"]
 
 Repeat for each environment (dev, uat, prod, etc.).
 
-## 4. Ensure required credentials are in .env
+## 4. Ensure required credentials are in hub.toml
 
-Each workflow documents which env var it reads. Check `.env.example` for the
-full list. If a variable is missing, the workflow produces no items — it
-doesn't error.
+Each workflow documents which credential key it reads. Check the `[credentials]`
+table in your `hub.toml` (or `hub-private/devices/<device>.toml`). If a required
+credential is missing, the workflow produces no items — it doesn't error.
 
 ## Notes
 

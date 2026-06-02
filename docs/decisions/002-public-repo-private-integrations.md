@@ -42,6 +42,5 @@ locally.
 - Development workflow: edit files via either path (symlinks make them
   the same inode), build and test from `hub/`, commit from `hub-private/`.
   One context switch per commit, not per edit.
-- `hub.toml` and `.env` (both gitignored) can live in `hub-private` and
-  be symlinked into the hub root — giving per-device config backup for
-  free.
+- `hub.toml` (gitignored) lives in `hub-private` and is symlinked into
+  the hub root — giving per-device config and credential backup for free.

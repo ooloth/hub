@@ -43,7 +43,7 @@ if [[ ! -f "$DEVICE_CONFIG" ]]; then
   echo "expected: $DEVICE_CONFIG"
   echo ""
   echo "available devices:"
-  ls "$HUB_PRIVATE/devices/" 2>/dev/null | sed 's/\.toml$//' | grep -v '\.env$' | sed 's/^/  /' || echo "  (none)"
+  ls "$HUB_PRIVATE/devices/" 2>/dev/null | sed 's/\.toml$//' | sed 's/^/  /' || echo "  (none)"
   exit 1
 fi
 

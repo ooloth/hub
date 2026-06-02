@@ -20,8 +20,8 @@ If this device doesn't have a config file yet, copy the closest existing one and
 cp hub-private/devices/home-laptop.toml hub-private/devices/<this-device>.toml
 ```
 
-Add the `[[project]]` entries and workflows relevant to this machine. See
-[Add a Project](add-a-project.md) for the config format.
+Add the `[credentials]` entries and `[[project]]` blocks relevant to this machine.
+See [Add a Project](add-a-project.md) for the project config format.
 
 ## 3. Wire the symlinks
 
@@ -30,7 +30,7 @@ cd hub
 just setup-private <this-device>
 ```
 
-This creates symlinks for the private clients, workflows, device config, and `.env`.
+This creates symlinks for the private clients, workflows, and device config (`hub.toml`).
 
 ## 4. Verify
 

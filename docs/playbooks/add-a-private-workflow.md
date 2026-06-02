@@ -51,9 +51,11 @@ renderer reads from `PrivateStatusData` and prints lines to stdout.
 
 Add a corresponding renderer in `hub-private/ui/tui/src/` for any TUI-specific display logic.
 
-## 6. Add credentials to .env
+## 6. Add credentials to hub.toml
 
-Add the required `op://` secret references to `hub-private/.env`.
+Add the required credential keys to the `[credentials]` table in each
+device's `hub-private/devices/<device>.toml`. Values can be plain strings
+or `op://` 1Password references.
 
 ## 7. Enable on your device
 

@@ -16,9 +16,8 @@ want to name publicly (e.g. confidential work stuff) — those live in a separat
     ui/tui/src/      ← private TUI rendering logic
     prompts/         ← private investigation prompts
     devices/         ← per-device configuration
-      home-laptop.toml
+      home-laptop.toml   ← includes [credentials] with op:// references
       work-laptop.toml
-    .env             ← 1Password secret references (shared across devices)
 ```
 
 ## Symlinks
@@ -30,7 +29,6 @@ hub/clients/src/private      →  hub-private/clients/src/
 hub/workflows/src/private    →  hub-private/workflows/src/
 hub/ui/cli/src/private       →  hub-private/ui/cli/src/
 hub/ui/tui/src/private       →  hub-private/ui/tui/src/
-hub/.env                     →  hub-private/devices/<device>.env
 hub/hub.toml                 →  hub-private/devices/<device>.toml
 ```
 
@@ -63,10 +61,16 @@ if [[ "$DEVICE" == "home-laptop" ]]; then
 else
   stub "$HUB_ROOT/ui/tui/src/investigations/media.rs" \
     'use anyhow::Result;
+use secrecy::Secret;
+use std::collections::HashMap;
 
 use super::LaunchConfig;
 
-pub(crate) fn config(_title: &str, _error: &str) -> Result<LaunchConfig> {
+pub(crate) fn config(
+    _title: &str,
+    _error: &str,
+    _credentials: &HashMap<String, Secret<String>>,
+) -> Result<LaunchConfig> {
     unreachable!("media investigation not available on this device")
 }'
 fi
@@ -77,8 +81,8 @@ on all devices. The `unreachable!()` body is never reached on machines where
 the investigation is not configured. CI creates an empty stub (sufficient for
 `cargo fmt --check`; CI never compiles with `--features private`).
 
-The first two are gitignored in hub. `.env` and `hub.toml` are also gitignored,
-so none of the symlinks are ever committed to the public repo.
+All of these are gitignored in hub, so none of the symlinks are ever committed
+to the public repo.
 
 ## Per-Device Configuration
 
