@@ -97,7 +97,7 @@ fn field_lines(pr: &PullRequest) -> Vec<Line<'static>> {
 /// Field row whose value gets a colored bullet (used for "status").
 fn field_row(key: &str, value: &str, value_color: Color) -> Line<'static> {
     Line::from(vec![
-        Span::styled(format!("  {key:<8}"), dim()),
+        Span::styled(format!("{key:<8}"), dim()),
         Span::styled("●  ", Style::default().fg(value_color)),
         Span::raw(value.to_string()),
     ])
@@ -106,14 +106,14 @@ fn field_row(key: &str, value: &str, value_color: Color) -> Line<'static> {
 /// Field row with no marker — just dim key, raw value.
 fn field_row_plain(key: &str, value: &str) -> Line<'static> {
     Line::from(vec![
-        Span::styled(format!("  {key:<8}"), dim()),
+        Span::styled(format!("{key:<8}"), dim()),
         Span::raw(format!("   {value}")),
     ])
 }
 
 /// Field row with pre-built value spans — used when the value needs mixed colors.
 fn field_row_spans(key: &str, value_spans: Vec<Span<'static>>) -> Line<'static> {
-    let mut spans = vec![Span::styled(format!("  {key:<8}"), dim()), Span::raw("   ")];
+    let mut spans = vec![Span::styled(format!("{key:<8}"), dim()), Span::raw("   ")];
     spans.extend(value_spans);
     Line::from(spans)
 }
@@ -166,7 +166,7 @@ fn description_lines(body: Option<&str>, width: usize) -> Vec<Line<'static>> {
 
 fn file_lines(files: &[domain::ChangedFile], width: usize) -> Vec<Line<'static>> {
     if files.is_empty() {
-        return vec![Line::from(Span::styled("  (no files)", dim()))];
+        return vec![Line::from(Span::styled("(no files)", dim()))];
     }
     // Right-justify the diff totals when there's room.
     let max_path_len = files
@@ -179,7 +179,7 @@ fn file_lines(files: &[domain::ChangedFile], width: usize) -> Vec<Line<'static>>
         .iter()
         .map(|f| {
             let path = truncate(&f.path, path_col);
-            let mut spans = vec![Span::raw(format!("  {path:<path_col$}  "))];
+            let mut spans = vec![Span::raw(format!("{path:<path_col$}  "))];
             spans.extend(diff_spans(f.additions, f.deletions));
             Line::from(spans)
         })
@@ -209,6 +209,7 @@ pub(super) fn pr_right_column_lines(
     pr: &PullRequest,
     width: usize,
     available_height: usize,
+    separator_style: Style,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
@@ -263,7 +264,10 @@ pub(super) fn pr_right_column_lines(
     let space_for_files = available_height.saturating_sub(used);
     if space_for_files > 0 && !pr.changed_files.is_empty() {
         lines.push(Line::from(""));
-        lines.push(separator_line(width));
+        lines.push(Line::from(Span::styled(
+            "─".repeat(width.max(1)),
+            separator_style,
+        )));
         let all_files = file_lines(&pr.changed_files, width);
         let total = all_files.len();
         if total <= space_for_files {
@@ -272,10 +276,7 @@ pub(super) fn pr_right_column_lines(
             let visible = space_for_files.saturating_sub(1).max(1);
             lines.extend(all_files.into_iter().take(visible));
             let hidden = total - visible;
-            lines.push(Line::from(Span::styled(
-                format!("  +{hidden} more…"),
-                dim(),
-            )));
+            lines.push(Line::from(Span::styled(format!("+{hidden} more…"), dim())));
         }
     }
 
@@ -534,7 +535,7 @@ mod tests {
 
     // --- pr_right_column_lines ---
 
-    use super::pr_right_column_lines;
+    use super::{dim, pr_right_column_lines};
 
     fn pr_with_all_fields() -> PullRequest {
         PullRequest {
@@ -579,7 +580,7 @@ mod tests {
 
     #[test]
     fn pr_right_column_lines_snapshot_fully_populated_pr() {
-        let lines = pr_right_column_lines(&pr_with_all_fields(), W, H);
+        let lines = pr_right_column_lines(&pr_with_all_fields(), W, H, dim());
         let text: Vec<String> = lines.iter().map(line_text).collect();
         insta::assert_snapshot!(text.join("\n"));
     }
@@ -589,7 +590,7 @@ mod tests {
         let mut p = pr_with_all_fields();
         p.approval_count = 0;
         p.review_decision = None;
-        let lines = pr_right_column_lines(&p, W, H);
+        let lines = pr_right_column_lines(&p, W, H, dim());
         let has_reviews_row = lines.iter().any(|l| line_text(l).contains("reviews "));
         assert!(!has_reviews_row, "expected no reviews row");
     }
@@ -603,7 +604,7 @@ mod tests {
     ) {
         let mut p = pr_with_all_fields();
         p.approval_count = count;
-        let lines = pr_right_column_lines(&p, W, H);
+        let lines = pr_right_column_lines(&p, W, H, dim());
         let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(
             all_text.contains(expected),
@@ -615,7 +616,7 @@ mod tests {
     fn pr_right_column_lines_omits_blocker_row_when_merge_blocker_is_none() {
         let mut p = pr_with_all_fields();
         p.merge_blocker = None;
-        let lines = pr_right_column_lines(&p, W, H);
+        let lines = pr_right_column_lines(&p, W, H, dim());
         let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(
             !all_text.contains("blocker"),
@@ -633,7 +634,7 @@ mod tests {
     ) {
         let mut p = pr_with_all_fields();
         p.merge_blocker = Some(blocker);
-        let lines = pr_right_column_lines(&p, W, H);
+        let lines = pr_right_column_lines(&p, W, H, dim());
         let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(
             all_text.contains(expected_word),
@@ -643,7 +644,7 @@ mod tests {
 
     #[test]
     fn pr_right_column_lines_shows_file_section_separator_when_space_allows() {
-        let lines = pr_right_column_lines(&pr_with_all_fields(), W, H);
+        let lines = pr_right_column_lines(&pr_with_all_fields(), W, H, dim());
         let has_separator = lines.iter().any(|l| line_text(l).contains('─'));
         assert!(
             has_separator,
@@ -653,7 +654,7 @@ mod tests {
 
     #[test]
     fn pr_right_column_lines_omits_file_list_when_no_space() {
-        let lines = pr_right_column_lines(&pr_with_all_fields(), W, 5);
+        let lines = pr_right_column_lines(&pr_with_all_fields(), W, 5, dim());
         let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(
             !all_text.contains("mod.rs"),
@@ -676,7 +677,7 @@ mod tests {
         // Available height just enough for fields + separator + 3 files
         let field_count = 12; // approx: 10 fields + 1 blocker + 1 reviews
         let height = field_count + 2 + 3; // fields + sep overhead + 3 file slots
-        let lines = pr_right_column_lines(&p, W, height);
+        let lines = pr_right_column_lines(&p, W, height, dim());
         let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(
             all_text.contains("more…"),

@@ -12,14 +12,14 @@ expression: screen_text(&buf)
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭───────────────────────────────────────────────┬──────────────────────────────╮
-│(no description)                               │   checks     (none)          │
-│                                               │   status     0 reviews       │
-│                                               │   comments   0 comments      │
-│                                               │   diff       +0 −0 in 0 files│
-│                                               │   author     @alice          │
-│                                               │   updated    now ago         │
-│                                               │   repo       owner/repo      │
-│                                               │   branch     feat/fix        │
+│(no description)                               │ checks     (none)            │
+│                                               │ status     0 reviews         │
+│                                               │ comments   0 comments        │
+│                                               │ diff       +0 −0 in 0 files  │
+│                                               │ author     @alice            │
+│                                               │ updated    now ago           │
+│                                               │ repo       owner/repo        │
+│                                               │ branch     feat/fix          │
 │                                               │                              │
 │                                               │                              │
 │                                               │                              │

@@ -7,18 +7,18 @@ expression: screen_text(&buf)
 │    ooloth/hub · #159 · @ooloth · 0 reviews                                  │                                                                                                                   │
 │                                                                             │ filter claude stderr                                                                                              │
 │                                                                             │                                                                                                                   │
-│                                                                             │   status  ●  0 reviews                                                                                            │
-│                                                                             │   checks     ✓ passing                                                                                            │
-│                                                                             │   diff       +43 −3 in 3 files                                                                                    │
-│                                                                             │   branch     fix/stderr-filter                                                                                    │
-│                                                                             │   author     @ooloth                                                                                              │
-│                                                                             │   updated    2d ago                                                                                               │
+│                                                                             │ status  ●  0 reviews                                                                                              │
+│                                                                             │ checks     ✓ passing                                                                                              │
+│                                                                             │ diff       +43 −3 in 3 files                                                                                      │
+│                                                                             │ branch     fix/stderr-filter                                                                                      │
+│                                                                             │ author     @ooloth                                                                                                │
+│                                                                             │ updated    2d ago                                                                                                 │
 │                                                                             │                                                                                                                   │
 │                                                                             │ Files changed                                                                                                     │
 │                                                                             │                                                                                                                   │
-│                                                                             │   workflows/src/agent.rs  +24 −3                                                                                  │
-│                                                                             │   workflows/src/lib.rs    +1 −0                                                                                   │
-│                                                                             │   tests/agent_test.rs     +18 −0                                                                                  │
+│                                                                             │ workflows/src/agent.rs  +24 −3                                                                                    │
+│                                                                             │ workflows/src/lib.rs    +1 −0                                                                                     │
+│                                                                             │ tests/agent_test.rs     +18 −0                                                                                    │
 │                                                                             │                                                                                                                   │
 │                                                                             │ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────│
 │                                                                             │                                                                                                                   │

@@ -7,16 +7,16 @@ expression: screen_text(&buf)
 │    to wrap                            │                                                          │
 │    ooloth/hub · #1 · @ooloth · 0 revie│ first PR title that is long enough to wrap               │
 │ ──────────────────────────────────────│                                                          │
-│ ●  second PR                          │   status  ●  0 reviews                                   │
-│    ooloth/hub · #2 · @ooloth · 0 revie│   checks     (none)                                      │
-│                                       │   diff       +0 −0 in 0 files                            │
-│                                       │   branch     feat/1                                      │
-│                                       │   author     @ooloth                                     │
-│                                       │   updated    2d ago                                      │
+│ ●  second PR                          │ status  ●  0 reviews                                     │
+│    ooloth/hub · #2 · @ooloth · 0 revie│ checks     (none)                                        │
+│                                       │ diff       +0 −0 in 0 files                              │
+│                                       │ branch     feat/1                                        │
+│                                       │ author     @ooloth                                       │
+│                                       │ updated    2d ago                                        │
 │                                       │                                                          │
 │                                       │ Files changed                                            │
 │                                       │                                                          │
-│                                       │   (no files)                                             │
+│                                       │ (no files)                                               │
 │                                       │                                                          │
 │                                       │ ─────────────────────────────────────────────────────────│
 │                                       │   +4 more lines · vim-scroll coming in v2 (#240)         │

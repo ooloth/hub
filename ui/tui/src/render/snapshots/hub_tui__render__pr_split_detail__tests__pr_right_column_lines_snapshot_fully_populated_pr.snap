@@ -2,17 +2,17 @@
 source: ui/tui/src/render/pr_split_detail.rs
 expression: "text.join(\"\\n\")"
 ---
-  checks     ✓ passing
-  status     Approved
-  reviews    2 approvals
-  comments   5 comments
-  blocker    conflict
-  diff       +110 −15 in 2 files
-  author     @alice
-  updated    3d ago
-  repo       ooloth/hub
-  branch     feat/two-col
+checks     ✓ passing
+status     Approved
+reviews    2 approvals
+comments   5 comments
+blocker    conflict
+diff       +110 −15 in 2 files
+author     @alice
+updated    3d ago
+repo       ooloth/hub
+branch     feat/two-col
 
 ────────────────────────────────────────
-  ui/tui/src/render/m…  +30 −10
-  ui/tui/src/render/p…  +80 −5
+ui/tui/src/render/m…  +30 −10
+ui/tui/src/render/p…  +80 −5

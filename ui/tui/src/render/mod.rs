@@ -645,25 +645,24 @@ fn render_pr_detail(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let [body_area, divider_area, meta_raw] = Layout::horizontal([
+    let [body_area_raw, divider_area, meta_raw] = Layout::horizontal([
         Constraint::Percentage(60),
         Constraint::Length(1),
         Constraint::Fill(1),
     ])
     .areas(inner);
+    let body_area = Rect {
+        width: body_area_raw.width.saturating_sub(1),
+        ..body_area_raw
+    };
 
     {
         let buf = frame.buffer_mut();
         for y in inner.y..inner.y + inner.height {
-            buf.set_string(divider_area.x, y, "│", Style::default());
+            buf.set_string(divider_area.x, y, "│", border_style);
         }
-        buf.set_string(divider_area.x, area.y, "┬", Style::default());
-        buf.set_string(
-            divider_area.x,
-            area.y + area.height - 1,
-            "┴",
-            Style::default(),
-        );
+        buf.set_string(divider_area.x, area.y, "┬", border_style);
+        buf.set_string(divider_area.x, area.y + area.height - 1, "┴", border_style);
     }
 
     let meta_area = Rect {
@@ -722,6 +721,7 @@ fn render_pr_detail(
             pr,
             meta_area.width as usize,
             meta_area.height as usize,
+            border_style,
         )),
         meta_area,
     );

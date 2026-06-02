@@ -7,16 +7,16 @@ expression: screen_text(&buf)
 │    ooloth/hub · #1 · @ooloth · 0 reviews                                    │                                                                                                                   │
 │ ────────────────────────────────────────────────────────────────────────────│ third PR fresh                                                                                                    │
 │ ●  second PR awaiting reviews                                               │                                                                                                                   │
-│    ooloth/hub · #2 · @ooloth · 0 reviews                                    │   status  ●  0 reviews                                                                                            │
-│ ────────────────────────────────────────────────────────────────────────────│   checks     (none)                                                                                               │
-│ ●  third PR fresh                                                           │   diff       +0 −0 in 0 files                                                                                     │
-│    ooloth/hub · #3 · @ooloth · 0 reviews                                    │   branch     feat/3                                                                                               │
-│                                                                             │   author     @ooloth                                                                                              │
-│                                                                             │   updated    2d ago                                                                                               │
+│    ooloth/hub · #2 · @ooloth · 0 reviews                                    │ status  ●  0 reviews                                                                                              │
+│ ────────────────────────────────────────────────────────────────────────────│ checks     (none)                                                                                                 │
+│ ●  third PR fresh                                                           │ diff       +0 −0 in 0 files                                                                                       │
+│    ooloth/hub · #3 · @ooloth · 0 reviews                                    │ branch     feat/3                                                                                                 │
+│                                                                             │ author     @ooloth                                                                                                │
+│                                                                             │ updated    2d ago                                                                                                 │
 │                                                                             │                                                                                                                   │
 │                                                                             │ Files changed                                                                                                     │
 │                                                                             │                                                                                                                   │
-│                                                                             │   (no files)                                                                                                      │
+│                                                                             │ (no files)                                                                                                        │
 │                                                                             │                                                                                                                   │
 │                                                                             │ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────│
 │                                                                             │                                                                                                                   │

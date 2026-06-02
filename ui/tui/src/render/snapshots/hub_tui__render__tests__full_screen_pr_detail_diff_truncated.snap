@@ -3,25 +3,25 @@ source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
 ╭───────────────────────────────────────────────┬──────────────────────────────╮
-│## Summary                                     │   checks     (none)          │
-│                                               │   status     0 reviews       │
-│Adds a detail screen for PRs.                  │   comments   2 comments      │
-│                                               │   diff       +3 −1 in 150 fil│
-│## Why                                         │   author     @ooloth         │
-│                                               │   updated    1d ago          │
-│Readability from terminal without leaving the  │   repo       ooloth/hub      │
-│TUI.                                           │   branch     feat/pr-detail  │
+│## Summary                                     │ checks     (none)            │
+│                                               │ status     0 reviews         │
+│Adds a detail screen for PRs.                  │ comments   2 comments        │
+│                                               │ diff       +3 −1 in 150 files│
+│## Why                                         │ author     @ooloth           │
+│                                               │ updated    1d ago            │
+│Readability from terminal without leaving the  │ repo       ooloth/hub        │
+│TUI.                                           │ branch     feat/pr-detail    │
 │                                               │                              │
-│── src/main.rs ───────────────────────── +3 -1 │ ─────────────────────────────│
-│                                               │   src/main.rs      +3 −1     │
-│@@ -10,7 +10,9 @@                              │   assets/logo.png  +0 −0     │
+│── src/main.rs ──────────────────────── +3 -1  │ ─────────────────────────────│
+│                                               │ src/main.rs      +3 −1       │
+│@@ -10,7 +10,9 @@                              │ assets/logo.png  +0 −0       │
 │ context                                       │                              │
 │-old line                                      │                              │
 │+new line                                      │                              │
 │+another new                                   │                              │
 │+third new                                     │                              │
 │                                               │                              │
-│── assets/logo.png ───────────────────── +0 -0 │                              │
+│── assets/logo.png ──────────────────── +0 -0  │                              │
 │ (binary)                                      │                              │
 │                                               │                              │
 │ … and 148 more files not shown                │                              │
