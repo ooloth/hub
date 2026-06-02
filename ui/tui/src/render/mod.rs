@@ -636,11 +636,12 @@ fn render_pr_detail(
     pr: &domain::PullRequest,
     scroll: &mut u16,
     area: Rect,
+    border_style: Style,
 ) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(FOCUS_COLOR));
+        .border_style(border_style);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -1086,12 +1087,13 @@ fn render_split_detail_pane(
     items: &[DisplayItem],
     selected_row: Option<&FlatRow>,
     detail_scroll: u16,
+    border_style: Style,
 ) {
     let mut scroll = detail_scroll;
     match selected_row {
         Some(FlatRow::Single(item)) | Some(FlatRow::GroupChild { item, .. }) => match item {
             workflows::status::StatusItem::Pr(pr) => {
-                render_pr_detail(frame, pr, &mut scroll, area);
+                render_pr_detail(frame, pr, &mut scroll, area, border_style);
             }
             workflows::status::StatusItem::Issue(issue) => {
                 render_issue_detail(frame, issue, &mut scroll, area);
@@ -1168,7 +1170,14 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
                 );
                 frame.render_widget(Clear, detail_area);
                 let selected_row = flat_rows.get(*selected);
-                render_split_detail_pane(frame, detail_area, items, selected_row, *detail_scroll);
+                render_split_detail_pane(
+                    frame,
+                    detail_area,
+                    items,
+                    selected_row,
+                    *detail_scroll,
+                    filter_chrome_style(filter, app.ui.query_input.as_deref()),
+                );
             }
         },
         Screen::LogDetail { view, scroll, .. } => {
@@ -1178,13 +1187,13 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
             render_issue_detail(frame, issue, scroll, content_area);
         }
         Screen::PrDetail { pr, scroll, .. } => {
-            render_pr_detail(frame, pr, scroll, content_area);
+            render_pr_detail(frame, pr, scroll, content_area, dim());
         }
         Screen::ReviewingPr { pr, .. } => {
-            render_pr_detail(frame, pr, &mut 0, content_area);
+            render_pr_detail(frame, pr, &mut 0, content_area, dim());
         }
         Screen::MergingPr { pr, .. } => {
-            render_pr_detail(frame, pr, &mut 0, content_area);
+            render_pr_detail(frame, pr, &mut 0, content_area, dim());
         }
         Screen::DismissingIssue { issue, input, .. } => {
             render_issue_detail(frame, issue, &mut 0, content_area);
