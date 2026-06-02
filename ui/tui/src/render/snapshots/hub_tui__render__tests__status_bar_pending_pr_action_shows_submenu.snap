@@ -1,0 +1,5 @@
+---
+source: ui/tui/src/render/mod.rs
+expression: status_row(&buf)
+---
+  [d] delta · [l] lazygit · [o] octo · [Esc] cancel

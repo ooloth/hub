@@ -11,4 +11,4 @@ expression: screen_text(&buf)
 │                                                                              │
 │                                                                              │
 ╰ 0 reviews ─────────────────────────────────────────────────────── ooloth/hub ╯
-  [↩] open · [i] investigate · [o] octo · [l] lazygit · [v] review · [m] merge
+  [o] open · [d] diff · [v] review · [m] merge · [i] ask · [Esc] back
