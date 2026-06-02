@@ -12,11 +12,10 @@ use ratatui::{
 use crate::display::{
     flat_row_line, flat_row_urgency, format_age_short, log_detail_view_from_group,
     log_detail_view_from_item, merge_blocker_word, DisplayItem, Filter, FlatRow, LineParts,
-    LogDetailView, LogLine, RowSeparator,
+    LogDetailView, LogLine, RowSeparator, SelectedItemKind,
 };
 use crate::state::{
-    compute_enter_action, compute_investigate_action, App, DetailMode, EnterAction,
-    InvestigateAction, RefreshState, Screen,
+    compute_investigate_action, App, DetailMode, InvestigateAction, RefreshState, Screen,
 };
 
 pub(super) const FOCUS_COLOR: Color = Color::Rgb(203, 166, 247); // Catppuccin Mocha Mauve
@@ -338,18 +337,12 @@ fn position_label(screen: &Screen) -> String {
     }
 }
 
-fn action_hints(enter: &EnterAction, investigate: &InvestigateAction) -> String {
-    let enter_hint = match enter {
-        EnterAction::OpenLogDetail => " · [↩] open".to_string(),
-        EnterAction::OpenIssueDetail | EnterAction::OpenPrDetail => " · [↩] read".to_string(),
-        EnterAction::None => String::new(),
-    };
-    let inv_hint = if matches!(investigate, InvestigateAction::None) {
+fn investigate_hint(investigate: &InvestigateAction) -> &'static str {
+    if matches!(investigate, InvestigateAction::None) {
         ""
     } else {
         " · [i] investigate"
-    };
-    format!("{enter_hint}{inv_hint}")
+    }
 }
 
 /// Returns the number of wrapped lines the body text produces at the given width.
@@ -374,53 +367,78 @@ fn status_bar_left(app: &App) -> String {
     if let Some(flash) = &app.ui.flash {
         return flash.clone();
     }
+    if app.ui.pending_pr_action {
+        return " [d] delta · [l] lazygit · [o] octo · [Esc] cancel".to_string();
+    }
     if matches!(app.ui.screen, Screen::PrDetail { .. }) {
-        return " [↩] open · [i] investigate · [o] octo · [l] lazygit · [v] review · [m] merge · [Esc] back"
-            .to_string();
+        return " [o] open · [d] diff · [v] review · [m] merge · [i] ask · [Esc] back".to_string();
     }
     if let Screen::PrSplit {
         items, selected, ..
     } = &app.ui.screen
     {
-        // No PRs → only Esc is meaningful (per-PR actions need a selection).
         if items.is_empty() {
             return " [Esc] back".to_string();
         }
-        // Enter (focus-shift) lands in v2 (#240).
         return format!(
-            " {}/{} · [i] investigate · [o] octo · [l] lazygit · [v] review · [m] merge · [Esc] back",
+            " {}/{} · [o] open · [d] diff · [v] review · [m] merge · [i] ask · [Esc] back",
             selected + 1,
             items.len()
         );
     }
     if matches!(app.ui.screen, Screen::IssueDetail { .. }) {
-        return " [a] approve · [d] dismiss · [↩] open · [Esc] back".to_string();
+        return " [o] open · [w] dismiss · [a] approve · [i] investigate · [Esc] back".to_string();
     }
     if matches!(app.ui.screen, Screen::DismissingIssue { .. }) {
         return " [↩] confirm · [Esc] cancel".to_string();
     }
-    let enter_action = compute_enter_action(app);
-    let investigate_action = compute_investigate_action(app);
-    let pos = position_label(app.current_screen());
-    let hints = action_hints(&enter_action, &investigate_action);
-    let group_hint = if let Screen::UnifiedList {
+    if let Screen::UnifiedList {
         flat_rows,
         selected,
+        detail_mode,
         ..
     } = &app.ui.screen
     {
-        match flat_rows.get(*selected) {
-            Some(FlatRow::GroupHeader {
-                expanded: false, ..
-            }) => " · [l] expand",
-            Some(FlatRow::GroupHeader { expanded: true, .. }) => " · [h] collapse",
-            Some(FlatRow::GroupChild { .. }) => " · [h] collapse",
-            _ => "",
+        let pos = position_label(app.current_screen());
+        let inv = compute_investigate_action(app);
+        match detail_mode {
+            DetailMode::Hidden => {
+                let inv_hint = investigate_hint(&inv);
+                let group_hint = match flat_rows.get(*selected) {
+                    Some(FlatRow::GroupHeader {
+                        expanded: false, ..
+                    }) => " · [l] expand",
+                    Some(FlatRow::GroupHeader { expanded: true, .. }) => " · [h] collapse",
+                    Some(FlatRow::GroupChild { .. }) => " · [h] collapse",
+                    _ => "",
+                };
+                format!(
+                    "{pos} · [↩] details · [p] prs · [O] issues · [e] errors · [/] search{inv_hint}{group_hint}"
+                )
+            }
+            DetailMode::Visible { .. } => {
+                let item_kind = app
+                    .current_screen()
+                    .selected_status_item()
+                    .map(|i| SelectedItemKind::from_item(&i))
+                    .unwrap_or(SelectedItemKind::Other);
+                match item_kind {
+                    SelectedItemKind::Pr => format!(
+                        "{pos} · [o] open · [d] diff · [v] review · [m] merge · [i] ask · [Esc] back"
+                    ),
+                    SelectedItemKind::Issue => format!(
+                        "{pos} · [o] open · [w] dismiss · [a] approve · [i] investigate · [Esc] back"
+                    ),
+                    SelectedItemKind::Other => {
+                        let inv_hint = investigate_hint(&inv);
+                        format!("{pos} · [o] open{inv_hint} · [Esc] back")
+                    }
+                }
+            }
         }
     } else {
-        ""
-    };
-    format!("{pos}{hints}{group_hint}")
+        String::new()
+    }
 }
 
 fn render_issue_detail(
@@ -1325,12 +1343,12 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::{
-        action_hints, position_label, render, right_status_text, status_bar_left, urgency_color,
-        urgency_style, wrap_text,
+        investigate_hint, position_label, render, right_status_text, status_bar_left,
+        urgency_color, urgency_style, wrap_text,
     };
     use crate::display::{flatten, Category, DisplayItem, Filter, GroupKey, ListSnapshot};
     use crate::state::{
-        App, DataState, DetailMode, EnterAction, InvestigateAction, RefreshState, Screen, UiState,
+        App, DataState, DetailMode, InvestigateAction, RefreshState, Screen, UiState,
     };
     use chrono::Utc;
     use ratatui::backend::TestBackend;
@@ -1654,48 +1672,27 @@ mod tests {
     }
 
     #[test]
-    fn action_hints_open_log_detail() {
-        let enter = EnterAction::OpenLogDetail;
-        let inv = InvestigateAction::None;
-        assert_eq!(action_hints(&enter, &inv), " · [↩] open");
+    fn investigate_hint_returns_empty_when_none() {
+        assert_eq!(investigate_hint(&InvestigateAction::None), "");
     }
 
     #[test]
-    fn action_hints_read_pr() {
-        let enter = EnterAction::OpenPrDetail;
-        let inv = InvestigateAction::None;
-        assert_eq!(action_hints(&enter, &inv), " · [↩] read");
-    }
-
-    #[test]
-    fn action_hints_investigate_ci() {
-        let enter = EnterAction::None;
+    fn investigate_hint_returns_hint_when_actionable() {
         let inv = InvestigateAction::LaunchCi {
             repo: "owner/repo".to_string(),
             run_url: "https://example.com".to_string(),
         };
-        assert_eq!(action_hints(&enter, &inv), " · [i] investigate");
+        assert_eq!(investigate_hint(&inv), " · [i] investigate");
     }
 
     #[cfg(feature = "private")]
     #[test]
-    fn action_hints_investigate_media() {
-        let enter = EnterAction::None;
+    fn investigate_hint_returns_hint_for_media() {
         let inv = InvestigateAction::LaunchMediaBlocked {
             title: "Show — S01E01".to_string(),
             error: "Invalid video file".to_string(),
         };
-        assert_eq!(action_hints(&enter, &inv), " · [i] investigate");
-    }
-
-    #[test]
-    fn action_hints_combined() {
-        let enter = EnterAction::OpenPrDetail;
-        let inv = InvestigateAction::LaunchCi {
-            repo: "owner/repo".to_string(),
-            run_url: "https://example.com".to_string(),
-        };
-        assert_eq!(action_hints(&enter, &inv), " · [↩] read · [i] investigate");
+        assert_eq!(investigate_hint(&inv), " · [i] investigate");
     }
 
     #[test]
@@ -1970,6 +1967,7 @@ mod tests {
                         selected: 0,
                         filter: Filter::default(),
                         expanded_groups: HashSet::new(),
+                        detail_mode: crate::state::DetailMode::Hidden,
                     },
                     issue,
                     scroll,
@@ -2030,6 +2028,7 @@ mod tests {
                         selected: 0,
                         filter: Filter::default(),
                         expanded_groups: HashSet::new(),
+                        detail_mode: crate::state::DetailMode::Hidden,
                     },
                     issue,
                     input,
@@ -2157,6 +2156,7 @@ mod tests {
                         selected: 0,
                         filter: Filter::default(),
                         expanded_groups: HashSet::new(),
+                        detail_mode: crate::state::DetailMode::Hidden,
                     },
                     pr,
                     scroll,
@@ -2273,6 +2273,7 @@ mod tests {
                         selected: 0,
                         filter: Filter::default(),
                         expanded_groups: HashSet::new(),
+                        detail_mode: crate::state::DetailMode::Hidden,
                     },
                     pr,
                     prev: crate::state::PrPrevScreen::PrDetail,
@@ -2496,6 +2497,7 @@ mod tests {
                         selected: 0,
                         filter: Filter::default(),
                         expanded_groups: HashSet::new(),
+                        detail_mode: crate::state::DetailMode::Hidden,
                     },
                     all_items: items.clone(),
                     items,
@@ -2687,5 +2689,14 @@ mod tests {
         let mut app = unified_list_app(items);
         let buf = draw(&mut app, 120, 20);
         insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    // SL5: pending_pr_action shows submenu in status bar.
+    #[test]
+    fn status_bar_pending_pr_action_shows_submenu() {
+        let mut app = split_view_app(vec![DisplayItem::Single(pr())], 0, 0);
+        app.ui.pending_pr_action = true;
+        let buf = draw(&mut app, 120, 5);
+        insta::assert_snapshot!(status_row(&buf));
     }
 }

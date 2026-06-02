@@ -1,11 +1,16 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::display::Category;
+use crate::display::{Category, SelectedItemKind};
 use tui_input::InputRequest;
 
 use crate::state::{Action, App, ReviewSkill, Screen};
 
 pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
+    // PR actions submenu intercepts all keys while pending.
+    if app.ui.pending_pr_action {
+        return pr_action_submenu_key(key);
+    }
+
     // Query mode intercepts all keys (Ctrl-C still quits).
     if app.ui.query_input.is_some() {
         return query_mode_key(key);
@@ -66,7 +71,14 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
     }
 
     match app.current_screen() {
-        Screen::UnifiedList { detail_mode, .. } => unified_list_keys(key, detail_mode),
+        Screen::UnifiedList { detail_mode, .. } => {
+            let item_kind = app
+                .current_screen()
+                .selected_status_item()
+                .map(|item| SelectedItemKind::from_item(&item))
+                .unwrap_or(SelectedItemKind::Other);
+            unified_list_keys(key, detail_mode, item_kind)
+        }
         Screen::LogDetail { .. } => log_detail_keys(key),
         Screen::IssueDetail { .. } => issue_reader_keys(key),
         Screen::PrDetail { .. } => pr_reader_keys(key),
@@ -74,6 +86,23 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
         Screen::ReviewingPr { .. } => unreachable!("handled above"),
         Screen::MergingPr { .. } => unreachable!("handled above"),
         Screen::DismissingIssue { .. } => unreachable!("handled above"),
+    }
+}
+
+fn pr_action_submenu_key(key: KeyEvent) -> Option<Action> {
+    if matches!(
+        (key.code, key.modifiers),
+        (KeyCode::Char('c'), KeyModifiers::CONTROL)
+    ) {
+        return Some(Action::Quit);
+    }
+    match key.code {
+        KeyCode::Char('d') => Some(Action::OpenPrDiffInDelta),
+        KeyCode::Char('l') => Some(Action::OpenInLazygit),
+        KeyCode::Char('o') => Some(Action::OpenInOcto),
+        // Any other key (including Esc) clears the submenu via Back.
+        KeyCode::Esc => Some(Action::Back),
+        _ => Some(Action::Back),
     }
 }
 
@@ -93,13 +122,35 @@ fn query_mode_key(key: KeyEvent) -> Option<Action> {
     }
 }
 
-fn unified_list_keys(key: KeyEvent, detail_mode: &crate::state::DetailMode) -> Option<Action> {
+fn unified_list_keys(
+    key: KeyEvent,
+    detail_mode: &crate::state::DetailMode,
+    item_kind: SelectedItemKind,
+) -> Option<Action> {
     let split_active = matches!(detail_mode, crate::state::DetailMode::Visible { .. });
     match (key.code, key.modifiers) {
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => Some(Action::MoveUp),
         (KeyCode::Down, _) | (KeyCode::Char('j'), _) => Some(Action::MoveDown),
         (KeyCode::Char('J'), _) if split_active => Some(Action::ScrollDetailDown),
         (KeyCode::Char('K'), _) if split_active => Some(Action::ScrollDetailUp),
+        // PR-specific actions available when split view is showing a PR.
+        (KeyCode::Char('v'), _) if split_active && item_kind == SelectedItemKind::Pr => {
+            Some(Action::OpenReviewPicker)
+        }
+        (KeyCode::Char('m'), _) if split_active && item_kind == SelectedItemKind::Pr => {
+            Some(Action::MergePr)
+        }
+        // d arms the PR diff submenu when split view shows a PR.
+        (KeyCode::Char('d'), _) if split_active && item_kind == SelectedItemKind::Pr => {
+            Some(Action::PrActionSubmenu)
+        }
+        // Issue-specific actions available when split view is showing an issue.
+        (KeyCode::Char('a'), _) if split_active && item_kind == SelectedItemKind::Issue => {
+            Some(Action::ApproveForAgent)
+        }
+        (KeyCode::Char('w'), _) if split_active && item_kind == SelectedItemKind::Issue => {
+            Some(Action::DismissIssue)
+        }
         (KeyCode::Char('h'), _) => Some(Action::CollapseGroup),
         (KeyCode::Char('l'), _) => Some(Action::ExpandGroup),
         (KeyCode::Char('g'), _) => Some(Action::PendingG),
@@ -111,7 +162,8 @@ fn unified_list_keys(key: KeyEvent, detail_mode: &crate::state::DetailMode) -> O
         (KeyCode::Char('p'), _) => Some(Action::FilterCategory(Category::Prs)),
         (KeyCode::Char('P'), _) => Some(Action::EnterPrSplit),
         (KeyCode::Char('e'), _) => Some(Action::FilterCategory(Category::Errors)),
-        (KeyCode::Char('o'), _) => Some(Action::FilterCategory(Category::Issues)),
+        (KeyCode::Char('o'), _) => Some(Action::OpenUrl),
+        (KeyCode::Char('O'), _) => Some(Action::FilterCategory(Category::Issues)),
         (KeyCode::Char('a'), _) => Some(Action::ClearFilter),
         (KeyCode::Char('/'), _) => Some(Action::StartQuery),
         _ => None,
@@ -259,6 +311,7 @@ mod tests {
             selected: 0,
             filter: Filter::default(),
             expanded_groups: std::collections::HashSet::new(),
+            detail_mode: crate::state::DetailMode::Hidden,
         };
         App {
             ui: UiState {
@@ -318,6 +371,7 @@ mod tests {
             selected: 0,
             filter: Filter::default(),
             expanded_groups: std::collections::HashSet::new(),
+            detail_mode: crate::state::DetailMode::Hidden,
         };
         App {
             ui: UiState {
@@ -428,7 +482,8 @@ mod tests {
     #[case(ch('p'), Some(Action::FilterCategory(Category::Prs)))]
     #[case(ch('P'), Some(Action::EnterPrSplit))]
     #[case(ch('e'), Some(Action::FilterCategory(Category::Errors)))]
-    #[case(ch('o'), Some(Action::FilterCategory(Category::Issues)))]
+    #[case(ch('o'), Some(Action::OpenUrl))]
+    #[case(ch('O'), Some(Action::FilterCategory(Category::Issues)))]
     #[case(ch('a'), Some(Action::ClearFilter))]
     #[case(ch('/'), Some(Action::StartQuery))]
     #[case(ch('x'), None)]
@@ -527,6 +582,7 @@ mod tests {
             selected: 0,
             filter: Filter::default(),
             expanded_groups: std::collections::HashSet::new(),
+            detail_mode: crate::state::DetailMode::Hidden,
         };
         App {
             ui: UiState {
@@ -633,6 +689,7 @@ mod tests {
             selected: 0,
             filter: Filter::default(),
             expanded_groups: std::collections::HashSet::new(),
+            detail_mode: crate::state::DetailMode::Hidden,
         };
         App {
             ui: UiState {
@@ -674,6 +731,7 @@ mod tests {
             selected: 0,
             filter: Filter::default(),
             expanded_groups: std::collections::HashSet::new(),
+            detail_mode: crate::state::DetailMode::Hidden,
         };
         App {
             ui: UiState {
@@ -760,6 +818,7 @@ mod tests {
             selected: 0,
             filter: Filter::default(),
             expanded_groups: std::collections::HashSet::new(),
+            detail_mode: crate::state::DetailMode::Hidden,
         };
         App {
             ui: UiState {
@@ -823,6 +882,7 @@ mod tests {
             selected: 0,
             filter: Filter::default(),
             expanded_groups: std::collections::HashSet::new(),
+            detail_mode: crate::state::DetailMode::Hidden,
         };
         App {
             ui: UiState {
@@ -879,5 +939,186 @@ mod tests {
         assert_eq!(key_to_action(&log_detail_app(), ch('P')), None);
         assert_eq!(key_to_action(&issue_detail_app(), ch('P')), None);
         assert_eq!(key_to_action(&pr_detail_app(), ch('P')), None);
+    }
+
+    // --- Split view context dispatch ---
+
+    fn split_view_app_with_pr() -> App {
+        use crate::display::{flatten, DisplayItem};
+        use workflows::status::StatusItem;
+        let item = StatusItem::Pr(domain::PullRequest {
+            number: 1,
+            title: "Fix".to_string(),
+            repo: domain::RepoSlug::new("owner", "repo"),
+            url: "https://github.com/owner/repo/pull/1".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+            kind: domain::PrKind::Mine,
+            author: "ooloth".to_string(),
+            review_decision: None,
+            approval_count: 0,
+            comment_count: 0,
+            head_branch: "feat/fix".to_string(),
+            base_branch: "main".to_string(),
+            body: None,
+            ci_status: None,
+            changed_files: vec![],
+            total_changed_files: 0,
+            review_threads: vec![],
+            pr_comments: vec![],
+            merge_blocker: None,
+        });
+        let items = vec![DisplayItem::Single(item)];
+        let expanded = std::collections::HashSet::new();
+        let flat_rows = flatten(&items, &expanded);
+        App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    flat_rows,
+                    items,
+                    selected: 0,
+                    filter: Filter::default(),
+                    expanded_groups: expanded,
+                    detail_mode: crate::state::DetailMode::Visible { detail_scroll: 0 },
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    fn split_view_app_with_issue() -> App {
+        use crate::display::{flatten, DisplayItem};
+        use workflows::status::StatusItem;
+        let item = StatusItem::Issue(domain::Issue {
+            number: 42,
+            title: "Bug".to_string(),
+            repo: domain::RepoSlug::new("owner", "repo"),
+            url: "https://github.com/owner/repo/issues/42".to_string(),
+            author: "agent".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+            labels: vec![],
+            body: None,
+        });
+        let items = vec![DisplayItem::Single(item)];
+        let expanded = std::collections::HashSet::new();
+        let flat_rows = flatten(&items, &expanded);
+        App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    flat_rows,
+                    items,
+                    selected: 0,
+                    filter: Filter::default(),
+                    expanded_groups: expanded,
+                    detail_mode: crate::state::DetailMode::Visible { detail_scroll: 0 },
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    fn pending_pr_action_app_with_pr() -> App {
+        let mut app = split_view_app_with_pr();
+        app.ui.pending_pr_action = true;
+        app
+    }
+
+    // K3: d on PR in split view → PendingPrAction
+    #[test]
+    fn d_on_pr_in_split_view_arms_pr_submenu() {
+        assert_eq!(
+            key_to_action(&split_view_app_with_pr(), ch('d')),
+            Some(Action::PrActionSubmenu)
+        );
+    }
+
+    // K4: d on non-PR in split view → nothing
+    #[test]
+    fn d_on_non_pr_in_split_view_does_nothing() {
+        assert_eq!(key_to_action(&split_view_app_with_issue(), ch('d')), None);
+    }
+
+    // K5: d→d while pending → OpenPrDiffInDelta
+    #[test]
+    fn d_while_pending_pr_action_opens_diff() {
+        assert_eq!(
+            key_to_action(&pending_pr_action_app_with_pr(), ch('d')),
+            Some(Action::OpenPrDiffInDelta)
+        );
+    }
+
+    // K6: d→l while pending → OpenInLazygit
+    #[test]
+    fn l_while_pending_pr_action_opens_lazygit() {
+        assert_eq!(
+            key_to_action(&pending_pr_action_app_with_pr(), ch('l')),
+            Some(Action::OpenInLazygit)
+        );
+    }
+
+    // K7: d→o while pending → OpenInOcto
+    #[test]
+    fn o_while_pending_pr_action_opens_octo() {
+        assert_eq!(
+            key_to_action(&pending_pr_action_app_with_pr(), ch('o')),
+            Some(Action::OpenInOcto)
+        );
+    }
+
+    // K8: Esc while pending → Back (clears submenu)
+    #[test]
+    fn esc_while_pending_pr_action_cancels() {
+        assert_eq!(
+            key_to_action(&pending_pr_action_app_with_pr(), k(KeyCode::Esc)),
+            Some(Action::Back)
+        );
+    }
+
+    // K9: v on PR in split view → OpenReviewPicker
+    #[test]
+    fn v_on_pr_in_split_view_opens_review_picker() {
+        assert_eq!(
+            key_to_action(&split_view_app_with_pr(), ch('v')),
+            Some(Action::OpenReviewPicker)
+        );
+    }
+
+    // K10: m on PR in split view → MergePr
+    #[test]
+    fn m_on_pr_in_split_view_merges_pr() {
+        assert_eq!(
+            key_to_action(&split_view_app_with_pr(), ch('m')),
+            Some(Action::MergePr)
+        );
+    }
+
+    // K11: a on issue in split view → ApproveForAgent
+    #[test]
+    fn a_on_issue_in_split_view_approves_for_agent() {
+        assert_eq!(
+            key_to_action(&split_view_app_with_issue(), ch('a')),
+            Some(Action::ApproveForAgent)
+        );
+    }
+
+    // K12: a on PR in split view → ClearFilter (not ApproveForAgent)
+    #[test]
+    fn a_on_pr_in_split_view_clears_filter() {
+        assert_eq!(
+            key_to_action(&split_view_app_with_pr(), ch('a')),
+            Some(Action::ClearFilter)
+        );
+    }
+
+    // K13: w on issue in split view → DismissIssue
+    #[test]
+    fn w_on_issue_in_split_view_dismisses_issue() {
+        assert_eq!(
+            key_to_action(&split_view_app_with_issue(), ch('w')),
+            Some(Action::DismissIssue)
+        );
     }
 }

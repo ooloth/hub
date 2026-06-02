@@ -77,6 +77,8 @@ pub(crate) enum Screen {
         expanded_groups: HashSet<GroupKey>,
         detail_mode: DetailMode,
     },
+    // Entry point removed in #244; kept for potential future use.
+    #[allow(dead_code)]
     IssueDetail {
         parent: ListSnapshot,
         issue: Issue,
@@ -136,6 +138,9 @@ pub(crate) enum PrPrevScreen {
         selected: usize,
         query: Option<String>,
     },
+    /// Restore the UnifiedList split view that launched the review/merge picker.
+    #[allow(dead_code)]
+    UnifiedList { snapshot: ListSnapshot },
 }
 
 impl Default for Screen {
@@ -175,13 +180,6 @@ impl Screen {
             } => items.get(*selected).cloned().map(StatusItem::Pr),
         }
     }
-}
-
-pub(crate) enum EnterAction {
-    None,
-    OpenLogDetail,
-    OpenIssueDetail,
-    OpenPrDetail,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -251,6 +249,9 @@ pub(crate) enum Action {
     OpenReviewPicker,
     CommitReview(ReviewSkill),
     CancelReview,
+    OpenUrl,
+    PrActionSubmenu,
+    OpenPrDiffInDelta,
     Refresh,
     ApproveForAgent,
     MergePr,
@@ -278,6 +279,10 @@ pub(crate) enum Action {
 pub(crate) enum Effect {
     Quit,
     OpenUrl(String),
+    OpenPrDiffInDelta {
+        repo: String,
+        number: u64,
+    },
     SetIssueLabels {
         repo: String,
         number: u64,

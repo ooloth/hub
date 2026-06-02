@@ -78,18 +78,16 @@ fn build_detail_lines(pr: &PullRequest, width: usize, visible_height: usize) -> 
 
 fn field_lines(pr: &PullRequest) -> Vec<Line<'static>> {
     let status = pr_status_text(pr);
-    let diff = format!(
-        "+{} −{} in {} files",
-        pr.changed_files.iter().map(|f| f.additions).sum::<u32>(),
-        pr.changed_files.iter().map(|f| f.deletions).sum::<u32>(),
-        pr.total_changed_files,
-    );
     let checks = check_status_text(pr.ci_status);
     let updated = format!("{} ago", format_age_short(pr.age));
+    let additions: u32 = pr.changed_files.iter().map(|f| f.additions).sum();
+    let deletions: u32 = pr.changed_files.iter().map(|f| f.deletions).sum();
+    let mut diff_spans = diff_spans(additions, deletions);
+    diff_spans.push(Span::raw(format!(" in {} files", pr.total_changed_files)));
     vec![
         field_row("status", &status, urgency_color(pr.urgency)),
         field_row_plain("checks", &checks),
-        field_row_plain("diff", &diff),
+        field_row_spans("diff", diff_spans),
         field_row_plain("branch", &pr.head_branch),
         field_row_plain("author", &format!("@{}", pr.author)),
         field_row_plain("updated", &updated),
@@ -111,6 +109,22 @@ fn field_row_plain(key: &str, value: &str) -> Line<'static> {
         Span::styled(format!("  {key:<8}"), dim()),
         Span::raw(format!("   {value}")),
     ])
+}
+
+/// Field row with pre-built value spans — used when the value needs mixed colors.
+fn field_row_spans(key: &str, value_spans: Vec<Span<'static>>) -> Line<'static> {
+    let mut spans = vec![Span::styled(format!("  {key:<8}"), dim()), Span::raw("   ")];
+    spans.extend(value_spans);
+    Line::from(spans)
+}
+
+/// Green `+N`, plain space, red `−N`.
+fn diff_spans(additions: u32, deletions: u32) -> Vec<Span<'static>> {
+    vec![
+        Span::styled(format!("+{additions}"), Style::default().fg(Color::Green)),
+        Span::raw(" "),
+        Span::styled(format!("−{deletions}"), Style::default().fg(Color::Red)),
+    ]
 }
 
 fn check_status_text(ci: Option<CiStatus>) -> String {
@@ -164,12 +178,10 @@ fn file_lines(files: &[domain::ChangedFile], width: usize) -> Vec<Line<'static>>
     files
         .iter()
         .map(|f| {
-            let totals = format!("+{} −{}", f.additions, f.deletions);
             let path = truncate(&f.path, path_col);
-            Line::from(vec![
-                Span::raw(format!("  {path:<path_col$}  ")),
-                Span::styled(totals, dim()),
-            ])
+            let mut spans = vec![Span::raw(format!("  {path:<path_col$}  "))];
+            spans.extend(diff_spans(f.additions, f.deletions));
+            Line::from(spans)
         })
         .collect()
 }
@@ -205,14 +217,14 @@ fn apply_overflow_hint(mut lines: Vec<Line<'static>>, visible_height: usize) -> 
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_overflow_hint, check_status_text, description_lines, field_lines, file_lines,
-        truncate,
+        apply_overflow_hint, check_status_text, description_lines, diff_spans, field_lines,
+        file_lines, truncate,
     };
     use chrono::Duration;
     use domain::{
         ChangedFile, CiStatus, MergeBlocker, PrKind, PullRequest, RepoSlug, ReviewDecision, Urgency,
     };
-    use ratatui::text::Line;
+    use ratatui::{style::Color, text::Line};
     use rstest::rstest;
 
     fn line_text(line: &Line<'static>) -> String {
@@ -355,6 +367,15 @@ mod tests {
         let text = line_text(&lines[0]);
         assert!(text.contains("workflows/src/agent.rs"));
         assert!(text.contains("+24 −3"));
+    }
+
+    #[test]
+    fn diff_spans_additions_are_green_and_deletions_are_red() {
+        let spans = diff_spans(10, 5);
+        assert_eq!(spans[0].content, "+10");
+        assert_eq!(spans[0].style.fg, Some(Color::Green));
+        assert_eq!(spans[2].content, "−5");
+        assert_eq!(spans[2].style.fg, Some(Color::Red));
     }
 
     #[test]

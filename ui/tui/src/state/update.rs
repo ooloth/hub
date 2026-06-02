@@ -4,12 +4,11 @@ use chrono::Utc;
 use domain::{agent_ready_labels, dismissed_labels};
 
 use super::{
-    Action, App, DetailMode, Effect, EnterAction, InvestigateAction, Msg, PrOwnership,
-    PrPrevScreen, RefreshState, Screen,
+    Action, App, DetailMode, Effect, InvestigateAction, Msg, PrOwnership, PrPrevScreen,
+    RefreshState, Screen,
 };
 use crate::display::{
-    build_unified, flatten, item_investigation, item_url, lines_to_compact_json,
-    log_detail_view_from_group, log_detail_view_from_item, DisplayItem, Filter, FlatRow,
+    build_unified, flatten, item_investigation, item_url, lines_to_compact_json, Filter, FlatRow,
     InvestigationKind, ListSnapshot, LogDetailView,
 };
 use workflows::status::StatusItem;
@@ -18,6 +17,16 @@ impl App {
     pub(crate) fn update(&mut self, action: Action) -> Vec<Effect> {
         self.ui.flash = None;
         self.ui.pending_g = false;
+        // Clear the PR-actions submenu on any action that isn't part of the submenu itself.
+        if !matches!(
+            action,
+            Action::PrActionSubmenu
+                | Action::OpenPrDiffInDelta
+                | Action::OpenInLazygit
+                | Action::OpenInOcto
+        ) {
+            self.ui.pending_pr_action = false;
+        }
         match action {
             Action::Quit => vec![Effect::Quit],
             Action::ToggleHelp => {
@@ -98,6 +107,7 @@ impl App {
                     selected,
                     filter,
                     expanded_groups,
+                    detail_mode,
                     ..
                 } = &self.ui.screen
                 else {
@@ -108,6 +118,7 @@ impl App {
                     selected: *selected,
                     filter: filter.clone(),
                     expanded_groups: expanded_groups.clone(),
+                    detail_mode: detail_mode.clone(),
                 };
                 let prs: Vec<_> = self
                     .data
@@ -214,6 +225,21 @@ impl App {
                     _ => vec![],
                 }
             }
+            Action::PrActionSubmenu => {
+                self.ui.pending_pr_action = true;
+                vec![]
+            }
+            Action::OpenPrDiffInDelta => {
+                self.ui.pending_pr_action = false;
+                if let Some(StatusItem::Pr(pr)) = self.ui.screen.selected_status_item() {
+                    vec![Effect::OpenPrDiffInDelta {
+                        repo: pr.repo.to_string(),
+                        number: pr.number,
+                    }]
+                } else {
+                    vec![]
+                }
+            }
             Action::MoveUp
             | Action::MoveDown
             | Action::MoveToTop
@@ -221,6 +247,7 @@ impl App {
             | Action::MovePageUp
             | Action::MovePageDown
             | Action::Enter
+            | Action::OpenUrl
             | Action::ExpandGroup
             | Action::CollapseGroup
             | Action::ApproveForAgent
@@ -448,9 +475,99 @@ impl App {
                 }
                 vec![]
             }
+            Action::OpenUrl => {
+                if let Some(url) = self.selected_url() {
+                    vec![Effect::OpenUrl(url.to_string())]
+                } else {
+                    vec![]
+                }
+            }
+            Action::OpenReviewPicker => self.open_unified_split_pr_picker(PrAction::Review),
+            Action::MergePr => self.open_unified_split_pr_picker(PrAction::Merge),
+            Action::ApproveForAgent => {
+                let Some(StatusItem::Issue(issue)) = self.ui.screen.selected_status_item() else {
+                    return vec![];
+                };
+                let labels = agent_ready_labels(&issue.labels);
+                vec![Effect::SetIssueLabels {
+                    repo: issue.repo.to_string(),
+                    number: issue.number,
+                    labels,
+                }]
+            }
+            Action::DismissIssue => {
+                let Some(StatusItem::Issue(issue)) = self.ui.screen.selected_status_item() else {
+                    return vec![];
+                };
+                let Screen::UnifiedList {
+                    items,
+                    selected,
+                    filter,
+                    expanded_groups,
+                    detail_mode,
+                    ..
+                } = &self.ui.screen
+                else {
+                    return vec![];
+                };
+                let snapshot = ListSnapshot {
+                    items: items.clone(),
+                    selected: *selected,
+                    filter: filter.clone(),
+                    expanded_groups: expanded_groups.clone(),
+                    detail_mode: detail_mode.clone(),
+                };
+                self.ui.screen = Screen::DismissingIssue {
+                    parent: snapshot,
+                    issue,
+                    input: tui_input::Input::default(),
+                };
+                vec![]
+            }
             Action::Investigate => self.handle_investigate(),
             _ => unreachable!(),
         }
+    }
+
+    /// Transition UnifiedList split view → ReviewingPr or MergingPr for the selected PR.
+    fn open_unified_split_pr_picker(&mut self, kind: PrAction) -> Vec<Effect> {
+        let Some(StatusItem::Pr(pr)) = self.ui.screen.selected_status_item() else {
+            return vec![];
+        };
+        let Screen::UnifiedList {
+            items,
+            selected,
+            filter,
+            expanded_groups,
+            detail_mode,
+            ..
+        } = &self.ui.screen
+        else {
+            return vec![];
+        };
+        let snapshot = ListSnapshot {
+            items: items.clone(),
+            selected: *selected,
+            filter: filter.clone(),
+            expanded_groups: expanded_groups.clone(),
+            detail_mode: detail_mode.clone(),
+        };
+        let prev = PrPrevScreen::UnifiedList {
+            snapshot: snapshot.clone(),
+        };
+        self.ui.screen = match kind {
+            PrAction::Review => Screen::ReviewingPr {
+                parent: snapshot,
+                pr,
+                prev,
+            },
+            PrAction::Merge => Screen::MergingPr {
+                parent: snapshot,
+                pr,
+                prev,
+            },
+        };
+        vec![]
     }
 
     fn handle_log_detail(&mut self, action: Action) -> Vec<Effect> {
@@ -841,15 +958,17 @@ impl App {
     fn handle_dismissing(&mut self, action: Action) -> Vec<Effect> {
         match action {
             Action::CancelDismissal => {
-                let Screen::DismissingIssue { parent, issue, .. } =
-                    std::mem::take(&mut self.ui.screen)
+                let Screen::DismissingIssue { parent, .. } = std::mem::take(&mut self.ui.screen)
                 else {
                     return vec![];
                 };
-                self.ui.screen = Screen::IssueDetail {
-                    parent,
-                    issue,
-                    scroll: 0,
+                self.ui.screen = Screen::UnifiedList {
+                    flat_rows: flatten(&parent.items, &parent.expanded_groups),
+                    items: parent.items,
+                    selected: parent.selected,
+                    filter: parent.filter,
+                    expanded_groups: parent.expanded_groups,
+                    detail_mode: parent.detail_mode,
                 };
                 vec![]
             }
@@ -866,10 +985,13 @@ impl App {
                 let labels = dismissed_labels(&issue.labels);
                 let repo = issue.repo.to_string();
                 let number = issue.number;
-                self.ui.screen = Screen::IssueDetail {
-                    parent,
-                    issue,
-                    scroll: 0,
+                self.ui.screen = Screen::UnifiedList {
+                    flat_rows: flatten(&parent.items, &parent.expanded_groups),
+                    items: parent.items,
+                    selected: parent.selected,
+                    filter: parent.filter,
+                    expanded_groups: parent.expanded_groups,
+                    detail_mode: parent.detail_mode,
                 };
                 vec![Effect::DismissIssue {
                     repo,
@@ -1041,51 +1163,14 @@ fn restore_after_pr_action(
             selected,
             query,
         },
-    }
-}
-
-pub(crate) fn compute_enter_action(app: &App) -> EnterAction {
-    match app.current_screen() {
-        Screen::UnifiedList {
-            flat_rows,
-            selected,
-            items,
-            ..
-        } => match flat_rows.get(*selected) {
-            Some(FlatRow::GroupHeader { key, .. }) => {
-                let group_items = items.iter().find_map(|di| match di {
-                    DisplayItem::Group { label, items: gi } if label == key => Some(gi.as_slice()),
-                    _ => None,
-                });
-                if group_items.and_then(log_detail_view_from_group).is_some() {
-                    EnterAction::OpenLogDetail
-                } else {
-                    EnterAction::None
-                }
-            }
-            Some(FlatRow::GroupChild { item, .. }) | Some(FlatRow::Single(item)) => match item {
-                StatusItem::Issue(_) => EnterAction::OpenIssueDetail,
-                StatusItem::Pr(_) => EnterAction::OpenPrDetail,
-                StatusItem::Gcp(_) | StatusItem::Loki(_) => {
-                    if log_detail_view_from_item(item).is_some() {
-                        EnterAction::OpenLogDetail
-                    } else {
-                        EnterAction::None
-                    }
-                }
-                _ => EnterAction::None,
-            },
-            None => EnterAction::None,
+        PrPrevScreen::UnifiedList { snapshot } => Screen::UnifiedList {
+            flat_rows: flatten(&snapshot.items, &snapshot.expanded_groups),
+            items: snapshot.items,
+            selected: snapshot.selected,
+            filter: snapshot.filter,
+            expanded_groups: snapshot.expanded_groups,
+            detail_mode: snapshot.detail_mode,
         },
-        Screen::LogDetail { .. }
-        | Screen::IssueDetail { .. }
-        | Screen::DismissingIssue { .. }
-        | Screen::PrDetail { .. }
-        | Screen::ReviewingPr { .. }
-        | Screen::MergingPr { .. } => EnterAction::None,
-        // PrSplit: Enter is reserved for v2 (focus-shift to right pane,
-        // tracked in ooloth/hub#240). For v1 it does nothing.
-        Screen::PrSplit { .. } => EnterAction::None,
     }
 }
 
@@ -1306,8 +1391,8 @@ mod tests {
     use std::collections::HashSet;
 
     use super::{
-        compute_enter_action, compute_investigate_action, handle_msg, Action, App, DetailMode,
-        Effect, EnterAction, InvestigateAction, Msg, RefreshState, Screen,
+        compute_investigate_action, handle_msg, Action, App, DetailMode, Effect, InvestigateAction,
+        Msg, RefreshState, Screen,
     };
     use crate::display::{
         flatten, log_detail_view_from_item, Category, DisplayItem, Filter, GroupKey, ListSnapshot,
@@ -1351,6 +1436,7 @@ mod tests {
             selected: 0,
             filter: Filter::default(),
             expanded_groups: HashSet::new(),
+            detail_mode: crate::state::DetailMode::Hidden,
         };
         App {
             ui: UiState {
@@ -2109,6 +2195,7 @@ mod tests {
             selected: 0,
             filter: Filter::default(),
             expanded_groups: HashSet::new(),
+            detail_mode: crate::state::DetailMode::Hidden,
         };
         let issue = match stub_issue() {
             StatusItem::Issue(i) => i,
@@ -2322,13 +2409,10 @@ mod tests {
     }
 
     #[test]
-    fn cancel_dismissal_returns_to_issue_detail_with_same_issue() {
+    fn cancel_dismissal_returns_to_unified_list() {
         let mut app = app_in_dismissing();
         app.update(Action::CancelDismissal);
-        let Screen::IssueDetail { issue, .. } = app.current_screen() else {
-            panic!("expected IssueDetail");
-        };
-        assert_eq!(issue.number, 42);
+        assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
     }
 
     #[test]
@@ -2339,10 +2423,10 @@ mod tests {
     }
 
     #[test]
-    fn commit_dismissal_returns_to_issue_detail() {
+    fn commit_dismissal_returns_to_unified_list() {
         let mut app = app_in_dismissing();
         app.update(Action::CommitDismissal);
-        assert!(matches!(app.current_screen(), Screen::IssueDetail { .. }));
+        assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
     }
 
     #[test]
@@ -2379,8 +2463,6 @@ mod tests {
         };
         assert_eq!(reason, "");
     }
-
-    // --- compute_enter_action ---
 
     // --- helpers ---
 
@@ -2485,6 +2567,7 @@ mod tests {
             selected: 0,
             filter: Filter::default(),
             expanded_groups: HashSet::new(),
+            detail_mode: crate::state::DetailMode::Hidden,
         };
         let pr = match stub_pr() {
             StatusItem::Pr(p) => p,
@@ -2689,21 +2772,6 @@ mod tests {
             parent.items[0],
             DisplayItem::Single(workflows::status::StatusItem::Ci(_))
         ));
-    }
-
-    #[test]
-    fn compute_enter_action_on_issue_returns_open_issue_detail() {
-        let app = app_with_items(vec![DisplayItem::Single(stub_issue())]);
-        assert!(matches!(
-            compute_enter_action(&app),
-            EnterAction::OpenIssueDetail
-        ));
-    }
-
-    #[test]
-    fn compute_enter_action_in_issue_detail_returns_none() {
-        let app = app_in_issue_detail();
-        assert!(matches!(compute_enter_action(&app), EnterAction::None));
     }
 
     // --- AskAboutPr ---
@@ -3320,5 +3388,51 @@ mod tests {
             }
             _ => panic!("expected UnifiedList"),
         }
+    }
+
+    // --- OpenUrl ---
+
+    fn pr_item() -> StatusItem {
+        StatusItem::Pr(domain::PullRequest {
+            number: 1,
+            title: "Fix".to_string(),
+            repo: domain::RepoSlug::new("owner", "repo"),
+            url: "https://github.com/owner/repo/pull/1".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+            kind: domain::PrKind::Mine,
+            author: "ooloth".to_string(),
+            review_decision: None,
+            approval_count: 0,
+            comment_count: 0,
+            head_branch: "feat/fix".to_string(),
+            base_branch: "main".to_string(),
+            body: None,
+            ci_status: None,
+            changed_files: vec![],
+            total_changed_files: 0,
+            review_threads: vec![],
+            pr_comments: vec![],
+            merge_blocker: None,
+        })
+    }
+
+    // U1: OpenUrl on an item with a URL emits Effect::OpenUrl with the item's URL.
+    #[test]
+    fn open_url_on_item_with_url_emits_open_url_effect() {
+        let mut app = app_with_items(vec![DisplayItem::Single(pr_item())]);
+        let effects = app.update(Action::OpenUrl);
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::OpenUrl(u)] if u == "https://github.com/owner/repo/pull/1"
+        ));
+    }
+
+    // U2: OpenUrl with no selected item (empty list) is a no-op.
+    #[test]
+    fn open_url_with_no_selection_is_noop() {
+        let mut app = app_with_items(vec![]);
+        let effects = app.update(Action::OpenUrl);
+        assert!(effects.is_empty());
     }
 }

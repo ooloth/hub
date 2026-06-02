@@ -278,6 +278,13 @@ async fn run_loop(
                 Effect::OpenUrl(url) => {
                     let _ = open::that_detached(url);
                 }
+                Effect::OpenPrDiffInDelta { repo, number } => {
+                    let window_name = format!("{repo}#{number}-diff");
+                    let cmd = format!("gh pr diff {number} -R {repo} | delta; read",);
+                    let _ = std::process::Command::new("tmux")
+                        .args(["new-window", "-n", &window_name, &cmd])
+                        .spawn();
+                }
                 Effect::LaunchCi { repo, run_url } => {
                     if let Err(err) = investigations::launch(
                         investigations::ci::config(&repo, &run_url),

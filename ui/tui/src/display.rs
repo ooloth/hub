@@ -236,6 +236,7 @@ pub(crate) struct ListSnapshot {
     pub(crate) selected: usize,
     pub(crate) filter: Filter,
     pub(crate) expanded_groups: HashSet<GroupKey>,
+    pub(crate) detail_mode: crate::state::DetailMode,
 }
 
 #[derive(Clone, Debug)]
@@ -269,6 +270,25 @@ impl LineParts {
         }
         parts.push(&self.age);
         parts.join(" ")
+    }
+}
+
+/// Which broad category the selected item belongs to — used by the input
+/// layer to decide which context-specific keybindings to emit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SelectedItemKind {
+    Pr,
+    Issue,
+    Other,
+}
+
+impl SelectedItemKind {
+    pub(crate) fn from_item(item: &StatusItem) -> Self {
+        match item {
+            StatusItem::Pr(_) => SelectedItemKind::Pr,
+            StatusItem::Issue(_) => SelectedItemKind::Issue,
+            _ => SelectedItemKind::Other,
+        }
     }
 }
 

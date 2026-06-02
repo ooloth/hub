@@ -5,10 +5,10 @@ mod types;
 mod update;
 
 pub(crate) use types::{
-    Action, DetailMode, Effect, EnterAction, InvestigateAction, Msg, PrOwnership, PrPrevScreen,
-    RefreshState, ReviewSkill, Screen,
+    Action, DetailMode, Effect, InvestigateAction, Msg, PrOwnership, PrPrevScreen, RefreshState,
+    ReviewSkill, Screen,
 };
-pub(crate) use update::{compute_enter_action, compute_investigate_action, handle_msg};
+pub(crate) use update::{compute_investigate_action, handle_msg};
 
 #[derive(Debug, Default)]
 pub(crate) struct UiState {
@@ -17,6 +17,9 @@ pub(crate) struct UiState {
     pub(crate) flash: Option<String>,
     pub(crate) query_input: Option<String>,
     pub(crate) pending_g: bool,
+    /// True while the PR actions submenu is showing (d was pressed on a PR in split view).
+    /// The next keypress either executes a sub-action or cancels.
+    pub(crate) pending_pr_action: bool,
 }
 
 #[derive(Debug, Default)]
