@@ -402,3 +402,136 @@ This doc covers everything else.
   group="bc-compound-design" → flux-config + workflow-config refresh serialize
   ```
 - Adding a new data source: write fetch function, register with `manager.register(key, label, fn, default_interval)`, done — config auto-persisted, cache auto-managed, SSE auto-emitted
+
+---
+
+## Todo Board
+
+- 7-column kanban organized by time horizon, not just status — columns are temporal buckets:
+  ```
+  ┌───────────┬───────────┬──────────┬───────────┬───────────┬─────────────┐
+  │ THIS WEEK │   TODAY   │   DONE   │  ARCHIVE  │  MONITOR  │ WORKSTREAMS │
+  │   (12)    │    (4)    │   (2)    │  ╌╌╌╌╌╌  │   (3)     │    (5)      │
+  │ [card]    │ [card]    │ [card]   │  drop →   │ [card]    │ [card]      │
+  │ [card]    │ [card]    │          │  archive  │           │             │
+  └───────────┴───────────┴──────────┴───────────┴───────────┴─────────────┘
+  ```
+  Archive column has dashed border — visual affordance for "drop here to dismiss"
+- Item count badge in every column header — scope visible without counting
+- 4-level priority system communicated via icon + card border color:
+  ```
+  low    → gray  ↓  (no border)
+  normal → blue  =  (no border, default)
+  high   → orange ↑ (colored left border)
+  urgent → red   !  (colored left border, stronger)
+  ```
+- Priority picker in edit modal: 4 icon buttons, selected at full opacity, others dimmed — not a dropdown
+- Card shows only: title (2 lines, bold), description (2 lines, dimmed, only if non-empty), type badge — everything else is in the detail modal
+- Type badge uses hashed color from the type string (8 possible colors) — consistent per type without a fixed palette
+- Type system is dynamic: types emerge from created items, auto-registered in a `todo_types` table, surfaced via autocomplete — no predefined enum
+- Create modal defaults status to `today` when opened from board tab, `backlog` when opened from backlog tab — context-aware default
+- Backlog tab shows backlog + next-week side-by-side with a dedicated "promote to this week" drop zone:
+  ```
+  ┌───────────────────┬───────────────┬───────────┐
+  │ BACKLOG (23)      │ NEXT WEEK (5) │ ╌╌╌╌╌╌╌  │
+  │ [items]           │ [items]       │ → To This  │
+  │                   │               │   Week     │
+  └───────────────────┴───────────────┴───────────┘
+  ```
+- Archive tab is read-only with a "Clear Archive" bulk delete — requires confirmation, irreversible, removes all `archived` items
+- Todos and tasks are separate entities in separate databases with separate status vocabularies:
+  - Todos: `backlog / next-week / this-week / today / done / monitor / workstreams / archived` — lightweight, personal
+  - Tasks: `backlog / ready / in-progress / blocked / review / done / archived` — tracked, linked to tickets/PRs/docs
+- Drag-and-drop uses a counter pattern to handle nested elements without flicker: `dragCounter++` on enter, `dragCounter--` on leave, apply highlight only when counter > 0
+- Optimistic update on drag: move card in local state immediately, then sync with API, then full refresh — no waiting for the server
+- Edit modal has dirty tracking: Save button disabled until a field changes AND name is non-empty
+- Tab state encoded in URL search params (`?tab=backlog`) — back button navigation works, state survives refresh
+
+## Repo Management
+
+- Three support tiers derived at runtime from two boolean fields (never stored as a tier column):
+  ```
+  venv_configured=true  AND tests_configured=true  → Fully Supported  (green)
+  venv_configured=true  OR  tests_configured=true  → Tracked          (yellow)
+  neither                                           → Discovered       (gray)
+  ```
+- Repo schema: `name, origin, venv (enum), venv_configured, tests_configured, custom_test_handling, notes` — capability bits, not status
+- `venv` field is an enum routing hint, not a boolean: `pyproject` (single venv at root), `monorepo` (per-subproject venvs), `none` (skip) — determines workspace setup strategy
+- `notes` field captures operational blockers: "needs libomp", "private pip index unreachable", "macOS-only, no Linux wheels" — explains why `venv_configured=false` despite being a known repo
+- Rows with notes shown in warning color — the note is a signal, not metadata
+- Edit modal shows derived "Fully Supported" badge that recomputes live as user toggles the two flags — immediate visual feedback:
+  ```
+  [✓] Venv Configured
+  [✗] Tests Configured
+  ──────────────────────
+  Status: TRACKED  (not fully supported yet)
+  ```
+- Two separate repo views with different concerns:
+  - Metadata repos — all tracked repos, configurable, filterable, stable
+  - Git repos — subset with rich commit history, tags, release management; expensive to fetch, cached aggressively
+- Git commit graph rendered with Unicode box drawing: main lane vs branch lanes in different colors, release tags as larger nodes, "untagged commits since last release" highlighted in orange as a signal to cut a release
+- Origin resolution tries DB lookup first, then falls back to platform conventions (Bitbucket org, then GitHub org) — warns if origin was guessed
+- Host extracted from `origin` field for filtering and badging: `github.com` → GitHub, `bitbucket.org` → Bitbucket
+- Batch filter → action pattern: filter list, select multiple, apply update to all selected — useful for "mark all pyproject repos as tests_configured"
+
+## Settings / Data Source Management
+
+- Settings as a dedicated screen with sidebar nav: General, Data Sources, Repositories — each a full subpage, not a modal
+- Data source list as a table, one row per source:
+  ```
+  ┌─ Source ──────────┬─ Status ──┬─ Last Refreshed ─┬─ Interval ─┬─ Data ─┬─ ↻ ─┐
+  │ Pull Requests      │ ✓ OK      │ 3m ago           │ 5m         │ 👁     │  ↻  │
+  │ Flux Errors        │ ✗ Error   │ 45m ago          │ 10m        │ —      │  ↻  │
+  │ E2E Tests          │ 🔄 ...    │ just now         │ 5m         │ 👁     │  ↻  │
+  └───────────────────┴───────────┴──────────────────┴────────────┴────────┴──────┘
+  ```
+- Status badge states: ✓ OK (green), ✗ Error (red, tooltip shows message), 🔄 Refreshing (blue), ⏳ Never (gray)
+- Error badge is hoverable — shows the actual error message inline; don't bury it in a modal
+- Interval column is click-to-edit inline — number input appears in place, Enter to save, Escape to cancel; no modal needed
+- Interval = 0 means disabled — unifies "pause" and "configure rate" into one field
+- Shows both current interval and default: "10m (default: 5m)" when customized — never hides configuration drift
+- Data preview button (👁) opens a modal showing the raw cached JSON — disabled until data exists and is under 500KB; tooltip explains why when disabled
+- Immediate saves — no "Save" button anywhere; changes take effect on Enter/confirm
+- "Last refreshed" column updates via a 30-second background timer without re-fetching — relative times stay fresh locally
+- Lazy SSE connection: wait 3 seconds after page load before opening the event stream — lets initial data fetches complete first
+- Separate `last-refreshed.json` file persists refresh timestamps across restarts — "3m ago" survives a process restart
+- Startup strategy: refresh only sources that are stale (older than their interval), serve cached data for the rest — don't refetch everything on launch
+- Loading spinner with 3-second timeout: if no data arrives, show "No sources registered" — never spin forever
+
+## Workspace Management
+
+- Two-tier directory structure: permanent read-only reference + ephemeral task working copies:
+  ```
+  workspaces/
+  ├── _CANONICAL/              ← always on default branch, no venv, never edited
+  │   └── repos/
+  │       ├── repo-a/
+  │       └── repo-b/
+  └── TICKET-123/              ← one per task, deleted after task complete
+      └── repos/
+          ├── repo-a/          ← on feature branch, has .venv
+          └── repo-b/          ← same feature branch, has .venv
+  ```
+- `_CANONICAL` is for reading (browsing code, URL resolution) — agents are explicitly forbidden from making changes there
+- One workspace per task; one workspace can span multiple repos (all on the same feature branch)
+- Workspace ID = ticket/task key (e.g., `TICKET-123`) — implies branch name by default, overridable with `--branch`
+- Split-install strategy for fast venv setup — avoids 12+ minute dependency resolution:
+  ```
+  Standard:      uv pip install -e .[extras]          → ~12 min (resolution + download)
+  Split install:
+    Step 1:      uv pip install --no-deps -r lockfile  → ~8s  (download only, no resolution)
+    Step 2:      uv pip install --no-deps -e .[extras]  → ~2s  (editable install, deps satisfied)
+    Total:                                              → ~10s
+  ```
+  Requires a pre-computed lockfile (`uv.lock`, `pinned-versions.txt`, or `lockfiles/3.11/lockfile.txt`); falls back to full resolution if absent
+- Three venv methods auto-detected from repo structure:
+  - `pyproject` — single `.venv` at repo root (most repos)
+  - `monorepo` — per-subproject `.venvs`, set up in parallel via thread pool
+  - `none` — skip venv entirely (non-Python or special repos)
+- Python version read from `.python-version` file (pyenv format), falls back to `3.11`
+- Cleanup is safe: check for unpushed commits before deleting (`git log @{u}..HEAD`); exit with error if any found — agent must confirm before proceeding
+- `prepare` command resets a repo to default branch and creates a new feature branch — used to reuse a workspace across multiple iterations without a fresh clone
+- `commit-push` wraps the full push workflow in one command: stage specified files → commit (message from stdin) → optional squash → rebase on base branch → `--force-with-lease` push
+- Always-fresh per task: workspaces are created fresh, worked in, then deleted — no reuse across tasks
+- Workspace-to-task association: task record stores `jira_tickets` field; workspace path derived from it; agent uses this to know where to work
+- Safety on cleanup: if workspace contains unpushed commits, emit `UNPUSHED_CHANGES` and exit non-zero — agent must get confirmation before deleting
