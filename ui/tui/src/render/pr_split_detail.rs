@@ -1,4 +1,4 @@
-use domain::{CiStatus, PullRequest};
+use domain::{CiStatus, PullRequest, ReviewDecision};
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
@@ -6,7 +6,7 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use crate::display::format_age_short;
+use crate::display::{format_age_short, merge_blocker_word};
 
 use super::{dim, pr_card::pr_status_text, urgency_color, wrap_text};
 
@@ -196,6 +196,91 @@ fn truncate(s: &str, max: usize) -> String {
         let mut t: String = chars[..max - 1].iter().collect();
         t.push('…');
         t
+    }
+}
+
+/// Metadata lines for the right column of the two-column PR detail pane.
+///
+/// Returned in display order: checks, status, reviews (if any), comments,
+/// blocker (if any), diff, author, updated, repo, branch.
+pub(super) fn pr_right_column_lines(pr: &PullRequest) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+
+    lines.push(field_row_spans("checks", check_status_spans(pr.ci_status)));
+    lines.push(field_row_spans(
+        "status",
+        review_decision_spans(pr.review_decision),
+    ));
+
+    if pr.approval_count > 0 {
+        let label = if pr.approval_count == 1 {
+            "1 approval".to_string()
+        } else {
+            format!("{} approvals", pr.approval_count)
+        };
+        lines.push(field_row_plain("reviews", &label));
+    }
+
+    let comment_label = match pr.comment_count {
+        1 => "1 comment".to_string(),
+        n => format!("{n} comments"),
+    };
+    lines.push(field_row_plain("comments", &comment_label));
+
+    if let Some(blocker) = pr.merge_blocker {
+        lines.push(field_row_spans(
+            "blocker",
+            vec![Span::styled(
+                merge_blocker_word(blocker),
+                Style::default().fg(Color::Red),
+            )],
+        ));
+    }
+
+    let additions: u32 = pr.changed_files.iter().map(|f| f.additions).sum();
+    let deletions: u32 = pr.changed_files.iter().map(|f| f.deletions).sum();
+    let mut diff = diff_spans(additions, deletions);
+    diff.push(Span::raw(format!(" in {} files", pr.total_changed_files)));
+    lines.push(field_row_spans("diff", diff));
+
+    lines.push(field_row_plain("author", &format!("@{}", pr.author)));
+    lines.push(field_row_plain(
+        "updated",
+        &format!("{} ago", format_age_short(pr.age)),
+    ));
+    lines.push(field_row_plain("repo", &pr.repo.to_string()));
+    lines.push(field_row_plain("branch", &pr.head_branch));
+
+    lines
+}
+
+fn check_status_spans(ci: Option<CiStatus>) -> Vec<Span<'static>> {
+    match ci {
+        Some(CiStatus::Success) => {
+            vec![Span::styled("✓ passing", Style::default().fg(Color::Green))]
+        }
+        Some(CiStatus::Failure) => vec![Span::styled("✗ failing", Style::default().fg(Color::Red))],
+        Some(CiStatus::Pending) => vec![Span::styled(
+            "⏳ pending",
+            Style::default().fg(Color::Yellow),
+        )],
+        Some(CiStatus::Neutral) => vec![Span::styled("○ neutral", dim())],
+        None => vec![Span::styled("(none)", dim())],
+    }
+}
+
+fn review_decision_spans(decision: Option<ReviewDecision>) -> Vec<Span<'static>> {
+    match decision {
+        Some(ReviewDecision::Approved) => {
+            vec![Span::styled("Approved", Style::default().fg(Color::Green))]
+        }
+        Some(ReviewDecision::ChangesRequested) => {
+            vec![Span::styled(
+                "Changes requested",
+                Style::default().fg(Color::Red),
+            )]
+        }
+        None => vec![Span::styled("0 reviews", dim())],
     }
 }
 
@@ -417,5 +502,111 @@ mod tests {
         let lines: Vec<Line<'static>> = (0..3).map(|i| Line::from(format!("line {i}"))).collect();
         let result = apply_overflow_hint(lines.clone(), 0);
         assert_eq!(result.len(), 3);
+    }
+
+    // --- pr_right_column_lines ---
+
+    use super::pr_right_column_lines;
+
+    fn pr_with_all_fields() -> PullRequest {
+        PullRequest {
+            number: 42,
+            title: "feat: add two-column PR detail".to_string(),
+            repo: RepoSlug::new("ooloth", "hub"),
+            url: "https://github.com/ooloth/hub/pull/42".to_string(),
+            age: Duration::days(3),
+            urgency: Urgency::High,
+            kind: PrKind::ToReview,
+            author: "alice".to_string(),
+            review_decision: Some(ReviewDecision::Approved),
+            approval_count: 2,
+            comment_count: 5,
+            head_branch: "feat/two-col".to_string(),
+            base_branch: "main".to_string(),
+            body: Some("Some description.".to_string()),
+            ci_status: Some(CiStatus::Success),
+            changed_files: vec![
+                ChangedFile {
+                    path: "ui/tui/src/render/mod.rs".to_string(),
+                    additions: 30,
+                    deletions: 10,
+                    patch: None,
+                },
+                ChangedFile {
+                    path: "ui/tui/src/render/pr_split_detail.rs".to_string(),
+                    additions: 80,
+                    deletions: 5,
+                    patch: None,
+                },
+            ],
+            total_changed_files: 2,
+            review_threads: vec![],
+            pr_comments: vec![],
+            merge_blocker: Some(MergeBlocker::Conflict),
+        }
+    }
+
+    #[test]
+    fn pr_right_column_lines_snapshot_fully_populated_pr() {
+        let lines = pr_right_column_lines(&pr_with_all_fields());
+        let text: Vec<String> = lines.iter().map(line_text).collect();
+        insta::assert_snapshot!(text.join("\n"));
+    }
+
+    #[test]
+    fn pr_right_column_lines_omits_reviews_row_when_approval_count_is_zero() {
+        let mut p = pr_with_all_fields();
+        p.approval_count = 0;
+        p.review_decision = None;
+        let lines = pr_right_column_lines(&p);
+        let has_reviews_row = lines.iter().any(|l| line_text(l).contains("reviews "));
+        assert!(!has_reviews_row, "expected no reviews row");
+    }
+
+    #[rstest]
+    #[case::one(1, "1 approval")]
+    #[case::many(3, "3 approvals")]
+    fn pr_right_column_lines_shows_reviews_row_when_approval_count_nonzero(
+        #[case] count: u32,
+        #[case] expected: &str,
+    ) {
+        let mut p = pr_with_all_fields();
+        p.approval_count = count;
+        let lines = pr_right_column_lines(&p);
+        let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(
+            all_text.contains(expected),
+            "expected '{expected}' in:\n{all_text}"
+        );
+    }
+
+    #[test]
+    fn pr_right_column_lines_omits_blocker_row_when_merge_blocker_is_none() {
+        let mut p = pr_with_all_fields();
+        p.merge_blocker = None;
+        let lines = pr_right_column_lines(&p);
+        let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(
+            !all_text.contains("blocker"),
+            "expected no blocker row, got:\n{all_text}"
+        );
+    }
+
+    #[rstest]
+    #[case::conflict(MergeBlocker::Conflict, "conflict")]
+    #[case::behind(MergeBlocker::Behind, "behind")]
+    #[case::blocked(MergeBlocker::Blocked, "blocked")]
+    fn pr_right_column_lines_shows_blocker_row_with_correct_word(
+        #[case] blocker: MergeBlocker,
+        #[case] expected_word: &str,
+    ) {
+        let mut p = pr_with_all_fields();
+        p.merge_blocker = Some(blocker);
+        let lines = pr_right_column_lines(&p);
+        let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(
+            all_text.contains(expected_word),
+            "expected '{expected_word}' in:\n{all_text}"
+        );
     }
 }

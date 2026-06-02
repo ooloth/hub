@@ -11,8 +11,8 @@ use ratatui::{
 
 use crate::display::{
     flat_row_line, flat_row_urgency, format_age_short, log_detail_view_from_group,
-    log_detail_view_from_item, merge_blocker_word, DisplayItem, Filter, FlatRow, LineParts,
-    LogDetailView, LogLine, RowSeparator, SelectedItemKind,
+    log_detail_view_from_item, DisplayItem, Filter, FlatRow, LineParts, LogDetailView, LogLine,
+    RowSeparator, SelectedItemKind,
 };
 use crate::state::{
     compute_investigate_action, App, DetailMode, InvestigateAction, RefreshState, Screen,
@@ -637,126 +637,41 @@ fn render_pr_detail(
     scroll: &mut u16,
     area: Rect,
 ) {
-    let inner_width = area.width.saturating_sub(2) as usize;
-
-    let bold = Style::default().add_modifier(Modifier::BOLD);
-
-    let ci_span = match pr.ci_status {
-        Some(domain::CiStatus::Success) => {
-            Some(Span::styled("✓", Style::default().fg(Color::Green)))
-        }
-        Some(domain::CiStatus::Failure) => Some(Span::styled("✗", Style::default().fg(Color::Red))),
-        Some(domain::CiStatus::Pending) => {
-            Some(Span::styled("…", Style::default().fg(Color::Yellow)))
-        }
-        Some(domain::CiStatus::Neutral) => Some(Span::styled("~", dim())),
-        None => None,
-    };
-
-    let mut title_spans: Vec<Span> = vec![Span::raw(format!(" #{} · {} ", pr.number, pr.title))];
-    if let Some(ci) = ci_span {
-        title_spans.push(ci);
-        title_spans.push(Span::raw(" "));
-    }
-    if pr.merge_blocker.is_some() {
-        title_spans.push(Span::styled("! ", Style::default().fg(Color::Red)));
-    }
-    let left_title = Line::from(title_spans).style(bold);
-    let right_title = Line::from(format!(" @{} · {} ", pr.author, format_age_short(pr.age),))
-        .style(bold)
-        .right_aligned();
-
-    let bottom_right = Line::from(format!(" {} ", pr.repo))
-        .style(bold)
-        .right_aligned();
-
-    let review_status_span = match pr.review_decision {
-        Some(domain::ReviewDecision::ChangesRequested) => Some(Span::styled(
-            "Changes requested",
-            Style::default().fg(Color::Red),
-        )),
-        Some(domain::ReviewDecision::Approved) => {
-            let label = match pr.approval_count {
-                1 => "1 approval".to_string(),
-                n => format!("{n} approvals"),
-            };
-            Some(Span::styled(label, Style::default().fg(Color::Green)))
-        }
-        None => Some(Span::styled("0 reviews", bold)),
-    };
-    let comment_span = match pr.comment_count {
-        0 => None,
-        1 => Some(Span::styled("1 comment", bold)),
-        n => Some(Span::styled(format!("{n} comments"), bold)),
-    };
-    let files_spans: Option<Vec<Span>> = if pr.total_changed_files > 0 {
-        let total_add: u32 = pr.changed_files.iter().map(|f| f.additions).sum();
-        let total_del: u32 = pr.changed_files.iter().map(|f| f.deletions).sum();
-        let n = pr.total_changed_files;
-        let file_label = if n == 1 {
-            "1 file".to_string()
-        } else {
-            format!("{n} files")
-        };
-        Some(vec![
-            Span::styled(file_label, bold),
-            Span::styled(" · ", bold),
-            Span::styled(format!("+{total_add}"), Style::default().fg(Color::Green)),
-            Span::styled(format!(" -{total_del}"), Style::default().fg(Color::Red)),
-        ])
-    } else {
-        None
-    };
-
-    let blocker_span = pr
-        .merge_blocker
-        .map(|b| Span::styled(merge_blocker_word(b), Style::default().fg(Color::Red)));
-
-    // Build bottom-left as: [conflict/behind/blocked ·] [review status ·] [X comments ·] [X files · +Y -Z]
-    let mut left_spans: Vec<Span> = vec![Span::raw(" ")];
-    let mut has_content = false;
-    if let Some(b) = blocker_span {
-        left_spans.push(b);
-        has_content = true;
-    }
-    if let Some(s) = review_status_span {
-        if has_content {
-            left_spans.push(Span::styled(" · ".to_string(), bold));
-        }
-        left_spans.push(s);
-        has_content = true;
-    }
-    if let Some(c) = comment_span {
-        if has_content {
-            left_spans.push(Span::styled(" · ".to_string(), bold));
-        }
-        left_spans.push(c);
-        has_content = true;
-    }
-    if let Some(fs) = files_spans {
-        if has_content {
-            left_spans.push(Span::styled(" · ".to_string(), bold));
-        }
-        left_spans.extend(fs);
-        has_content = true;
-    }
-    let bottom_left: Option<Line> = if has_content {
-        left_spans.push(Span::raw(" "));
-        Some(Line::from(left_spans))
-    } else {
-        None
-    };
-
-    let mut block = Block::default()
-        .title(left_title)
-        .title(right_title)
-        .title_bottom(bottom_right)
+    let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(FOCUS_COLOR));
-    if let Some(bl) = bottom_left {
-        block = block.title_bottom(bl);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let [body_area, divider_area, meta_raw] = Layout::horizontal([
+        Constraint::Percentage(60),
+        Constraint::Length(1),
+        Constraint::Fill(1),
+    ])
+    .areas(inner);
+
+    {
+        let buf = frame.buffer_mut();
+        for y in inner.y..inner.y + inner.height {
+            buf.set_string(divider_area.x, y, "│", Style::default());
+        }
+        buf.set_string(divider_area.x, area.y, "┬", Style::default());
+        buf.set_string(
+            divider_area.x,
+            area.y + area.height - 1,
+            "┴",
+            Style::default(),
+        );
     }
+
+    let meta_area = Rect {
+        x: meta_raw.x + 1,
+        width: meta_raw.width.saturating_sub(1),
+        ..meta_raw
+    };
+
+    let body_width = body_area.width as usize;
 
     let raw_body = pr
         .body
@@ -770,7 +685,7 @@ fn render_pr_detail(
 
     if !pr.pr_comments.is_empty() {
         let label = " top-level comments ";
-        let fill_len = inner_width.saturating_sub(label.chars().count() + 4);
+        let fill_len = body_width.saturating_sub(label.chars().count() + 4);
         let fill = "─".repeat(fill_len);
         let lav = Style::default().fg(LAVENDER);
         content.lines.push(
@@ -787,20 +702,25 @@ fn render_pr_detail(
         }
     }
 
-    let mut diff = pr_diff_lines(pr, inner_width);
+    let mut diff = pr_diff_lines(pr, body_width);
     content.lines.append(&mut diff);
 
     let total_lines = content.lines.len();
-    let viewport_height = area.height.saturating_sub(2) as usize;
+    let viewport_height = body_area.height as usize;
     let max_scroll = total_lines.saturating_sub(viewport_height) as u16;
     *scroll = (*scroll).min(max_scroll);
 
-    let paragraph = Paragraph::new(content)
-        .block(block)
-        .wrap(ratatui::widgets::Wrap { trim: false })
-        .scroll((*scroll, 0));
+    frame.render_widget(
+        Paragraph::new(content)
+            .wrap(ratatui::widgets::Wrap { trim: false })
+            .scroll((*scroll, 0)),
+        body_area,
+    );
 
-    frame.render_widget(paragraph, area);
+    frame.render_widget(
+        Paragraph::new(pr_split_detail::pr_right_column_lines(pr)),
+        meta_area,
+    );
 }
 
 fn unified_title(filter: &Filter, query_input: Option<&str>) -> String {

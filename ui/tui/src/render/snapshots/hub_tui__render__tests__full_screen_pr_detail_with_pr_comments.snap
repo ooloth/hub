@@ -2,38 +2,38 @@
 source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
-╭ #102 · Add PrDetail screen ──────────────────────────────────── @ooloth · 1d ╮
-│                                                                              │
-│## Summary                                                                    │
-│                                                                              │
-│Adds a detail screen for PRs.                                                 │
-│                                                                              │
-│## Why                                                                        │
-│                                                                              │
-│Readability from terminal without leaving the TUI.                            │
-│                                                                              │
-│── top-level comments ────────────────────────────────────────────────────────│
-│                                                                              │
-│ @reviewer · 1d                                                               │
-│ Looks good overall, a few nits below.                                        │
-│                                                                              │
-│ @reviewer2 · 6h                                                              │
-│ LGTM from my side.                                                           │
-│                                                                              │
-│── src/main.rs ──────────────────────────────────────────────────────── +3 -1 │
-│                                                                              │
-│@@ -10,7 +10,9 @@                                                             │
-│ context                                                                      │
-│-old line                                                                     │
-│+new line                                                                     │
-│+another new                                                                  │
-│+third new                                                                    │
-│                                                                              │
-│── assets/logo.png ──────────────────────────────────────────────────── +0 -0 │
-│ (binary)                                                                     │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-╰ 0 reviews · 2 comments · 2 files · +3 -1 ──────────────────────── ooloth/hub ╯
+╭───────────────────────────────────────────────┬──────────────────────────────╮
+│                                               │   checks     (none)          │
+│## Summary                                     │   status     0 reviews       │
+│                                               │   comments   2 comments      │
+│Adds a detail screen for PRs.                  │   diff       +3 −1 in 2 files│
+│                                               │   author     @ooloth         │
+│## Why                                         │   updated    1d ago          │
+│                                               │   repo       ooloth/hub      │
+│Readability from terminal without leaving the  │   branch     feat/pr-detail  │
+│TUI.                                           │                              │
+│                                               │                              │
+│── top-level comments ─────────────────────────│                              │
+│                                               │                              │
+│ @reviewer · 1d                                │                              │
+│ Looks good overall, a few nits below.         │                              │
+│                                               │                              │
+│ @reviewer2 · 6h                               │                              │
+│ LGTM from my side.                            │                              │
+│                                               │                              │
+│── src/main.rs ───────────────────────── +3 -1 │                              │
+│                                               │                              │
+│@@ -10,7 +10,9 @@                              │                              │
+│ context                                       │                              │
+│-old line                                      │                              │
+│+new line                                      │                              │
+│+another new                                   │                              │
+│+third new                                     │                              │
+│                                               │                              │
+│── assets/logo.png ───────────────────── +0 -0 │                              │
+│ (binary)                                      │                              │
+│                                               │                              │
+│                                               │                              │
+│                                               │                              │
+╰───────────────────────────────────────────────┴──────────────────────────────╯
   [o] open · [d] diff · [v] review · [m] merge · [i] ask · [Esc] back

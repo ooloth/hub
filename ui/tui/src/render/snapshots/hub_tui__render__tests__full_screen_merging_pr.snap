@@ -2,33 +2,33 @@
 source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
-╭ #102 · Add PrDetail screen ──────────────────────────────────────────────────────────────────────────── @ooloth · 1d ╮
-│                                                                                                                      │
-│## Summary                                                                                                            │
-│                                                                                                                      │
-│Adds a detail screen for PRs.                                                                                         │
-│                                                                                                                      │
-│## Why                                                                                                                │
-│                                                                                                                      │
-│Readability from terminal without leaving the TUI.                                                                    │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-╰ 0 reviews · 2 comments ────────────────────────────────────────────────────────────────────────────────── ooloth/hub ╯
+╭───────────────────────────────────────────────────────────────────────┬──────────────────────────────────────────────╮
+│                                                                       │   checks     (none)                          │
+│## Summary                                                             │   status     0 reviews                       │
+│                                                                       │   comments   2 comments                      │
+│Adds a detail screen for PRs.                                          │   diff       +0 −0 in 0 files                │
+│                                                                       │   author     @ooloth                         │
+│## Why                                                                 │   updated    1d ago                          │
+│                                                                       │   repo       ooloth/hub                      │
+│Readability from terminal without leaving the TUI.                     │   branch     feat/pr-detail                  │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+╰───────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────╯
  Squash and merge #102 into main?  [↩] confirm · [Esc] cancel

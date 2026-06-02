@@ -2,33 +2,33 @@
 source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
-╭ #102 · Add PrDetail screen ──────────────────────────────────── @ooloth · 1d ╮
-│                                                                              │
-│## Summary                                                                    │
-│                                                                              │
-│Adds a detail screen for PRs.                                                 │
-│                                                                              │
-│## Why                                                                        │
-│                                                                              │
-│Readability from terminal without leaving the TUI.                            │
-│                                                                              │
-│── src/main.rs ──────────────────────────────────────────────────────── +3 -1 │
-│                                                                              │
-│@@ -10,7 +10,9 @@                                                             │
-│ context                                                                      │
-│-old line                                                                     │
-│+new line                                                                     │
-│+another new                                                                  │
-│+third new                                                                    │
-│                                                                              │
-│── assets/logo.png ──────────────────────────────────────────────────── +0 -0 │
-│ (binary)                                                                     │
-│                                                                              │
-│ … and 148 more files not shown                                               │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-╰ 0 reviews · 2 comments · 150 files · +3 -1 ────────────────────── ooloth/hub ╯
+╭───────────────────────────────────────────────┬──────────────────────────────╮
+│                                               │   checks     (none)          │
+│## Summary                                     │   status     0 reviews       │
+│                                               │   comments   2 comments      │
+│Adds a detail screen for PRs.                  │   diff       +3 −1 in 150 fil│
+│                                               │   author     @ooloth         │
+│## Why                                         │   updated    1d ago          │
+│                                               │   repo       ooloth/hub      │
+│Readability from terminal without leaving the  │   branch     feat/pr-detail  │
+│TUI.                                           │                              │
+│                                               │                              │
+│── src/main.rs ───────────────────────── +3 -1 │                              │
+│                                               │                              │
+│@@ -10,7 +10,9 @@                              │                              │
+│ context                                       │                              │
+│-old line                                      │                              │
+│+new line                                      │                              │
+│+another new                                   │                              │
+│+third new                                     │                              │
+│                                               │                              │
+│── assets/logo.png ───────────────────── +0 -0 │                              │
+│ (binary)                                      │                              │
+│                                               │                              │
+│ … and 148 more files not shown                │                              │
+│                                               │                              │
+│                                               │                              │
+│                                               │                              │
+│                                               │                              │
+╰───────────────────────────────────────────────┴──────────────────────────────╯
   [o] open · [d] diff · [v] review · [m] merge · [i] ask · [Esc] back

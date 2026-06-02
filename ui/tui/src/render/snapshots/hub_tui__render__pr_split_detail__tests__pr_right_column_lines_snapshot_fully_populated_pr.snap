@@ -1,0 +1,14 @@
+---
+source: ui/tui/src/render/pr_split_detail.rs
+expression: "text.join(\"\\n\")"
+---
+  checks     ✓ passing
+  status     Approved
+  reviews    2 approvals
+  comments   5 comments
+  blocker    conflict
+  diff       +110 −15 in 2 files
+  author     @alice
+  updated    3d ago
+  repo       ooloth/hub
+  branch     feat/two-col
