@@ -7,6 +7,7 @@ use crossterm::{
 };
 use futures::StreamExt;
 use ratatui::{backend::CrosstermBackend, Terminal};
+use secrecy::ExposeSecret;
 use std::{io, time::Duration};
 use tokio::sync::mpsc;
 use workflows::status::{StatusReport, SCHEMA_VERSION};
@@ -79,7 +80,7 @@ impl Drop for TerminalSession {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let config = config::Config::load()?;
+    let config = config::Config::load().await?;
     let conn = store::status::connect()?;
     store::status::ensure_table(&conn)?;
 
@@ -152,6 +153,7 @@ fn spawn_fetch(config: &config::Config, tx: mpsc::Sender<Result<StatusReport>>) 
         private_workflow_names: config.private_monitor_workflow_names(),
         loki_envs: config.loki_envs(),
         gcp_envs: config.gcp_envs(),
+        extra_credentials: config.extra_credentials.clone(),
     };
 
     tokio::spawn(async move {
@@ -167,7 +169,7 @@ fn spawn_git_fetch(config: &config::Config) {
         .map(|p| (p.name.clone(), p.repo.clone()))
         .collect();
     tokio::spawn(async move {
-        if let Err(e) = workflows::fetch::run(&projects, &github_token).await {
+        if let Err(e) = workflows::fetch::run(&projects, github_token.expose_secret()).await {
             eprintln!("hub fetch: {e}");
         }
     });
@@ -191,6 +193,7 @@ fn request_refresh(
             private_workflow_names: config.private_monitor_workflow_names(),
             loki_envs: config.loki_envs(),
             gcp_envs: config.gcp_envs(),
+            extra_credentials: config.extra_credentials.clone(),
         };
         let git_params = include_git_fetch.then(|| {
             let token = config.github_token.clone();
@@ -206,7 +209,7 @@ fn request_refresh(
             tokio::time::sleep(d).await;
             let _ = tx.send(workflows::status::run(params).await).await;
             if let Some((token, projects)) = git_params {
-                if let Err(e) = workflows::fetch::run(&projects, &token).await {
+                if let Err(e) = workflows::fetch::run(&projects, token.expose_secret()).await {
                     eprintln!("hub fetch: {e}");
                 }
             }
@@ -290,7 +293,7 @@ async fn run_loop(
                         investigations::ci::config(&repo, &run_url),
                         investigations::WorktreeSpec::EphemeralFresh { repo },
                         config,
-                        &config.github_token,
+                        config.github_token.expose_secret(),
                     )
                     .await
                     {
@@ -302,7 +305,7 @@ async fn run_loop(
                         investigations::issue::config(&repo, number),
                         investigations::WorktreeSpec::EphemeralFresh { repo },
                         config,
-                        &config.github_token,
+                        config.github_token.expose_secret(),
                     )
                     .await
                     {
@@ -332,7 +335,7 @@ async fn run_loop(
                             head_branch,
                         },
                         config,
-                        &config.github_token,
+                        config.github_token.expose_secret(),
                     )
                     .await
                     {
@@ -354,7 +357,7 @@ async fn run_loop(
                             head_branch,
                         },
                         config,
-                        &config.github_token,
+                        config.github_token.expose_secret(),
                     )
                     .await
                     {
@@ -377,7 +380,7 @@ async fn run_loop(
                             head_branch,
                         },
                         config,
-                        &config.github_token,
+                        config.github_token.expose_secret(),
                     )
                     .await
                     {
@@ -394,7 +397,7 @@ async fn run_loop(
                         number,
                         &head_branch,
                         config,
-                        &config.github_token,
+                        config.github_token.expose_secret(),
                     )
                     .await
                     {
@@ -411,7 +414,7 @@ async fn run_loop(
                         number,
                         &head_branch,
                         config,
-                        &config.github_token,
+                        config.github_token.expose_secret(),
                     )
                     .await
                     {
@@ -441,7 +444,7 @@ async fn run_loop(
                         ),
                         investigations::WorktreeSpec::Ephemeral { project },
                         config,
-                        &config.github_token,
+                        config.github_token.expose_secret(),
                     )
                     .await
                     {
@@ -463,7 +466,7 @@ async fn run_loop(
                         ),
                         investigations::WorktreeSpec::Ephemeral { project },
                         config,
-                        &config.github_token,
+                        config.github_token.expose_secret(),
                     )
                     .await
                     {
@@ -472,13 +475,17 @@ async fn run_loop(
                 }
                 #[cfg(feature = "private")]
                 Effect::LaunchMediaBlocked { title, error } => {
-                    let result = match investigations::media::config(&title, &error) {
+                    let result = match investigations::media::config(
+                        &title,
+                        &error,
+                        &config.extra_credentials,
+                    ) {
                         Ok(cfg) => {
                             investigations::launch(
                                 cfg,
                                 investigations::WorktreeSpec::CurrentDir,
                                 config,
-                                &config.github_token,
+                                config.github_token.expose_secret(),
                             )
                             .await
                         }
@@ -494,7 +501,7 @@ async fn run_loop(
                     labels,
                 } => {
                     match clients::github::set_issue_labels(
-                        &config.github_token,
+                        config.github_token.expose_secret(),
                         &repo,
                         number,
                         &labels,
@@ -512,8 +519,12 @@ async fn run_loop(
                     }
                 }
                 Effect::MergePullRequest { repo, number } => {
-                    match clients::github::merge_pull_request(&config.github_token, &repo, number)
-                        .await
+                    match clients::github::merge_pull_request(
+                        config.github_token.expose_secret(),
+                        &repo,
+                        number,
+                    )
+                    .await
                     {
                         Ok(()) => {
                             app.ui.flash = Some(format!("Merged #{number}"));
@@ -531,7 +542,7 @@ async fn run_loop(
                     labels,
                 } => {
                     match clients::github::dismiss_issue(
-                        &config.github_token,
+                        config.github_token.expose_secret(),
                         &repo,
                         number,
                         &reason,

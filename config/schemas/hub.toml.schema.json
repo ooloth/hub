@@ -4,7 +4,32 @@
   "description": "Per-device project and workflow configuration for hub.",
   "type": "object",
   "additionalProperties": false,
+  "required": ["credentials"],
   "properties": {
+    "credentials": {
+      "type": "object",
+      "description": "Runtime credentials resolved at startup. Values are 1Password references (op://...) or plain strings. Keys for hub-private workflows are permitted via additionalProperties.",
+      "required": ["github_token", "github_username"],
+      "additionalProperties": { "type": "string" },
+      "properties": {
+        "github_token": {
+          "type": "string",
+          "description": "GitHub personal access token. Required by all GitHub workflows."
+        },
+        "github_username": {
+          "type": "string",
+          "description": "GitHub username of the authenticated user."
+        },
+        "linear_token": {
+          "type": "string",
+          "description": "Linear API key. Required when any linear workflow is configured."
+        },
+        "loki_token": {
+          "type": "string",
+          "description": "Loki bearer token. Optional — omit for VPN-only endpoints that require no auth."
+        }
+      }
+    },
     "project": {
       "type": "array",
       "description": "Codebases to observe on this device.",

@@ -3,6 +3,15 @@ source: config/src/toml.rs
 expression: result
 ---
 HubToml {
+    credentials: CredentialsToml {
+        github_token: "op://Scripts/GitHub/token",
+        github_username: "testuser",
+        linear_token: Some(
+            "op://Scripts/Linear/key",
+        ),
+        loki_token: None,
+        extra: {},
+    },
     project: [
         Project {
             name: "myapp",

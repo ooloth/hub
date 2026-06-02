@@ -6,7 +6,9 @@
 [dependencies]
   anyhow = "1"
   domain = { path = "../domain" }
+  secrecy = "0.8"
   serde = { version = "1", features = ["derive"] }
+  tokio = { version = "1", features = ["full"] }
   toml = "0.8"
 
 [dev-dependencies]

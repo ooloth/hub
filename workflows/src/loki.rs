@@ -1,6 +1,7 @@
 use anyhow::Result;
 use chrono::Utc;
 use domain::{LokiEntry, LokiEnv, Urgency};
+use secrecy::ExposeSecret;
 
 pub async fn run(env: &LokiEnv) -> Result<Vec<LokiEntry>> {
     let mut results = Vec::new();
@@ -8,7 +9,7 @@ pub async fn run(env: &LokiEnv) -> Result<Vec<LokiEntry>> {
     for query in &env.queries {
         let entries = clients::loki::entries(
             &env.endpoint,
-            env.token.as_deref(),
+            env.token.as_ref().map(|t| t.expose_secret().as_str()),
             &query.query,
             &query.lookback,
         )

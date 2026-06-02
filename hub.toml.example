@@ -5,6 +5,16 @@
 # Schema: config/schemas/hub.toml.schema.json
 # Taplo LSP will validate this file automatically if .taplo.toml is present.
 
+# ── Credentials ───────────────────────────────────────────────────────────────
+# Values are 1Password references (op://Vault/Item/field) or plain strings.
+# Resolved at startup — no op run wrapper needed.
+
+[credentials]
+github_token    = "op://Scripts/GitHub/personal-access-token"
+github_username = "your-github-username"
+# linear_token  = "op://Scripts/Linear/api-key"   # required if using linear workflows
+# loki_token    = "op://Scripts/Loki/token"        # optional; omit for VPN-only endpoints
+
 # ── Projects without deployments ──────────────────────────────────────────────
 # Use [[project.workflow]] for codebase-level observations (PRs, issues, CI).
 

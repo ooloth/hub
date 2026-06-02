@@ -1,3 +1,4 @@
+use secrecy::Secret;
 use serde::{Deserialize, Serialize};
 
 pub mod duration_secs {
@@ -233,7 +234,8 @@ pub struct LokiEnv {
     pub project: String,
     pub env: String,
     pub endpoint: String,
-    pub token: Option<String>,
+    #[serde(skip)]
+    pub token: Option<Secret<String>>,
     pub grafana_url: Option<String>,
     pub queries: Vec<LokiQuery>,
 }

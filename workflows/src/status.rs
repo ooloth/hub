@@ -1,7 +1,9 @@
 use anyhow::Result;
 use domain::{CiFailure, Issue, LinearIssue, PullRequest, Urgency};
+use secrecy::{ExposeSecret, Secret};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
+use std::collections::HashMap;
 
 pub const SCHEMA_VERSION: i32 = 14;
 
@@ -82,15 +84,16 @@ pub struct PrivateStatusResult {
 }
 
 pub struct StatusParams {
-    pub github_token: String,
+    pub github_token: Secret<String>,
     pub github_username: String,
     pub pr_repos: Vec<domain::GithubPrsRepo>,
     pub issue_repos: Vec<String>,
     pub ci_repos: Vec<(String, String)>,
-    pub linear_token: Option<String>,
+    pub linear_token: Option<Secret<String>>,
     pub private_workflow_names: Vec<String>,
     pub loki_envs: Vec<domain::LokiEnv>,
     pub gcp_envs: Vec<domain::GcpEnv>,
+    pub extra_credentials: HashMap<String, Secret<String>>,
 }
 
 /// Fetches all status data concurrently, merges into a unified list, and sorts
@@ -99,27 +102,16 @@ pub struct StatusParams {
 /// # Errors
 /// Returns an error if any API call fails.
 pub async fn run(params: StatusParams) -> Result<StatusReport> {
+    let github_token = params.github_token.expose_secret();
     let (my_open, review_queue, my_drafts, external, issues, ci_failures, linear_issues) = tokio::join!(
-        clients::github::my_open_prs(
-            &params.github_token,
-            &params.pr_repos,
-            &params.github_username,
-        ),
-        clients::github::prs_awaiting_review(&params.github_token, &params.pr_repos),
-        clients::github::my_draft_prs(
-            &params.github_token,
-            &params.pr_repos,
-            &params.github_username,
-        ),
-        clients::github::external_prs(&params.github_token, &params.pr_repos),
-        clients::github::issues(
-            &params.github_token,
-            &params.issue_repos,
-            &params.github_username,
-        ),
-        clients::github::ci_failures(&params.github_token, &params.ci_repos),
+        clients::github::my_open_prs(github_token, &params.pr_repos, &params.github_username),
+        clients::github::prs_awaiting_review(github_token, &params.pr_repos),
+        clients::github::my_draft_prs(github_token, &params.pr_repos, &params.github_username),
+        clients::github::external_prs(github_token, &params.pr_repos),
+        clients::github::issues(github_token, &params.issue_repos, &params.github_username),
+        clients::github::ci_failures(github_token, &params.ci_repos),
         async {
-            match params.linear_token.as_deref() {
+            match params.linear_token.as_ref().map(|t| t.expose_secret()) {
                 Some(token) => clients::linear::issues(token).await,
                 None => Ok(vec![]),
             }
@@ -193,7 +185,9 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
     // Private workflows — gracefully handle failures; source names come from the result data.
     #[cfg(feature = "private")]
     {
-        let private = crate::private::status::run(params.private_workflow_names).await;
+        let private =
+            crate::private::status::run(params.private_workflow_names, &params.extra_credentials)
+                .await;
         items.extend(private.items);
         errors.extend(private.failed_sources);
     }

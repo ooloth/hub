@@ -359,7 +359,9 @@ dependencies = [
  "insta",
  "proptest",
  "rstest 0.25.0",
+ "secrecy",
  "serde",
+ "tokio",
  "toml",
 ]
 
@@ -637,6 +639,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "rstest 0.25.0",
+ "secrecy",
  "serde",
  "serde_json",
 ]
@@ -1111,6 +1114,7 @@ dependencies = [
  "ratatui",
  "rstest 0.23.0",
  "rusqlite",
+ "secrecy",
  "serde_json",
  "store",
  "syntect",
@@ -2520,6 +2524,15 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "secrecy"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9bd1c54ea06cfd2f6b63219704de0b9b4f72dcc2b8fdef820be6cd799780e91e"
+dependencies = [
+ "zeroize",
+]
 
 [[package]]
 name = "security-framework"
@@ -3979,6 +3992,7 @@ dependencies = [
  "chrono",
  "clients",
  "domain",
+ "secrecy",
  "serde",
  "serde_json",
  "store",

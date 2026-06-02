@@ -1,11 +1,23 @@
 use anyhow::{Context, Result};
 use serde::Deserialize;
+use std::collections::HashMap;
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub(crate) struct HubToml {
+    pub credentials: CredentialsToml,
     #[serde(default)]
     pub project: Vec<Project>,
     pub monitor: Option<Monitor>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct CredentialsToml {
+    pub github_token: String,
+    pub github_username: String,
+    pub linear_token: Option<String>,
+    pub loki_token: Option<String>,
+    #[serde(flatten)]
+    pub extra: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize, PartialEq)]
@@ -73,14 +85,17 @@ pub(crate) fn parse(content: &str) -> Result<HubToml> {
 }
 
 pub(crate) fn parse_file(path: &str) -> Result<HubToml> {
-    match std::fs::read_to_string(path) {
-        Ok(content) => parse(&content),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(HubToml {
-            project: vec![],
-            monitor: None,
-        }),
-        Err(e) => Err(e).context(format!("failed to read {path}")),
-    }
+    let content = std::fs::read_to_string(path).with_context(|| {
+        if std::path::Path::new(path)
+            .try_exists()
+            .unwrap_or(false)
+        {
+            format!("failed to read {path}")
+        } else {
+            format!("{path} not found — copy hub.toml.example to hub.toml and add a [credentials] section")
+        }
+    })?;
+    parse(&content)
 }
 
 #[cfg(test)]
@@ -89,11 +104,60 @@ mod tests {
     use proptest::prelude::*;
     use rstest::rstest;
 
+    const CREDENTIALS: &str = r#"
+        [credentials]
+        github_token = "test-token"
+        github_username = "testuser"
+    "#;
+
+    fn with_credentials(rest: &str) -> String {
+        format!("{CREDENTIALS}\n{rest}")
+    }
+
     #[test]
-    fn empty_file() {
-        let result = parse("").unwrap();
+    fn credentials_only_config_parses() {
+        let result = parse(CREDENTIALS).unwrap();
+        assert_eq!(result.credentials.github_token, "test-token");
+        assert_eq!(result.credentials.github_username, "testuser");
+        assert!(result.credentials.linear_token.is_none());
+        assert!(result.credentials.loki_token.is_none());
+        assert!(result.credentials.extra.is_empty());
         assert_eq!(result.project, vec![]);
         assert!(result.monitor.is_none());
+    }
+
+    #[test]
+    fn credentials_with_all_fields_parse() {
+        let result = parse(
+            r#"
+            [credentials]
+            github_token = "tok"
+            github_username = "user"
+            linear_token = "lin"
+            loki_token = "loki"
+            sonarr_url = "http://sonarr.local"
+            sonarr_api_key = "key"
+        "#,
+        )
+        .unwrap();
+        assert_eq!(result.credentials.linear_token.as_deref(), Some("lin"));
+        assert_eq!(result.credentials.loki_token.as_deref(), Some("loki"));
+        assert_eq!(
+            result
+                .credentials
+                .extra
+                .get("sonarr_url")
+                .map(String::as_str),
+            Some("http://sonarr.local")
+        );
+        assert_eq!(
+            result
+                .credentials
+                .extra
+                .get("sonarr_api_key")
+                .map(String::as_str),
+            Some("key")
+        );
     }
 
     #[rstest]
@@ -104,7 +168,7 @@ mod tests {
         #[case] name: &str,
         #[case] expected: WorkflowConfig,
     ) {
-        let toml = format!(
+        let toml = with_credentials(&format!(
             r#"
             [[project]]
             name = "hub"
@@ -113,14 +177,14 @@ mod tests {
             [[project.workflow]]
             name = "{name}"
         "#
-        );
+        ));
         let result = parse(&toml).unwrap();
         assert_eq!(result.project[0].workflow, vec![expected]);
     }
 
     #[test]
     fn github_ci_with_lookback() {
-        let result = parse(
+        let result = parse(&with_credentials(
             r#"
             [[project]]
             name = "hub"
@@ -130,7 +194,7 @@ mod tests {
             name = "github-ci"
             lookback = "48h"
         "#,
-        )
+        ))
         .unwrap();
         assert_eq!(
             result.project[0].workflow,
@@ -142,7 +206,7 @@ mod tests {
 
     #[test]
     fn github_prs_with_exclude_authors() {
-        let result = parse(
+        let result = parse(&with_credentials(
             r#"
             [[project]]
             name = "hub"
@@ -152,7 +216,7 @@ mod tests {
             name = "github-prs"
             exclude_authors = ["dependabot", "renovate"]
         "#,
-        )
+        ))
         .unwrap();
         assert_eq!(
             result.project[0].workflow,
@@ -164,7 +228,7 @@ mod tests {
 
     #[test]
     fn loki_logs_parses_with_required_fields_only() {
-        let result = parse(
+        let result = parse(&with_credentials(
             r#"
             [[project]]
             name = "myapp"
@@ -179,7 +243,7 @@ mod tests {
             title = "app errors"
             query = '{app="myapp"} | logfmt | level="error"'
         "#,
-        )
+        ))
         .unwrap();
         let env = &result.project[0].environment[0];
         assert_eq!(
@@ -199,7 +263,7 @@ mod tests {
 
     #[test]
     fn loki_logs_parses_with_lookback() {
-        let result = parse(
+        let result = parse(&with_credentials(
             r#"
             [[project]]
             name = "myapp"
@@ -215,7 +279,7 @@ mod tests {
             query = '{app="myapp",component="worker"} |= "panic"'
             lookback = "30m"
         "#,
-        )
+        ))
         .unwrap();
         assert_eq!(
             result.project[0].environment[0].workflow,
@@ -230,7 +294,7 @@ mod tests {
 
     #[test]
     fn gcp_logs_parses_with_required_fields_only() {
-        let result = parse(
+        let result = parse(&with_credentials(
             r#"
             [[project]]
             name = "myapp"
@@ -245,7 +309,7 @@ mod tests {
             title = "errors"
             query = 'resource.type="cloud_run_revision" AND severity>=ERROR'
         "#,
-        )
+        ))
         .unwrap();
         let env = &result.project[0].environment[0];
         assert_eq!(env.gcp_project.as_deref(), Some("my-org-prod"));
@@ -262,7 +326,7 @@ mod tests {
 
     #[test]
     fn gcp_logs_parses_with_lookback() {
-        let result = parse(
+        let result = parse(&with_credentials(
             r#"
             [[project]]
             name = "myapp"
@@ -279,7 +343,7 @@ mod tests {
             query = 'resource.type="cloud_run_revision" AND severity>=ERROR'
             lookback = "30m"
         "#,
-        )
+        ))
         .unwrap();
         assert_eq!(
             result.project[0].environment[0].workflow,
@@ -294,12 +358,12 @@ mod tests {
 
     #[test]
     fn monitor_with_known_workflow_name() {
-        let result = parse(
+        let result = parse(&with_credentials(
             r#"
             [[monitor.workflow]]
             name = "github-prs"
         "#,
-        )
+        ))
         .unwrap();
         let monitor = result.monitor.unwrap();
         assert_eq!(
@@ -312,12 +376,12 @@ mod tests {
 
     #[test]
     fn monitor_with_unknown_workflow_name_does_not_error() {
-        let result = parse(
+        let result = parse(&with_credentials(
             r#"
             [[monitor.workflow]]
             name = "private-integration"
         "#,
-        )
+        ))
         .unwrap();
         let monitor = result.monitor.unwrap();
         assert_eq!(
@@ -330,7 +394,7 @@ mod tests {
 
     #[test]
     fn unknown_workflow_name_is_an_error() {
-        let err = parse(
+        let err = parse(&with_credentials(
             r#"
             [[project]]
             name = "hub"
@@ -339,27 +403,26 @@ mod tests {
             [[project.workflow]]
             name = "nonexistent-workflow"
         "#,
-        )
+        ))
         .unwrap_err();
         assert!(err.to_string().contains("failed to parse hub.toml"));
     }
 
     #[test]
-    fn missing_file_returns_empty() {
-        let result = parse_file("/nonexistent/path/hub.toml").unwrap();
-        assert_eq!(result.project, vec![]);
-        assert!(result.monitor.is_none());
+    fn missing_file_returns_error() {
+        let err = parse_file("/nonexistent/path/hub.toml").unwrap_err();
+        assert!(err.to_string().contains("not found"));
     }
 
     #[test]
     fn project_no_workflows() {
-        let result = parse(
+        let result = parse(&with_credentials(
             r#"
             [[project]]
             name = "hub"
             repo = "ooloth/hub"
         "#,
-        )
+        ))
         .unwrap();
         assert_eq!(result.project.len(), 1);
         assert_eq!(result.project[0].name, "hub");
@@ -372,6 +435,11 @@ mod tests {
     fn snapshot_full_device_config() {
         let result = parse(
             r#"
+            [credentials]
+            github_token = "op://Scripts/GitHub/token"
+            github_username = "testuser"
+            linear_token = "op://Scripts/Linear/key"
+
             [[project]]
             name = "myapp"
             repo = "org/myapp"
@@ -419,7 +487,6 @@ mod tests {
     }
 
     proptest! {
-        // Arbitrary project names and repo slugs survive a parse round-trip.
         #[test]
         fn project_fields_round_trip(
             name in "[a-zA-Z][a-zA-Z0-9_. -]{0,30}",
@@ -427,7 +494,7 @@ mod tests {
             repo in "[a-zA-Z][a-zA-Z0-9_-]{0,15}",
         ) {
             let toml = format!(
-                "[[project]]\nname = \"{name}\"\nrepo = \"{owner}/{repo}\"\n"
+                "[credentials]\ngithub_token = \"tok\"\ngithub_username = \"user\"\n\n[[project]]\nname = \"{name}\"\nrepo = \"{owner}/{repo}\"\n"
             );
             let result = parse(&toml).unwrap();
             prop_assert_eq!(&result.project[0].name, &name);

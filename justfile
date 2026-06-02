@@ -6,13 +6,8 @@ default:
 # Without it, only the public integrations defined in `hub` are shown.
 _features := if path_exists("clients/src/private") == "true" { "--features private" } else { "" }
 
-# run a recipe with secrets injected from .env via 1Password
-# usage: just op <recipe>
-op +ARGS:
-    op run --env-file=.env -- just {{ARGS}}
-
 status:
-    op run --env-file=.env -- cargo run -p hub-cli {{_features}} -- status
+    cargo run -p hub-cli {{_features}} -- status
 
 check:
     taplo fmt
@@ -27,10 +22,10 @@ install:
     cargo install --path ui/tui {{_features}}
 
 cli:
-    op run --env-file=.env -- cargo run -p hub-cli {{_features}}
+    cargo run -p hub-cli {{_features}}
 
 tui:
-    op run --env-file=.env -- cargo run -p hub-tui {{_features}}
+    cargo run -p hub-tui {{_features}}
 
 test:
     cargo nextest run {{_features}}
