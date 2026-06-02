@@ -229,6 +229,9 @@ impl App {
                 self.ui.pending_pr_action = true;
                 vec![]
             }
+            // CancelPrSubmenu dismisses the d-submenu without collapsing the split view.
+            // pending_pr_action is already cleared by the prologue for any non-submenu action.
+            Action::CancelPrSubmenu => vec![],
             Action::OpenPrDiffInDelta => {
                 self.ui.pending_pr_action = false;
                 if let Some(StatusItem::Pr(pr)) = self.ui.screen.selected_status_item() {

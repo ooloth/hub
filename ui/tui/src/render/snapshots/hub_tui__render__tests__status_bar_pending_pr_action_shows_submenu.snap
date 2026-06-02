@@ -2,4 +2,4 @@
 source: ui/tui/src/render/mod.rs
 expression: status_row(&buf)
 ---
-  [d] delta · [l] lazygit · [o] octo · [Esc] cancel
+ PR #1 · diff  [d] delta · [l] lazygit · [o] octo · [Esc] cancel

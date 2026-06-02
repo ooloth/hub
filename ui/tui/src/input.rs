@@ -100,9 +100,8 @@ fn pr_action_submenu_key(key: KeyEvent) -> Option<Action> {
         KeyCode::Char('d') => Some(Action::OpenPrDiffInDelta),
         KeyCode::Char('l') => Some(Action::OpenInLazygit),
         KeyCode::Char('o') => Some(Action::OpenInOcto),
-        // Any other key (including Esc) clears the submenu via Back.
-        KeyCode::Esc => Some(Action::Back),
-        _ => Some(Action::Back),
+        // Esc and any unrecognized key dismiss the submenu without closing the split view.
+        _ => Some(Action::CancelPrSubmenu),
     }
 }
 
@@ -1068,12 +1067,12 @@ mod tests {
         );
     }
 
-    // K8: Esc while pending → Back (clears submenu)
+    // K8: Esc while pending → CancelPrSubmenu (dismisses submenu, keeps split view)
     #[test]
-    fn esc_while_pending_pr_action_cancels() {
+    fn esc_while_pending_pr_action_cancels_submenu_only() {
         assert_eq!(
             key_to_action(&pending_pr_action_app_with_pr(), k(KeyCode::Esc)),
-            Some(Action::Back)
+            Some(Action::CancelPrSubmenu)
         );
     }
 

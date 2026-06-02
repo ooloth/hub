@@ -251,6 +251,7 @@ pub(crate) enum Action {
     CancelReview,
     OpenUrl,
     PrActionSubmenu,
+    CancelPrSubmenu,
     OpenPrDiffInDelta,
     Refresh,
     ApproveForAgent,

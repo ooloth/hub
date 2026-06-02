@@ -367,9 +367,6 @@ fn status_bar_left(app: &App) -> String {
     if let Some(flash) = &app.ui.flash {
         return flash.clone();
     }
-    if app.ui.pending_pr_action {
-        return " [d] delta · [l] lazygit · [o] octo · [Esc] cancel".to_string();
-    }
     if matches!(app.ui.screen, Screen::PrDetail { .. }) {
         return " [o] open · [d] diff · [v] review · [m] merge · [i] ask · [Esc] back".to_string();
     }
@@ -1294,7 +1291,24 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let [bar_left, bar_right] =
         Layout::horizontal([Constraint::Min(0), Constraint::Length(right_width)]).areas(bar_area);
 
-    if let Screen::ReviewingPr { pr, .. } = &app.ui.screen {
+    if app.ui.pending_pr_action {
+        let pr_label = app
+            .current_screen()
+            .selected_status_item()
+            .and_then(|item| {
+                if let workflows::status::StatusItem::Pr(pr) = item {
+                    Some(format!(" PR #{} · diff", pr.number))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| " diff".to_string());
+        let line = Line::from(vec![
+            Span::styled(pr_label, Style::default().fg(YELLOW)),
+            Span::styled("  [d] delta · [l] lazygit · [o] octo · [Esc] cancel", dim()),
+        ]);
+        frame.render_widget(Paragraph::new(line), bar_left);
+    } else if let Screen::ReviewingPr { pr, .. } = &app.ui.screen {
         let label = format!(" Review #{}", pr.number);
         let line = Line::from(vec![
             Span::styled(label, Style::default().fg(YELLOW)),
