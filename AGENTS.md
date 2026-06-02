@@ -14,7 +14,7 @@ See [README.md](README.md) for the full feature list and value proposition.
 
 ```
 clients/     # external API wrappers — one file (or subdirectory) per external service
-config/      # reads env vars into typed domain structs
+config/      # reads hub.toml and resolves credentials into typed domain structs
 domain/      # types + pure logic; no I/O; no imports from other hub crates
 store/       # local SQLite reads/writes
 workflows/   # orchestrated operations; the "what hub does"
@@ -48,7 +48,7 @@ do not depend on `config/` directly.
 | HTTP clients   | reqwest                    |
 | SQLite         | rusqlite (bundled) or sqlx |
 | Serialization  | serde                      |
-| Secrets        | 1Password CLI (`op run`)   |
+| Secrets        | 1Password CLI (`secrecy` + `op read`) |
 | Error handling | anyhow                     |
 
 ### Rust Conventions
@@ -62,7 +62,7 @@ Hard rules for agents:
 - **No lifetime annotations**: if you're writing `'a`, stop and restructure. Return owned types instead.
 - **Clone freely**: don't fight the borrow checker. Clone across `.await` points. Optimize only if profiling shows it matters.
 - **Async**: `#[tokio::main]`, `features = ["full"]`. Use `tokio::join!` for parallel work. Use `tokio::fs`/`tokio::time` not std equivalents inside async.
-- **Secrets**: read from env vars via `std::env::var`. Never read from files. Injected at runtime by `op run --env-file=.env`.
+- **Secrets**: wrapped in `Secret<String>` (secrecy crate) throughout `Config`, `LokiEnv`, and `StatusParams`. Sourced from `hub.toml`'s `[credentials]` table; `op://` references are resolved at startup via `op read`. `.expose_secret()` is called only at client call sites.
 - **CLI**: `clap` with derive macros. Annotate structs; don't use the builder API.
 - **Newtypes over primitives**: IDs, status values, and domain-meaningful strings are
   wrapped in newtypes defined in `domain/`, not passed as bare `u64` or `String`.
@@ -149,7 +149,7 @@ what is actually available. Never assume a prerequisite is missing.
 
 | Doc                                      | Covers                                                |
 | ---------------------------------------- | ----------------------------------------------------- |
-| `docs/architecture/secrets.md`           | 1Password → op run → env var model                    |
+| `docs/architecture/secrets.md`           | 1Password → op read → Secret<String> model            |
 | `docs/architecture/private-workflows.md` | Two-repo model for private workflows                  |
 | `clients/README.md`                      | reqwest pattern for HTTP clients                      |
 | `store/README.md`                        | rusqlite pattern, db path, Connection threading notes |

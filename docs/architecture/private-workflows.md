@@ -87,11 +87,13 @@ entries and their `[[project.workflow]]` / `[[project.environment]]` blocks rele
 to that machine — work projects won't activate on the home laptop if they're not
 listed in `home-laptop.toml`, and vice versa.
 
-## Secrets
+## Credentials
 
-`.env` is shared across all devices — it holds `op://` references for every workflow.
-Having unused references on a given device is harmless; `op run` only injects what's
-present, and hub only reads what it needs.
+Each device file includes a `[credentials]` table with the `op://` references it
+needs. Unknown keys (private workflow credentials like `sonarr_url`) are captured
+in `Config.extra_credentials` and passed to hub-private workflows — the public hub
+code never sees the key names. Having extra keys on a device is harmless; hub only
+reads what it needs.
 
 ## Cargo Feature Flag
 

@@ -7,14 +7,13 @@ set -euo pipefail
 # Usage: bash scripts/setup-private.sh <device-name> [path-to-hub-private] [worktree-root]
 # Or:    just setup-private <device-name>
 #
-# <device-name> must match files in hub-private/devices/<device-name>.{toml,env}
-# <worktree-root> when set, uses that path as HUB_ROOT and skips .env/hub.toml
+# <device-name> must match a file in hub-private/devices/<device-name>.toml
+# <worktree-root> when set, uses that path as HUB_ROOT and skips hub.toml
 #   linking (used by `hub implement` to wire private modules into fresh worktrees)
 
 DEVICE="${1:-}"
 HUB_PRIVATE="${2:-../hub-private}"
 WORKTREE="${3:-}"
-
 if [[ -n "$WORKTREE" ]]; then
   HUB_ROOT="$(cd "$WORKTREE" && pwd)"
 else
@@ -38,20 +37,13 @@ fi
 
 HUB_PRIVATE="$(cd "$HUB_PRIVATE" && pwd)"
 DEVICE_CONFIG="$HUB_PRIVATE/devices/$DEVICE.toml"
-DEVICE_ENV="$HUB_PRIVATE/devices/$DEVICE.env"
 
 if [[ ! -f "$DEVICE_CONFIG" ]]; then
   echo "error: no config found for device '$DEVICE'"
   echo "expected: $DEVICE_CONFIG"
   echo ""
   echo "available devices:"
-  ls "$HUB_PRIVATE/devices/" 2>/dev/null | sed 's/\.toml$//' | sed 's/^/  /' || echo "  (none)"
-  exit 1
-fi
-
-if [[ ! -f "$DEVICE_ENV" ]]; then
-  echo "error: no .env found for device '$DEVICE'"
-  echo "expected: $DEVICE_ENV"
+  ls "$HUB_PRIVATE/devices/" 2>/dev/null | sed 's/\.toml$//' | grep -v '\.env$' | sed 's/^/  /' || echo "  (none)"
   exit 1
 fi
 
@@ -85,7 +77,6 @@ link "$HUB_PRIVATE/workflows/src"    "$HUB_ROOT/workflows/src/private"
 link "$HUB_PRIVATE/ui/cli/src"       "$HUB_ROOT/ui/cli/src/private"
 link "$HUB_PRIVATE/ui/tui/src"       "$HUB_ROOT/ui/tui/src/private"
 if [[ -z "$WORKTREE" ]]; then
-  link "$DEVICE_ENV"                 "$HUB_ROOT/.env"
   link "$DEVICE_CONFIG"              "$HUB_ROOT/hub.toml"
 fi
 
@@ -97,10 +88,16 @@ if [[ "$DEVICE" == "home-laptop" ]]; then
 else
   stub "$HUB_ROOT/ui/tui/src/investigations/media.rs" \
     'use anyhow::Result;
+use secrecy::Secret;
+use std::collections::HashMap;
 
 use super::LaunchConfig;
 
-pub(crate) fn config(_title: &str, _error: &str) -> Result<LaunchConfig> {
+pub(crate) fn config(
+    _title: &str,
+    _error: &str,
+    _credentials: &HashMap<String, Secret<String>>,
+) -> Result<LaunchConfig> {
     unreachable!("media investigation not available on this device")
 }'
 fi
@@ -108,6 +105,6 @@ fi
 if [[ -z "$WORKTREE" ]]; then
   echo ""
   echo "done. device: $DEVICE"
-  echo "edit hub-private/devices/$DEVICE.toml to configure integrations for this device."
+  echo "edit hub-private/devices/$DEVICE.toml to configure projects and credentials."
   echo "run 'just check' to verify compilation."
 fi

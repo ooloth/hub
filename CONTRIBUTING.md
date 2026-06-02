@@ -19,21 +19,21 @@ workflows only (e.g. GitHub PRs). The `private` feature is silently skipped.
 
 ```bash
 git clone <repo> && cd hub
-cp .env.example .env
-# edit .env — replace op:// references with your actual 1Password paths
+cp hub.toml.example hub.toml
+# edit hub.toml — fill in [credentials] with your 1Password references or plain values
 prek install
 just check
 ```
 
-`.env` and `hub.toml` live as plain local files in the repo root, gitignored.
+`hub.toml` lives as a plain local file in the repo root, gitignored.
 
 ### With hub-private (adds private workflows)
 
-If you have access to `hub-private`, it replaces the plain `.env` and `hub.toml`
-files with symlinks into the private repo, and adds private workflow code.
+If you have access to `hub-private`, it replaces the plain `hub.toml`
+file with a symlink into the private repo, and adds private workflow code.
 
-> If you already created local `.env` or `hub.toml` files above, remove them
-> before running this — `setup-private` will error rather than overwrite them.
+> If you already created a local `hub.toml` file above, remove it before
+> running this — `setup-private` will error rather than overwrite it.
 
 ```bash
 git clone git@github.com:ooloth/hub-private.git ../hub-private
@@ -52,7 +52,7 @@ for the full model, how to add new devices, and how to add new private workflows
 
 ```bash
 just check              # fmt + lint (autofixes where possible)
-just status             # run with secrets injected
+just status             # run the CLI status command
 ```
 
 ## Common tasks

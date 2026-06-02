@@ -1,4 +1,4 @@
-# 003 — Config model: hub.toml for structure, .env for secrets
+# 003 — Config model: hub.toml for structure and credentials
 
 ## Context
 
@@ -10,15 +10,13 @@ poor fit for structured lists of projects and their properties.
 
 ## Decision
 
-Two gitignored config files, each with a committed example:
+One gitignored config file with a committed example:
 
-**`.env`** — credentials only. One token per service type, shared across all
-projects that use that service. Secrets are stored in 1Password and injected
-at runtime via `op run --env-file=.env`. Never contains project-specific
-structure.
-
-**`hub.toml`** — structure only. No secrets. Has two top-level concepts:
-`[[project]]` for codebases, and `[monitor]` for non-project observations.
+**`hub.toml`** — structure and credentials. Has three top-level concepts:
+`[credentials]` for secrets, `[[project]]` for codebases, and `[monitor]`
+for non-project observations. Credential values are either plain strings or
+1Password references (`op://Vault/Item/field`), resolved at startup via
+`op read`. No separate `.env` file or `op run` wrapper is needed.
 
 ### Projects
 
@@ -115,11 +113,12 @@ machine. When hub-private is in use, per-device configs live in
 
 ## Consequences
 
-- The `config` crate parses `hub.toml` and reads env vars, delivering a
-  single typed `Config` struct downstream.
-- `hub.toml.example` and `.env.example` are committed to the repo and kept
-  up to date as workflows are added.
-- A project whose required env vars are absent produces no items — clean
-  degradation when a service is unconfigured.
+- The `config` crate parses `hub.toml` and resolves credentials, delivering
+  a single typed `Config` struct downstream. Secrets are wrapped in
+  `Secret<String>` and exposed only at client call sites.
+- `hub.toml.example` is committed to the repo and kept up to date as
+  credentials and workflows are added.
+- Missing required credentials (`github_token`, `github_username`) produce
+  a clear startup error. Optional credentials produce no items when absent.
 - Per-workflow config (e.g. polling cadence) fits naturally as additional
   fields on the workflow object; no schema changes required.
