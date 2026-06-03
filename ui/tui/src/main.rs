@@ -377,27 +377,6 @@ async fn run_loop(
                         app.ui.flash = Some(err.to_string());
                     }
                 }
-                Effect::AskAboutPr {
-                    repo,
-                    number,
-                    ownership,
-                    head_branch,
-                    ..
-                } => {
-                    if let Err(err) = investigations::launch(
-                        investigations::pr::bare_config(number, &repo, ownership),
-                        investigations::WorktreeSpec::PullRequest {
-                            repo,
-                            number,
-                            head_branch,
-                        },
-                        config,
-                    )
-                    .await
-                    {
-                        app.ui.flash = Some(err.to_string());
-                    }
-                }
                 Effect::ReviewPr {
                     repo,
                     number,

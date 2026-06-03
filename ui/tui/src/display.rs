@@ -110,18 +110,13 @@ pub(crate) enum LogDetailView {
         env: String,
         title: String,
         message: String,
-        url: String,
-        lookback: String,
         lines: Vec<LogLine>,
-        gcp_project: String,
     },
     Loki {
         project: String,
         env: String,
         title: String,
         message: String,
-        url: String,
-        lookback: String,
         lines: Vec<LogLine>,
     },
 }
@@ -146,18 +141,13 @@ pub(crate) fn log_detail_view_from_item(item: &StatusItem) -> Option<LogDetailVi
             env: g.env.clone(),
             title: g.title.clone(),
             message: g.message.clone(),
-            url: g.url.clone(),
-            lookback: g.lookback.clone(),
             lines: vec![LogLine::parse(&g.line)],
-            gcp_project: g.gcp_project.clone(),
         }),
         StatusItem::Loki(l) => Some(LogDetailView::Loki {
             project: l.project.clone(),
             env: l.env.clone(),
             title: l.title.clone(),
             message: l.message.clone(),
-            url: l.url.clone(),
-            lookback: l.lookback.clone(),
             lines: vec![LogLine::parse(&l.line)],
         }),
         _ => None,
@@ -174,8 +164,6 @@ pub(crate) fn log_detail_view_from_group(items: &[StatusItem]) -> Option<LogDeta
             env: g.env.clone(),
             title: g.title.clone(),
             message: g.message.clone(),
-            url: g.url.clone(),
-            lookback: g.lookback.clone(),
             lines: items
                 .iter()
                 .filter_map(|i| match i {
@@ -183,15 +171,12 @@ pub(crate) fn log_detail_view_from_group(items: &[StatusItem]) -> Option<LogDeta
                     _ => None,
                 })
                 .collect(),
-            gcp_project: g.gcp_project.clone(),
         }),
         StatusItem::Loki(l) => Some(LogDetailView::Loki {
             project: l.project.clone(),
             env: l.env.clone(),
             title: l.title.clone(),
             message: l.message.clone(),
-            url: l.url.clone(),
-            lookback: l.lookback.clone(),
             lines: items
                 .iter()
                 .filter_map(|i| match i {

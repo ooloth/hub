@@ -5,9 +5,7 @@ use chrono::{DateTime, Utc};
 use domain::{Issue, PrKind, PullRequest, ReviewDecision};
 use workflows::status::{StatusItem, StatusReport};
 
-use crate::display::{
-    Category, DisplayItem, Filter, FlatRow, GroupKey, ListSnapshot, LogDetailView,
-};
+use crate::display::{Category, DisplayItem, Filter, FlatRow, GroupKey, ListSnapshot};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ReviewSkill {
@@ -61,12 +59,6 @@ pub(crate) enum DetailMode {
     },
 }
 
-// Flat enum encoding the valid navigation graph in the type system.
-// UnifiedList is the default (top-level) screen. Detail screens carry a
-// ListSnapshot as their return address — pressing Back restores the list
-// to the exact items/selection/filter/expansion state before drill-in.
-// IssueDetail shows the full body of a single issue with a scroll offset.
-// LogDetail shows the raw JSON log line for a GCP or Loki entry.
 #[derive(Debug)]
 pub(crate) enum Screen {
     UnifiedList {
@@ -76,26 +68,6 @@ pub(crate) enum Screen {
         filter: Filter,
         expanded_groups: HashSet<GroupKey>,
         detail_mode: DetailMode,
-    },
-    // Entry point removed in #244; kept for potential future use.
-    #[allow(dead_code)]
-    IssueDetail {
-        parent: ListSnapshot,
-        issue: Issue,
-        scroll: u16,
-    },
-    // Entry point removed in #244 (split view replaced full-screen navigation).
-    // Kept for potential future use (e.g. deeper drill-in from split detail pane).
-    #[allow(dead_code)]
-    LogDetail {
-        parent: ListSnapshot,
-        view: LogDetailView,
-        scroll: u16,
-    },
-    PrDetail {
-        parent: ListSnapshot,
-        pr: PullRequest,
-        scroll: u16,
     },
     MergingPr {
         parent: ListSnapshot,
@@ -109,12 +81,9 @@ pub(crate) enum Screen {
     },
 }
 
-/// The screen a Merge picker should restore on commit or cancel.
+/// The screen the merge picker restores on commit or cancel.
 #[derive(Clone, Debug)]
 pub(crate) enum PrPrevScreen {
-    /// Restore Screen::PrDetail with scroll = 0.
-    PrDetail,
-    /// Restore the UnifiedList split view that launched the merge picker.
     UnifiedList { snapshot: ListSnapshot },
 }
 
@@ -143,13 +112,8 @@ impl Screen {
                 FlatRow::GroupChild { item, .. } => Some(item.clone()),
                 FlatRow::GroupHeader { .. } => None,
             },
-            Screen::LogDetail { .. } => None,
-            Screen::IssueDetail { issue, .. } | Screen::DismissingIssue { issue, .. } => {
-                Some(StatusItem::Issue(issue.clone()))
-            }
-            Screen::PrDetail { pr, .. } | Screen::MergingPr { pr, .. } => {
-                Some(StatusItem::Pr(pr.clone()))
-            }
+            Screen::DismissingIssue { issue, .. } => Some(StatusItem::Issue(issue.clone())),
+            Screen::MergingPr { pr, .. } => Some(StatusItem::Pr(pr.clone())),
         }
     }
 }
@@ -217,7 +181,6 @@ pub(crate) enum Action {
     ExpandGroup,
     CollapseGroup,
     Investigate,
-    AskAboutPr,
     OpenReviewPicker,
     CommitReview(ReviewSkill),
     CancelReview,
@@ -302,12 +265,6 @@ pub(crate) enum Effect {
         number: u64,
         kind: PrKind,
         review_decision: Option<ReviewDecision>,
-        head_branch: String,
-    },
-    AskAboutPr {
-        repo: String,
-        number: u64,
-        ownership: PrOwnership,
         head_branch: String,
     },
     ReviewPr {

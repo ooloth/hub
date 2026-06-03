@@ -8,8 +8,8 @@ use super::{
     RefreshState, Screen,
 };
 use crate::display::{
-    build_unified, flatten, item_investigation, item_url, lines_to_compact_json, Filter, FlatRow,
-    InvestigationKind, ListSnapshot, LogDetailView,
+    build_unified, flatten, item_investigation, item_url, Filter, FlatRow, InvestigationKind,
+    ListSnapshot,
 };
 use workflows::status::StatusItem;
 
@@ -63,23 +63,6 @@ impl App {
                     }
                     return vec![];
                 }
-                self.ui.screen = match std::mem::take(&mut self.ui.screen) {
-                    Screen::LogDetail { parent, .. }
-                    | Screen::IssueDetail { parent, .. }
-                    | Screen::PrDetail { parent, .. } => {
-                        let flat_rows = flatten(&parent.items, &parent.expanded_groups);
-                        Screen::UnifiedList {
-                            items: parent.items,
-                            flat_rows,
-                            selected: parent.selected,
-                            filter: parent.filter,
-                            expanded_groups: parent.expanded_groups,
-                            detail_mode: DetailMode::Hidden,
-                        }
-                    }
-                    // Already at top level — no-op.
-                    other => other,
-                };
                 vec![]
             }
             Action::FilterCategory(cat) => {
@@ -190,6 +173,30 @@ impl App {
                     vec![]
                 }
             }
+            Action::OpenInOcto => {
+                self.ui.pending_pr_action = false;
+                if let Some(StatusItem::Pr(pr)) = self.ui.screen.selected_status_item() {
+                    vec![Effect::OpenInOcto {
+                        repo: pr.repo.to_string(),
+                        number: pr.number,
+                        head_branch: pr.head_branch.clone(),
+                    }]
+                } else {
+                    vec![]
+                }
+            }
+            Action::OpenInLazygit => {
+                self.ui.pending_pr_action = false;
+                if let Some(StatusItem::Pr(pr)) = self.ui.screen.selected_status_item() {
+                    vec![Effect::OpenInLazygit {
+                        repo: pr.repo.to_string(),
+                        number: pr.number,
+                        head_branch: pr.head_branch.clone(),
+                    }]
+                } else {
+                    vec![]
+                }
+            }
             Action::MoveUp
             | Action::MoveDown
             | Action::MoveToTop
@@ -209,16 +216,10 @@ impl App {
             | Action::CommitDismissal
             | Action::CancelDismissal
             | Action::Investigate
-            | Action::AskAboutPr
-            | Action::OpenInOcto
-            | Action::OpenInLazygit
             | Action::OpenReviewPicker
             | Action::CommitReview(_)
             | Action::CancelReview => match &self.ui.screen {
                 Screen::UnifiedList { .. } => self.handle_unified_list(action),
-                Screen::LogDetail { .. } => self.handle_log_detail(action),
-                Screen::IssueDetail { .. } => self.handle_issue_reader(action),
-                Screen::PrDetail { .. } => self.handle_pr_reader(action),
                 Screen::MergingPr { .. } => self.handle_merging_pr(action),
                 Screen::DismissingIssue { .. } => self.handle_dismissing(action),
             },
@@ -523,235 +524,38 @@ impl App {
         }
     }
 
-    fn handle_log_detail(&mut self, action: Action) -> Vec<Effect> {
-        match action {
-            Action::MoveUp => {
-                if let Screen::LogDetail { scroll, .. } = &mut self.ui.screen {
-                    *scroll = scroll.saturating_sub(1);
-                }
-                vec![]
-            }
-            Action::MoveDown => {
-                if let Screen::LogDetail { scroll, .. } = &mut self.ui.screen {
-                    *scroll = scroll.saturating_add(1);
-                }
-                vec![]
-            }
-            Action::MoveToTop => {
-                if let Screen::LogDetail { scroll, .. } = &mut self.ui.screen {
-                    *scroll = 0;
-                }
-                vec![]
-            }
-            Action::MoveToBottom => {
-                if let Screen::LogDetail { scroll, .. } = &mut self.ui.screen {
-                    *scroll = u16::MAX;
-                }
-                vec![]
-            }
-            Action::MovePageUp => {
-                if let Screen::LogDetail { scroll, .. } = &mut self.ui.screen {
-                    *scroll = scroll.saturating_sub(10);
-                }
-                vec![]
-            }
-            Action::MovePageDown => {
-                if let Screen::LogDetail { scroll, .. } = &mut self.ui.screen {
-                    *scroll = scroll.saturating_add(10);
-                }
-                vec![]
-            }
-            Action::Enter => self
-                .selected_url()
-                .map(|u| vec![Effect::OpenUrl(u.to_string())])
-                .unwrap_or_default(),
-            Action::Investigate => self.handle_investigate(),
-            _ => unreachable!(),
-        }
-    }
-
-    fn handle_issue_reader(&mut self, action: Action) -> Vec<Effect> {
-        match action {
-            Action::MoveUp => {
-                if let Screen::IssueDetail { scroll, .. } = &mut self.ui.screen {
-                    *scroll = scroll.saturating_sub(1);
-                }
-                vec![]
-            }
-            Action::MoveDown => {
-                if let Screen::IssueDetail { scroll, .. } = &mut self.ui.screen {
-                    *scroll = scroll.saturating_add(1);
-                }
-                vec![]
-            }
-            Action::MoveToTop => {
-                if let Screen::IssueDetail { scroll, .. } = &mut self.ui.screen {
-                    *scroll = 0;
-                }
-                vec![]
-            }
-            Action::MoveToBottom => {
-                // max scroll is clamped in render; set to a large value and let render clamp it
-                if let Screen::IssueDetail { scroll, .. } = &mut self.ui.screen {
-                    *scroll = u16::MAX;
-                }
-                vec![]
-            }
-            Action::MovePageUp => {
-                if let Screen::IssueDetail { scroll, .. } = &mut self.ui.screen {
-                    *scroll = scroll.saturating_sub(10);
-                }
-                vec![]
-            }
-            Action::MovePageDown => {
-                if let Screen::IssueDetail { scroll, .. } = &mut self.ui.screen {
-                    *scroll = scroll.saturating_add(10);
-                }
-                vec![]
-            }
-            Action::Enter => self
-                .selected_url()
-                .map(|u| vec![Effect::OpenUrl(u.to_string())])
-                .unwrap_or_default(),
-            Action::ApproveForAgent => {
-                let Screen::IssueDetail { issue, .. } = &self.ui.screen else {
-                    return vec![];
-                };
-                let labels = agent_ready_labels(&issue.labels);
-                vec![Effect::SetIssueLabels {
-                    repo: issue.repo.to_string(),
-                    number: issue.number,
-                    labels,
-                }]
-            }
-            Action::DismissIssue => {
-                let Screen::IssueDetail { issue, parent, .. } = &self.ui.screen else {
-                    return vec![];
-                };
-                let issue = issue.clone();
-                let parent = parent.clone();
-                self.ui.screen = Screen::DismissingIssue {
-                    parent,
-                    issue,
-                    input: tui_input::Input::default(),
-                };
-                vec![]
-            }
-            Action::Investigate => self.handle_investigate(),
-            _ => unreachable!(),
-        }
-    }
-
-    fn handle_pr_reader(&mut self, action: Action) -> Vec<Effect> {
-        match action {
-            Action::MoveUp => {
-                if let Screen::PrDetail { scroll, .. } = &mut self.ui.screen {
-                    *scroll = scroll.saturating_sub(1);
-                }
-                vec![]
-            }
-            Action::MoveDown => {
-                if let Screen::PrDetail { scroll, .. } = &mut self.ui.screen {
-                    *scroll = scroll.saturating_add(1);
-                }
-                vec![]
-            }
-            Action::MoveToTop => {
-                if let Screen::PrDetail { scroll, .. } = &mut self.ui.screen {
-                    *scroll = 0;
-                }
-                vec![]
-            }
-            Action::MoveToBottom => {
-                if let Screen::PrDetail { scroll, .. } = &mut self.ui.screen {
-                    *scroll = u16::MAX;
-                }
-                vec![]
-            }
-            Action::MovePageUp => {
-                if let Screen::PrDetail { scroll, .. } = &mut self.ui.screen {
-                    *scroll = scroll.saturating_sub(10);
-                }
-                vec![]
-            }
-            Action::MovePageDown => {
-                if let Screen::PrDetail { scroll, .. } = &mut self.ui.screen {
-                    *scroll = scroll.saturating_add(10);
-                }
-                vec![]
-            }
-            Action::Enter => self
-                .selected_url()
-                .map(|u| vec![Effect::OpenUrl(u.to_string())])
-                .unwrap_or_default(),
-            Action::MergePr => {
-                let Screen::PrDetail { pr, parent, .. } = &self.ui.screen else {
-                    return vec![];
-                };
-                let pr = pr.clone();
-                let parent = parent.clone();
-                self.ui.screen = Screen::MergingPr {
-                    parent,
-                    pr,
-                    prev: PrPrevScreen::PrDetail,
-                };
-                vec![]
-            }
-            Action::AskAboutPr => {
-                let Screen::PrDetail { pr, .. } = &self.ui.screen else {
-                    return vec![];
-                };
-                let ownership = PrOwnership::from_kind(pr.kind);
-                vec![Effect::AskAboutPr {
-                    repo: pr.repo.to_string(),
-                    number: pr.number,
-                    ownership,
-                    head_branch: pr.head_branch.clone(),
-                }]
-            }
-            Action::OpenInOcto => {
-                let Screen::PrDetail { pr, .. } = &self.ui.screen else {
-                    return vec![];
-                };
-                vec![Effect::OpenInOcto {
-                    repo: pr.repo.to_string(),
-                    number: pr.number,
-                    head_branch: pr.head_branch.clone(),
-                }]
-            }
-            Action::OpenInLazygit => {
-                let Screen::PrDetail { pr, .. } = &self.ui.screen else {
-                    return vec![];
-                };
-                vec![Effect::OpenInLazygit {
-                    repo: pr.repo.to_string(),
-                    number: pr.number,
-                    head_branch: pr.head_branch.clone(),
-                }]
-            }
-            Action::Investigate => self.handle_investigate(),
-            _ => unreachable!(),
-        }
-    }
-
     fn handle_merging_pr(&mut self, action: Action) -> Vec<Effect> {
         match action {
             Action::CancelMerge => {
-                let Screen::MergingPr { parent, pr, prev } = std::mem::take(&mut self.ui.screen)
-                else {
+                let Screen::MergingPr { prev, .. } = std::mem::take(&mut self.ui.screen) else {
                     return vec![];
                 };
-                self.ui.screen = restore_after_pr_action(parent, pr, prev);
+                let PrPrevScreen::UnifiedList { snapshot } = prev;
+                self.ui.screen = Screen::UnifiedList {
+                    flat_rows: flatten(&snapshot.items, &snapshot.expanded_groups),
+                    items: snapshot.items,
+                    selected: snapshot.selected,
+                    filter: snapshot.filter,
+                    expanded_groups: snapshot.expanded_groups,
+                    detail_mode: snapshot.detail_mode,
+                };
                 vec![]
             }
             Action::CommitMerge => {
-                let Screen::MergingPr { parent, pr, prev } = std::mem::take(&mut self.ui.screen)
-                else {
+                let Screen::MergingPr { pr, prev, .. } = std::mem::take(&mut self.ui.screen) else {
                     return vec![];
                 };
                 let repo = pr.repo.to_string();
                 let number = pr.number;
-                self.ui.screen = restore_after_pr_action(parent, pr, prev);
+                let PrPrevScreen::UnifiedList { snapshot } = prev;
+                self.ui.screen = Screen::UnifiedList {
+                    flat_rows: flatten(&snapshot.items, &snapshot.expanded_groups),
+                    items: snapshot.items,
+                    selected: snapshot.selected,
+                    filter: snapshot.filter,
+                    expanded_groups: snapshot.expanded_groups,
+                    detail_mode: snapshot.detail_mode,
+                };
                 vec![Effect::MergePullRequest { repo, number }]
             }
             _ => unreachable!(),
@@ -893,91 +697,13 @@ impl App {
                 FlatRow::GroupChild { item, .. } => item_url(item),
                 FlatRow::GroupHeader { .. } => None,
             },
-            Screen::LogDetail { view, .. } => {
-                let url = match view {
-                    LogDetailView::Gcp { url, .. } | LogDetailView::Loki { url, .. } => {
-                        url.as_str()
-                    }
-                };
-                if url.is_empty() {
-                    None
-                } else {
-                    Some(url)
-                }
-            }
-            Screen::IssueDetail { issue, .. } | Screen::DismissingIssue { issue, .. } => {
-                Some(&issue.url)
-            }
-            Screen::PrDetail { pr, .. } | Screen::MergingPr { pr, .. } => Some(&pr.url),
+            Screen::DismissingIssue { issue, .. } => Some(&issue.url),
+            Screen::MergingPr { pr, .. } => Some(&pr.url),
         }
     }
 }
 
-fn restore_after_pr_action(
-    parent: ListSnapshot,
-    pr: domain::PullRequest,
-    prev: PrPrevScreen,
-) -> Screen {
-    match prev {
-        PrPrevScreen::PrDetail => Screen::PrDetail {
-            parent,
-            pr,
-            scroll: 0,
-        },
-        PrPrevScreen::UnifiedList { snapshot } => Screen::UnifiedList {
-            flat_rows: flatten(&snapshot.items, &snapshot.expanded_groups),
-            items: snapshot.items,
-            selected: snapshot.selected,
-            filter: snapshot.filter,
-            expanded_groups: snapshot.expanded_groups,
-            detail_mode: snapshot.detail_mode,
-        },
-    }
-}
-
 pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
-    // LogDetail carries the view directly — serialise all lines to a compact JSON array.
-    if let Screen::LogDetail { view, .. } = &app.ui.screen {
-        return match view {
-            LogDetailView::Gcp {
-                project,
-                env,
-                title,
-                message,
-                url,
-                lookback,
-                lines,
-                gcp_project,
-            } => InvestigateAction::LaunchGcp {
-                project: project.clone(),
-                env: env.clone(),
-                title: title.clone(),
-                message: message.clone(),
-                line: lines_to_compact_json(lines),
-                url: url.clone(),
-                lookback: lookback.clone(),
-                gcp_project: gcp_project.clone(),
-            },
-            LogDetailView::Loki {
-                project,
-                env,
-                title,
-                message,
-                url,
-                lookback,
-                lines,
-            } => InvestigateAction::LaunchLoki {
-                project: project.clone(),
-                env: env.clone(),
-                title: title.clone(),
-                message: message.clone(),
-                line: lines_to_compact_json(lines),
-                url: url.clone(),
-                lookback: lookback.clone(),
-            },
-        };
-    }
-
     let Some(item) = app.ui.screen.selected_status_item() else {
         return InvestigateAction::None;
     };
@@ -1064,11 +790,7 @@ fn refresh_screen_in_place(screen: &mut Screen, raw: &[workflows::status::Status
             *flat_rows = flatten(&new_items, expanded_groups);
             *items = new_items;
         }
-        Screen::LogDetail { parent, .. }
-        | Screen::IssueDetail { parent, .. }
-        | Screen::PrDetail { parent, .. }
-        | Screen::MergingPr { parent, .. }
-        | Screen::DismissingIssue { parent, .. } => {
+        Screen::MergingPr { parent, .. } | Screen::DismissingIssue { parent, .. } => {
             let new_items = build_unified(raw.to_vec(), &parent.filter);
             parent.selected = parent.selected.min(new_items.len().saturating_sub(1));
             parent.items = new_items;
@@ -1134,10 +856,7 @@ mod tests {
         compute_investigate_action, handle_msg, Action, App, DetailMode, Effect, InvestigateAction,
         Msg, RefreshState, Screen,
     };
-    use crate::display::{
-        flatten, log_detail_view_from_item, Category, DisplayItem, Filter, GroupKey, ListSnapshot,
-        LogDetailView, LogLine,
-    };
+    use crate::display::{flatten, Category, DisplayItem, Filter, GroupKey};
     use crate::state::{DataState, UiState};
     use workflows::status::{StatusItem, StatusReport};
 
@@ -1153,37 +872,6 @@ mod tests {
                     filter: Filter::default(),
                     expanded_groups: expanded,
                     detail_mode: DetailMode::Hidden,
-                },
-                ..UiState::default()
-            },
-            ..App::default()
-        }
-    }
-
-    fn app_in_log_detail(item: StatusItem) -> App {
-        let view = log_detail_view_from_item(&item).unwrap_or_else(|| LogDetailView::Gcp {
-            project: "p".to_string(),
-            env: "e".to_string(),
-            title: "t".to_string(),
-            message: "m".to_string(),
-            url: "https://example.com".to_string(),
-            lookback: "1h".to_string(),
-            lines: vec![LogLine::parse("{}")],
-            gcp_project: String::new(),
-        });
-        let parent = ListSnapshot {
-            items: vec![DisplayItem::Single(item)],
-            selected: 0,
-            filter: Filter::default(),
-            expanded_groups: HashSet::new(),
-            detail_mode: crate::state::DetailMode::Hidden,
-        };
-        App {
-            ui: UiState {
-                screen: Screen::LogDetail {
-                    parent,
-                    view,
-                    scroll: 0,
                 },
                 ..UiState::default()
             },
@@ -1244,36 +932,6 @@ mod tests {
             InvestigateAction::LaunchCi {
                 repo: "ooloth/hub".to_string(),
                 run_url: "https://github.com/ooloth/hub/actions/runs/123".to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn investigate_action_launches_gcp_from_log_detail() {
-        let gcp = StatusItem::Gcp(domain::GcpEntry {
-            title: "errors".to_string(),
-            project: "mapapp".to_string(),
-            env: "neuro".to_string(),
-            message: "something broke".to_string(),
-            line: r#"{"message":"something broke"}"#.to_string(),
-            lookback: "7d".to_string(),
-            age: chrono::Duration::zero(),
-            urgency: domain::Urgency::High,
-            url: "https://console.cloud.google.com/logs/query".to_string(),
-            gcp_project: "mapapp-prod-abc123".to_string(),
-        });
-        let app = app_in_log_detail(gcp);
-        assert_eq!(
-            compute_investigate_action(&app),
-            InvestigateAction::LaunchGcp {
-                project: "mapapp".to_string(),
-                env: "neuro".to_string(),
-                title: "errors".to_string(),
-                message: "something broke".to_string(),
-                line: r#"[{"message":"something broke"}]"#.to_string(),
-                url: "https://console.cloud.google.com/logs/query".to_string(),
-                lookback: "7d".to_string(),
-                gcp_project: "mapapp-prod-abc123".to_string(),
             }
         );
     }
@@ -1913,7 +1571,7 @@ mod tests {
         assert_eq!(selected(&app), 0);
     }
 
-    // --- IssueDetail: Enter on issue opens reader ---
+    // --- Enter / Back on UnifiedList items ---
 
     fn stub_issue() -> StatusItem {
         StatusItem::Issue(domain::Issue {
@@ -1927,38 +1585,6 @@ mod tests {
             labels: vec!["status:needs-human-review".to_string()],
             body: Some("Issue body text.".to_string()),
         })
-    }
-
-    fn app_in_issue_detail() -> App {
-        let parent = ListSnapshot {
-            items: vec![DisplayItem::Single(stub_issue())],
-            selected: 0,
-            filter: Filter::default(),
-            expanded_groups: HashSet::new(),
-            detail_mode: crate::state::DetailMode::Hidden,
-        };
-        let issue = match stub_issue() {
-            StatusItem::Issue(i) => i,
-            _ => unreachable!(),
-        };
-        App {
-            ui: UiState {
-                screen: Screen::IssueDetail {
-                    parent,
-                    issue,
-                    scroll: 0,
-                },
-                ..UiState::default()
-            },
-            ..App::default()
-        }
-    }
-
-    fn issue_detail_scroll(app: &App) -> u16 {
-        match app.current_screen() {
-            Screen::IssueDetail { scroll, .. } => *scroll,
-            _ => panic!("expected IssueDetail"),
-        }
     }
 
     #[test]
@@ -2005,80 +1631,32 @@ mod tests {
         assert_eq!(*selected, 1);
     }
 
-    // --- IssueDetail: scroll ---
+    // --- ApproveForAgent / DismissIssue from split view ---
 
-    #[test]
-    fn issue_detail_move_down_increments_scroll() {
-        let mut app = app_in_issue_detail();
-        app.update(Action::MoveDown);
-        assert_eq!(issue_detail_scroll(&app), 1);
+    fn split_view_app_with_issue() -> App {
+        let item = stub_issue();
+        let items = vec![DisplayItem::Single(item)];
+        let expanded = HashSet::new();
+        let flat_rows = flatten(&items, &expanded);
+        App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    flat_rows,
+                    items,
+                    selected: 0,
+                    filter: Filter::default(),
+                    expanded_groups: expanded,
+                    detail_mode: DetailMode::Visible { detail_scroll: 0 },
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
     }
 
     #[test]
-    fn issue_detail_move_up_at_zero_is_noop() {
-        let mut app = app_in_issue_detail();
-        app.update(Action::MoveUp);
-        assert_eq!(issue_detail_scroll(&app), 0);
-    }
-
-    #[test]
-    fn issue_detail_move_up_decrements_scroll() {
-        let mut app = app_in_issue_detail();
-        apply(
-            &mut app,
-            &[Action::MoveDown, Action::MoveDown, Action::MoveUp],
-        );
-        assert_eq!(issue_detail_scroll(&app), 1);
-    }
-
-    #[test]
-    fn issue_detail_move_to_top_resets_scroll_to_zero() {
-        let mut app = app_in_issue_detail();
-        apply(
-            &mut app,
-            &[Action::MoveDown, Action::MoveDown, Action::MoveToTop],
-        );
-        assert_eq!(issue_detail_scroll(&app), 0);
-    }
-
-    #[test]
-    fn issue_detail_move_to_bottom_sets_max_scroll() {
-        let mut app = app_in_issue_detail();
-        app.update(Action::MoveToBottom);
-        assert_eq!(issue_detail_scroll(&app), u16::MAX);
-    }
-
-    #[test]
-    fn issue_detail_page_down_adds_10() {
-        let mut app = app_in_issue_detail();
-        app.update(Action::MovePageDown);
-        assert_eq!(issue_detail_scroll(&app), 10);
-    }
-
-    #[test]
-    fn issue_detail_page_up_subtracts_10() {
-        let mut app = app_in_issue_detail();
-        apply(&mut app, &[Action::MovePageDown, Action::MovePageDown]);
-        assert_eq!(issue_detail_scroll(&app), 20);
-        app.update(Action::MovePageUp);
-        assert_eq!(issue_detail_scroll(&app), 10);
-    }
-
-    #[test]
-    fn issue_detail_page_up_clamps_at_zero() {
-        let mut app = app_in_issue_detail();
-        apply(
-            &mut app,
-            &[Action::MovePageDown, Action::MovePageUp, Action::MovePageUp],
-        );
-        assert_eq!(issue_detail_scroll(&app), 0);
-    }
-
-    // --- IssueDetail: effects ---
-
-    #[test]
-    fn approve_for_agent_emits_set_issue_labels() {
-        let mut app = app_in_issue_detail();
+    fn approve_for_agent_from_split_view_emits_set_issue_labels() {
+        let mut app = split_view_app_with_issue();
         let effects = app.update(Action::ApproveForAgent);
         assert_eq!(effects.len(), 1);
         let Effect::SetIssueLabels {
@@ -2095,21 +1673,10 @@ mod tests {
         assert!(!labels.contains(&"status:needs-human-review".to_string()));
     }
 
-    #[test]
-    fn enter_in_issue_detail_emits_open_url() {
-        let mut app = app_in_issue_detail();
-        let effects = app.update(Action::Enter);
-        assert_eq!(effects.len(), 1);
-        let Effect::OpenUrl(url) = effects.into_iter().next().unwrap() else {
-            panic!("expected OpenUrl");
-        };
-        assert!(url.contains("issues/42"));
-    }
-
     // --- DismissIssue flow ---
 
     fn app_in_dismissing() -> App {
-        let mut app = app_in_issue_detail();
+        let mut app = split_view_app_with_issue();
         app.update(Action::DismissIssue);
         app
     }
@@ -2203,8 +1770,6 @@ mod tests {
         };
         assert_eq!(reason, "");
     }
-
-    // --- helpers ---
 
     // --- UnifiedList refresh ---
 
@@ -2301,97 +1866,25 @@ mod tests {
         })
     }
 
-    fn app_in_pr_detail() -> App {
-        let parent = ListSnapshot {
-            items: vec![DisplayItem::Single(stub_pr())],
-            selected: 0,
-            filter: Filter::default(),
-            expanded_groups: HashSet::new(),
-            detail_mode: crate::state::DetailMode::Hidden,
-        };
-        let pr = match stub_pr() {
-            StatusItem::Pr(p) => p,
-            _ => unreachable!(),
-        };
+    fn split_view_app_with_pr_for_merge() -> App {
+        let item = stub_pr();
+        let items = vec![DisplayItem::Single(item)];
+        let expanded = HashSet::new();
+        let flat_rows = flatten(&items, &expanded);
         App {
             ui: UiState {
-                screen: Screen::PrDetail {
-                    parent,
-                    pr,
-                    scroll: 0,
+                screen: Screen::UnifiedList {
+                    flat_rows,
+                    items,
+                    selected: 0,
+                    filter: Filter::default(),
+                    expanded_groups: expanded,
+                    detail_mode: DetailMode::Visible { detail_scroll: 0 },
                 },
                 ..UiState::default()
             },
             ..App::default()
         }
-    }
-
-    // --- IssueDetail refresh ---
-
-    #[test]
-    fn refresh_in_issue_detail_preserves_screen_variant() {
-        let mut app = app_in_issue_detail();
-        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
-        assert!(matches!(app.current_screen(), Screen::IssueDetail { .. }));
-    }
-
-    #[test]
-    fn refresh_in_issue_detail_preserves_scroll() {
-        let mut app = app_in_issue_detail();
-        apply(&mut app, &[Action::MovePageDown]); // scroll → 10
-        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
-        assert_eq!(issue_detail_scroll(&app), 10);
-    }
-
-    #[test]
-    fn refresh_in_issue_detail_updates_parent_items() {
-        let mut app = app_in_issue_detail(); // parent has stub_issue
-        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
-        let Screen::IssueDetail { parent, .. } = app.current_screen() else {
-            panic!("expected IssueDetail");
-        };
-        // parent rebuilt from report: now contains the CI item, not the issue
-        assert!(matches!(
-            parent.items[0],
-            DisplayItem::Single(workflows::status::StatusItem::Ci(_))
-        ));
-    }
-
-    // --- PrDetail refresh ---
-
-    fn pr_detail_scroll(app: &App) -> u16 {
-        match app.current_screen() {
-            Screen::PrDetail { scroll, .. } => *scroll,
-            _ => panic!("expected PrDetail"),
-        }
-    }
-
-    #[test]
-    fn refresh_in_pr_detail_preserves_screen_variant() {
-        let mut app = app_in_pr_detail();
-        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
-        assert!(matches!(app.current_screen(), Screen::PrDetail { .. }));
-    }
-
-    #[test]
-    fn refresh_in_pr_detail_preserves_scroll() {
-        let mut app = app_in_pr_detail();
-        apply(&mut app, &[Action::MovePageDown]); // scroll → 10
-        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
-        assert_eq!(pr_detail_scroll(&app), 10);
-    }
-
-    #[test]
-    fn refresh_in_pr_detail_updates_parent_items() {
-        let mut app = app_in_pr_detail(); // parent has stub_pr
-        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
-        let Screen::PrDetail { parent, .. } = app.current_screen() else {
-            panic!("expected PrDetail");
-        };
-        assert!(matches!(
-            parent.items[0],
-            DisplayItem::Single(workflows::status::StatusItem::Ci(_))
-        ));
     }
 
     // --- DismissingIssue refresh ---
@@ -2435,19 +1928,19 @@ mod tests {
     // --- MergePr flow ---
 
     fn app_in_merging() -> App {
-        let mut app = app_in_pr_detail();
+        let mut app = split_view_app_with_pr_for_merge();
         app.update(Action::MergePr);
         app
     }
 
     #[test]
-    fn merge_pr_transitions_to_merging_screen() {
+    fn merge_pr_from_split_view_transitions_to_merging_screen() {
         let app = app_in_merging();
         assert!(matches!(app.current_screen(), Screen::MergingPr { .. }));
     }
 
     #[test]
-    fn merge_pr_preserves_parent_and_pr() {
+    fn merge_pr_preserves_pr() {
         let app = app_in_merging();
         let Screen::MergingPr { pr, .. } = app.current_screen() else {
             panic!("expected MergingPr");
@@ -2457,13 +1950,10 @@ mod tests {
     }
 
     #[test]
-    fn cancel_merge_returns_to_pr_detail_with_same_pr() {
+    fn cancel_merge_returns_to_unified_list() {
         let mut app = app_in_merging();
         app.update(Action::CancelMerge);
-        let Screen::PrDetail { pr, .. } = app.current_screen() else {
-            panic!("expected PrDetail");
-        };
-        assert_eq!(pr.number, 7);
+        assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
     }
 
     #[test]
@@ -2474,10 +1964,10 @@ mod tests {
     }
 
     #[test]
-    fn commit_merge_returns_to_pr_detail() {
+    fn commit_merge_returns_to_unified_list() {
         let mut app = app_in_merging();
         app.update(Action::CommitMerge);
-        assert!(matches!(app.current_screen(), Screen::PrDetail { .. }));
+        assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
     }
 
     #[test]
@@ -2514,32 +2004,12 @@ mod tests {
         ));
     }
 
-    // --- AskAboutPr ---
+    // --- OpenInOcto / OpenInLazygit from split view ---
 
     #[test]
-    fn ask_about_pr_emits_ask_about_pr_effect_with_correct_ownership() {
-        let mut app = app_in_pr_detail();
-        let effects = app.update(Action::AskAboutPr);
-        assert_eq!(effects.len(), 1);
-        let Effect::AskAboutPr {
-            repo,
-            number,
-            ownership,
-            ..
-        } = effects.into_iter().next().unwrap()
-        else {
-            panic!("expected AskAboutPr");
-        };
-        assert_eq!(repo, "ooloth/hub");
-        assert_eq!(number, 7);
-        assert_eq!(ownership, crate::state::PrOwnership::Owned);
-    }
-
-    // --- OpenInOcto ---
-
-    #[test]
-    fn open_in_octo_emits_open_in_octo_effect_with_pr_identity() {
-        let mut app = app_in_pr_detail();
+    fn open_in_octo_from_split_view_emits_effect_with_pr_identity() {
+        let mut app = split_view_app_with_pr_for_merge();
+        app.ui.pending_pr_action = true;
         let effects = app.update(Action::OpenInOcto);
         assert_eq!(effects.len(), 1);
         let Effect::OpenInOcto {
@@ -2555,11 +2025,10 @@ mod tests {
         assert_eq!(head_branch, "feat/thing");
     }
 
-    // --- OpenInLazygit ---
-
     #[test]
-    fn open_in_lazygit_emits_effect_with_pr_identity() {
-        let mut app = app_in_pr_detail();
+    fn open_in_lazygit_from_split_view_emits_effect_with_pr_identity() {
+        let mut app = split_view_app_with_pr_for_merge();
+        app.ui.pending_pr_action = true;
         let effects = app.update(Action::OpenInLazygit);
         assert_eq!(effects.len(), 1);
         let Effect::OpenInLazygit {

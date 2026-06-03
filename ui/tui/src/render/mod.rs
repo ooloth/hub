@@ -107,19 +107,6 @@ const KEYBINDS_LIST: &[(&str, &str)] = &[
     ("q / Ctrl-C", "quit"),
 ];
 
-const KEYBINDS_LOG_READER: &[(&str, &str)] = &[
-    ("?", "toggle help"),
-    ("h / k", "up"),
-    ("j / l", "down"),
-    ("gg / G", "go to top / bottom"),
-    ("Ctrl-u / Ctrl-d", "page up / down"),
-    ("Enter", "open URL"),
-    ("i", "investigate"),
-    ("r", "refresh"),
-    ("Esc", "back to list"),
-    ("q / Ctrl-C", "quit"),
-];
-
 const KEYBINDS_PR_READER: &[(&str, &str)] = &[
     ("?", "toggle help"),
     ("k / j", "scroll up / down"),
@@ -302,11 +289,7 @@ fn position_label(screen: &Screen) -> String {
                 format!("{}/{n}", selected + 1)
             }
         }
-        Screen::LogDetail { .. }
-        | Screen::IssueDetail { .. }
-        | Screen::DismissingIssue { .. }
-        | Screen::PrDetail { .. }
-        | Screen::MergingPr { .. } => String::new(),
+        Screen::DismissingIssue { .. } | Screen::MergingPr { .. } => String::new(),
     }
 }
 
@@ -339,12 +322,6 @@ pub(crate) fn issue_body_line_count(body: Option<&str>, width: usize) -> usize {
 fn status_bar_left(app: &App) -> String {
     if let Some(flash) = &app.ui.flash {
         return flash.clone();
-    }
-    if matches!(app.ui.screen, Screen::PrDetail { .. }) {
-        return " [o] open · [d] diff · [v] review · [m] merge · [i] ask · [Esc] back".to_string();
-    }
-    if matches!(app.ui.screen, Screen::IssueDetail { .. }) {
-        return " [o] open · [w] dismiss · [a] approve · [i] investigate · [Esc] back".to_string();
     }
     if matches!(app.ui.screen, Screen::DismissingIssue { .. }) {
         return " [↩] confirm · [Esc] cancel".to_string();
@@ -1219,15 +1196,6 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
                 );
             }
         },
-        Screen::LogDetail { view, scroll, .. } => {
-            render_log_detail(frame, view, scroll, content_area);
-        }
-        Screen::IssueDetail { issue, scroll, .. } => {
-            render_issue_detail(frame, issue, scroll, content_area);
-        }
-        Screen::PrDetail { pr, scroll, .. } => {
-            render_pr_detail(frame, pr, scroll, content_area, dim());
-        }
         Screen::MergingPr { pr, .. } => {
             render_pr_detail(frame, pr, &mut 0, content_area, dim());
         }
@@ -1298,9 +1266,8 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     if app.ui.show_help {
         let keybinds = match &app.ui.screen {
             Screen::UnifiedList { .. } => KEYBINDS_LIST,
-            Screen::LogDetail { .. } => KEYBINDS_LOG_READER,
-            Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } => KEYBINDS_ISSUE_READER,
-            Screen::PrDetail { .. } | Screen::MergingPr { .. } => KEYBINDS_PR_READER,
+            Screen::DismissingIssue { .. } => KEYBINDS_ISSUE_READER,
+            Screen::MergingPr { .. } => KEYBINDS_PR_READER,
         };
         let text = format_keybinds(keybinds);
         let lines = keybinds.len() as u16;
@@ -1934,26 +1901,6 @@ mod tests {
         insta::assert_snapshot!(screen_text(&buf));
     }
 
-    fn issue_detail_app(issue: domain::Issue, scroll: u16) -> App {
-        App {
-            ui: UiState {
-                screen: Screen::IssueDetail {
-                    parent: ListSnapshot {
-                        items: vec![],
-                        selected: 0,
-                        filter: Filter::default(),
-                        expanded_groups: HashSet::new(),
-                        detail_mode: crate::state::DetailMode::Hidden,
-                    },
-                    issue,
-                    scroll,
-                },
-                ..UiState::default()
-            },
-            ..App::default()
-        }
-    }
-
     fn stub_issue_with_body() -> domain::Issue {
         domain::Issue {
             number: 42,
@@ -1974,20 +1921,6 @@ mod tests {
                  ## Actual\n\nThe screen is blank."
                     .to_string(),
             ),
-        }
-    }
-
-    fn stub_issue_no_body() -> domain::Issue {
-        domain::Issue {
-            number: 7,
-            title: "No description issue".to_string(),
-            repo: domain::RepoSlug::new("ooloth", "hub"),
-            url: "https://github.com/ooloth/hub/issues/7".to_string(),
-            author: "agent".to_string(),
-            age: chrono::Duration::days(3),
-            urgency: domain::Urgency::Low,
-            labels: vec![],
-            body: None,
         }
     }
 
@@ -2033,41 +1966,7 @@ mod tests {
         insta::assert_snapshot!(screen_text(&buf));
     }
 
-    // ── Full-screen IssueDetail snapshots ─────────────────────────────────────
-
-    #[test]
-    fn full_screen_issue_detail_with_body() {
-        // I1: Issue with body and labels at scroll=0.
-        let mut app = issue_detail_app(stub_issue_with_body(), 0);
-        let buf = draw(&mut app, 80, 20);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn full_screen_issue_detail_no_body() {
-        // I2: Issue with no body and no labels — shows "(no description)" placeholder.
-        let mut app = issue_detail_app(stub_issue_no_body(), 0);
-        let buf = draw(&mut app, 80, 15);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn full_screen_issue_detail_scrolled() {
-        // I3: Same issue as I1 but scroll=3 — body content shifts up.
-        let mut app = issue_detail_app(stub_issue_with_body(), 3);
-        let buf = draw(&mut app, 80, 20);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn status_bar_in_issue_detail() {
-        // I4: Status bar in IssueDetail shows "[a] approve · [o] open · [Esc] back".
-        let mut app = issue_detail_app(stub_issue_with_body(), 0);
-        let buf = draw(&mut app, 120, 5);
-        insta::assert_snapshot!(status_row(&buf));
-    }
-
-    // ── Full-screen PrDetail snapshots ───────────────────────────────────────
+    // ── Full-screen MergingPr snapshots ──────────────────────────────────────
 
     fn stub_pr_with_body() -> domain::PullRequest {
         domain::PullRequest {
@@ -2098,161 +1997,22 @@ mod tests {
         }
     }
 
-    fn stub_pr_no_body() -> domain::PullRequest {
-        domain::PullRequest {
-            number: 99,
-            title: "Fix typo in README".to_string(),
-            repo: domain::RepoSlug::new("ooloth", "hub"),
-            url: "https://github.com/ooloth/hub/pull/99".to_string(),
-            age: chrono::Duration::hours(5),
-            urgency: domain::Urgency::Low,
-            kind: domain::PrKind::Mine,
-            author: "ooloth".to_string(),
-            review_decision: None,
-            approval_count: 0,
-            comment_count: 0,
-            head_branch: "fix/readme-typo".to_string(),
-            base_branch: "main".to_string(),
-            body: None,
-            ci_status: None,
-            changed_files: vec![],
-            total_changed_files: 0,
-            review_threads: vec![],
-            pr_comments: vec![],
-            merge_blocker: None,
-        }
-    }
-
-    fn pr_detail_app(pr: domain::PullRequest, scroll: u16) -> App {
-        App {
-            ui: UiState {
-                screen: Screen::PrDetail {
-                    parent: ListSnapshot {
-                        items: vec![],
-                        selected: 0,
-                        filter: Filter::default(),
-                        expanded_groups: HashSet::new(),
-                        detail_mode: crate::state::DetailMode::Hidden,
-                    },
-                    pr,
-                    scroll,
-                },
-                ..UiState::default()
-            },
-            ..App::default()
-        }
-    }
-
-    #[test]
-    fn full_screen_pr_detail_with_body() {
-        // P1: PR with body and review count at scroll=0.
-        let mut app = pr_detail_app(stub_pr_with_body(), 0);
-        let buf = draw(&mut app, 80, 20);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn full_screen_pr_detail_no_body() {
-        // P2: PR with no body — shows "(no description)" placeholder.
-        let mut app = pr_detail_app(stub_pr_no_body(), 0);
-        let buf = draw(&mut app, 80, 15);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn full_screen_pr_detail_scrolled() {
-        // P3: PR with body at scroll=2 — content shifts up.
-        let mut app = pr_detail_app(stub_pr_with_body(), 2);
-        let buf = draw(&mut app, 80, 20);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn status_bar_in_pr_detail() {
-        // P4: Status bar shows "[↩] open · [i] investigate · [Esc] back".
-        let mut app = pr_detail_app(stub_pr_with_body(), 0);
-        let buf = draw(&mut app, 120, 5);
-        insta::assert_snapshot!(status_row(&buf));
-    }
-
-    #[test]
-    fn full_screen_pr_detail_ci_success() {
-        // P5: CI success badge + review count in bottom-left.
-        let mut pr = stub_pr_with_body();
-        pr.ci_status = Some(domain::CiStatus::Success);
-        let mut app = pr_detail_app(pr, 0);
-        let buf = draw(&mut app, 80, 10);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn full_screen_pr_detail_ci_failure() {
-        // P6: CI failure badge, no reviews.
-        let mut pr = stub_pr_no_body();
-        pr.ci_status = Some(domain::CiStatus::Failure);
-        let mut app = pr_detail_app(pr, 0);
-        let buf = draw(&mut app, 80, 10);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn full_screen_pr_detail_ci_pending() {
-        // P7: CI pending badge + 1 approval.
-        let mut pr = stub_pr_with_body();
-        pr.ci_status = Some(domain::CiStatus::Pending);
-        pr.approval_count = 1;
-        pr.review_decision = Some(domain::ReviewDecision::Approved);
-        let mut app = pr_detail_app(pr, 0);
-        let buf = draw(&mut app, 80, 10);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn full_screen_pr_detail_approved() {
-        // P8: approved decision shown in bottom-left.
-        let mut pr = stub_pr_no_body();
-        pr.review_decision = Some(domain::ReviewDecision::Approved);
-        pr.approval_count = 1;
-        let mut app = pr_detail_app(pr, 0);
-        let buf = draw(&mut app, 80, 10);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn full_screen_pr_detail_changes_requested() {
-        // P9: changes-requested decision shown in bottom-left.
-        let mut pr = stub_pr_no_body();
-        pr.review_decision = Some(domain::ReviewDecision::ChangesRequested);
-        let mut app = pr_detail_app(pr, 0);
-        let buf = draw(&mut app, 80, 10);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn full_screen_pr_detail_with_conflict() {
-        // P10: merge conflict shown in bottom-left status row.
-        let mut pr = stub_pr_no_body();
-        pr.merge_blocker = Some(domain::MergeBlocker::Conflict);
-        let mut app = pr_detail_app(pr, 0);
-        let buf = draw(&mut app, 80, 10);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
     // ── Full-screen MergingPr snapshots ──────────────────────────────────────
 
     fn merging_pr_app(pr: domain::PullRequest) -> App {
+        let snapshot = ListSnapshot {
+            items: vec![],
+            selected: 0,
+            filter: Filter::default(),
+            expanded_groups: HashSet::new(),
+            detail_mode: crate::state::DetailMode::Hidden,
+        };
         App {
             ui: UiState {
                 screen: Screen::MergingPr {
-                    parent: ListSnapshot {
-                        items: vec![],
-                        selected: 0,
-                        filter: Filter::default(),
-                        expanded_groups: HashSet::new(),
-                        detail_mode: crate::state::DetailMode::Hidden,
-                    },
+                    parent: snapshot.clone(),
                     pr,
-                    prev: crate::state::PrPrevScreen::PrDetail,
+                    prev: crate::state::PrPrevScreen::UnifiedList { snapshot },
                 },
                 ..UiState::default()
             },
@@ -2274,107 +2034,6 @@ mod tests {
         let mut app = merging_pr_app(stub_pr_with_body());
         let buf = draw(&mut app, 120, 5);
         insta::assert_snapshot!(status_row(&buf));
-    }
-
-    // ── PrDetail diff snapshots ───────────────────────────────────────────────
-
-    fn stub_pr_with_diff() -> domain::PullRequest {
-        let mut pr = stub_pr_with_body();
-        pr.total_changed_files = 2;
-        pr.changed_files = vec![
-            domain::ChangedFile {
-                path: "src/main.rs".to_string(),
-                additions: 3,
-                deletions: 1,
-                patch: Some(
-                    "@@ -10,7 +10,9 @@\n context\n-old line\n+new line\n+another new\n+third new"
-                        .to_string(),
-                ),
-            },
-            domain::ChangedFile {
-                path: "assets/logo.png".to_string(),
-                additions: 0,
-                deletions: 0,
-                patch: None,
-            },
-        ];
-        pr
-    }
-
-    #[test]
-    fn full_screen_pr_detail_with_diff() {
-        // D1: PR body followed by diff section with one text file and one binary.
-        let mut app = pr_detail_app(stub_pr_with_diff(), 0);
-        let buf = draw(&mut app, 80, 30);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn full_screen_pr_detail_diff_truncated() {
-        // D2: total_changed_files > changed_files.len() — shows truncation footer.
-        let mut pr = stub_pr_with_diff();
-        pr.total_changed_files = 150;
-        let mut app = pr_detail_app(pr, 0);
-        let buf = draw(&mut app, 80, 30);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn full_screen_pr_detail_diff_scrolled() {
-        // D3: scrolled into the diff section.
-        let mut app = pr_detail_app(stub_pr_with_diff(), 10);
-        let buf = draw(&mut app, 80, 20);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn full_screen_pr_detail_with_inline_comments() {
-        // D4: inline review comment after a changed line; file-level comment at end.
-        let mut pr = stub_pr_with_diff();
-        pr.review_threads = vec![
-            domain::ReviewThread {
-                path: "src/main.rs".to_string(),
-                line: Some(11), // context line "context" is new-file line 10; "+new line" is 11
-                comments: vec![domain::ReviewComment {
-                    author: "reviewer".to_string(),
-                    age: chrono::Duration::days(2),
-                    body: "Why not use a constant here?".to_string(),
-                }],
-            },
-            domain::ReviewThread {
-                path: "src/main.rs".to_string(),
-                line: None, // file-level
-                comments: vec![domain::ReviewComment {
-                    author: "reviewer2".to_string(),
-                    age: chrono::Duration::hours(3),
-                    body: "Overall LGTM.".to_string(),
-                }],
-            },
-        ];
-        let mut app = pr_detail_app(pr, 0);
-        let buf = draw(&mut app, 80, 40);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn full_screen_pr_detail_with_pr_comments() {
-        // D5: top-level PR comments appear between body and diff.
-        let mut pr = stub_pr_with_diff();
-        pr.pr_comments = vec![
-            domain::ReviewComment {
-                author: "reviewer".to_string(),
-                age: chrono::Duration::days(1),
-                body: "Looks good overall, a few nits below.".to_string(),
-            },
-            domain::ReviewComment {
-                author: "reviewer2".to_string(),
-                age: chrono::Duration::hours(6),
-                body: "LGTM from my side.".to_string(),
-            },
-        ];
-        let mut app = pr_detail_app(pr, 0);
-        let buf = draw(&mut app, 80, 35);
-        insta::assert_snapshot!(screen_text(&buf));
     }
 
     // ── Full-screen detail view snapshots ─────────────────────────────────────

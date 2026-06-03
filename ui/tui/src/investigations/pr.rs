@@ -2,17 +2,6 @@ use crate::state::{PrOwnership, ReviewSkill};
 
 use super::LaunchConfig;
 
-pub(crate) fn bare_config(number: u64, repo: &str, ownership: PrOwnership) -> LaunchConfig {
-    LaunchConfig {
-        system_prompt: system_prompt(number, repo, ownership, None),
-        prompt: String::new(),
-        supporting_data: None,
-        model: "opus".to_string(),
-        allowed_tools: "Bash,Read,Edit,Write,Glob,Grep".to_string(),
-        env: vec![],
-    }
-}
-
 pub(crate) fn review_config(
     number: u64,
     repo: &str,
@@ -62,30 +51,8 @@ fn system_prompt(
 
 #[cfg(test)]
 mod tests {
-    use super::{bare_config, review_config, system_prompt};
+    use super::{review_config, system_prompt};
     use crate::state::{PrOwnership, ReviewSkill};
-
-    #[test]
-    fn bare_config_has_empty_prompt() {
-        let cfg = bare_config(42, "ooloth/hub", PrOwnership::Owned);
-        assert_eq!(cfg.prompt, "");
-    }
-
-    #[test]
-    fn bare_owned_system_prompt_contains_pr_number_repo_and_owned_hint() {
-        let cfg = bare_config(42, "ooloth/hub", PrOwnership::Owned);
-        assert!(cfg.system_prompt.contains("42"));
-        assert!(cfg.system_prompt.contains("ooloth/hub"));
-        assert!(cfg.system_prompt.contains("your PR"));
-        assert!(cfg.system_prompt.contains("local changes"));
-    }
-
-    #[test]
-    fn bare_external_system_prompt_contains_post_comments_hint() {
-        let cfg = bare_config(42, "ooloth/hub", PrOwnership::External);
-        assert!(cfg.system_prompt.contains("Post comments"));
-        assert!(cfg.system_prompt.contains("do not make local changes"));
-    }
 
     #[test]
     fn review_config_prompt_contains_skill_and_pr_number() {

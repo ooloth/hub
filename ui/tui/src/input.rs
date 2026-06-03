@@ -32,9 +32,6 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
     }
 
     let can_go_back = matches!(
-        app.ui.screen,
-        Screen::LogDetail { .. } | Screen::IssueDetail { .. } | Screen::PrDetail { .. }
-    ) || matches!(
         &app.ui.screen,
         Screen::UnifiedList {
             detail_mode: crate::state::DetailMode::Visible { .. },
@@ -76,9 +73,6 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
                 .unwrap_or(SelectedItemKind::Other);
             unified_list_keys(key, detail_mode, item_kind)
         }
-        Screen::LogDetail { .. } => log_detail_keys(key),
-        Screen::IssueDetail { .. } => issue_reader_keys(key),
-        Screen::PrDetail { .. } => pr_reader_keys(key),
         Screen::MergingPr { .. } => unreachable!("handled above"),
         Screen::DismissingIssue { .. } => unreachable!("handled above"),
     }
@@ -164,23 +158,6 @@ fn unified_list_keys(
     }
 }
 
-fn pr_reader_keys(key: KeyEvent) -> Option<Action> {
-    match (key.code, key.modifiers) {
-        (KeyCode::Up, _) | (KeyCode::Char('k'), _) => Some(Action::MoveUp),
-        (KeyCode::Down, _) | (KeyCode::Char('j'), _) => Some(Action::MoveDown),
-        (KeyCode::Char('g'), _) => Some(Action::PendingG),
-        (KeyCode::Char('G'), _) => Some(Action::MoveToBottom),
-        (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Action::MovePageUp),
-        (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(Action::MovePageDown),
-        (KeyCode::Enter, _) => Some(Action::Enter),
-        (KeyCode::Char('i'), _) => Some(Action::AskAboutPr),
-        (KeyCode::Char('o'), _) => Some(Action::OpenInOcto),
-        (KeyCode::Char('l'), _) => Some(Action::OpenInLazygit),
-        (KeyCode::Char('m'), _) => Some(Action::MergePr),
-        _ => None,
-    }
-}
-
 fn review_picker_submenu_key(key: KeyEvent) -> Option<Action> {
     if matches!(
         (key.code, key.modifiers),
@@ -193,34 +170,6 @@ fn review_picker_submenu_key(key: KeyEvent) -> Option<Action> {
         KeyCode::Char('m') => Some(Action::CommitReview(ReviewSkill::PrCommentsConverge)),
         // Esc and any unrecognized key dismiss the submenu without closing the split view.
         _ => Some(Action::CancelReview),
-    }
-}
-
-fn log_detail_keys(key: KeyEvent) -> Option<Action> {
-    match (key.code, key.modifiers) {
-        (KeyCode::Up, _) | (KeyCode::Char('k'), _) => Some(Action::MoveUp),
-        (KeyCode::Down, _) | (KeyCode::Char('j'), _) => Some(Action::MoveDown),
-        (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Action::MovePageUp),
-        (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(Action::MovePageDown),
-        (KeyCode::Enter, _) => Some(Action::Enter),
-        (KeyCode::Char('i'), _) => Some(Action::Investigate),
-        _ => None,
-    }
-}
-
-fn issue_reader_keys(key: KeyEvent) -> Option<Action> {
-    match (key.code, key.modifiers) {
-        (KeyCode::Up, _) | (KeyCode::Char('k'), _) => Some(Action::MoveUp),
-        (KeyCode::Down, _) | (KeyCode::Char('j'), _) => Some(Action::MoveDown),
-        (KeyCode::Char('g'), _) => Some(Action::PendingG),
-        (KeyCode::Char('G'), _) => Some(Action::MoveToBottom),
-        (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Action::MovePageUp),
-        (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(Action::MovePageDown),
-        (KeyCode::Enter, _) => Some(Action::Enter),
-        (KeyCode::Char('a'), _) => Some(Action::ApproveForAgent),
-        (KeyCode::Char('d'), _) => Some(Action::DismissIssue),
-        (KeyCode::Char('i'), _) => Some(Action::Investigate),
-        _ => None,
     }
 }
 
@@ -279,36 +228,6 @@ mod tests {
         KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
     }
 
-    fn log_detail_app() -> App {
-        let snapshot = ListSnapshot {
-            items: vec![],
-            selected: 0,
-            filter: Filter::default(),
-            expanded_groups: std::collections::HashSet::new(),
-            detail_mode: crate::state::DetailMode::Hidden,
-        };
-        App {
-            ui: UiState {
-                screen: Screen::LogDetail {
-                    parent: snapshot,
-                    view: crate::display::LogDetailView::Gcp {
-                        project: "proj".to_string(),
-                        env: "prod".to_string(),
-                        title: "errors".to_string(),
-                        message: "oops".to_string(),
-                        url: String::new(),
-                        lookback: "1h".to_string(),
-                        lines: vec![crate::display::LogLine::parse("{}")],
-                        gcp_project: String::new(),
-                    },
-                    scroll: 0,
-                },
-                ..UiState::default()
-            },
-            ..App::default()
-        }
-    }
-
     fn filtered_app(category: Category) -> App {
         App {
             ui: UiState {
@@ -339,37 +258,6 @@ mod tests {
         }
     }
 
-    fn issue_detail_app() -> App {
-        let parent = ListSnapshot {
-            items: vec![],
-            selected: 0,
-            filter: Filter::default(),
-            expanded_groups: std::collections::HashSet::new(),
-            detail_mode: crate::state::DetailMode::Hidden,
-        };
-        App {
-            ui: UiState {
-                screen: Screen::IssueDetail {
-                    parent,
-                    issue: domain::Issue {
-                        number: 1,
-                        title: "test".to_string(),
-                        repo: domain::RepoSlug::new("ooloth", "hub"),
-                        url: "https://github.com/ooloth/hub/issues/1".to_string(),
-                        author: "agent".to_string(),
-                        age: chrono::Duration::zero(),
-                        urgency: domain::Urgency::Low,
-                        labels: vec![],
-                        body: None,
-                    },
-                    scroll: 0,
-                },
-                ..UiState::default()
-            },
-            ..App::default()
-        }
-    }
-
     #[rstest]
     #[case(ch('q'), Some(Action::Quit))]
     #[case(ctrl('c'), Some(Action::Quit))]
@@ -380,15 +268,6 @@ mod tests {
         #[case] expected: Option<Action>,
     ) {
         assert_eq!(key_to_action(&App::default(), key), expected);
-    }
-
-    #[rstest]
-    #[case(ch('q'), Some(Action::Quit))]
-    #[case(ctrl('c'), Some(Action::Quit))]
-    #[case(ch('?'), Some(Action::ToggleHelp))]
-    #[case(ch('r'), Some(Action::Refresh))]
-    fn universal_keys_fire_in_log_detail(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
-        assert_eq!(key_to_action(&log_detail_app(), key), expected);
     }
 
     #[test]
@@ -403,14 +282,6 @@ mod tests {
         assert_eq!(
             key_to_action(&app, k(KeyCode::Esc)),
             Some(Action::CloseHelp)
-        );
-    }
-
-    #[test]
-    fn esc_goes_back_from_log_detail() {
-        assert_eq!(
-            key_to_action(&log_detail_app(), k(KeyCode::Esc)),
-            Some(Action::Back)
         );
     }
 
@@ -486,29 +357,6 @@ mod tests {
     }
 
     #[rstest]
-    #[case(k(KeyCode::Up), Some(Action::MoveUp))]
-    #[case(ch('k'), Some(Action::MoveUp))]
-    #[case(k(KeyCode::Down), Some(Action::MoveDown))]
-    #[case(ch('j'), Some(Action::MoveDown))]
-    #[case(ctrl('u'), Some(Action::MovePageUp))]
-    #[case(ctrl('d'), Some(Action::MovePageDown))]
-    #[case(k(KeyCode::Enter), Some(Action::Enter))]
-    #[case(ch('i'), Some(Action::Investigate))]
-    #[case(ch('h'), None)]
-    #[case(ch('l'), None)]
-    #[case(ch('g'), None)]
-    #[case(ch('G'), None)]
-    #[case(ch('p'), None)]
-    #[case(ch('e'), None)]
-    #[case(ch('o'), None)]
-    #[case(ch('a'), None)]
-    #[case(ch('/'), None)]
-    #[case(ch('x'), None)]
-    fn log_detail_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
-        assert_eq!(key_to_action(&log_detail_app(), key), expected);
-    }
-
-    #[rstest]
     #[case(ctrl('c'), Some(Action::Quit))]
     #[case(k(KeyCode::Esc), Some(Action::CancelQuery))]
     #[case(k(KeyCode::Enter), Some(Action::CommitQuery))]
@@ -518,36 +366,6 @@ mod tests {
     #[case(ch('?'), Some(Action::AppendQuery('?')))]
     fn query_mode_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
         assert_eq!(key_to_action(&querying_app(), key), expected);
-    }
-
-    #[rstest]
-    #[case(k(KeyCode::Up), Some(Action::MoveUp))]
-    #[case(ch('k'), Some(Action::MoveUp))]
-    #[case(k(KeyCode::Down), Some(Action::MoveDown))]
-    #[case(ch('j'), Some(Action::MoveDown))]
-    #[case(ch('g'), Some(Action::PendingG))]
-    #[case(ch('G'), Some(Action::MoveToBottom))]
-    #[case(ctrl('u'), Some(Action::MovePageUp))]
-    #[case(ctrl('d'), Some(Action::MovePageDown))]
-    #[case(k(KeyCode::Enter), Some(Action::Enter))]
-    #[case(ch('a'), Some(Action::ApproveForAgent))]
-    #[case(ch('d'), Some(Action::DismissIssue))]
-    #[case(ch('i'), Some(Action::Investigate))]
-    #[case(ch('o'), None)]
-    #[case(ch('p'), None)]
-    #[case(ch('e'), None)]
-    #[case(ch('/'), None)]
-    #[case(ch('x'), None)]
-    fn issue_detail_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
-        assert_eq!(key_to_action(&issue_detail_app(), key), expected);
-    }
-
-    #[test]
-    fn esc_goes_back_from_issue_detail() {
-        assert_eq!(
-            key_to_action(&issue_detail_app(), k(KeyCode::Esc)),
-            Some(Action::Back)
-        );
     }
 
     fn dismissing_app() -> App {
@@ -641,64 +459,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn universal_keys_fire_in_issue_detail() {
-        assert_eq!(
-            key_to_action(&issue_detail_app(), ch('q')),
-            Some(Action::Quit)
-        );
-        assert_eq!(
-            key_to_action(&issue_detail_app(), ch('r')),
-            Some(Action::Refresh)
-        );
-        assert_eq!(
-            key_to_action(&issue_detail_app(), ch('?')),
-            Some(Action::ToggleHelp)
-        );
-    }
-
-    fn pr_detail_app() -> App {
-        let parent = ListSnapshot {
-            items: vec![],
-            selected: 0,
-            filter: Filter::default(),
-            expanded_groups: std::collections::HashSet::new(),
-            detail_mode: crate::state::DetailMode::Hidden,
-        };
-        App {
-            ui: UiState {
-                screen: Screen::PrDetail {
-                    parent,
-                    pr: domain::PullRequest {
-                        number: 7,
-                        title: "test pr".to_string(),
-                        repo: domain::RepoSlug::new("ooloth", "hub"),
-                        url: "https://github.com/ooloth/hub/pull/7".to_string(),
-                        age: chrono::Duration::zero(),
-                        urgency: domain::Urgency::Low,
-                        kind: domain::PrKind::Mine,
-                        author: "ooloth".to_string(),
-                        review_decision: None,
-                        approval_count: 0,
-                        comment_count: 0,
-                        head_branch: "feat/thing".to_string(),
-                        base_branch: "main".to_string(),
-                        body: None,
-                        ci_status: None,
-                        changed_files: vec![],
-                        total_changed_files: 0,
-                        review_threads: vec![],
-                        pr_comments: vec![],
-                        merge_blocker: None,
-                    },
-                    scroll: 0,
-                },
-                ..UiState::default()
-            },
-            ..App::default()
-        }
-    }
-
     fn merging_app() -> App {
         let parent = ListSnapshot {
             items: vec![],
@@ -707,6 +467,7 @@ mod tests {
             expanded_groups: std::collections::HashSet::new(),
             detail_mode: crate::state::DetailMode::Hidden,
         };
+        let snapshot = parent.clone();
         App {
             ui: UiState {
                 screen: Screen::MergingPr {
@@ -733,40 +494,12 @@ mod tests {
                         pr_comments: vec![],
                         merge_blocker: None,
                     },
-                    prev: PrPrevScreen::PrDetail,
+                    prev: PrPrevScreen::UnifiedList { snapshot },
                 },
                 ..UiState::default()
             },
             ..App::default()
         }
-    }
-
-    #[rstest]
-    #[case(k(KeyCode::Up), Some(Action::MoveUp))]
-    #[case(ch('k'), Some(Action::MoveUp))]
-    #[case(k(KeyCode::Down), Some(Action::MoveDown))]
-    #[case(ch('j'), Some(Action::MoveDown))]
-    #[case(ch('g'), Some(Action::PendingG))]
-    #[case(ch('G'), Some(Action::MoveToBottom))]
-    #[case(ctrl('u'), Some(Action::MovePageUp))]
-    #[case(ctrl('d'), Some(Action::MovePageDown))]
-    #[case(k(KeyCode::Enter), Some(Action::Enter))]
-    #[case(ch('i'), Some(Action::AskAboutPr))]
-    #[case(ch('o'), Some(Action::OpenInOcto))]
-    #[case(ch('l'), Some(Action::OpenInLazygit))]
-    #[case(ch('m'), Some(Action::MergePr))]
-    #[case(ch('v'), None)]
-    #[case(ch('x'), None)]
-    fn pr_detail_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
-        assert_eq!(key_to_action(&pr_detail_app(), key), expected);
-    }
-
-    #[test]
-    fn esc_goes_back_from_pr_detail() {
-        assert_eq!(
-            key_to_action(&pr_detail_app(), k(KeyCode::Esc)),
-            Some(Action::Back)
-        );
     }
 
     #[rstest]
