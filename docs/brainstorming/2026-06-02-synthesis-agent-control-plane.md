@@ -70,25 +70,66 @@ Errors → stderr, exit 1: `ERROR: task TASK-0042 status is 'in-progress', expec
 - Three block types: diff (old/new with −/+), bash command, file write
 - Context % as colored bar: green <75%, yellow 75–90%, red >90%
 
-**TUI split panel:**
-```
-No agents running → full-width urgency list
-Agents running    → 50/50 split:
+**TUI layout — same pattern as existing PR detail view:**
 
-┌─ Urgency List ──────────────┬─ Running Agents ──────────┐
-│ CRITICAL                    │ ⊛ TASK-0042  ooloth/hub   │
-│  • PR#42 · auth refactor    │   Implementing…  18m 42s  │
-│ HIGH                        │   Bash · Edit x2 · Read   │
-│  • Issue#78 · docs update   │   Cost: $0.14  Ctx: 42%   │
-└─────────────────────────────┴───────────────────────────┘
+Agent sessions appear as items in the unified urgency list (mixed with PRs, issues, CI).
+Selecting one auto-opens the detail panels below — no separate layout mode.
+
 ```
+┌─ All ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Agent · TASK-0042 · auth refactor · review · 18m · $0.14 · ctx 42%                                                                                            ooloth/hub · 18m ago │
+│ Agent · TASK-0043 · fix CI flakiness · in-progress · 4m · $0.03 · ctx 12%                                                                                     ooloth/hub · 4m ago  │
+│ PR · gmail: enforce TLS certificate verification in STARTTLS connection #42 · ooloth · no reviews                                                         ooloth/media-tools · 14d │
+│ PR · Add project overview, integrations, and dev commands to CLAUDE.md #83 · ooloth · no reviews · conflict                                          ooloth/michaeluloth.com · 13d │
+│ PR · Fix wrong variable name and API in README.invariant.md #84 · ooloth · no reviews                                                                ooloth/michaeluloth.com · 13d │
+│ PR · cli: fix broken import and stale docstring #55 · ooloth · no reviews · conflict                                                                          ooloth/scripts · 12d │
+│ PR · workflows/implement: filter claude stderr before forwarding to caller #159 · ooloth · no reviews                                                             ooloth/hub · 12d │
+│ PR · docs: add cargo-nextest to CONTRIBUTING prerequisites #210 · ooloth · no reviews                                                                              ooloth/hub · 8d │
+│ PR · docs: add deploy playbook and fix CLAUDE.md reference #49 · ooloth · no reviews                                                                       ooloth/media-tools · 8d │
+│ CI · workflows/build: cargo check failed                                                                                                                       ooloth/hub · 2h ago │
+│                                                                                                                                                                                    │
+│ Issue · Propagate importer error context in status.rs instead of silently dropping it #12 · author:agent, status:needs-human-review                       ooloth/hub-private · 16d │
+│ Issue · Replace let mut accumulation loop in importer.rs with iterator partition #14 · author:agent, status:needs-human-review                            ooloth/hub-private · 16d │
+│ Issue · Non-obvious VPN network namespace constraint not documented for agents #7 · author:agent, status:needs-human-review                                     ooloth/media · 16d │
+│ Issue · Document observability signals so agents can diagnose failures #66 · author:agent, status:needs-human-review                                              ooloth/hub · 16d │
+│ Issue · Add CLAUDE.md to orient agents to project purpose #5 · author:agent, status:needs-human-review                                                 ooloth/advent-of-code · 16d │
+│                                                                                                                                                                                    │
+│                                                                                                                                                                                    │
+│                                                                                                                                                                                    │
+│                                                                                                                                                                                    │
+│                                                                                                                                                                                    │
+├─ session stream ─────────────────────────────────────────────────────────────────────────────────────────────┬─ task info ─────────────────────────────────────────────────────────┤
+│ 14:39  E  Edit /src/domain/types.rs                                                                         │ TASK-0042 · auth refactor                                            │
+│           - pub fn session_id(&self) -> String {                                                            │                                                                      │
+│           + pub fn session_id(&self) -> &str {                                                              │ status     review                                                    │
+│ 14:38  +  Bash: cargo test -p hub-tui -- 42 passed (3.2s)                                                   │ type       implement                                                 │
+│ 14:37  >  "Running tests to verify the auth changes work correctly..."                                      │                                                                      │
+│ 14:36  E  Edit /src/config.rs                                                                               │ pr         ooloth/hub #214                                           │
+│           - let session = self.session.clone();                                                             │ ticket     HUB-42                                                    │
+│           + let session = &self.session;                                                                    │                                                                      │
+│ 14:35  o  Read /docs/architecture/secrets.md (4.2k)                                                         │ cost       $0.14                                                     │
+│ 14:34  +  Bash: just check -- passed                                                                        │ ctx        ########..  42%                                           │
+│ 14:33  >  "Starting with config to understand auth flow..."                                                 │ elapsed    18m 23s                                                   │
+│ 14:32  o  Read /src/auth.rs (8.1k)                                                                          │ turns      12                                                        │
+│ 14:32  *  Session initialized (claude-sonnet-4-6)                                                           │                                                                      │
+│                                                                                                             │ ───────────────────────────────────────────────────────────────────  │
+│                                                                                                             │ > human  fix line 42, add test case Z                                │
+│                                                                                                             │ * agent  Done -- see PR for details                                  │
+└─────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────┘
+ 1/1038 · [↩] details · [d] dispatch · [y] approve · [n] reject · [v] transcript · [i] interrupt · [p] prs · [e] errors · [O] issues · [/] search
+```
+
+**Urgency mapping for sessions:**
+- `review` / `blocked` → High (orange) — needs human action, same tier as "PR needs review"
+- `in-progress` → neutral/Low — visible for monitoring, not demanding attention
+- `backlog` / `ready` — not shown in unified list (not yet actionable)
 
 **Keybindings:**
-- `d` — dispatch modal (model, worktree mode) → ENTER → spawn → show agent detail
-- `y` / `n` — approve / reject (when agent sets `review`)
-- `v` — view transcript
+- `d` — dispatch modal → ENTER → spawn → auto-selects new session item in list
+- `y` / `n` — approve / reject (when session is in `review`)
+- `v` — open full transcript in tmux split
 - `i` — interrupt agent
-- `Esc` — back
+- `Esc` — collapse detail panes, return to list-only
 
 **Human-agent collaboration:**
 - Both sides write to `task_comments`; agent reads comments on resume via CLI
@@ -140,10 +181,11 @@ Agents running    → 50/50 split:
 
 ### Phase 3 — TUI agent control plane ← **biggest game changer; do this next**
 6. `AgentSession` domain type (session_id, status, cost_usd, context_pct, turns, activity_feed)
-7. Split panel layout: urgency list + running agents side-by-side
-8. JSONL parser: line-by-line, filter system messages, three block types
-9. Agent detail view: metadata + activity feed + actions footer
-10. Keybindings: `d` dispatch modal, `y`/`n` approve/reject, `v` transcript, `i` interrupt
+7. Sessions as items in the unified list, urgency-ranked (`review`/`blocked`=High, `in-progress`=Low)
+8. One-line list format: `Agent · TASK-0042 · title · status · elapsed · cost · ctx%`
+9. JSONL parser: line-by-line, filter system messages, three block types (diff, bash, file write)
+10. Detail view: stream pane (bottom left, live-polls 10s) + task info pane (bottom right)
+11. Keybindings: `d` dispatch modal, `y`/`n` approve/reject, `v` transcript, `i` interrupt
 
 ### Phase 4 — CI failure + task link
 11. Show `TASK-XXXX` badge on CI failure rows with a linked task
