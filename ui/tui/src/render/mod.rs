@@ -1,5 +1,4 @@
-pub(crate) mod pr_card;
-mod pr_split_detail;
+mod pr_detail_columns;
 
 use chrono::Utc;
 use ratatui::{
@@ -127,21 +126,6 @@ const KEYBINDS_PR_READER: &[(&str, &str)] = &[
     ("gg / G", "go to top / bottom"),
     ("Ctrl-u / Ctrl-d", "page up / down"),
     ("Enter", "open in browser"),
-    ("i", "investigate PR"),
-    ("o", "open in octo"),
-    ("l", "open in lazygit"),
-    ("v", "review"),
-    ("m", "squash and merge"),
-    ("r", "refresh"),
-    ("Esc", "back to list"),
-    ("q / Ctrl-C", "quit"),
-];
-
-const KEYBINDS_PR_SPLIT: &[(&str, &str)] = &[
-    ("?", "toggle help"),
-    ("k / j", "select prev / next PR"),
-    ("gg / G", "first / last PR"),
-    ("Ctrl-u / Ctrl-d", "page up / down"),
     ("i", "investigate PR"),
     ("o", "open in octo"),
     ("l", "open in lazygit"),
@@ -318,16 +302,6 @@ fn position_label(screen: &Screen) -> String {
                 format!("{}/{n}", selected + 1)
             }
         }
-        Screen::PrSplit {
-            items, selected, ..
-        } => {
-            let n = items.len();
-            if n == 0 {
-                String::new()
-            } else {
-                format!("{}/{n}", selected + 1)
-            }
-        }
         Screen::LogDetail { .. }
         | Screen::IssueDetail { .. }
         | Screen::DismissingIssue { .. }
@@ -369,19 +343,6 @@ fn status_bar_left(app: &App) -> String {
     }
     if matches!(app.ui.screen, Screen::PrDetail { .. }) {
         return " [o] open · [d] diff · [v] review · [m] merge · [i] ask · [Esc] back".to_string();
-    }
-    if let Screen::PrSplit {
-        items, selected, ..
-    } = &app.ui.screen
-    {
-        if items.is_empty() {
-            return " [Esc] back".to_string();
-        }
-        return format!(
-            " {}/{} · [o] open · [d] diff · [v] review · [m] merge · [i] ask · [Esc] back",
-            selected + 1,
-            items.len()
-        );
     }
     if matches!(app.ui.screen, Screen::IssueDetail { .. }) {
         return " [o] open · [w] dismiss · [a] approve · [i] investigate · [Esc] back".to_string();
@@ -717,7 +678,7 @@ fn render_pr_detail(
     );
 
     frame.render_widget(
-        Paragraph::new(pr_split_detail::pr_right_column_lines(
+        Paragraph::new(pr_detail_columns::pr_right_column_lines(
             pr,
             meta_area.width as usize,
             meta_area.height as usize,
@@ -889,126 +850,6 @@ fn render_dismiss_modal(frame: &mut ratatui::Frame, input: &tui_input::Input, ar
         input_area.x + (cursor_pos.saturating_sub(scroll)) as u16,
         input_area.y,
     ));
-}
-
-fn pr_split_title(query: Option<&str>, query_input: Option<&str>) -> String {
-    match query_input.or(query).filter(|s| !s.is_empty()) {
-        None => " PRs ".to_string(),
-        Some(q) => format!(" PRs · \"{q}\" "),
-    }
-}
-
-fn pr_split_chrome(query: Option<&str>, query_input: Option<&str>) -> Style {
-    if query_input.is_some() {
-        Style::default().fg(Color::Yellow)
-    } else if query.is_some() {
-        Style::default().fg(FOCUS_COLOR)
-    } else {
-        dim()
-    }
-}
-
-fn render_pr_split(
-    frame: &mut ratatui::Frame,
-    items: &[domain::PullRequest],
-    selected: usize,
-    query: Option<&str>,
-    query_input: Option<&str>,
-    area: Rect,
-) {
-    let title_text = pr_split_title(query, query_input);
-    let chrome = pr_split_chrome(query, query_input);
-    let title = Span::styled(
-        title_text,
-        chrome
-            .add_modifier(Modifier::BOLD)
-            .remove_modifier(Modifier::DIM),
-    );
-
-    if items.is_empty() {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(chrome)
-            .title(title);
-        let paragraph = Paragraph::new("No PRs.").block(block);
-        frame.render_widget(paragraph, area);
-        return;
-    }
-
-    let outer_block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(chrome)
-        .title(title);
-    let inner = outer_block.inner(area);
-    frame.render_widget(outer_block, area);
-
-    let [left_inner, divider_inner, right_raw] = Layout::horizontal([
-        Constraint::Percentage(40),
-        Constraint::Length(1),
-        Constraint::Fill(1),
-    ])
-    .areas(inner);
-
-    // Vertical divider and top/bottom junctions
-    {
-        let buf = frame.buffer_mut();
-        for y in inner.y..inner.y + inner.height {
-            buf.set_string(divider_inner.x, y, "│", Style::default());
-        }
-        buf.set_string(divider_inner.x, area.y, "┬", Style::default());
-        buf.set_string(
-            divider_inner.x,
-            area.y + area.height - 1,
-            "┴",
-            Style::default(),
-        );
-    }
-
-    // 1-char left padding for the right pane
-    let right_inner = Rect {
-        x: right_raw.x + 1,
-        width: right_raw.width.saturating_sub(1),
-        ..right_raw
-    };
-
-    render_pr_card_list(frame, items, selected, left_inner);
-    pr_split_detail::render_pr_split_detail(frame, &items[selected], right_inner);
-}
-
-fn render_pr_card_list(
-    frame: &mut ratatui::Frame,
-    items: &[domain::PullRequest],
-    selected: usize,
-    area: Rect,
-) {
-    let inner_width = area.width as usize;
-    let last_idx = items.len().saturating_sub(1);
-    // Dividers are separate ListItems so they are never part of the
-    // selection highlight. Card i is at list index i*2; dividers occupy
-    // the odd indices between them.
-    let list_items: Vec<ListItem> = items
-        .iter()
-        .enumerate()
-        .flat_map(|(i, pr)| {
-            let card = ListItem::new(pr_card::pr_card_lines(pr, inner_width));
-            if i < last_idx {
-                vec![card, ListItem::new(card_divider(inner_width))]
-            } else {
-                vec![card]
-            }
-        })
-        .collect();
-    let mut state = ListState::default();
-    state.select(Some(selected * 2));
-    let list = List::new(list_items).highlight_style(list_highlight());
-    frame.render_stateful_widget(list, area, &mut state);
-}
-
-fn card_divider(inner_width: usize) -> Line<'static> {
-    let dashes = "─".repeat(inner_width.saturating_sub(1));
-    Line::from(Span::styled(format!(" {dashes}"), dim()))
 }
 
 fn render_log_detail(
@@ -1371,21 +1212,6 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
             render_issue_detail(frame, issue, &mut 0, content_area);
             render_dismiss_modal(frame, input, frame.area());
         }
-        Screen::PrSplit {
-            items,
-            selected,
-            query,
-            ..
-        } => {
-            render_pr_split(
-                frame,
-                items,
-                *selected,
-                query.as_deref(),
-                app.ui.query_input.as_deref(),
-                content_area,
-            );
-        }
     }
 
     let right_status =
@@ -1444,7 +1270,6 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
             Screen::PrDetail { .. } | Screen::ReviewingPr { .. } | Screen::MergingPr { .. } => {
                 KEYBINDS_PR_READER
             }
-            Screen::PrSplit { .. } => KEYBINDS_PR_SPLIT,
         };
         let text = format_keybinds(keybinds);
         let lines = keybinds.len() as u16;
@@ -2577,152 +2402,6 @@ mod tests {
             wrap_text("alpha beta gamma", 10),
             vec!["alpha beta", "gamma"]
         );
-    }
-
-    // ── PrSplit ───────────────────────────────────────────────────────────────
-
-    fn pr_split_pr(number: u64, title: &str, urgency: domain::Urgency) -> domain::PullRequest {
-        domain::PullRequest {
-            number,
-            title: title.to_string(),
-            repo: domain::RepoSlug::new("ooloth", "hub"),
-            url: format!("https://github.com/ooloth/hub/pull/{number}"),
-            age: chrono::Duration::days(2),
-            urgency,
-            kind: domain::PrKind::Mine,
-            author: "ooloth".to_string(),
-            review_decision: None,
-            approval_count: 0,
-            comment_count: 0,
-            head_branch: format!("feat/{number}"),
-            base_branch: "main".to_string(),
-            body: Some(format!("Body of PR #{number}.")),
-            ci_status: None,
-            changed_files: vec![],
-            total_changed_files: 0,
-            review_threads: vec![],
-            pr_comments: vec![],
-            merge_blocker: None,
-        }
-    }
-
-    fn pr_split_app(items: Vec<domain::PullRequest>, selected: usize) -> App {
-        App {
-            ui: UiState {
-                screen: Screen::PrSplit {
-                    parent: ListSnapshot {
-                        items: vec![],
-                        selected: 0,
-                        filter: Filter::default(),
-                        expanded_groups: HashSet::new(),
-                        detail_mode: crate::state::DetailMode::Hidden,
-                    },
-                    all_items: items.clone(),
-                    items,
-                    selected,
-                    query: None,
-                },
-                ..UiState::default()
-            },
-            ..App::default()
-        }
-    }
-
-    #[test]
-    fn full_screen_pr_split_empty() {
-        // S1: No PRs — full-width fallback block with "No PRs available."
-        let mut app = pr_split_app(vec![], 0);
-        let buf = draw(&mut app, 195, 40);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn full_screen_pr_split_first_selected() {
-        // S2: 3 PRs, first selected — left card list (selection highlighted on
-        // PR #1) + right detail pane for PR #1.
-        let mut app = pr_split_app(
-            vec![
-                pr_split_pr(1, "first PR with conflict marker", domain::Urgency::High),
-                pr_split_pr(2, "second PR awaiting reviews", domain::Urgency::Medium),
-                pr_split_pr(3, "third PR fresh", domain::Urgency::Low),
-            ],
-            0,
-        );
-        let buf = draw(&mut app, 195, 40);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn full_screen_pr_split_last_selected() {
-        // S3: Same 3 PRs, last selected — right pane swaps to PR #3 detail.
-        let mut app = pr_split_app(
-            vec![
-                pr_split_pr(1, "first PR with conflict marker", domain::Urgency::High),
-                pr_split_pr(2, "second PR awaiting reviews", domain::Urgency::Medium),
-                pr_split_pr(3, "third PR fresh", domain::Urgency::Low),
-            ],
-            2,
-        );
-        let buf = draw(&mut app, 195, 40);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn full_screen_pr_split_narrow_terminal() {
-        // S4: 100 cols (cramped) — both panes still render per the
-        // "always split" decision; titles wrap and the right pane shows
-        // the H1 overflow hint when content exceeds the visible height.
-        let mut app = pr_split_app(
-            vec![
-                pr_split_pr(
-                    1,
-                    "first PR title that is long enough to wrap",
-                    domain::Urgency::High,
-                ),
-                pr_split_pr(2, "second PR", domain::Urgency::Low),
-            ],
-            0,
-        );
-        let buf = draw(&mut app, 100, 20);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn full_screen_pr_split_detail_populated() {
-        // S5: Selected PR has body content, files-changed list, CI status,
-        // and a merge blocker — exercises every section of the right pane.
-        let mut pr = pr_split_pr(159, "filter claude stderr", domain::Urgency::Medium);
-        pr.body = Some(
-            "The agent invocation path forwards stderr verbatim, which has\n\
-             leaked token-bearing lines into committed transcripts."
-                .to_string(),
-        );
-        pr.head_branch = "fix/stderr-filter".to_string();
-        pr.ci_status = Some(domain::CiStatus::Success);
-        pr.changed_files = vec![
-            domain::ChangedFile {
-                path: "workflows/src/agent.rs".to_string(),
-                additions: 24,
-                deletions: 3,
-                patch: None,
-            },
-            domain::ChangedFile {
-                path: "workflows/src/lib.rs".to_string(),
-                additions: 1,
-                deletions: 0,
-                patch: None,
-            },
-            domain::ChangedFile {
-                path: "tests/agent_test.rs".to_string(),
-                additions: 18,
-                deletions: 0,
-                patch: None,
-            },
-        ];
-        pr.total_changed_files = 3;
-        let mut app = pr_split_app(vec![pr], 0);
-        let buf = draw(&mut app, 195, 40);
-        insta::assert_snapshot!(screen_text(&buf));
     }
 
     // ── Split view snapshot tests ─────────────────────────────────────────────

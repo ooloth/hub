@@ -63,7 +63,6 @@ impl App {
                     Screen::LogDetail { parent, .. }
                     | Screen::IssueDetail { parent, .. }
                     | Screen::PrDetail { parent, .. }
-                    | Screen::PrSplit { parent, .. }
                     | Screen::ReviewingPr { parent, .. } => {
                         let flat_rows = flatten(&parent.items, &parent.expanded_groups);
                         Screen::UnifiedList {
@@ -101,43 +100,6 @@ impl App {
                 });
                 vec![]
             }
-            Action::EnterPrSplit => {
-                let Screen::UnifiedList {
-                    items,
-                    selected,
-                    filter,
-                    expanded_groups,
-                    detail_mode,
-                    ..
-                } = &self.ui.screen
-                else {
-                    return vec![];
-                };
-                let snapshot = ListSnapshot {
-                    items: items.clone(),
-                    selected: *selected,
-                    filter: filter.clone(),
-                    expanded_groups: expanded_groups.clone(),
-                    detail_mode: detail_mode.clone(),
-                };
-                let prs: Vec<_> = self
-                    .data
-                    .raw_items
-                    .iter()
-                    .filter_map(|item| match item {
-                        StatusItem::Pr(pr) => Some(pr.clone()),
-                        _ => None,
-                    })
-                    .collect();
-                self.ui.screen = Screen::PrSplit {
-                    parent: snapshot,
-                    all_items: prs.clone(),
-                    items: prs,
-                    selected: 0,
-                    query: None,
-                };
-                vec![]
-            }
             Action::ClearFilter => {
                 self.ui.query_input = None;
                 let new_filter = match &self.ui.screen {
@@ -162,7 +124,6 @@ impl App {
                 // rather than forcing them to retype. Esc still clears everything.
                 let existing = match &self.ui.screen {
                     Screen::UnifiedList { filter, .. } => filter.query.clone().unwrap_or_default(),
-                    Screen::PrSplit { query, .. } => query.clone().unwrap_or_default(),
                     _ => String::new(),
                 };
                 self.ui.query_input = Some(existing);
@@ -183,34 +144,17 @@ impl App {
                 vec![]
             }
             Action::CommitQuery => {
-                let committed = self.ui.query_input.take().filter(|q| !q.is_empty());
-                if let Screen::PrSplit { query, .. } = &mut self.ui.screen {
-                    *query = committed;
-                }
+                self.ui.query_input = None;
                 vec![]
             }
             Action::CancelQuery => {
                 self.ui.query_input = None;
-                match &mut self.ui.screen {
-                    Screen::PrSplit {
-                        all_items,
-                        items,
-                        selected,
-                        query,
-                        ..
-                    } => {
-                        *items = all_items.clone();
-                        *selected = 0;
-                        *query = None;
-                    }
-                    Screen::UnifiedList { filter, .. } => {
-                        let cat = filter.category;
-                        self.rebuild_unified(Filter {
-                            category: cat,
-                            query: None,
-                        });
-                    }
-                    _ => {}
+                if let Screen::UnifiedList { filter, .. } = &mut self.ui.screen {
+                    let cat = filter.category;
+                    self.rebuild_unified(Filter {
+                        category: cat,
+                        query: None,
+                    });
                 }
                 vec![]
             }
@@ -272,7 +216,6 @@ impl App {
                 Screen::LogDetail { .. } => self.handle_log_detail(action),
                 Screen::IssueDetail { .. } => self.handle_issue_reader(action),
                 Screen::PrDetail { .. } => self.handle_pr_reader(action),
-                Screen::PrSplit { .. } => self.handle_pr_split(action),
                 Screen::ReviewingPr { .. } => self.handle_reviewing_pr(action),
                 Screen::MergingPr { .. } => self.handle_merging_pr(action),
                 Screen::DismissingIssue { .. } => self.handle_dismissing(action),
@@ -300,24 +243,12 @@ impl App {
 
     fn sync_query_to_filter(&mut self) {
         let query_text = self.ui.query_input.clone().filter(|q| !q.is_empty());
-        match &mut self.ui.screen {
-            Screen::UnifiedList { filter, .. } => {
-                let cat = filter.category;
-                self.rebuild_unified(Filter {
-                    category: cat,
-                    query: query_text,
-                });
-            }
-            Screen::PrSplit {
-                all_items,
-                items,
-                selected,
-                ..
-            } => {
-                *items = filter_prs(all_items, query_text.as_deref());
-                *selected = 0;
-            }
-            _ => {}
+        if let Screen::UnifiedList { filter, .. } = &mut self.ui.screen {
+            let cat = filter.category;
+            self.rebuild_unified(Filter {
+                category: cat,
+                query: query_text,
+            });
         }
     }
 
@@ -810,111 +741,6 @@ impl App {
         }
     }
 
-    fn handle_pr_split(&mut self, action: Action) -> Vec<Effect> {
-        match action {
-            Action::MoveUp => {
-                self.move_up();
-                vec![]
-            }
-            Action::MoveDown => {
-                self.move_down();
-                vec![]
-            }
-            Action::MoveToTop => {
-                self.move_to_top();
-                vec![]
-            }
-            Action::MoveToBottom => {
-                self.move_to_bottom();
-                vec![]
-            }
-            Action::MovePageUp => {
-                self.move_page_up();
-                vec![]
-            }
-            Action::MovePageDown => {
-                self.move_page_down();
-                vec![]
-            }
-            Action::OpenInOcto => self.pr_split_selected().map_or(vec![], |pr| {
-                vec![Effect::OpenInOcto {
-                    repo: pr.repo.to_string(),
-                    number: pr.number,
-                    head_branch: pr.head_branch.clone(),
-                }]
-            }),
-            Action::OpenInLazygit => self.pr_split_selected().map_or(vec![], |pr| {
-                vec![Effect::OpenInLazygit {
-                    repo: pr.repo.to_string(),
-                    number: pr.number,
-                    head_branch: pr.head_branch.clone(),
-                }]
-            }),
-            Action::AskAboutPr => self.pr_split_selected().map_or(vec![], |pr| {
-                let ownership = PrOwnership::from_kind(pr.kind);
-                vec![Effect::AskAboutPr {
-                    repo: pr.repo.to_string(),
-                    number: pr.number,
-                    ownership,
-                    head_branch: pr.head_branch.clone(),
-                }]
-            }),
-            Action::OpenReviewPicker => self.open_pr_action_picker(PrAction::Review),
-            Action::MergePr => self.open_pr_action_picker(PrAction::Merge),
-            // Enter is reserved for v2 (focus-shift to right pane, tracked
-            // in ooloth/hub#240).
-            _ => vec![],
-        }
-    }
-
-    /// Transition PrSplit → ReviewingPr or MergingPr for the selected PR,
-    /// capturing the current items + selected so Cancel/Commit can restore
-    /// the same PrSplit view.
-    fn open_pr_action_picker(&mut self, kind: PrAction) -> Vec<Effect> {
-        let Screen::PrSplit {
-            items,
-            all_items,
-            selected,
-            parent,
-            query,
-        } = std::mem::take(&mut self.ui.screen)
-        else {
-            return vec![];
-        };
-        let Some(pr) = items.get(selected).cloned() else {
-            // Empty PrSplit (no selectable PR). Restore the screen as-is.
-            self.ui.screen = Screen::PrSplit {
-                all_items,
-                items,
-                selected,
-                parent,
-                query,
-            };
-            return vec![];
-        };
-        let prev = PrPrevScreen::PrSplit {
-            all_items,
-            items,
-            selected,
-            query,
-        };
-        self.ui.screen = match kind {
-            PrAction::Review => Screen::ReviewingPr { parent, pr, prev },
-            PrAction::Merge => Screen::MergingPr { parent, pr, prev },
-        };
-        vec![]
-    }
-
-    fn pr_split_selected(&self) -> Option<&domain::PullRequest> {
-        let Screen::PrSplit {
-            items, selected, ..
-        } = &self.ui.screen
-        else {
-            return None;
-        };
-        items.get(*selected)
-    }
-
     fn handle_reviewing_pr(&mut self, action: Action) -> Vec<Effect> {
         match action {
             Action::CommitReview(skill) => {
@@ -1124,36 +950,15 @@ impl App {
             Screen::PrDetail { pr, .. }
             | Screen::ReviewingPr { pr, .. }
             | Screen::MergingPr { pr, .. } => Some(&pr.url),
-            Screen::PrSplit {
-                items, selected, ..
-            } => items.get(*selected).map(|pr| pr.url.as_str()),
         }
     }
 }
 
-/// Which transient picker to enter from PrSplit.
+/// Which transient picker to enter from the UnifiedList split view.
 #[derive(Clone, Copy)]
 enum PrAction {
     Review,
     Merge,
-}
-
-/// Restore the screen a Review/Merge picker came from.
-///
-/// The picker preserves the parent (UnifiedList back-nav address) and
-/// the PR being acted on; `prev` records whether it was entered from
-/// PrDetail or PrSplit and carries the data needed to faithfully rebuild
-/// the source screen.
-fn filter_prs(all: &[domain::PullRequest], query: Option<&str>) -> Vec<domain::PullRequest> {
-    let q = match query.filter(|s| !s.is_empty()) {
-        Some(q) => q,
-        None => return all.to_vec(),
-    };
-    let terms = crate::display::QueryTerms::parse(q);
-    all.iter()
-        .filter(|pr| terms.matches(&crate::render::pr_card::pr_card_text(pr).to_lowercase()))
-        .cloned()
-        .collect()
 }
 
 fn restore_after_pr_action(
@@ -1166,18 +971,6 @@ fn restore_after_pr_action(
             parent,
             pr,
             scroll: 0,
-        },
-        PrPrevScreen::PrSplit {
-            all_items,
-            items,
-            selected,
-            query,
-        } => Screen::PrSplit {
-            parent,
-            all_items,
-            items,
-            selected,
-            query,
         },
         PrPrevScreen::UnifiedList { snapshot } => Screen::UnifiedList {
             flat_rows: flatten(&snapshot.items, &snapshot.expanded_groups),
@@ -1328,30 +1121,6 @@ fn refresh_screen_in_place(screen: &mut Screen, raw: &[workflows::status::Status
             let new_items = build_unified(raw.to_vec(), &parent.filter);
             parent.selected = parent.selected.min(new_items.len().saturating_sub(1));
             parent.items = new_items;
-        }
-        Screen::PrSplit {
-            parent,
-            all_items,
-            items,
-            selected,
-            query,
-        } => {
-            let new_parent_items = build_unified(raw.to_vec(), &parent.filter);
-            parent.selected = parent
-                .selected
-                .min(new_parent_items.len().saturating_sub(1));
-            parent.items = new_parent_items;
-            let new_all: Vec<_> = raw
-                .iter()
-                .filter_map(|item| match item {
-                    StatusItem::Pr(pr) => Some(pr.clone()),
-                    _ => None,
-                })
-                .collect();
-            let new_items = filter_prs(&new_all, query.as_deref());
-            *selected = (*selected).min(new_items.len().saturating_sub(1));
-            *all_items = new_all;
-            *items = new_items;
         }
     }
 }
@@ -2917,315 +2686,8 @@ mod tests {
         assert!(effects.is_empty());
     }
 
-    // --- EnterPrSplit / Screen::PrSplit ---
-
-    fn stub_pr_numbered(number: u64, title: &str) -> StatusItem {
-        let StatusItem::Pr(mut pr) = stub_pr() else {
-            unreachable!()
-        };
-        pr.number = number;
-        pr.title = title.to_string();
-        pr.url = format!("https://github.com/ooloth/hub/pull/{number}");
-        StatusItem::Pr(pr)
-    }
-
-    fn app_with_raw(items: Vec<StatusItem>) -> App {
-        let mut app = app_with_items(
-            items
-                .iter()
-                .cloned()
-                .map(DisplayItem::Single)
-                .collect::<Vec<_>>(),
-        );
-        app.data.raw_items = items;
-        app
-    }
-
     #[test]
-    fn enter_pr_split_from_unified_list_with_prs_pushes_pr_split_screen() {
-        let mut app = app_with_raw(vec![
-            stub_pr_numbered(1, "first"),
-            ci_failure(),
-            stub_pr_numbered(2, "second"),
-        ]);
-        app.update(Action::EnterPrSplit);
-        let Screen::PrSplit {
-            items, selected, ..
-        } = app.current_screen()
-        else {
-            panic!("expected PrSplit");
-        };
-        assert_eq!(items.len(), 2);
-        assert_eq!(items[0].number, 1);
-        assert_eq!(items[1].number, 2);
-        assert_eq!(*selected, 0);
-    }
-
-    #[test]
-    fn enter_pr_split_from_unified_list_with_no_prs_pushes_empty_pr_split() {
-        let mut app = app_with_raw(vec![ci_failure()]);
-        app.update(Action::EnterPrSplit);
-        let Screen::PrSplit {
-            items, selected, ..
-        } = app.current_screen()
-        else {
-            panic!("expected PrSplit");
-        };
-        assert!(items.is_empty());
-        assert_eq!(*selected, 0);
-    }
-
-    #[test]
-    fn enter_pr_split_captures_unified_list_parent_for_back_nav() {
-        let mut app = app_with_raw(vec![stub_pr_numbered(1, "first")]);
-        // Filter to PRs first so we can verify the snapshot preserves it.
-        app.update(Action::FilterCategory(Category::Prs));
-        app.update(Action::EnterPrSplit);
-        let Screen::PrSplit { parent, .. } = app.current_screen() else {
-            panic!("expected PrSplit");
-        };
-        assert_eq!(parent.filter.category, Some(Category::Prs));
-    }
-
-    #[test]
-    fn enter_pr_split_from_non_unified_list_does_nothing() {
-        let mut app = app_in_pr_detail();
-        app.update(Action::EnterPrSplit);
-        assert!(matches!(app.current_screen(), Screen::PrDetail { .. }));
-    }
-
-    #[test]
-    fn back_from_pr_split_restores_unified_list_with_filter() {
-        let mut app = app_with_raw(vec![stub_pr_numbered(1, "first")]);
-        app.update(Action::FilterCategory(Category::Prs));
-        app.update(Action::EnterPrSplit);
-        app.update(Action::Back);
-        let Screen::UnifiedList { filter, .. } = app.current_screen() else {
-            panic!("expected UnifiedList");
-        };
-        assert_eq!(filter.category, Some(Category::Prs));
-    }
-
-    #[test]
-    fn move_down_in_pr_split_advances_selection() {
-        let mut app = app_with_raw(vec![
-            stub_pr_numbered(1, "first"),
-            stub_pr_numbered(2, "second"),
-            stub_pr_numbered(3, "third"),
-        ]);
-        app.update(Action::EnterPrSplit);
-        app.update(Action::MoveDown);
-        let Screen::PrSplit { selected, .. } = app.current_screen() else {
-            panic!();
-        };
-        assert_eq!(*selected, 1);
-    }
-
-    #[test]
-    fn move_down_at_end_of_pr_split_stays_at_last() {
-        let mut app = app_with_raw(vec![
-            stub_pr_numbered(1, "first"),
-            stub_pr_numbered(2, "second"),
-        ]);
-        app.update(Action::EnterPrSplit);
-        app.update(Action::MoveDown);
-        app.update(Action::MoveDown);
-        app.update(Action::MoveDown);
-        let Screen::PrSplit { selected, .. } = app.current_screen() else {
-            panic!();
-        };
-        assert_eq!(*selected, 1);
-    }
-
-    #[test]
-    fn move_up_in_pr_split_at_zero_stays_at_zero() {
-        let mut app = app_with_raw(vec![stub_pr_numbered(1, "first")]);
-        app.update(Action::EnterPrSplit);
-        app.update(Action::MoveUp);
-        let Screen::PrSplit { selected, .. } = app.current_screen() else {
-            panic!();
-        };
-        assert_eq!(*selected, 0);
-    }
-
-    #[test]
-    fn enter_in_pr_split_is_a_noop_in_v1() {
-        // Reserved for v2 (focus-shift, tracked in ooloth/hub#240).
-        let mut app = app_with_raw(vec![stub_pr_numbered(1, "first")]);
-        app.update(Action::EnterPrSplit);
-        let effects = app.update(Action::Enter);
-        assert!(effects.is_empty());
-        assert!(matches!(app.current_screen(), Screen::PrSplit { .. }));
-    }
-
-    // --- Per-PR actions from PrSplit (slice 4) ---
-
-    fn app_in_pr_split_with_two_prs() -> App {
-        let mut app = app_with_raw(vec![
-            stub_pr_numbered(7, "first"),
-            stub_pr_numbered(8, "second"),
-        ]);
-        app.update(Action::EnterPrSplit);
-        app
-    }
-
-    #[test]
-    fn open_in_octo_from_pr_split_emits_effect_for_selected_pr() {
-        let mut app = app_in_pr_split_with_two_prs();
-        app.update(Action::MoveDown); // select PR #8
-        let effects = app.update(Action::OpenInOcto);
-        assert_eq!(effects.len(), 1);
-        let Effect::OpenInOcto {
-            repo,
-            number,
-            head_branch,
-        } = effects.into_iter().next().unwrap()
-        else {
-            panic!("expected OpenInOcto");
-        };
-        assert_eq!(repo, "ooloth/hub");
-        assert_eq!(number, 8);
-        assert_eq!(head_branch, "feat/thing");
-    }
-
-    #[test]
-    fn open_in_lazygit_from_pr_split_emits_effect_for_selected_pr() {
-        let mut app = app_in_pr_split_with_two_prs();
-        let effects = app.update(Action::OpenInLazygit);
-        assert_eq!(effects.len(), 1);
-        let Effect::OpenInLazygit { number, .. } = effects.into_iter().next().unwrap() else {
-            panic!("expected OpenInLazygit");
-        };
-        assert_eq!(number, 7);
-    }
-
-    #[test]
-    fn ask_about_pr_from_pr_split_emits_effect_with_ownership() {
-        let mut app = app_in_pr_split_with_two_prs();
-        let effects = app.update(Action::AskAboutPr);
-        assert_eq!(effects.len(), 1);
-        let Effect::AskAboutPr {
-            repo,
-            number,
-            ownership,
-            ..
-        } = effects.into_iter().next().unwrap()
-        else {
-            panic!("expected AskAboutPr");
-        };
-        assert_eq!(repo, "ooloth/hub");
-        assert_eq!(number, 7);
-        // stub_pr is PrKind::Mine → Owned
-        assert_eq!(ownership, crate::state::PrOwnership::Owned);
-    }
-
-    #[test]
-    fn per_pr_actions_in_empty_pr_split_emit_no_effects() {
-        // Defensive: a PrSplit pushed with no PRs (empty cache) must not panic
-        // when the user presses an action key.
-        let mut app = app_with_raw(vec![]);
-        app.update(Action::EnterPrSplit);
-        assert!(app.update(Action::OpenInOcto).is_empty());
-        assert!(app.update(Action::OpenInLazygit).is_empty());
-        assert!(app.update(Action::AskAboutPr).is_empty());
-    }
-
-    // --- Review / merge pickers from PrSplit (slice 4.5) ---
-
-    use crate::state::PrPrevScreen;
-
-    #[test]
-    fn open_review_picker_from_pr_split_transitions_to_reviewing_pr() {
-        let mut app = app_in_pr_split_with_two_prs();
-        app.update(Action::MoveDown); // select PR #8
-        let effects = app.update(Action::OpenReviewPicker);
-        assert!(effects.is_empty());
-        let Screen::ReviewingPr { pr, prev, .. } = app.current_screen() else {
-            panic!("expected ReviewingPr");
-        };
-        assert_eq!(pr.number, 8);
-        assert!(matches!(prev, PrPrevScreen::PrSplit { selected: 1, .. }));
-    }
-
-    #[test]
-    fn cancel_review_from_pr_split_source_restores_pr_split_with_selection() {
-        let mut app = app_in_pr_split_with_two_prs();
-        app.update(Action::MoveDown);
-        app.update(Action::OpenReviewPicker);
-        app.update(Action::CancelReview);
-        let Screen::PrSplit {
-            items, selected, ..
-        } = app.current_screen()
-        else {
-            panic!("expected PrSplit");
-        };
-        assert_eq!(items.len(), 2);
-        assert_eq!(*selected, 1);
-    }
-
-    #[test]
-    fn commit_review_from_pr_split_source_restores_pr_split_and_emits_effect() {
-        let mut app = app_in_pr_split_with_two_prs();
-        app.update(Action::OpenReviewPicker);
-        let effects = app.update(Action::CommitReview(crate::state::ReviewSkill::Converge));
-        assert!(matches!(app.current_screen(), Screen::PrSplit { .. }));
-        assert_eq!(effects.len(), 1);
-        assert!(matches!(effects[0], Effect::ReviewPr { .. }));
-    }
-
-    #[test]
-    fn merge_pr_from_pr_split_transitions_to_merging_pr() {
-        let mut app = app_in_pr_split_with_two_prs();
-        let effects = app.update(Action::MergePr);
-        assert!(effects.is_empty());
-        let Screen::MergingPr { pr, prev, .. } = app.current_screen() else {
-            panic!("expected MergingPr");
-        };
-        assert_eq!(pr.number, 7);
-        assert!(matches!(prev, PrPrevScreen::PrSplit { selected: 0, .. }));
-    }
-
-    #[test]
-    fn cancel_merge_from_pr_split_source_restores_pr_split() {
-        let mut app = app_in_pr_split_with_two_prs();
-        app.update(Action::MergePr);
-        app.update(Action::CancelMerge);
-        assert!(matches!(app.current_screen(), Screen::PrSplit { .. }));
-    }
-
-    #[test]
-    fn commit_merge_from_pr_split_source_restores_pr_split_and_emits_effect() {
-        let mut app = app_in_pr_split_with_two_prs();
-        app.update(Action::MergePr);
-        let effects = app.update(Action::CommitMerge);
-        assert!(matches!(app.current_screen(), Screen::PrSplit { .. }));
-        assert_eq!(effects.len(), 1);
-        assert!(matches!(effects[0], Effect::MergePullRequest { .. }));
-    }
-
-    #[test]
-    fn open_review_picker_from_empty_pr_split_is_noop() {
-        let mut app = app_with_raw(vec![]);
-        app.update(Action::EnterPrSplit);
-        let effects = app.update(Action::OpenReviewPicker);
-        assert!(effects.is_empty());
-        // Should still be on PrSplit (no panic, no transition).
-        assert!(matches!(app.current_screen(), Screen::PrSplit { .. }));
-    }
-
-    #[test]
-    fn merge_pr_from_empty_pr_split_is_noop() {
-        let mut app = app_with_raw(vec![]);
-        app.update(Action::EnterPrSplit);
-        let effects = app.update(Action::MergePr);
-        assert!(effects.is_empty());
-        assert!(matches!(app.current_screen(), Screen::PrSplit { .. }));
-    }
-
-    #[test]
-    fn cancel_review_from_pr_detail_source_still_restores_pr_detail() {
-        // Regression guard: the PrDetail → ReviewingPr → cancel flow must
-        // still restore PrDetail, not accidentally route to PrSplit.
+    fn cancel_review_from_pr_detail_source_restores_pr_detail() {
         let mut app = app_in_pr_detail();
         app.update(Action::OpenReviewPicker);
         app.update(Action::CancelReview);

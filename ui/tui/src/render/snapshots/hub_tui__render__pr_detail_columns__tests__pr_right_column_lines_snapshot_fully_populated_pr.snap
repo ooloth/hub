@@ -1,5 +1,5 @@
 ---
-source: ui/tui/src/render/pr_split_detail.rs
+source: ui/tui/src/render/pr_detail_columns.rs
 expression: "text.join(\"\\n\")"
 ---
 checks     ✓ passing

@@ -52,52 +52,27 @@ impl App {
             | Screen::ReviewingPr { .. }
             | Screen::MergingPr { .. }
             | Screen::DismissingIssue { .. } => 0,
-            Screen::PrSplit { items, .. } => items.len(),
         }
     }
 
     pub(crate) fn move_up(&mut self) {
-        match &mut self.ui.screen {
-            Screen::UnifiedList { selected, .. } | Screen::PrSplit { selected, .. } => {
-                *selected = selected.saturating_sub(1);
-            }
-            Screen::LogDetail { .. }
-            | Screen::IssueDetail { .. }
-            | Screen::PrDetail { .. }
-            | Screen::ReviewingPr { .. }
-            | Screen::MergingPr { .. }
-            | Screen::DismissingIssue { .. } => {}
+        if let Screen::UnifiedList { selected, .. } = &mut self.ui.screen {
+            *selected = selected.saturating_sub(1);
         }
     }
 
     pub(crate) fn move_down(&mut self) {
         let len = self.active_list_len();
-        match &mut self.ui.screen {
-            Screen::UnifiedList { selected, .. } | Screen::PrSplit { selected, .. } => {
-                if len > 0 && *selected < len - 1 {
-                    *selected += 1;
-                }
+        if let Screen::UnifiedList { selected, .. } = &mut self.ui.screen {
+            if len > 0 && *selected < len - 1 {
+                *selected += 1;
             }
-            Screen::LogDetail { .. }
-            | Screen::IssueDetail { .. }
-            | Screen::PrDetail { .. }
-            | Screen::ReviewingPr { .. }
-            | Screen::MergingPr { .. }
-            | Screen::DismissingIssue { .. } => {}
         }
     }
 
     pub(crate) fn move_to_top(&mut self) {
-        match &mut self.ui.screen {
-            Screen::UnifiedList { selected, .. } | Screen::PrSplit { selected, .. } => {
-                *selected = 0;
-            }
-            Screen::LogDetail { .. }
-            | Screen::IssueDetail { .. }
-            | Screen::PrDetail { .. }
-            | Screen::ReviewingPr { .. }
-            | Screen::MergingPr { .. }
-            | Screen::DismissingIssue { .. } => {}
+        if let Screen::UnifiedList { selected, .. } = &mut self.ui.screen {
+            *selected = 0;
         }
     }
 
@@ -106,31 +81,15 @@ impl App {
         if len == 0 {
             return;
         }
-        match &mut self.ui.screen {
-            Screen::UnifiedList { selected, .. } | Screen::PrSplit { selected, .. } => {
-                *selected = len - 1;
-            }
-            Screen::LogDetail { .. }
-            | Screen::IssueDetail { .. }
-            | Screen::PrDetail { .. }
-            | Screen::ReviewingPr { .. }
-            | Screen::MergingPr { .. }
-            | Screen::DismissingIssue { .. } => {}
+        if let Screen::UnifiedList { selected, .. } = &mut self.ui.screen {
+            *selected = len - 1;
         }
     }
 
     pub(crate) fn move_page_up(&mut self) {
         const PAGE: usize = 10;
-        match &mut self.ui.screen {
-            Screen::UnifiedList { selected, .. } | Screen::PrSplit { selected, .. } => {
-                *selected = selected.saturating_sub(PAGE);
-            }
-            Screen::LogDetail { .. }
-            | Screen::IssueDetail { .. }
-            | Screen::PrDetail { .. }
-            | Screen::ReviewingPr { .. }
-            | Screen::MergingPr { .. }
-            | Screen::DismissingIssue { .. } => {}
+        if let Screen::UnifiedList { selected, .. } = &mut self.ui.screen {
+            *selected = selected.saturating_sub(PAGE);
         }
     }
 
@@ -140,16 +99,8 @@ impl App {
         if len == 0 {
             return;
         }
-        match &mut self.ui.screen {
-            Screen::UnifiedList { selected, .. } | Screen::PrSplit { selected, .. } => {
-                *selected = (*selected + PAGE).min(len - 1);
-            }
-            Screen::LogDetail { .. }
-            | Screen::IssueDetail { .. }
-            | Screen::PrDetail { .. }
-            | Screen::ReviewingPr { .. }
-            | Screen::MergingPr { .. }
-            | Screen::DismissingIssue { .. } => {}
+        if let Screen::UnifiedList { selected, .. } = &mut self.ui.screen {
+            *selected = (*selected + PAGE).min(len - 1);
         }
     }
 }

@@ -97,13 +97,6 @@ pub(crate) enum Screen {
         pr: PullRequest,
         scroll: u16,
     },
-    PrSplit {
-        parent: ListSnapshot,
-        all_items: Vec<PullRequest>,
-        items: Vec<PullRequest>,
-        selected: usize,
-        query: Option<String>,
-    },
     ReviewingPr {
         parent: ListSnapshot,
         pr: PullRequest,
@@ -122,22 +115,10 @@ pub(crate) enum Screen {
 }
 
 /// The screen a Review/Merge picker should restore on commit or cancel.
-///
-/// Pickers are always entered from either PrDetail or PrSplit. The
-/// variant records just enough to rebuild the source screen — for
-/// PrSplit, the full PR list and selection so the user lands back on
-/// the same card they were viewing.
 #[derive(Clone, Debug)]
 pub(crate) enum PrPrevScreen {
-    /// Restore Screen::PrDetail with scroll = 0 (matches the prior
-    /// behaviour before this enum was introduced).
+    /// Restore Screen::PrDetail with scroll = 0.
     PrDetail,
-    PrSplit {
-        all_items: Vec<PullRequest>,
-        items: Vec<PullRequest>,
-        selected: usize,
-        query: Option<String>,
-    },
     /// Restore the UnifiedList split view that launched the review/merge picker.
     #[allow(dead_code)]
     UnifiedList { snapshot: ListSnapshot },
@@ -175,9 +156,6 @@ impl Screen {
             Screen::PrDetail { pr, .. }
             | Screen::ReviewingPr { pr, .. }
             | Screen::MergingPr { pr, .. } => Some(StatusItem::Pr(pr.clone())),
-            Screen::PrSplit {
-                items, selected, ..
-            } => items.get(*selected).cloned().map(StatusItem::Pr),
         }
     }
 }
@@ -268,7 +246,6 @@ pub(crate) enum Action {
     ScrollDetailUp,
     // Filter actions — only take effect from UnifiedList in normal mode.
     FilterCategory(Category),
-    EnterPrSplit,
     ClearFilter,
     StartQuery,
     AppendQuery(char),

@@ -33,10 +33,7 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
 
     let can_go_back = matches!(
         app.ui.screen,
-        Screen::LogDetail { .. }
-            | Screen::IssueDetail { .. }
-            | Screen::PrDetail { .. }
-            | Screen::PrSplit { .. }
+        Screen::LogDetail { .. } | Screen::IssueDetail { .. } | Screen::PrDetail { .. }
     ) || matches!(
         &app.ui.screen,
         Screen::UnifiedList {
@@ -82,7 +79,6 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
         Screen::LogDetail { .. } => log_detail_keys(key),
         Screen::IssueDetail { .. } => issue_reader_keys(key),
         Screen::PrDetail { .. } => pr_reader_keys(key),
-        Screen::PrSplit { .. } => pr_split_keys(key),
         Screen::ReviewingPr { .. } => unreachable!("handled above"),
         Screen::MergingPr { .. } => unreachable!("handled above"),
         Screen::DismissingIssue { .. } => unreachable!("handled above"),
@@ -159,7 +155,6 @@ fn unified_list_keys(
         (KeyCode::Enter, _) => Some(Action::Enter),
         (KeyCode::Char('i'), _) => Some(Action::Investigate),
         (KeyCode::Char('p'), _) => Some(Action::FilterCategory(Category::Prs)),
-        (KeyCode::Char('P'), _) => Some(Action::EnterPrSplit),
         (KeyCode::Char('e'), _) => Some(Action::FilterCategory(Category::Errors)),
         (KeyCode::Char('o'), _) => Some(Action::OpenUrl),
         (KeyCode::Char('O'), _) => Some(Action::FilterCategory(Category::Issues)),
@@ -179,25 +174,6 @@ fn pr_reader_keys(key: KeyEvent) -> Option<Action> {
         (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Action::MovePageUp),
         (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(Action::MovePageDown),
         (KeyCode::Enter, _) => Some(Action::Enter),
-        (KeyCode::Char('i'), _) => Some(Action::AskAboutPr),
-        (KeyCode::Char('o'), _) => Some(Action::OpenInOcto),
-        (KeyCode::Char('l'), _) => Some(Action::OpenInLazygit),
-        (KeyCode::Char('v'), _) => Some(Action::OpenReviewPicker),
-        (KeyCode::Char('m'), _) => Some(Action::MergePr),
-        _ => None,
-    }
-}
-
-fn pr_split_keys(key: KeyEvent) -> Option<Action> {
-    // Enter is reserved for v2 focus-shift (ooloth/hub#240).
-    match (key.code, key.modifiers) {
-        (KeyCode::Up, _) | (KeyCode::Char('k'), _) => Some(Action::MoveUp),
-        (KeyCode::Down, _) | (KeyCode::Char('j'), _) => Some(Action::MoveDown),
-        (KeyCode::Char('g'), _) => Some(Action::PendingG),
-        (KeyCode::Char('G'), _) => Some(Action::MoveToBottom),
-        (KeyCode::Char('u'), KeyModifiers::CONTROL) => Some(Action::MovePageUp),
-        (KeyCode::Char('d'), KeyModifiers::CONTROL) => Some(Action::MovePageDown),
-        (KeyCode::Char('/'), _) => Some(Action::StartQuery),
         (KeyCode::Char('i'), _) => Some(Action::AskAboutPr),
         (KeyCode::Char('o'), _) => Some(Action::OpenInOcto),
         (KeyCode::Char('l'), _) => Some(Action::OpenInLazygit),
@@ -480,7 +456,6 @@ mod tests {
     #[case(k(KeyCode::Enter), Some(Action::Enter))]
     #[case(ch('i'), Some(Action::Investigate))]
     #[case(ch('p'), Some(Action::FilterCategory(Category::Prs)))]
-    #[case(ch('P'), Some(Action::EnterPrSplit))]
     #[case(ch('e'), Some(Action::FilterCategory(Category::Errors)))]
     #[case(ch('o'), Some(Action::OpenUrl))]
     #[case(ch('O'), Some(Action::FilterCategory(Category::Issues)))]
@@ -875,71 +850,6 @@ mod tests {
             key_to_action(&reviewing_app(), ctrl('c')),
             Some(Action::Quit)
         );
-    }
-
-    fn pr_split_app() -> App {
-        let parent = ListSnapshot {
-            items: vec![],
-            selected: 0,
-            filter: Filter::default(),
-            expanded_groups: std::collections::HashSet::new(),
-            detail_mode: crate::state::DetailMode::Hidden,
-        };
-        App {
-            ui: UiState {
-                screen: Screen::PrSplit {
-                    parent,
-                    all_items: vec![],
-                    items: vec![],
-                    selected: 0,
-                    query: None,
-                },
-                ..UiState::default()
-            },
-            ..App::default()
-        }
-    }
-
-    #[rstest]
-    #[case(k(KeyCode::Up), Some(Action::MoveUp))]
-    #[case(ch('k'), Some(Action::MoveUp))]
-    #[case(k(KeyCode::Down), Some(Action::MoveDown))]
-    #[case(ch('j'), Some(Action::MoveDown))]
-    #[case(ch('g'), Some(Action::PendingG))]
-    #[case(ch('G'), Some(Action::MoveToBottom))]
-    #[case(ctrl('u'), Some(Action::MovePageUp))]
-    #[case(ctrl('d'), Some(Action::MovePageDown))]
-    #[case(ch('i'), Some(Action::AskAboutPr))]
-    #[case(ch('o'), Some(Action::OpenInOcto))]
-    #[case(ch('l'), Some(Action::OpenInLazygit))]
-    #[case(ch('v'), Some(Action::OpenReviewPicker))]
-    #[case(ch('m'), Some(Action::MergePr))]
-    #[case(ch('/'), Some(Action::StartQuery))]
-    // Enter is reserved for v2 (ooloth/hub#240).
-    #[case(k(KeyCode::Enter), None)]
-    #[case(ch('h'), None)]
-    #[case(ch('p'), None)]
-    #[case(ch('P'), None)]
-    #[case(ch('x'), None)]
-    fn pr_split_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
-        assert_eq!(key_to_action(&pr_split_app(), key), expected);
-    }
-
-    #[test]
-    fn esc_goes_back_from_pr_split() {
-        assert_eq!(
-            key_to_action(&pr_split_app(), k(KeyCode::Esc)),
-            Some(Action::Back)
-        );
-    }
-
-    #[test]
-    fn capital_p_does_nothing_outside_unified_list() {
-        // EnterPrSplit is only valid from UnifiedList; the key should not fire elsewhere.
-        assert_eq!(key_to_action(&pr_split_app(), ch('P')), None);
-        assert_eq!(key_to_action(&log_detail_app(), ch('P')), None);
-        assert_eq!(key_to_action(&issue_detail_app(), ch('P')), None);
-        assert_eq!(key_to_action(&pr_detail_app(), ch('P')), None);
     }
 
     // --- Split view context dispatch ---
