@@ -1110,6 +1110,7 @@ dependencies = [
  "insta",
  "itertools",
  "open",
+ "proptest",
  "pulldown-cmark",
  "ratatui",
  "rstest 0.23.0",

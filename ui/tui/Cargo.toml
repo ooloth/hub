@@ -39,4 +39,5 @@
 
 [dev-dependencies]
   insta = "1"
+  proptest = "1"
   rstest = "0.23"

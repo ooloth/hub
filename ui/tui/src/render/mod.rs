@@ -1145,6 +1145,30 @@ fn render_detail_placeholder(frame: &mut ratatui::Frame, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
+const LIST_BORDER_LINES: u16 = 2;
+
+// Pure arithmetic extracted for property testing.
+fn unified_list_height_from_counts(
+    item_count: usize,
+    divider_count: usize,
+    max_height: u16,
+) -> u16 {
+    let needed = (item_count + divider_count + LIST_BORDER_LINES as usize)
+        .try_into()
+        .unwrap_or(u16::MAX);
+    needed.min(max_height)
+}
+
+// Height of the list box in split view: content rows + urgency dividers + borders, capped at
+// max_height. Mirrors the divider injection logic in render_unified — keep in sync.
+fn unified_list_height(rows: &[FlatRow], max_height: u16) -> u16 {
+    let divider_count = rows
+        .windows(2)
+        .filter(|w| flat_row_urgency(&w[0]) != flat_row_urgency(&w[1]))
+        .count();
+    unified_list_height_from_counts(rows.len(), divider_count, max_height)
+}
+
 pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let [content_area, bar_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
@@ -1169,9 +1193,12 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
                 );
             }
             DetailMode::Visible { detail_scroll } => {
-                let [list_area, detail_area] =
-                    Layout::vertical([Constraint::Percentage(30), Constraint::Min(0)])
-                        .areas(content_area);
+                let max_list_height = content_area.height * 30 / 100;
+                let [list_area, detail_area] = Layout::vertical([
+                    Constraint::Length(unified_list_height(flat_rows, max_list_height)),
+                    Constraint::Min(0),
+                ])
+                .areas(content_area);
                 render_unified(
                     frame,
                     flat_rows,
@@ -1287,13 +1314,15 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
 mod tests {
     use super::{
         investigate_hint, position_label, render, right_status_text, status_bar_left,
-        urgency_color, urgency_style, wrap_text,
+        unified_list_height, unified_list_height_from_counts, urgency_color, urgency_style,
+        wrap_text,
     };
-    use crate::display::{flatten, Category, DisplayItem, Filter, GroupKey, ListSnapshot};
+    use crate::display::{flatten, Category, DisplayItem, Filter, FlatRow, GroupKey, ListSnapshot};
     use crate::state::{
         App, DataState, DetailMode, InvestigateAction, RefreshState, Screen, UiState,
     };
     use chrono::Utc;
+    use proptest::proptest;
     use ratatui::backend::TestBackend;
     use ratatui::style::Color;
     use ratatui::Terminal;
@@ -2495,5 +2524,88 @@ mod tests {
         app.ui.pending_pr_action = true;
         let buf = draw(&mut app, 120, 5);
         insta::assert_snapshot!(status_row(&buf));
+    }
+
+    // ── unified_list_height ──────────────────────────────────────────────────
+
+    fn pr_with_urgency(urgency: domain::Urgency) -> StatusItem {
+        StatusItem::Pr(domain::PullRequest {
+            urgency,
+            ..match pr() {
+                StatusItem::Pr(p) => p,
+                _ => unreachable!(),
+            }
+        })
+    }
+
+    #[test]
+    fn unified_list_height_shrinks_to_fit_when_below_cap() {
+        let rows = vec![
+            FlatRow::Single(pr()),
+            FlatRow::Single(pr()),
+            FlatRow::Single(pr()),
+        ];
+        // 3 items + 0 dividers (all Urgency::Low) + 2 borders = 5
+        assert_eq!(unified_list_height(&rows, 30), 5);
+    }
+
+    #[test]
+    fn unified_list_height_clamped_to_max_when_rows_exceed_cap() {
+        let rows: Vec<FlatRow> = (0..20).map(|_| FlatRow::Single(pr())).collect();
+        // 20 items + 0 dividers + 2 borders = 22, capped at 10
+        assert_eq!(unified_list_height(&rows, 10), 10);
+    }
+
+    #[test]
+    fn unified_list_height_includes_divider_lines() {
+        let rows = vec![
+            FlatRow::Single(pr_with_urgency(domain::Urgency::High)),
+            FlatRow::Single(pr()),
+        ];
+        // 2 items + 1 divider (High → Low) + 2 borders = 5
+        assert_eq!(unified_list_height(&rows, 30), 5);
+    }
+
+    #[test]
+    fn unified_list_height_counts_multiple_dividers() {
+        let rows = vec![
+            FlatRow::Single(pr_with_urgency(domain::Urgency::Critical)),
+            FlatRow::Single(pr_with_urgency(domain::Urgency::High)),
+            FlatRow::Single(pr()),
+        ];
+        // 3 items + 2 dividers (Critical→High, High→Low) + 2 borders = 7
+        assert_eq!(unified_list_height(&rows, 30), 7);
+    }
+
+    #[test]
+    fn unified_list_height_empty_rows_yields_borders_only() {
+        let rows: Vec<FlatRow> = vec![];
+        // 0 items + 0 dividers + 2 borders = 2
+        assert_eq!(unified_list_height(&rows, 30), 2);
+    }
+
+    proptest! {
+        #[test]
+        fn unified_list_height_never_exceeds_max(
+            item_count in 0usize..=1000,
+            divider_count in 0usize..=10,
+            max_height in 0u16..=200,
+        ) {
+            let result = unified_list_height_from_counts(item_count, divider_count, max_height);
+            assert!(result <= max_height);
+        }
+    }
+
+    // SV7: Split view with items spanning two urgency tiers (locks in divider-inclusive sizing).
+    #[test]
+    fn split_view_multi_urgency_tiers() {
+        let items = vec![
+            DisplayItem::Single(pr_with_urgency(domain::Urgency::High)),
+            DisplayItem::Single(pr()),
+            DisplayItem::Single(pr()),
+        ];
+        let mut app = split_view_app(items, 0, 0);
+        let buf = draw(&mut app, 120, 40);
+        insta::assert_snapshot!(screen_text(&buf));
     }
 }
