@@ -306,7 +306,6 @@ fn position_label(screen: &Screen) -> String {
         | Screen::IssueDetail { .. }
         | Screen::DismissingIssue { .. }
         | Screen::PrDetail { .. }
-        | Screen::ReviewingPr { .. }
         | Screen::MergingPr { .. } => String::new(),
     }
 }
@@ -1229,9 +1228,6 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         Screen::PrDetail { pr, scroll, .. } => {
             render_pr_detail(frame, pr, scroll, content_area, dim());
         }
-        Screen::ReviewingPr { pr, .. } => {
-            render_pr_detail(frame, pr, &mut 0, content_area, dim());
-        }
         Screen::MergingPr { pr, .. } => {
             render_pr_detail(frame, pr, &mut 0, content_area, dim());
         }
@@ -1265,10 +1261,20 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
             Span::styled("  [d] delta · [l] lazygit · [o] octo · [Esc] cancel", dim()),
         ]);
         frame.render_widget(Paragraph::new(line), bar_left);
-    } else if let Screen::ReviewingPr { pr, .. } = &app.ui.screen {
-        let label = format!(" Review #{}", pr.number);
+    } else if app.ui.pending_review_action {
+        let pr_label = app
+            .current_screen()
+            .selected_status_item()
+            .and_then(|item| {
+                if let workflows::status::StatusItem::Pr(pr) = item {
+                    Some(format!(" Review #{}", pr.number))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| " Review".to_string());
         let line = Line::from(vec![
-            Span::styled(label, Style::default().fg(YELLOW)),
+            Span::styled(pr_label, Style::default().fg(YELLOW)),
             Span::styled("  [c] code · [m] comments · [Esc] cancel", dim()),
         ]);
         frame.render_widget(Paragraph::new(line), bar_left);
@@ -1294,9 +1300,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
             Screen::UnifiedList { .. } => KEYBINDS_LIST,
             Screen::LogDetail { .. } => KEYBINDS_LOG_READER,
             Screen::IssueDetail { .. } | Screen::DismissingIssue { .. } => KEYBINDS_ISSUE_READER,
-            Screen::PrDetail { .. } | Screen::ReviewingPr { .. } | Screen::MergingPr { .. } => {
-                KEYBINDS_PR_READER
-            }
+            Screen::PrDetail { .. } | Screen::MergingPr { .. } => KEYBINDS_PR_READER,
         };
         let text = format_keybinds(keybinds);
         let lines = keybinds.len() as u16;

@@ -21,6 +21,9 @@ pub(crate) struct UiState {
     /// True while the PR actions submenu is showing (d was pressed on a PR in split view).
     /// The next keypress either executes a sub-action or cancels.
     pub(crate) pending_pr_action: bool,
+    /// True while the review picker submenu is showing (v was pressed on a PR in split view).
+    /// The next keypress either commits a review skill or cancels.
+    pub(crate) pending_review_action: bool,
 }
 
 #[derive(Debug, Default)]
@@ -49,7 +52,6 @@ impl App {
             Screen::LogDetail { .. }
             | Screen::IssueDetail { .. }
             | Screen::PrDetail { .. }
-            | Screen::ReviewingPr { .. }
             | Screen::MergingPr { .. }
             | Screen::DismissingIssue { .. } => 0,
         }

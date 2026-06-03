@@ -6,6 +6,11 @@ use tui_input::InputRequest;
 use crate::state::{Action, App, ReviewSkill, Screen};
 
 pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
+    // Review picker submenu intercepts all keys while pending.
+    if app.ui.pending_review_action {
+        return review_picker_submenu_key(key);
+    }
+
     // PR actions submenu intercepts all keys while pending.
     if app.ui.pending_pr_action {
         return pr_action_submenu_key(key);
@@ -24,11 +29,6 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
     // Merge confirmation intercepts all keys (Ctrl-C still quits).
     if matches!(app.ui.screen, Screen::MergingPr { .. }) {
         return merge_confirm_key(key);
-    }
-
-    // Review picker intercepts all keys (Ctrl-C still quits).
-    if matches!(app.ui.screen, Screen::ReviewingPr { .. }) {
-        return reviewing_pr_key(key);
     }
 
     let can_go_back = matches!(
@@ -79,7 +79,6 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
         Screen::LogDetail { .. } => log_detail_keys(key),
         Screen::IssueDetail { .. } => issue_reader_keys(key),
         Screen::PrDetail { .. } => pr_reader_keys(key),
-        Screen::ReviewingPr { .. } => unreachable!("handled above"),
         Screen::MergingPr { .. } => unreachable!("handled above"),
         Screen::DismissingIssue { .. } => unreachable!("handled above"),
     }
@@ -177,13 +176,12 @@ fn pr_reader_keys(key: KeyEvent) -> Option<Action> {
         (KeyCode::Char('i'), _) => Some(Action::AskAboutPr),
         (KeyCode::Char('o'), _) => Some(Action::OpenInOcto),
         (KeyCode::Char('l'), _) => Some(Action::OpenInLazygit),
-        (KeyCode::Char('v'), _) => Some(Action::OpenReviewPicker),
         (KeyCode::Char('m'), _) => Some(Action::MergePr),
         _ => None,
     }
 }
 
-fn reviewing_pr_key(key: KeyEvent) -> Option<Action> {
+fn review_picker_submenu_key(key: KeyEvent) -> Option<Action> {
     if matches!(
         (key.code, key.modifiers),
         (KeyCode::Char('c'), KeyModifiers::CONTROL)
@@ -193,8 +191,8 @@ fn reviewing_pr_key(key: KeyEvent) -> Option<Action> {
     match key.code {
         KeyCode::Char('c') => Some(Action::CommitReview(ReviewSkill::Converge)),
         KeyCode::Char('m') => Some(Action::CommitReview(ReviewSkill::PrCommentsConverge)),
-        KeyCode::Esc => Some(Action::CancelReview),
-        _ => None,
+        // Esc and any unrecognized key dismiss the submenu without closing the split view.
+        _ => Some(Action::CancelReview),
     }
 }
 
@@ -756,8 +754,8 @@ mod tests {
     #[case(ch('i'), Some(Action::AskAboutPr))]
     #[case(ch('o'), Some(Action::OpenInOcto))]
     #[case(ch('l'), Some(Action::OpenInLazygit))]
-    #[case(ch('v'), Some(Action::OpenReviewPicker))]
     #[case(ch('m'), Some(Action::MergePr))]
+    #[case(ch('v'), None)]
     #[case(ch('x'), None)]
     fn pr_detail_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
         assert_eq!(key_to_action(&pr_detail_app(), key), expected);
@@ -788,66 +786,31 @@ mod tests {
         assert_eq!(key_to_action(&merging_app(), ctrl('c')), Some(Action::Quit));
     }
 
-    fn reviewing_app() -> App {
-        let parent = ListSnapshot {
-            items: vec![],
-            selected: 0,
-            filter: Filter::default(),
-            expanded_groups: std::collections::HashSet::new(),
-            detail_mode: crate::state::DetailMode::Hidden,
-        };
-        App {
-            ui: UiState {
-                screen: Screen::ReviewingPr {
-                    parent,
-                    pr: domain::PullRequest {
-                        number: 7,
-                        title: "test pr".to_string(),
-                        repo: domain::RepoSlug::new("ooloth", "hub"),
-                        url: "https://github.com/ooloth/hub/pull/7".to_string(),
-                        age: chrono::Duration::zero(),
-                        urgency: domain::Urgency::Low,
-                        kind: domain::PrKind::Mine,
-                        author: "ooloth".to_string(),
-                        review_decision: None,
-                        approval_count: 0,
-                        comment_count: 0,
-                        head_branch: "feat/thing".to_string(),
-                        base_branch: "main".to_string(),
-                        body: None,
-                        ci_status: None,
-                        changed_files: vec![],
-                        total_changed_files: 0,
-                        review_threads: vec![],
-                        pr_comments: vec![],
-                        merge_blocker: None,
-                    },
-                    prev: PrPrevScreen::PrDetail,
-                },
-                ..UiState::default()
-            },
-            ..App::default()
-        }
+    fn pending_review_action_app_with_pr() -> App {
+        let mut app = split_view_app_with_pr();
+        app.ui.pending_review_action = true;
+        app
     }
 
     #[rstest]
     #[case(ch('c'), Some(Action::CommitReview(ReviewSkill::Converge)))]
     #[case(ch('m'), Some(Action::CommitReview(ReviewSkill::PrCommentsConverge)))]
     #[case(k(KeyCode::Esc), Some(Action::CancelReview))]
-    #[case(ch('j'), None)]
-    #[case(ch('k'), None)]
-    #[case(ch('v'), None)]
-    #[case(ch('i'), None)]
-    #[case(ch('q'), None)]
-    #[case(ch('r'), None)]
-    fn reviewing_pr_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
-        assert_eq!(key_to_action(&reviewing_app(), key), expected);
+    #[case(ch('j'), Some(Action::CancelReview))]
+    #[case(ch('k'), Some(Action::CancelReview))]
+    #[case(ch('v'), Some(Action::CancelReview))]
+    #[case(ch('x'), Some(Action::CancelReview))]
+    fn review_picker_submenu_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
+        assert_eq!(
+            key_to_action(&pending_review_action_app_with_pr(), key),
+            expected
+        );
     }
 
     #[test]
-    fn ctrl_c_quits_during_review_picker() {
+    fn ctrl_c_quits_during_review_picker_submenu() {
         assert_eq!(
-            key_to_action(&reviewing_app(), ctrl('c')),
+            key_to_action(&pending_review_action_app_with_pr(), ctrl('c')),
             Some(Action::Quit)
         );
     }

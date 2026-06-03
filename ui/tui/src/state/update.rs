@@ -27,6 +27,10 @@ impl App {
         ) {
             self.ui.pending_pr_action = false;
         }
+        // Clear the review picker submenu on any action that isn't part of it.
+        if !matches!(action, Action::OpenReviewPicker) {
+            self.ui.pending_review_action = false;
+        }
         match action {
             Action::Quit => vec![Effect::Quit],
             Action::ToggleHelp => {
@@ -62,8 +66,7 @@ impl App {
                 self.ui.screen = match std::mem::take(&mut self.ui.screen) {
                     Screen::LogDetail { parent, .. }
                     | Screen::IssueDetail { parent, .. }
-                    | Screen::PrDetail { parent, .. }
-                    | Screen::ReviewingPr { parent, .. } => {
+                    | Screen::PrDetail { parent, .. } => {
                         let flat_rows = flatten(&parent.items, &parent.expanded_groups);
                         Screen::UnifiedList {
                             items: parent.items,
@@ -216,7 +219,6 @@ impl App {
                 Screen::LogDetail { .. } => self.handle_log_detail(action),
                 Screen::IssueDetail { .. } => self.handle_issue_reader(action),
                 Screen::PrDetail { .. } => self.handle_pr_reader(action),
-                Screen::ReviewingPr { .. } => self.handle_reviewing_pr(action),
                 Screen::MergingPr { .. } => self.handle_merging_pr(action),
                 Screen::DismissingIssue { .. } => self.handle_dismissing(action),
             },
@@ -429,8 +431,53 @@ impl App {
                     vec![]
                 }
             }
-            Action::OpenReviewPicker => self.open_unified_split_pr_picker(PrAction::Review),
-            Action::MergePr => self.open_unified_split_pr_picker(PrAction::Merge),
+            Action::OpenReviewPicker => {
+                self.ui.pending_review_action = true;
+                vec![]
+            }
+            Action::CommitReview(skill) => {
+                let Some(StatusItem::Pr(pr)) = self.ui.screen.selected_status_item() else {
+                    return vec![];
+                };
+                let ownership = PrOwnership::from_kind(pr.kind);
+                vec![Effect::ReviewPr {
+                    repo: pr.repo.to_string(),
+                    number: pr.number,
+                    ownership,
+                    skill,
+                    head_branch: pr.head_branch.clone(),
+                }]
+            }
+            Action::CancelReview => vec![],
+            Action::MergePr => {
+                let Some(StatusItem::Pr(pr)) = self.ui.screen.selected_status_item() else {
+                    return vec![];
+                };
+                let Screen::UnifiedList {
+                    items,
+                    selected,
+                    filter,
+                    expanded_groups,
+                    detail_mode,
+                    ..
+                } = &self.ui.screen
+                else {
+                    return vec![];
+                };
+                let snapshot = ListSnapshot {
+                    items: items.clone(),
+                    selected: *selected,
+                    filter: filter.clone(),
+                    expanded_groups: expanded_groups.clone(),
+                    detail_mode: detail_mode.clone(),
+                };
+                self.ui.screen = Screen::MergingPr {
+                    parent: snapshot.clone(),
+                    pr,
+                    prev: PrPrevScreen::UnifiedList { snapshot },
+                };
+                vec![]
+            }
             Action::ApproveForAgent => {
                 let Some(StatusItem::Issue(issue)) = self.ui.screen.selected_status_item() else {
                     return vec![];
@@ -474,47 +521,6 @@ impl App {
             Action::Investigate => self.handle_investigate(),
             _ => unreachable!(),
         }
-    }
-
-    /// Transition UnifiedList split view → ReviewingPr or MergingPr for the selected PR.
-    fn open_unified_split_pr_picker(&mut self, kind: PrAction) -> Vec<Effect> {
-        let Some(StatusItem::Pr(pr)) = self.ui.screen.selected_status_item() else {
-            return vec![];
-        };
-        let Screen::UnifiedList {
-            items,
-            selected,
-            filter,
-            expanded_groups,
-            detail_mode,
-            ..
-        } = &self.ui.screen
-        else {
-            return vec![];
-        };
-        let snapshot = ListSnapshot {
-            items: items.clone(),
-            selected: *selected,
-            filter: filter.clone(),
-            expanded_groups: expanded_groups.clone(),
-            detail_mode: detail_mode.clone(),
-        };
-        let prev = PrPrevScreen::UnifiedList {
-            snapshot: snapshot.clone(),
-        };
-        self.ui.screen = match kind {
-            PrAction::Review => Screen::ReviewingPr {
-                parent: snapshot,
-                pr,
-                prev,
-            },
-            PrAction::Merge => Screen::MergingPr {
-                parent: snapshot,
-                pr,
-                prev,
-            },
-        };
-        vec![]
     }
 
     fn handle_log_detail(&mut self, action: Action) -> Vec<Effect> {
@@ -703,19 +709,6 @@ impl App {
                     head_branch: pr.head_branch.clone(),
                 }]
             }
-            Action::OpenReviewPicker => {
-                let Screen::PrDetail { pr, parent, .. } = &self.ui.screen else {
-                    return vec![];
-                };
-                let pr = pr.clone();
-                let parent = parent.clone();
-                self.ui.screen = Screen::ReviewingPr {
-                    parent,
-                    pr,
-                    prev: PrPrevScreen::PrDetail,
-                };
-                vec![]
-            }
             Action::OpenInOcto => {
                 let Screen::PrDetail { pr, .. } = &self.ui.screen else {
                     return vec![];
@@ -737,38 +730,6 @@ impl App {
                 }]
             }
             Action::Investigate => self.handle_investigate(),
-            _ => unreachable!(),
-        }
-    }
-
-    fn handle_reviewing_pr(&mut self, action: Action) -> Vec<Effect> {
-        match action {
-            Action::CommitReview(skill) => {
-                let Screen::ReviewingPr { pr, parent, prev } = std::mem::take(&mut self.ui.screen)
-                else {
-                    return vec![];
-                };
-                let ownership = PrOwnership::from_kind(pr.kind);
-                let repo = pr.repo.to_string();
-                let number = pr.number;
-                let head_branch = pr.head_branch.clone();
-                self.ui.screen = restore_after_pr_action(parent, pr, prev);
-                vec![Effect::ReviewPr {
-                    repo,
-                    number,
-                    ownership,
-                    skill,
-                    head_branch,
-                }]
-            }
-            Action::CancelReview => {
-                let Screen::ReviewingPr { parent, pr, prev } = std::mem::take(&mut self.ui.screen)
-                else {
-                    return vec![];
-                };
-                self.ui.screen = restore_after_pr_action(parent, pr, prev);
-                vec![]
-            }
             _ => unreachable!(),
         }
     }
@@ -947,18 +908,9 @@ impl App {
             Screen::IssueDetail { issue, .. } | Screen::DismissingIssue { issue, .. } => {
                 Some(&issue.url)
             }
-            Screen::PrDetail { pr, .. }
-            | Screen::ReviewingPr { pr, .. }
-            | Screen::MergingPr { pr, .. } => Some(&pr.url),
+            Screen::PrDetail { pr, .. } | Screen::MergingPr { pr, .. } => Some(&pr.url),
         }
     }
-}
-
-/// Which transient picker to enter from the UnifiedList split view.
-#[derive(Clone, Copy)]
-enum PrAction {
-    Review,
-    Merge,
 }
 
 fn restore_after_pr_action(
@@ -1115,7 +1067,6 @@ fn refresh_screen_in_place(screen: &mut Screen, raw: &[workflows::status::Status
         Screen::LogDetail { parent, .. }
         | Screen::IssueDetail { parent, .. }
         | Screen::PrDetail { parent, .. }
-        | Screen::ReviewingPr { parent, .. }
         | Screen::MergingPr { parent, .. }
         | Screen::DismissingIssue { parent, .. } => {
             let new_items = build_unified(raw.to_vec(), &parent.filter);
@@ -2624,35 +2575,44 @@ mod tests {
         assert_eq!(head_branch, "feat/thing");
     }
 
-    // --- OpenReviewPicker / ReviewingPr ---
+    // --- OpenReviewPicker from split view ---
 
-    fn app_in_reviewing() -> App {
-        let mut app = app_in_pr_detail();
+    fn split_view_app_with_pr_item() -> App {
+        use crate::display::{flatten, DisplayItem};
+        let item = stub_pr();
+        let items = vec![DisplayItem::Single(item)];
+        let expanded = HashSet::new();
+        let flat_rows = flatten(&items, &expanded);
+        App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    flat_rows,
+                    items,
+                    selected: 0,
+                    filter: Filter::default(),
+                    expanded_groups: expanded,
+                    detail_mode: DetailMode::Visible { detail_scroll: 0 },
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    #[test]
+    fn open_review_picker_from_split_view_sets_pending_flag_and_stays_on_screen() {
+        let mut app = split_view_app_with_pr_item();
         app.update(Action::OpenReviewPicker);
-        app
+        assert!(app.ui.pending_review_action);
+        assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
     }
 
     #[test]
-    fn open_review_picker_transitions_to_reviewing_pr_screen() {
-        let app = app_in_reviewing();
-        assert!(matches!(app.current_screen(), Screen::ReviewingPr { .. }));
-    }
-
-    #[test]
-    fn open_review_picker_preserves_parent_and_pr() {
-        let app = app_in_reviewing();
-        let Screen::ReviewingPr { pr, .. } = app.current_screen() else {
-            panic!("expected ReviewingPr");
-        };
-        assert_eq!(pr.number, 7);
-        assert_eq!(pr.repo.to_string(), "ooloth/hub");
-    }
-
-    #[test]
-    fn commit_review_converge_returns_to_pr_detail_and_emits_review_pr_effect() {
-        let mut app = app_in_reviewing();
+    fn commit_review_converge_from_split_view_emits_review_pr_effect() {
+        let mut app = split_view_app_with_pr_item();
+        app.ui.pending_review_action = true;
         let effects = app.update(Action::CommitReview(crate::state::ReviewSkill::Converge));
-        assert!(matches!(app.current_screen(), Screen::PrDetail { .. }));
+        assert!(!app.ui.pending_review_action);
         assert_eq!(effects.len(), 1);
         let Effect::ReviewPr {
             skill, ownership, ..
@@ -2665,12 +2625,13 @@ mod tests {
     }
 
     #[test]
-    fn commit_review_pr_comments_returns_to_pr_detail_and_emits_review_pr_effect() {
-        let mut app = app_in_reviewing();
+    fn commit_review_pr_comments_from_split_view_emits_review_pr_effect() {
+        let mut app = split_view_app_with_pr_item();
+        app.ui.pending_review_action = true;
         let effects = app.update(Action::CommitReview(
             crate::state::ReviewSkill::PrCommentsConverge,
         ));
-        assert!(matches!(app.current_screen(), Screen::PrDetail { .. }));
+        assert!(!app.ui.pending_review_action);
         assert_eq!(effects.len(), 1);
         let Effect::ReviewPr { skill, .. } = effects.into_iter().next().unwrap() else {
             panic!("expected ReviewPr");
@@ -2679,19 +2640,13 @@ mod tests {
     }
 
     #[test]
-    fn cancel_review_returns_to_pr_detail_with_no_effects() {
-        let mut app = app_in_reviewing();
+    fn cancel_review_from_split_view_clears_flag_stays_on_screen() {
+        let mut app = split_view_app_with_pr_item();
+        app.ui.pending_review_action = true;
         let effects = app.update(Action::CancelReview);
-        assert!(matches!(app.current_screen(), Screen::PrDetail { .. }));
+        assert!(!app.ui.pending_review_action);
+        assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
         assert!(effects.is_empty());
-    }
-
-    #[test]
-    fn cancel_review_from_pr_detail_source_restores_pr_detail() {
-        let mut app = app_in_pr_detail();
-        app.update(Action::OpenReviewPicker);
-        app.update(Action::CancelReview);
-        assert!(matches!(app.current_screen(), Screen::PrDetail { .. }));
     }
 
     // --- Split view state transitions ---

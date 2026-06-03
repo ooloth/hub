@@ -97,11 +97,6 @@ pub(crate) enum Screen {
         pr: PullRequest,
         scroll: u16,
     },
-    ReviewingPr {
-        parent: ListSnapshot,
-        pr: PullRequest,
-        prev: PrPrevScreen,
-    },
     MergingPr {
         parent: ListSnapshot,
         pr: PullRequest,
@@ -114,13 +109,12 @@ pub(crate) enum Screen {
     },
 }
 
-/// The screen a Review/Merge picker should restore on commit or cancel.
+/// The screen a Merge picker should restore on commit or cancel.
 #[derive(Clone, Debug)]
 pub(crate) enum PrPrevScreen {
     /// Restore Screen::PrDetail with scroll = 0.
     PrDetail,
-    /// Restore the UnifiedList split view that launched the review/merge picker.
-    #[allow(dead_code)]
+    /// Restore the UnifiedList split view that launched the merge picker.
     UnifiedList { snapshot: ListSnapshot },
 }
 
@@ -153,9 +147,9 @@ impl Screen {
             Screen::IssueDetail { issue, .. } | Screen::DismissingIssue { issue, .. } => {
                 Some(StatusItem::Issue(issue.clone()))
             }
-            Screen::PrDetail { pr, .. }
-            | Screen::ReviewingPr { pr, .. }
-            | Screen::MergingPr { pr, .. } => Some(StatusItem::Pr(pr.clone())),
+            Screen::PrDetail { pr, .. } | Screen::MergingPr { pr, .. } => {
+                Some(StatusItem::Pr(pr.clone()))
+            }
         }
     }
 }
