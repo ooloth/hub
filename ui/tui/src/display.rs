@@ -209,6 +209,7 @@ pub(crate) enum Category {
     Prs,
     Issues,
     Errors,
+    Tasks,
 }
 
 impl Category {
@@ -217,6 +218,7 @@ impl Category {
             Category::Prs => "PRs",
             Category::Issues => "Issues",
             Category::Errors => "Errors",
+            Category::Tasks => "Tasks",
         }
     }
 }
@@ -306,6 +308,7 @@ pub(crate) fn item_url(item: &StatusItem) -> Option<&str> {
         StatusItem::MediaMissing(m) => Some(&m.url),
         #[cfg(feature = "private")]
         StatusItem::MediaHealth(h) => Some(&h.url),
+        StatusItem::AgentSession(_) => None,
         #[cfg(feature = "private")]
         StatusItem::MediaBacklog { .. } => None,
     }
@@ -422,6 +425,7 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
             title: b.title.clone(),
             error: b.error.clone(),
         }),
+        StatusItem::AgentSession(_) => None,
         _ => None,
     }
 }
@@ -517,6 +521,14 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             category: "GCP".to_string(),
             age: format_age_short(g.age),
         },
+        StatusItem::AgentSession(t) => LineParts {
+            separator: RowSeparator::Bullet,
+            primary: vec![t.id.to_string(), t.title.clone()],
+            dim_inline: vec![format!(" {}", t.status), t.kind.to_string()],
+            source: None,
+            category: "Agent".to_string(),
+            age: format_age_short(t.age),
+        },
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => LineParts {
             separator: RowSeparator::Bullet,
@@ -574,6 +586,7 @@ pub(crate) fn item_urgency(item: &StatusItem) -> domain::Urgency {
         StatusItem::MediaMissing(m) => m.urgency,
         #[cfg(feature = "private")]
         StatusItem::MediaHealth(h) => h.urgency,
+        StatusItem::AgentSession(t) => t.urgency,
         #[cfg(feature = "private")]
         StatusItem::MediaBacklog { .. } => domain::Urgency::Low,
     }
@@ -616,6 +629,7 @@ pub(crate) fn item_category(item: &StatusItem) -> Category {
         StatusItem::Ci(_) | StatusItem::Loki(_) | StatusItem::Gcp(_) => Category::Errors,
         StatusItem::Pr(_) => Category::Prs,
         StatusItem::Issue(_) | StatusItem::Linear(_) => Category::Issues,
+        StatusItem::AgentSession(_) => Category::Tasks,
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(_)
         | StatusItem::MediaMissing(_)
@@ -919,6 +933,30 @@ mod tests {
         })
     }
 
+    fn agent_session() -> StatusItem {
+        StatusItem::AgentSession(domain::AgentTask {
+            id: "TASK-0042".parse().unwrap(),
+            title: "Fix auth bug".to_string(),
+            status: domain::TaskStatus::InProgress,
+            kind: domain::TaskKind::Implement,
+            session_id: Some("abc-123".to_string()),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+        })
+    }
+
+    fn agent_session_review() -> StatusItem {
+        StatusItem::AgentSession(domain::AgentTask {
+            id: "TASK-0043".parse().unwrap(),
+            title: "Update README".to_string(),
+            status: domain::TaskStatus::Review,
+            kind: domain::TaskKind::General,
+            session_id: None,
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::High,
+        })
+    }
+
     #[test]
     fn snapshot_item_lines() {
         let lines = [
@@ -964,6 +1002,11 @@ mod tests {
             format!("linear:      {}", item_line(&linear()).flat()),
             format!("loki:        {}", item_line(&loki()).flat()),
             format!("gcp:         {}", item_line(&gcp()).flat()),
+            format!("agent_in_progress: {}", item_line(&agent_session()).flat()),
+            format!(
+                "agent_review:      {}",
+                item_line(&agent_session_review()).flat()
+            ),
             format!(
                 "group_3:     {}",
                 flat_row_line(&FlatRow::GroupHeader {
@@ -1015,6 +1058,11 @@ mod tests {
     #[test]
     fn item_category_gcp_is_errors() {
         assert_eq!(item_category(&gcp()), Category::Errors);
+    }
+
+    #[test]
+    fn item_category_agent_session_is_tasks() {
+        assert_eq!(item_category(&agent_session()), Category::Tasks);
     }
 
     #[test]

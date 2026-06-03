@@ -1,11 +1,11 @@
 use anyhow::Result;
-use domain::{CiFailure, Issue, LinearIssue, PullRequest, Urgency};
+use domain::{AgentTask, CiFailure, Issue, LinearIssue, PullRequest, Urgency};
 use secrecy::{ExposeSecret, Secret};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::HashMap;
 
-pub const SCHEMA_VERSION: i32 = 14;
+pub const SCHEMA_VERSION: i32 = 15;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum StatusItem {
@@ -15,6 +15,7 @@ pub enum StatusItem {
     Linear(LinearIssue),
     Loki(domain::LokiEntry),
     Gcp(domain::GcpEntry),
+    AgentSession(AgentTask),
     #[cfg(feature = "private")]
     MediaBlocked(crate::private::status::BlockedItem),
     #[cfg(feature = "private")]
@@ -37,6 +38,7 @@ impl StatusItem {
             Self::Linear(l) => l.urgency,
             Self::Loki(l) => l.urgency,
             Self::Gcp(g) => g.urgency,
+            Self::AgentSession(t) => t.urgency,
             #[cfg(feature = "private")]
             Self::MediaBlocked(b) => b.urgency,
             #[cfg(feature = "private")]
@@ -56,6 +58,7 @@ impl StatusItem {
             Self::Linear(l) => l.age,
             Self::Loki(l) => l.age,
             Self::Gcp(g) => g.age,
+            Self::AgentSession(t) => t.age,
             #[cfg(feature = "private")]
             Self::MediaBlocked(b) => b.age,
             #[cfg(feature = "private")]
@@ -194,6 +197,12 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
 
     #[cfg(not(feature = "private"))]
     let _ = params.private_workflow_names;
+
+    // Agent tasks — synchronous local SQLite read; degrades gracefully on error.
+    match crate::tasks::list_visible() {
+        Ok(tasks) => items.extend(tasks.into_iter().map(StatusItem::AgentSession)),
+        Err(_) => errors.push("agent tasks".to_string()),
+    }
 
     items.sort_by_key(|i| (i.urgency(), Reverse(i.age())));
 

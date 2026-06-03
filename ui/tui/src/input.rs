@@ -163,6 +163,7 @@ fn unified_list_keys(
         (KeyCode::Char('e'), _) => Some(Action::FilterCategory(Category::Errors)),
         (KeyCode::Char('o'), _) => Some(Action::OpenUrl),
         (KeyCode::Char('O'), _) => Some(Action::FilterCategory(Category::Issues)),
+        (KeyCode::Char('t'), _) => Some(Action::FilterCategory(Category::Tasks)),
         (KeyCode::Char('a'), _) => Some(Action::ClearFilter),
         (KeyCode::Char('/'), _) => Some(Action::StartQuery),
         _ => None,
@@ -483,6 +484,7 @@ mod tests {
     #[case(ch('e'), Some(Action::FilterCategory(Category::Errors)))]
     #[case(ch('o'), Some(Action::OpenUrl))]
     #[case(ch('O'), Some(Action::FilterCategory(Category::Issues)))]
+    #[case(ch('t'), Some(Action::FilterCategory(Category::Tasks)))]
     #[case(ch('a'), Some(Action::ClearFilter))]
     #[case(ch('/'), Some(Action::StartQuery))]
     #[case(ch('x'), None)]
