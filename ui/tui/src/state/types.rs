@@ -373,4 +373,5 @@ pub(crate) enum Msg {
         report: StatusReport,
         refreshed_at: DateTime<Utc>,
     },
+    StreamUpdate(Vec<domain::StreamBlock>),
 }

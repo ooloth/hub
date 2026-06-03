@@ -109,6 +109,8 @@ async fn main() -> Result<()> {
                 RefreshState::Idle
             },
             last_updated: initial_updated,
+            stream_blocks: Vec::new(),
+            stream_session_id: None,
         },
         ui: UiState {
             screen: Screen::UnifiedList {
@@ -239,6 +241,10 @@ async fn run_loop(
     // advances without requiring a keypress.
     let mut display_interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
     display_interval.tick().await;
+    // Live-polls the JSONL stream for the selected AgentSession while detail is open.
+    let mut stream_interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
+    stream_interval.tick().await;
+    let (stream_tx, mut stream_rx) = mpsc::channel::<Vec<domain::StreamBlock>>(1);
 
     'run: loop {
         terminal.draw(|f| render(f, app))?;
@@ -270,6 +276,41 @@ async fn run_loop(
             }
             _ = display_interval.tick() => vec![], // redraw only; no state change
             Some(result) = rx.recv() => handle_msg(app, Msg::FetchResult(result))?,
+            _ = stream_interval.tick() => {
+                if let Screen::UnifiedList {
+                    flat_rows,
+                    selected,
+                    detail_mode: DetailMode::Visible { .. },
+                    ..
+                } = &app.ui.screen
+                {
+                    if let Some(crate::display::FlatRow::Single(
+                        workflows::status::StatusItem::AgentSession(task),
+                    )) = flat_rows.get(*selected)
+                    {
+                        if let Some(session_id) = &task.session_id {
+                            if app.data.stream_session_id.as_deref() != Some(session_id.as_str()) {
+                                app.data.stream_blocks.clear();
+                                app.data.stream_session_id = Some(session_id.clone());
+                            }
+                            let cwd = std::env::current_dir()
+                                .map(|p| p.to_string_lossy().to_string())
+                                .unwrap_or_default();
+                            let sid = session_id.clone();
+                            let stx = stream_tx.clone();
+                            tokio::spawn(async move {
+                                if let Ok(blocks) =
+                                    workflows::tasks::read_session_stream(&cwd, &sid).await
+                                {
+                                    let _ = stx.send(blocks).await;
+                                }
+                            });
+                        }
+                    }
+                }
+                vec![]
+            }
+            Some(blocks) = stream_rx.recv() => handle_msg(app, Msg::StreamUpdate(blocks))?,
         };
 
         for effect in effects {

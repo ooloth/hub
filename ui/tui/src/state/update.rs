@@ -372,8 +372,21 @@ impl App {
                     }
                 );
                 if is_hidden {
-                    if let Screen::UnifiedList { detail_mode, .. } = &mut self.ui.screen {
-                        *detail_mode = DetailMode::Visible { detail_scroll: 0 };
+                    if let Screen::UnifiedList {
+                        detail_mode,
+                        flat_rows,
+                        selected,
+                        ..
+                    } = &mut self.ui.screen
+                    {
+                        let is_agent = matches!(
+                            flat_rows.get(*selected),
+                            Some(FlatRow::Single(StatusItem::AgentSession(_)))
+                        );
+                        let initial_scroll = if is_agent { u16::MAX } else { 0 };
+                        *detail_mode = DetailMode::Visible {
+                            detail_scroll: initial_scroll,
+                        };
                     }
                 }
                 vec![]
@@ -1384,6 +1397,10 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
             refreshed_at,
         } => {
             apply_report(app, report, refreshed_at);
+            Ok(vec![])
+        }
+        Msg::StreamUpdate(blocks) => {
+            app.data.stream_blocks = blocks;
             Ok(vec![])
         }
     }

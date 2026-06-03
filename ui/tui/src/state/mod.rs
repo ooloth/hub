@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use domain::StreamBlock;
 use workflows::status::StatusItem;
 
 mod types;
@@ -27,6 +28,8 @@ pub(crate) struct DataState {
     pub(crate) raw_items: Vec<StatusItem>,
     pub(crate) refresh_state: RefreshState,
     pub(crate) last_updated: Option<DateTime<Utc>>,
+    pub(crate) stream_blocks: Vec<StreamBlock>,
+    pub(crate) stream_session_id: Option<String>,
 }
 
 #[derive(Debug, Default)]

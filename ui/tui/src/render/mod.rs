@@ -1081,29 +1081,200 @@ fn render_log_detail(
     frame.render_widget(Paragraph::new(Text::from(body)).block(block), area);
 }
 
+fn blocks_to_lines(blocks: &[domain::StreamBlock]) -> Vec<Line<'static>> {
+    use domain::StreamBlock;
+    const GREEN: Color = Color::Green;
+    const RED: Color = Color::Red;
+    const CYAN: Color = Color::Cyan;
+    let thinking_style = Style::default()
+        .add_modifier(Modifier::DIM)
+        .add_modifier(Modifier::ITALIC);
+    let dim_style = Style::default().add_modifier(Modifier::DIM);
+
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    for block in blocks {
+        match block {
+            StreamBlock::HumanTurn(text) => {
+                let mut iter = text.lines();
+                if let Some(first) = iter.next() {
+                    lines.push(Line::from(vec![
+                        Span::styled("> ", Style::default().fg(CYAN).add_modifier(Modifier::BOLD)),
+                        Span::raw(first.to_string()),
+                    ]));
+                }
+                for rest in iter {
+                    lines.push(Line::from(vec![
+                        Span::raw("  "),
+                        Span::raw(rest.to_string()),
+                    ]));
+                }
+            }
+            StreamBlock::AssistantText(text) => {
+                for line in text.lines() {
+                    lines.push(Line::raw(line.to_string()));
+                }
+            }
+            StreamBlock::AssistantThinking(text) => {
+                for line in text.lines() {
+                    lines.push(Line::from(Span::styled(line.to_string(), thinking_style)));
+                }
+            }
+            StreamBlock::ToolCall { name, summary } => {
+                lines.push(Line::from(vec![
+                    Span::styled(format!("  {name}: "), Style::default().fg(GREEN)),
+                    Span::styled(summary.clone(), Style::default().fg(GREEN)),
+                ]));
+            }
+            StreamBlock::ToolResult { is_error, content } => {
+                let first = content.lines().next().unwrap_or("").to_string();
+                let has_more = content.lines().count() > 1;
+                let display = if has_more {
+                    format!("{first} …")
+                } else {
+                    first
+                };
+                if *is_error {
+                    lines.push(Line::from(Span::styled(
+                        format!("  \u{2717} {display}"),
+                        Style::default().fg(RED),
+                    )));
+                } else {
+                    lines.push(Line::from(Span::styled(
+                        format!("  \u{2192} {display}"),
+                        dim_style,
+                    )));
+                }
+            }
+        }
+    }
+    lines
+}
+
+fn render_agent_session_detail(
+    frame: &mut ratatui::Frame,
+    task: &domain::AgentTask,
+    blocks: &[domain::StreamBlock],
+    scroll: &mut u16,
+    area: Rect,
+    border_style: Style,
+) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(border_style);
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let [stream_raw, divider_area, meta_raw] = Layout::horizontal([
+        Constraint::Percentage(60),
+        Constraint::Length(1),
+        Constraint::Fill(1),
+    ])
+    .areas(inner);
+
+    let stream_area = Rect {
+        width: stream_raw.width.saturating_sub(1),
+        ..stream_raw
+    };
+    let meta_area = Rect {
+        x: meta_raw.x + 1,
+        width: meta_raw.width.saturating_sub(1),
+        ..meta_raw
+    };
+
+    {
+        let buf = frame.buffer_mut();
+        for y in inner.y..inner.y + inner.height {
+            buf.set_string(divider_area.x, y, "│", border_style);
+        }
+        buf.set_string(divider_area.x, area.y, "┬", border_style);
+        buf.set_string(divider_area.x, area.y + area.height - 1, "┴", border_style);
+    }
+
+    // Stream pane (left)
+    let lines = blocks_to_lines(blocks);
+    let pane_h = stream_area.height as usize;
+    let total = lines.len();
+    let max_scroll = total.saturating_sub(pane_h) as u16;
+    *scroll = (*scroll).min(max_scroll);
+    let visible: Vec<Line<'static>> = lines
+        .into_iter()
+        .skip(*scroll as usize)
+        .take(pane_h)
+        .collect();
+    if visible.is_empty() {
+        frame.render_widget(
+            Paragraph::new("No session data yet.")
+                .style(Style::default().add_modifier(Modifier::DIM)),
+            stream_area,
+        );
+    } else {
+        frame.render_widget(Paragraph::new(visible), stream_area);
+    }
+
+    // Info pane (right)
+    let status_color = match task.status {
+        domain::TaskStatus::Review => YELLOW,
+        domain::TaskStatus::Blocked => Color::Red,
+        domain::TaskStatus::InProgress => Color::Cyan,
+        _ => Color::Gray,
+    };
+    let info_lines: Vec<Line<'static>> = vec![
+        Line::from(Span::styled(
+            format!("{} · {}", task.id, task.title),
+            Style::default().add_modifier(Modifier::BOLD),
+        )),
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled("status  ", Style::default().add_modifier(Modifier::DIM)),
+            Span::styled(task.status.to_string(), Style::default().fg(status_color)),
+        ]),
+        Line::from(vec![
+            Span::styled("kind    ", Style::default().add_modifier(Modifier::DIM)),
+            Span::raw(task.kind.to_string()),
+        ]),
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled("age     ", Style::default().add_modifier(Modifier::DIM)),
+            Span::raw(format_age_short(task.age)),
+        ]),
+    ];
+    frame.render_widget(Paragraph::new(info_lines), meta_area);
+}
+
 fn render_split_detail_pane(
     frame: &mut ratatui::Frame,
     area: Rect,
     items: &[DisplayItem],
     selected_row: Option<&FlatRow>,
-    detail_scroll: u16,
+    detail_scroll: &mut u16,
+    stream_blocks: &[domain::StreamBlock],
     border_style: Style,
 ) {
-    let mut scroll = detail_scroll;
     match selected_row {
         Some(FlatRow::Single(item)) | Some(FlatRow::GroupChild { item, .. }) => match item {
             workflows::status::StatusItem::Pr(pr) => {
-                render_pr_detail(frame, pr, &mut scroll, area, border_style);
+                render_pr_detail(frame, pr, detail_scroll, area, border_style);
             }
             workflows::status::StatusItem::Issue(issue) => {
-                render_issue_detail(frame, issue, &mut scroll, area);
+                render_issue_detail(frame, issue, detail_scroll, area);
             }
             workflows::status::StatusItem::Gcp(_) | workflows::status::StatusItem::Loki(_) => {
                 if let Some(view) = log_detail_view_from_item(item) {
-                    render_log_detail(frame, &view, &mut scroll, area);
+                    render_log_detail(frame, &view, detail_scroll, area);
                 } else {
                     render_detail_placeholder(frame, area);
                 }
+            }
+            workflows::status::StatusItem::AgentSession(task) => {
+                render_agent_session_detail(
+                    frame,
+                    task,
+                    stream_blocks,
+                    detail_scroll,
+                    area,
+                    border_style,
+                );
             }
             _ => render_detail_placeholder(frame, area),
         },
@@ -1113,7 +1284,7 @@ fn render_split_detail_pane(
                 _ => None,
             });
             if let Some(view) = group_items.and_then(log_detail_view_from_group) {
-                render_log_detail(frame, &view, &mut scroll, area);
+                render_log_detail(frame, &view, detail_scroll, area);
             } else {
                 render_detail_placeholder(frame, area);
             }
@@ -1175,7 +1346,8 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
                     detail_area,
                     items,
                     selected_row,
-                    *detail_scroll,
+                    detail_scroll,
+                    &app.data.stream_blocks,
                     filter_chrome_style(filter, app.ui.query_input.as_deref()),
                 );
             }
