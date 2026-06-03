@@ -25,6 +25,8 @@ Related issue: #45 (TUI as control plane) — may be superseded by this broader 
 | `workflows/src/status.rs` | `StatusItem` enum + `StatusReport` struct + `SCHEMA_VERSION` constant |
 | `store/src/status.rs` | SQLite connect/migrate/read/write pattern to follow for new tables |
 | `ui/cli/src/main.rs` | Clap derive skeleton — add subcommands here, not in a new binary |
+| `ui/cli/README.md` | Clap derive subcommand patterns to follow |
+| `store/README.md` | Rusqlite connection and query patterns to follow |
 | `ui/tui/src/state/types.rs` | `Screen` enum and list state — where `AgentSession` items plug in |
 | `ui/tui/README.md` | `SCHEMA_VERSION` bump rules — read before touching `StatusReport` |
 
@@ -46,7 +48,11 @@ This section maps directly to what hub is trying to build.
 
 **Task store:**
 - `tasks`, `task_comments`, `task_activity` SQLite tables in `store/`
-- Numbered SQL migrations tracked in `schema_version` (hub already has this pattern)
+- Numbered SQL migration runner needs to be built — the current store uses a single
+  `ensure_table` with inline SQL (see `store/src/status.rs`), which is fine for one
+  table but won't survive schema evolution across multiple task-related tables. The
+  inspiration doc describes the pattern: numbered `.sql` files applied in order,
+  applied versions tracked in a `schema_version` table, auto-run on connection.
 - Soft deletes via status field — never hard-delete
 - `GENERATED ALWAYS AS` task_key: `TASK-0042` from integer PK, indexed, no app logic
 - Comma-separated `jira_tickets`, `pr_links`, `doc_links` — deduplicated on write
