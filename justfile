@@ -27,10 +27,13 @@ cli:
 tui:
     cargo run -p hub-tui {{_features}}
 
-test:
+_require-nextest:
+    @cargo nextest --version > /dev/null 2>&1 || (echo "error: cargo-nextest not installed — run: cargo install cargo-nextest --locked" && exit 1)
+
+test: _require-nextest
     cargo nextest run {{_features}}
 
-test-update:
+test-update: _require-nextest
     INSTA_UPDATE=always cargo nextest run {{_features}}
 
 mutants:

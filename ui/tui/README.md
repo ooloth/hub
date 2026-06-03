@@ -125,7 +125,7 @@ deterministic snapshot.
 **To update snapshots after an intentional change:**
 
 ```bash
-INSTA_UPDATE=always cargo test -p hub-tui
+just test-update
 ```
 
 ## Investigations

@@ -7,6 +7,7 @@
 - [1Password CLI](https://developer.1password.com/docs/cli) — `brew install 1password-cli`
 - [taplo](https://taplo.tamasfe.dev) — `brew install taplo` (TOML formatter and schema validator)
 - [prek](https://github.com/j178/prek) — `brew install prek` (git hook manager)
+- [cargo-nextest](https://nexte.st) — `cargo install cargo-nextest --locked` (test runner used by `just test`)
 
 ## Setup
 

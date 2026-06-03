@@ -98,7 +98,7 @@ changed. Run `just test` and review any failures.
 If the diff is intentional, accept it:
 
 ```bash
-INSTA_UPDATE=always cargo test -p hub-tui
+just test-update
 ```
 
 When adding a new screen state or item type, add a snapshot for it —
