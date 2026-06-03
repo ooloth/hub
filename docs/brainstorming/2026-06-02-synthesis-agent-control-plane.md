@@ -14,8 +14,27 @@ Related issue: #45 (TUI as control plane) — may be superseded by this broader 
 - Investigation skill routing (keypress → Claude Code skill pre-loaded with context)
 - Split detail pane, action modals (review, merge, dismiss)
 - Single-row SQLite status cache (30-min TTL)
-- Minimal CLI skeleton (no subcommands)
+- Minimal CLI skeleton (`ui/cli/src/main.rs` — clap derive, empty `Cli {}` struct, no subcommands)
 - No task management, no dispatch loop, no agent monitoring
+
+**Key files an agent must know before touching anything:**
+
+| File | What it is |
+|------|-----------|
+| `domain/src/lib.rs` | Pure types only — no I/O. New domain types go here. |
+| `workflows/src/status.rs` | `StatusItem` enum + `StatusReport` struct + `SCHEMA_VERSION` constant |
+| `store/src/status.rs` | SQLite connect/migrate/read/write pattern to follow for new tables |
+| `ui/cli/src/main.rs` | Clap derive skeleton — add subcommands here, not in a new binary |
+| `ui/tui/src/state/types.rs` | `Screen` enum and list state — where `AgentSession` items plug in |
+| `ui/tui/README.md` | `SCHEMA_VERSION` bump rules — read before touching `StatusReport` |
+
+**Import direction (enforced — never violate):**
+```
+ui/ → config/
+   → workflows/ → clients/ → domain/
+                → store/   → domain/
+```
+`domain/` has no deps on other hub crates. `store/` only touches SQLite. `workflows/` orchestrates. Config values are passed as function args into workflows — workflows do not import `config/` directly.
 
 ---
 
@@ -122,7 +141,9 @@ Selecting one auto-opens the detail panels below — no separate layout mode.
 **Urgency mapping for sessions:**
 - `review` / `blocked` → High (orange) — needs human action, same tier as "PR needs review"
 - `in-progress` → neutral/Low — visible for monitoring, not demanding attention
-- `backlog` / `ready` — not shown in unified list (not yet actionable)
+- `backlog` / `ready` — filtered out in the TUI display layer (not in `workflows/`), same as how
+  draft PRs are hidden from certain views; `StatusReport` carries them, the list just doesn't
+  render them unless the user explicitly filters to show all agent tasks
 
 **Keybindings:**
 - `d` — dispatch modal → ENTER → spawn → auto-selects new session item in list
@@ -139,6 +160,12 @@ Selecting one auto-opens the detail panels below — no separate layout mode.
 **Task type routing:**
 - `implement | debug | general` → determines which skill loads at dispatch
 - Extends hub's existing investigation routing model
+
+**SCHEMA_VERSION (do not skip):**
+Adding `AgentSession` to `StatusReport` is a breaking schema change. Before committing,
+bump `SCHEMA_VERSION` in `workflows/src/status.rs` (currently `14`). The rules for when a
+bump is required are in `ui/tui/README.md`. Skipping this causes the TUI to silently serve
+a stale cache that doesn't contain session data.
 
 ### CLI and DB patterns (Part 1)
 
@@ -172,7 +199,7 @@ Selecting one auto-opens the detail panels below — no separate layout mode.
 
 ### Phase 1 — Task store + CLI
 1. Add `tasks`, `task_comments`, `task_activity` tables to `store/` with numbered migrations
-2. `hub tasks create / list / get / ready / update / comment` CLI commands
+2. `hub tasks create / list / get / ready / update / comment` CLI subcommands (add to existing `Cli` struct in `ui/cli/src/main.rs`)
 3. Structured output codes (`TASK_CREATED`, `AT_CAPACITY`, etc.)
 4. Flexible reference resolution (`42` or `TASK-0042`)
 
@@ -180,21 +207,22 @@ Selecting one auto-opens the detail panels below — no separate layout mode.
 5. `hub tasks dispatch` — atomic claim, deterministic session ID, capacity check, spawn Claude Code
 
 ### Phase 3 — TUI agent control plane ← **biggest game changer; do this next**
-6. `AgentSession` domain type (session_id, status, cost_usd, context_pct, turns, activity_feed)
-7. Sessions as items in the unified list, urgency-ranked (`review`/`blocked`=High, `in-progress`=Low)
-8. One-line list format: `Agent · TASK-0042 · title · status · elapsed · cost · ctx%`
-9. JSONL parser: line-by-line, filter system messages, three block types (diff, bash, file write)
-10. Detail view: stream pane (bottom left, live-polls 10s) + task info pane (bottom right)
-11. Keybindings: `d` dispatch modal, `y`/`n` approve/reject, `v` transcript, `i` interrupt
+6. `AgentSession` domain type in `domain/src/lib.rs` (session_id, status, cost_usd, context_pct, turns, activity_feed)
+7. Add `AgentSession` variant to `StatusItem` in `workflows/src/status.rs`; bump `SCHEMA_VERSION`
+8. Sessions as items in the unified list, urgency-ranked (`review`/`blocked`=High, `in-progress`=Low); `backlog`/`ready` filtered in TUI display layer
+9. One-line list format: `Agent · TASK-0042 · title · status · elapsed · cost · ctx%`
+10. JSONL parser: line-by-line, filter system messages, three block types (diff, bash, file write)
+11. Detail view: stream pane (bottom left, live-polls 10s) + task info pane (bottom right)
+12. Keybindings: `d` dispatch modal, `y`/`n` approve/reject, `v` transcript, `i` interrupt
 
 ### Phase 4 — CI failure + task link
-11. Show `TASK-XXXX` badge on CI failure rows with a linked task
-12. "Create task" action on CI failure rows with no linked task
+13. Show `TASK-XXXX` badge on CI failure rows with a linked task
+14. "Create task" action on CI failure rows with no linked task
 
 ### Phase 5 — Home screen tiles (after task management is proven)
-13. KPI summary cards per signal (PR, CI, Linear, Loki, Agent tasks)
-14. Two-tier layout: cards top + urgency ranking list bottom-right + agent tasks card bottom-left
-15. Per-card urgency thresholds (see status card reference in inspiration doc)
+15. KPI summary cards per signal (PR, CI, Linear, Loki, Agent tasks)
+16. Two-tier layout: cards top + urgency ranking list bottom-right + agent tasks card bottom-left
+17. Per-card urgency thresholds (see status card reference in inspiration doc)
 
 ---
 
