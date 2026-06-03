@@ -303,6 +303,140 @@ pub struct GcpEntry {
     pub gcp_project: String,
 }
 
+/// A task managed by hub's agent dispatch system, e.g. "TASK-0001".
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct TaskId(String);
+
+impl TaskId {
+    /// Constructs a `TaskId` from a value produced by the `tasks` SQLite table.
+    /// Panics if the DB-generated value somehow violates the TASK-NNNN invariant.
+    pub fn from_db(s: String) -> Self {
+        assert!(
+            s.starts_with("TASK-") && s.len() > 5 && s[5..].bytes().all(|b| b.is_ascii_digit()),
+            "invalid task ID from DB: {s}"
+        );
+        Self(s)
+    }
+}
+
+impl std::str::FromStr for TaskId {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.starts_with("TASK-") && s.len() > 5 && s[5..].bytes().all(|b| b.is_ascii_digit()) {
+            Ok(Self(s.to_string()))
+        } else {
+            Err(format!(
+                "invalid task ID {s:?}: expected TASK- followed by one or more digits"
+            ))
+        }
+    }
+}
+
+impl std::fmt::Display for TaskId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TaskStatus {
+    Backlog,
+    Ready,
+    InProgress,
+    Blocked,
+    Review,
+    Done,
+    Archived,
+}
+
+impl TaskStatus {
+    pub fn urgency(self) -> Urgency {
+        match self {
+            Self::Review | Self::Blocked => Urgency::High,
+            _ => Urgency::Low,
+        }
+    }
+}
+
+impl std::fmt::Display for TaskStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Backlog => "backlog",
+            Self::Ready => "ready",
+            Self::InProgress => "in-progress",
+            Self::Blocked => "blocked",
+            Self::Review => "review",
+            Self::Done => "done",
+            Self::Archived => "archived",
+        };
+        f.write_str(s)
+    }
+}
+
+impl std::str::FromStr for TaskStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "backlog" => Ok(Self::Backlog),
+            "ready" => Ok(Self::Ready),
+            "in-progress" => Ok(Self::InProgress),
+            "blocked" => Ok(Self::Blocked),
+            "review" => Ok(Self::Review),
+            "done" => Ok(Self::Done),
+            "archived" => Ok(Self::Archived),
+            _ => Err(format!("unknown task status: {s:?}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TaskKind {
+    Implement,
+    Debug,
+    General,
+}
+
+impl std::fmt::Display for TaskKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::Implement => "implement",
+            Self::Debug => "debug",
+            Self::General => "general",
+        };
+        f.write_str(s)
+    }
+}
+
+impl std::str::FromStr for TaskKind {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "implement" => Ok(Self::Implement),
+            "debug" => Ok(Self::Debug),
+            "general" => Ok(Self::General),
+            _ => Err(format!("unknown task kind: {s:?}")),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AgentTask {
+    pub id: TaskId,
+    pub title: String,
+    pub status: TaskStatus,
+    pub kind: TaskKind,
+    pub session_id: Option<String>,
+    #[serde(with = "duration_secs")]
+    pub age: chrono::Duration,
+    pub urgency: Urgency,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -420,6 +554,46 @@ mod tests {
                 "result missing WONTFIX_LABEL for input {labels:?}"
             );
         }
+    }
+
+    // ── task_id ───────────────────────────────────────────────────────────────
+
+    #[test]
+    fn task_id_from_str_accepts_valid_format() {
+        assert!("TASK-0001".parse::<TaskId>().is_ok());
+        assert!("TASK-9999".parse::<TaskId>().is_ok());
+        assert!("TASK-10000".parse::<TaskId>().is_ok());
+    }
+
+    #[test]
+    fn task_id_from_str_rejects_invalid_format() {
+        assert!("task-0001".parse::<TaskId>().is_err());
+        assert!("TASK-".parse::<TaskId>().is_err());
+        assert!("TASK-abc".parse::<TaskId>().is_err());
+        assert!("0001".parse::<TaskId>().is_err());
+    }
+
+    #[test]
+    fn task_id_display_round_trips() {
+        let id: TaskId = "TASK-0042".parse().unwrap();
+        assert_eq!(id.to_string(), "TASK-0042");
+    }
+
+    // ── task_status_urgency ───────────────────────────────────────────────────
+
+    #[test]
+    fn task_status_review_has_high_urgency() {
+        assert_eq!(TaskStatus::Review.urgency(), Urgency::High);
+    }
+
+    #[test]
+    fn task_status_blocked_has_high_urgency() {
+        assert_eq!(TaskStatus::Blocked.urgency(), Urgency::High);
+    }
+
+    #[test]
+    fn task_status_in_progress_has_low_urgency() {
+        assert_eq!(TaskStatus::InProgress.urgency(), Urgency::Low);
     }
 
     // ── repo_slug ─────────────────────────────────────────────────────────────
