@@ -47,12 +47,11 @@ ui/ → config/
 This section maps directly to what hub is trying to build.
 
 **Task store:**
-- `tasks`, `task_comments`, `task_activity` SQLite tables in `store/`
-- Numbered SQL migration runner needs to be built — the current store uses a single
-  `ensure_table` with inline SQL (see `store/src/status.rs`), which is fine for one
-  table but won't survive schema evolution across multiple task-related tables. The
-  inspiration doc describes the pattern: numbered `.sql` files applied in order,
-  applied versions tracked in a `schema_version` table, auto-run on connection.
+- `tasks` and `task_comments` SQLite tables in `store/` — use the same `ensure_table`
+  pattern as `store/src/status.rs` (inline SQL, `CREATE TABLE IF NOT EXISTS`)
+- `task_activity` (immutable audit log) — deferred; not needed for Phase 1-3
+- Numbered SQL migration runner — deferred; `ensure_table` per table is sufficient
+  until schema evolution is actually needed
 - Soft deletes via status field — never hard-delete
 - `GENERATED ALWAYS AS` task_key: `TASK-0042` from integer PK, indexed, no app logic
 - Comma-separated `jira_tickets`, `pr_links`, `doc_links` — deduplicated on write
@@ -68,8 +67,7 @@ backlog → ready → in-progress → blocked / review → done / archived
 **Atomic claim (critical):**
 1. Verify `status = 'ready'` — fail if not (prevents double-claim)
 2. Set `status = 'in-progress'`, set `agent_session_id`
-3. Write activity log entry
-4. Return task details
+3. Return task details
 
 **Dispatch:**
 - Deterministic session IDs: `uuid5(namespace, task_key)` — same task → same session → `claude --resume` works without a lookup
@@ -201,34 +199,41 @@ a stale cache that doesn't contain session data.
 
 ---
 
-## Execution phases
+## Execution slices
 
-### Phase 1 — Task store + CLI
-1. Add `tasks`, `task_comments`, `task_activity` tables to `store/` with numbered migrations
-2. `hub tasks create / list / get / ready / update / comment` CLI subcommands (add to existing `Cli` struct in `ui/cli/src/main.rs`)
-3. Structured output codes (`TASK_CREATED`, `AT_CAPACITY`, etc.)
-4. Flexible reference resolution (`42` or `TASK-0042`)
+Sliced vertically — each slice produces something testable in the TUI.
+Validation is always via the TUI, not the terminal. Thin as possible, but e2e with real permanent logic.
 
-### Phase 2 — Dispatch CLI
-5. `hub tasks dispatch` — atomic claim, deterministic session ID, capacity check, spawn Claude Code
+### Slice 1 — Agent sessions visible in TUI ← do this next
+1. `tasks` and `task_comments` tables in `store/` using `ensure_table` pattern
+2. `hub tasks create` and `hub tasks ready` — minimum CLI to bootstrap test data
+3. `AgentSession` domain type in `domain/src/lib.rs`
+4. `StatusItem::AgentSession` variant in `workflows/src/status.rs`; bump `SCHEMA_VERSION`
+5. Workflow reads in-progress tasks from store + session stats from `.claude/session-stats/`
+6. TUI: `Agent` list items, urgency-ranked; `backlog`/`ready` filtered in display layer
+7. TUI: split detail view — stream pane (bottom left, JSONL, live-polls 10s) + task info pane (bottom right)
 
-### Phase 3 — TUI agent control plane ← **biggest game changer; do this next**
-6. `AgentSession` domain type in `domain/src/lib.rs` (session_id, status, cost_usd, context_pct, turns, activity_feed)
-7. Add `AgentSession` variant to `StatusItem` in `workflows/src/status.rs`; bump `SCHEMA_VERSION`
-8. Sessions as items in the unified list, urgency-ranked (`review`/`blocked`=High, `in-progress`=Low); `backlog`/`ready` filtered in TUI display layer
-9. One-line list format: `Agent · TASK-0042 · title · status · elapsed · cost · ctx%`
-10. JSONL parser: line-by-line, filter system messages, three block types (diff, bash, file write)
-11. Detail view: stream pane (bottom left, live-polls 10s) + task info pane (bottom right)
-12. Keybindings: `d` dispatch modal, `y`/`n` approve/reject, `v` transcript, `i` interrupt
+→ Validate in TUI: `hub tasks create --title "test"`, `hub tasks ready TASK-0001`, set `agent_session_id` via SQL, open TUI
 
-### Phase 4 — CI failure + task link
-13. Show `TASK-XXXX` badge on CI failure rows with a linked task
-14. "Create task" action on CI failure rows with no linked task
+### Slice 2 — Full dispatch and agent collaboration loop
+8. `hub tasks dispatch` — atomic claim, deterministic session ID, capacity check, spawn Claude Code
+9. `hub tasks get / update / comment` — agent-facing commands for reading task and signalling progress
+10. `y` / `n` TUI keybindings to approve / reject tasks in `review`
 
-### Phase 5 — Home screen tiles (after task management is proven)
-15. KPI summary cards per signal (PR, CI, Linear, Loki, Agent tasks)
-16. Two-tier layout: cards top + urgency ranking list bottom-right + agent tasks card bottom-left
-17. Per-card urgency thresholds (see status card reference in inspiration doc)
+→ Validate in TUI: press `d` on a ready item, watch session appear, agent completes, press `y` to approve
+
+### Slice 3 — CI failure + task link
+11. Show `TASK-XXXX` badge on CI failure rows with a linked task
+12. "Create task" action on CI failure rows with no linked task
+
+→ Validate in TUI: see badge on a CI failure row that has a linked task
+
+### Slice 4 — Home screen tiles (after Slices 1-2 proven out)
+13. KPI summary cards per signal (PR, CI, Linear, Loki, Agent tasks)
+14. Two-tier layout: cards top + urgency list bottom-right + agent tasks card bottom-left
+15. Per-card urgency thresholds (see status card reference in inspiration doc)
+
+→ Validate in TUI: see home screen with all signal cards and urgency list
 
 ---
 
