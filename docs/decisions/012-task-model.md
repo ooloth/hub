@@ -1,5 +1,24 @@
 # 012 — Task model: one type, outcome-oriented, status-driven lifecycle
 
+## Addendum (2026-06-04)
+
+> **⚠ Partially superseded by [Decision 013](013-task-session-model.md).** The
+> following assumptions in this document no longer hold:
+>
+> - **Bidirectional comments**: `task_comments` was described as a shared channel
+>   where both human and agent write, and the agent reads human feedback on resume.
+>   Comments are now agent-authored only. Human-agent dialogue happens by resuming
+>   the session interactively (`o` key in TUI).
+> - **Re-dispatch on rejection**: the `in-review → ready` path (reject with
+>   feedback, re-queue for a new agent) is removed. One task = one agent session.
+>   Retry means closing the task and creating a new one with better inputs.
+> - **Terminal states**: `done` and `archived` (now `cancelled`) are joined by
+>   `failed` — for tasks where the agent attempted the work but the result was not
+>   accepted. `cancelled` is available from any status including `in-progress` and
+>   `in-review`.
+> - **Status inference**: the TUI derives session liveness from JSONL file polling
+>   rather than depending solely on agent CLI calls.
+
 ## Context
 
 [Decision 011](011-tui-extends-to-sessions-and-tasks.md) established that
