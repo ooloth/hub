@@ -1,0 +1,19 @@
+---
+source: ui/tui/src/render/mod.rs
+expression: screen_text(&buf)
+---
+╭ All ─────────────────────────────────────────────────────────────────────────╮
+│Agent · TASK-0001 · Implement feature X backlog · implement                now│
+│Agent · TASK-0001 · Implement feature X ready · implement                  now│
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+ 1/2 · [↩] details · [p] prs · [O] issues · [e] errors · [/] search

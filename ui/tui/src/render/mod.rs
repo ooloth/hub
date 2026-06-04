@@ -2271,4 +2271,36 @@ mod tests {
         let buf = draw(&mut app, 120, 40);
         insta::assert_snapshot!(screen_text(&buf));
     }
+
+    fn task_item(status: domain::TaskStatus, urgency: domain::Urgency) -> StatusItem {
+        StatusItem::AgentSession(domain::Task {
+            id: "TASK-0001".parse().unwrap(),
+            title: "Implement feature X".to_string(),
+            description: None,
+            status,
+            kind: domain::TaskKind::Implement,
+            session_id: None,
+            issue_links: vec![],
+            pr_links: vec![],
+            doc_links: vec![],
+            created_at: String::new(),
+            updated_at: String::new(),
+            age: chrono::Duration::zero(),
+            urgency,
+            comments: vec![],
+        })
+    }
+
+    #[test]
+    fn full_screen_unified_list_backlog_and_ready_tasks() {
+        // U12: Backlog and ready tasks appear in the unified list at Low urgency.
+        // Locks in that list_visible now surfaces these statuses and they render
+        // with the correct status label (no session, Low urgency dot).
+        let mut app = unified_list_app(vec![
+            DisplayItem::Single(task_item(domain::TaskStatus::Backlog, domain::Urgency::Low)),
+            DisplayItem::Single(task_item(domain::TaskStatus::Ready, domain::Urgency::Low)),
+        ]);
+        let buf = draw(&mut app, 80, 15);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
 }

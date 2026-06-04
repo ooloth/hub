@@ -96,14 +96,14 @@ pub fn set_ready(conn: &Connection, id: &TaskId) -> Result<()> {
     Ok(())
 }
 
-/// Returns all tasks with status `in-progress`, `blocked`, or `review` —
-/// the states that appear in the TUI unified list.
+/// Returns all tasks with status `backlog`, `ready`, `in-progress`, `blocked`, or `review` —
+/// the states that appear in the TUI unified list. `done` and `archived` are excluded.
 pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
     let mut stmt = conn
         .prepare(
             "SELECT id, title, status, kind, session_id, created_at
              FROM tasks
-             WHERE status IN ('in-progress', 'blocked', 'review')
+             WHERE status IN ('backlog', 'ready', 'in-progress', 'blocked', 'review')
              ORDER BY created_at ASC",
         )
         .context("failed to prepare task query")?;
@@ -446,29 +446,38 @@ mod tests {
     }
 
     #[test]
-    fn list_visible_returns_only_in_progress_blocked_review() {
+    fn list_visible_includes_backlog_ready_in_progress_blocked_review_excludes_done_archived() {
         let conn = in_memory();
-        let row_id: i64 = conn
-            .query_row(
-                "INSERT INTO tasks (title, status, kind, created_at) VALUES ('t','backlog','general',?1) RETURNING id",
-                params![Utc::now().to_rfc3339()],
-                |r| r.get(0),
-            )
-            .unwrap();
-        for status in &["in-progress", "blocked", "review"] {
+        for status in &[
+            "backlog",
+            "ready",
+            "in-progress",
+            "blocked",
+            "review",
+            "done",
+            "archived",
+        ] {
             conn.execute(
                 "INSERT INTO tasks (title, status, kind, created_at) VALUES (?1, ?2, 'general', ?3)",
                 params![format!("task {status}"), status, Utc::now().to_rfc3339()],
             )
             .unwrap();
         }
-        let _ = row_id; // backlog row; should be excluded
         let visible = list_visible(&conn).unwrap();
-        assert_eq!(visible.len(), 3);
+        assert_eq!(visible.len(), 5);
         let statuses: Vec<String> = visible.iter().map(|t| t.status.to_string()).collect();
-        assert!(statuses.contains(&"in-progress".to_string()));
-        assert!(statuses.contains(&"blocked".to_string()));
-        assert!(statuses.contains(&"review".to_string()));
+        for expected in &["backlog", "ready", "in-progress", "blocked", "review"] {
+            assert!(
+                statuses.contains(&expected.to_string()),
+                "missing: {expected}"
+            );
+        }
+        for excluded in &["done", "archived"] {
+            assert!(
+                !statuses.contains(&excluded.to_string()),
+                "should be excluded: {excluded}"
+            );
+        }
     }
 
     #[test]
