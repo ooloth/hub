@@ -919,26 +919,40 @@ mod tests {
     }
 
     fn agent_session() -> StatusItem {
-        StatusItem::AgentSession(domain::AgentTask {
+        StatusItem::AgentSession(domain::Task {
             id: "TASK-0042".parse().unwrap(),
             title: "Fix auth bug".to_string(),
+            description: None,
             status: domain::TaskStatus::InProgress,
             kind: domain::TaskKind::Implement,
             session_id: Some("abc-123".to_string()),
+            issue_links: vec![],
+            pr_links: vec![],
+            doc_links: vec![],
+            created_at: String::new(),
+            updated_at: String::new(),
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::Low,
+            comments: vec![],
         })
     }
 
     fn agent_session_review() -> StatusItem {
-        StatusItem::AgentSession(domain::AgentTask {
+        StatusItem::AgentSession(domain::Task {
             id: "TASK-0043".parse().unwrap(),
             title: "Update README".to_string(),
+            description: None,
             status: domain::TaskStatus::Review,
             kind: domain::TaskKind::General,
             session_id: None,
+            issue_links: vec![],
+            pr_links: vec![],
+            doc_links: vec![],
+            created_at: String::new(),
+            updated_at: String::new(),
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::High,
+            comments: vec![],
         })
     }
 

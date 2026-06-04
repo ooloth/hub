@@ -1,5 +1,5 @@
 use anyhow::Result;
-use domain::{AgentTask, CiFailure, Issue, LinearIssue, PullRequest, Urgency};
+use domain::{CiFailure, Issue, LinearIssue, PullRequest, Task, Urgency};
 use secrecy::{ExposeSecret, Secret};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
@@ -15,7 +15,7 @@ pub enum StatusItem {
     Linear(LinearIssue),
     Loki(domain::LokiEntry),
     Gcp(domain::GcpEntry),
-    AgentSession(AgentTask),
+    AgentSession(Task),
     #[cfg(feature = "private")]
     MediaBlocked(crate::private::status::BlockedItem),
     #[cfg(feature = "private")]

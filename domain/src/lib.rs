@@ -425,16 +425,66 @@ impl std::str::FromStr for TaskKind {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CommentAuthor {
+    Human,
+    Agent,
+}
+
+impl std::fmt::Display for CommentAuthor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Human => f.write_str("human"),
+            Self::Agent => f.write_str("agent"),
+        }
+    }
+}
+
+impl std::str::FromStr for CommentAuthor {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "human" => Ok(Self::Human),
+            "agent" => Ok(Self::Agent),
+            _ => Err(format!("unknown comment author: {s:?}")),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AgentTask {
+pub struct TaskComment {
+    pub id: i64,
+    pub author: CommentAuthor,
+    pub content: String,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Task {
     pub id: TaskId,
     pub title: String,
+    #[serde(default)]
+    pub description: Option<String>,
     pub status: TaskStatus,
     pub kind: TaskKind,
     pub session_id: Option<String>,
+    #[serde(default)]
+    pub issue_links: Vec<String>,
+    #[serde(default)]
+    pub pr_links: Vec<String>,
+    #[serde(default)]
+    pub doc_links: Vec<String>,
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub updated_at: String,
     #[serde(with = "duration_secs")]
     pub age: chrono::Duration,
     pub urgency: Urgency,
+    #[serde(default)]
+    pub comments: Vec<TaskComment>,
 }
 
 /// One block of content from an agent session transcript.
@@ -720,6 +770,27 @@ mod tests {
     fn task_id_display_round_trips() {
         let id: TaskId = "TASK-0042".parse().unwrap();
         assert_eq!(id.to_string(), "TASK-0042");
+    }
+
+    // ── comment_author ────────────────────────────────────────────────────────
+
+    #[rstest::rstest]
+    #[case("human", CommentAuthor::Human)]
+    #[case("agent", CommentAuthor::Agent)]
+    fn comment_author_serde_round_trips(#[case] s: &str, #[case] expected: CommentAuthor) {
+        let json = format!(r#""{s}""#);
+        let author: CommentAuthor = serde_json::from_str(&json).unwrap();
+        assert_eq!(author, expected);
+        let back = serde_json::to_string(&author).unwrap();
+        assert_eq!(back, json);
+    }
+
+    #[rstest::rstest]
+    #[case("human", Ok(CommentAuthor::Human))]
+    #[case("agent", Ok(CommentAuthor::Agent))]
+    #[case("bot", Err(()))]
+    fn comment_author_from_str(#[case] s: &str, #[case] expected: Result<CommentAuthor, ()>) {
+        assert_eq!(s.parse::<CommentAuthor>().map_err(|_| ()), expected);
     }
 
     // ── task_status_urgency ───────────────────────────────────────────────────

@@ -1091,6 +1091,8 @@ dependencies = [
  "clap",
  "config",
  "domain",
+ "rstest 0.25.0",
+ "serde_json",
  "tokio",
  "workflows",
 ]

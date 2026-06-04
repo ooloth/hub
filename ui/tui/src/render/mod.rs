@@ -969,7 +969,7 @@ fn blocks_to_lines(blocks: &[domain::StreamBlock]) -> Vec<Line<'static>> {
 
 fn render_agent_session_detail(
     frame: &mut ratatui::Frame,
-    task: &domain::AgentTask,
+    task: &domain::Task,
     blocks: &[domain::StreamBlock],
     scroll: &mut u16,
     area: Rect,

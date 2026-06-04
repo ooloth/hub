@@ -1,11 +1,37 @@
 use anyhow::{Context, Result};
-use domain::{AgentTask, StreamBlock, TaskId, TaskKind};
+use domain::{CommentAuthor, StreamBlock, Task, TaskId, TaskKind, TaskStatus};
 
 /// Creates a new task in `backlog` status and returns its generated `TaskId`.
-pub fn create(title: &str, kind: TaskKind) -> Result<TaskId> {
+pub fn create(
+    title: &str,
+    kind: TaskKind,
+    description: Option<&str>,
+    issue_links: &[String],
+) -> Result<TaskId> {
     let conn = store::status::connect()?;
     store::tasks::ensure_table(&conn)?;
-    store::tasks::create(&conn, title, kind)
+    store::tasks::create(&conn, title, kind, description, issue_links)
+}
+
+/// Returns the full task including all fields and its comment thread.
+pub fn get(id: &TaskId) -> Result<Task> {
+    let conn = store::status::connect()?;
+    store::tasks::ensure_table(&conn)?;
+    store::tasks::get(&conn, id)
+}
+
+/// Updates the status of a task and refreshes `updated_at`.
+pub fn update_status(id: &TaskId, status: TaskStatus) -> Result<()> {
+    let conn = store::status::connect()?;
+    store::tasks::ensure_table(&conn)?;
+    store::tasks::update_status(&conn, id, status)
+}
+
+/// Appends a comment to a task and refreshes the task's `updated_at`.
+pub fn add_comment(id: &TaskId, author: CommentAuthor, content: &str) -> Result<()> {
+    let conn = store::status::connect()?;
+    store::tasks::ensure_table(&conn)?;
+    store::tasks::add_comment(&conn, id, author, content)
 }
 
 /// Transitions a task from `backlog` to `ready`.
@@ -16,7 +42,7 @@ pub fn set_ready(id: &TaskId) -> Result<()> {
 }
 
 /// Returns all tasks that appear in the TUI unified list (in-progress, blocked, review).
-pub fn list_visible() -> Result<Vec<AgentTask>> {
+pub fn list_visible() -> Result<Vec<Task>> {
     let conn = store::status::connect()?;
     store::tasks::ensure_table(&conn)?;
     store::tasks::list_visible(&conn)
