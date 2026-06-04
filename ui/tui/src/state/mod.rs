@@ -52,7 +52,7 @@ impl App {
     pub(crate) fn active_list_len(&self) -> usize {
         match &self.ui.screen {
             Screen::UnifiedList { flat_rows, .. } => flat_rows.len(),
-            Screen::MergingPr { .. } | Screen::DismissingIssue { .. } => 0,
+            Screen::MergingPr { .. } => 0,
         }
     }
 

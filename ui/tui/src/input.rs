@@ -1,7 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::display::{Category, SelectedItemKind};
-use tui_input::InputRequest;
 use workflows::status::StatusItem;
 
 use crate::state::{Action, App, ReviewSkill, Screen};
@@ -35,11 +34,6 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
     // Query mode intercepts all keys (Ctrl-C still quits).
     if app.ui.query_input.is_some() {
         return query_mode_key(key);
-    }
-
-    // Dismiss prompt intercepts all keys (Ctrl-C still quits).
-    if matches!(app.ui.screen, Screen::DismissingIssue { .. }) {
-        return dismiss_mode_key(key);
     }
 
     // Merge confirmation intercepts all keys (Ctrl-C still quits).
@@ -90,7 +84,6 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
             unified_list_keys(key, detail_mode, item_kind)
         }
         Screen::MergingPr { .. } => unreachable!("handled above"),
-        Screen::DismissingIssue { .. } => unreachable!("handled above"),
     }
 }
 
@@ -181,9 +174,6 @@ fn unified_list_keys(
         (KeyCode::Char('a'), _) if split_active && item_kind == SelectedItemKind::Issue => {
             Some(Action::ApproveForAgent)
         }
-        (KeyCode::Char('w'), _) if split_active && item_kind == SelectedItemKind::Issue => {
-            Some(Action::DismissIssue)
-        }
         // Task status submenu — available whenever a task row is selected.
         (KeyCode::Char('s'), _) if item_kind == SelectedItemKind::Task => {
             Some(Action::TaskStatusSubmenu)
@@ -232,27 +222,6 @@ fn merge_confirm_key(key: KeyEvent) -> Option<Action> {
     match key.code {
         KeyCode::Esc => Some(Action::CancelMerge),
         KeyCode::Enter => Some(Action::CommitMerge),
-        _ => None,
-    }
-}
-
-fn dismiss_mode_key(key: KeyEvent) -> Option<Action> {
-    if matches!(
-        (key.code, key.modifiers),
-        (KeyCode::Char('c'), KeyModifiers::CONTROL)
-    ) {
-        return Some(Action::Quit);
-    }
-    match key.code {
-        KeyCode::Esc => Some(Action::CancelDismissal),
-        KeyCode::Enter => Some(Action::CommitDismissal),
-        KeyCode::Char(c) => Some(Action::DismissInput(InputRequest::InsertChar(c))),
-        KeyCode::Backspace => Some(Action::DismissInput(InputRequest::DeletePrevChar)),
-        KeyCode::Delete => Some(Action::DismissInput(InputRequest::DeleteNextChar)),
-        KeyCode::Left => Some(Action::DismissInput(InputRequest::GoToPrevChar)),
-        KeyCode::Right => Some(Action::DismissInput(InputRequest::GoToNextChar)),
-        KeyCode::Home => Some(Action::DismissInput(InputRequest::GoToStart)),
-        KeyCode::End => Some(Action::DismissInput(InputRequest::GoToEnd)),
         _ => None,
     }
 }
@@ -415,97 +384,6 @@ mod tests {
     #[case(ch('?'), Some(Action::AppendQuery('?')))]
     fn query_mode_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
         assert_eq!(key_to_action(&querying_app(), key), expected);
-    }
-
-    fn dismissing_app() -> App {
-        let parent = ListSnapshot {
-            items: vec![],
-            selected: 0,
-            filter: Filter::default(),
-            expanded_groups: std::collections::HashSet::new(),
-            detail_mode: crate::state::DetailMode::Hidden,
-        };
-        App {
-            ui: UiState {
-                screen: Screen::DismissingIssue {
-                    parent,
-                    issue: domain::Issue {
-                        number: 1,
-                        title: "test".to_string(),
-                        repo: domain::RepoSlug::new("ooloth", "hub"),
-                        url: "https://github.com/ooloth/hub/issues/1".to_string(),
-                        author: "agent".to_string(),
-                        age: chrono::Duration::zero(),
-                        urgency: domain::Urgency::Low,
-                        labels: vec![],
-                        body: None,
-                    },
-                    input: tui_input::Input::default(),
-                },
-                ..UiState::default()
-            },
-            ..App::default()
-        }
-    }
-
-    #[rstest]
-    #[case(k(KeyCode::Esc), Some(Action::CancelDismissal))]
-    #[case(k(KeyCode::Enter), Some(Action::CommitDismissal))]
-    #[case(
-        ch('x'),
-        Some(Action::DismissInput(tui_input::InputRequest::InsertChar('x')))
-    )]
-    #[case(
-        k(KeyCode::Backspace),
-        Some(Action::DismissInput(tui_input::InputRequest::DeletePrevChar))
-    )]
-    #[case(
-        k(KeyCode::Delete),
-        Some(Action::DismissInput(tui_input::InputRequest::DeleteNextChar))
-    )]
-    #[case(
-        k(KeyCode::Left),
-        Some(Action::DismissInput(tui_input::InputRequest::GoToPrevChar))
-    )]
-    #[case(
-        k(KeyCode::Right),
-        Some(Action::DismissInput(tui_input::InputRequest::GoToNextChar))
-    )]
-    #[case(
-        k(KeyCode::Home),
-        Some(Action::DismissInput(tui_input::InputRequest::GoToStart))
-    )]
-    #[case(
-        k(KeyCode::End),
-        Some(Action::DismissInput(tui_input::InputRequest::GoToEnd))
-    )]
-    fn dismiss_mode_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
-        assert_eq!(key_to_action(&dismissing_app(), key), expected);
-    }
-
-    #[test]
-    fn ctrl_c_quits_during_dismiss_prompt() {
-        assert_eq!(
-            key_to_action(&dismissing_app(), ctrl('c')),
-            Some(Action::Quit)
-        );
-    }
-
-    #[test]
-    fn normal_keys_intercepted_as_chars_in_dismiss_prompt() {
-        // 'q' and 'r' are captured as char inserts, not their usual actions
-        assert_eq!(
-            key_to_action(&dismissing_app(), ch('q')),
-            Some(Action::DismissInput(tui_input::InputRequest::InsertChar(
-                'q'
-            )))
-        );
-        assert_eq!(
-            key_to_action(&dismissing_app(), ch('r')),
-            Some(Action::DismissInput(tui_input::InputRequest::InsertChar(
-                'r'
-            )))
-        );
     }
 
     fn merging_app() -> App {
@@ -766,15 +644,6 @@ mod tests {
         assert_eq!(
             key_to_action(&split_view_app_with_pr(), ch('a')),
             Some(Action::ClearFilter)
-        );
-    }
-
-    // K13: w on issue in split view → DismissIssue
-    #[test]
-    fn w_on_issue_in_split_view_dismisses_issue() {
-        assert_eq!(
-            key_to_action(&split_view_app_with_issue(), ch('w')),
-            Some(Action::DismissIssue)
         );
     }
 

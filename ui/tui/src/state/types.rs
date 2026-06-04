@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use domain::{Issue, PrKind, PullRequest, ReviewDecision, TaskId, TaskStatus};
+use domain::{PrKind, PullRequest, ReviewDecision, TaskId, TaskStatus};
 use workflows::status::{StatusItem, StatusReport};
 
 use crate::display::{Category, DisplayItem, Filter, FlatRow, GroupKey, ListSnapshot};
@@ -74,11 +74,6 @@ pub(crate) enum Screen {
         pr: PullRequest,
         prev: PrPrevScreen,
     },
-    DismissingIssue {
-        parent: ListSnapshot,
-        issue: Issue,
-        input: tui_input::Input,
-    },
 }
 
 /// The screen the merge picker restores on commit or cancel.
@@ -112,7 +107,6 @@ impl Screen {
                 FlatRow::GroupChild { item, .. } => Some(item.clone()),
                 FlatRow::GroupHeader { .. } => None,
             },
-            Screen::DismissingIssue { issue, .. } => Some(StatusItem::Issue(issue.clone())),
             Screen::MergingPr { pr, .. } => Some(StatusItem::Pr(pr.clone())),
         }
     }
@@ -195,10 +189,6 @@ pub(crate) enum Action {
     OpenInLazygit,
     CommitMerge,
     CancelMerge,
-    DismissIssue,
-    DismissInput(tui_input::InputRequest),
-    CommitDismissal,
-    CancelDismissal,
     TaskStatusSubmenu,
     CancelTaskStatusSubmenu,
     TransitionTaskStatus(TaskStatus),
@@ -229,12 +219,6 @@ pub(crate) enum Effect {
     MergePullRequest {
         repo: String,
         number: u64,
-    },
-    DismissIssue {
-        repo: String,
-        number: u64,
-        reason: String,
-        labels: Vec<String>,
     },
     LaunchCi {
         repo: String,

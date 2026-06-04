@@ -123,20 +123,6 @@ const KEYBINDS_PR_READER: &[(&str, &str)] = &[
     ("q / Ctrl-C", "quit"),
 ];
 
-const KEYBINDS_ISSUE_READER: &[(&str, &str)] = &[
-    ("?", "toggle help"),
-    ("k / j", "scroll up / down"),
-    ("gg / G", "go to top / bottom"),
-    ("Ctrl-u / Ctrl-d", "page up / down"),
-    ("a", "approve for agent"),
-    ("d", "dismiss as won't fix"),
-    ("Enter", "open in browser"),
-    ("i", "investigate"),
-    ("r", "refresh"),
-    ("Esc", "back to list"),
-    ("q / Ctrl-C", "quit"),
-];
-
 fn format_keybinds(keybinds: &[(&str, &str)]) -> String {
     let key_w = keybinds
         .iter()
@@ -289,7 +275,7 @@ fn position_label(screen: &Screen) -> String {
                 format!("{}/{n}", selected + 1)
             }
         }
-        Screen::DismissingIssue { .. } | Screen::MergingPr { .. } => String::new(),
+        Screen::MergingPr { .. } => String::new(),
     }
 }
 
@@ -344,9 +330,6 @@ fn status_bar_left(app: &App) -> String {
     if let Some(flash) = &app.ui.flash {
         return flash.clone();
     }
-    if matches!(app.ui.screen, Screen::DismissingIssue { .. }) {
-        return " [↩] confirm · [Esc] cancel".to_string();
-    }
     if let Screen::UnifiedList {
         flat_rows,
         selected,
@@ -392,7 +375,7 @@ fn status_bar_left(app: &App) -> String {
                         "{pos} · [o] open · [d] diff · [v] review · [m] merge · [i] ask · [Esc] back"
                     ),
                     SelectedItemKind::Issue => format!(
-                        "{pos} · [o] open · [w] dismiss · [a] approve · [i] investigate · [Esc] back"
+                        "{pos} · [o] open · [a] approve · [i] investigate · [Esc] back"
                     ),
                     SelectedItemKind::Task => format!("{pos} · [s] status · [Esc] back"),
                     SelectedItemKind::Other => {
@@ -833,33 +816,6 @@ fn right_status_text(
     }
 }
 
-fn render_dismiss_modal(frame: &mut ratatui::Frame, input: &tui_input::Input, area: Rect) {
-    let modal_width = (area.width * 2 / 3)
-        .max(50)
-        .min(area.width.saturating_sub(4));
-    let modal = popup_area(area, 1, modal_width);
-
-    let block = Block::new()
-        .borders(Borders::ALL)
-        .title(" Dismiss issue — enter reason (optional) ");
-    let input_area = block.inner(modal);
-
-    let scroll = input.visual_scroll(input_area.width.saturating_sub(1) as usize);
-    let value = input.value();
-    let cursor_pos = input.visual_cursor();
-
-    frame.render_widget(Clear, modal);
-    frame.render_widget(block, modal);
-    frame.render_widget(
-        Paragraph::new(value.chars().skip(scroll).collect::<String>()),
-        input_area,
-    );
-    frame.set_cursor_position((
-        input_area.x + (cursor_pos.saturating_sub(scroll)) as u16,
-        input_area.y,
-    ));
-}
-
 fn render_log_detail(
     frame: &mut ratatui::Frame,
     view: &LogDetailView,
@@ -1232,10 +1188,6 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         Screen::MergingPr { pr, .. } => {
             render_pr_detail(frame, pr, &mut 0, content_area, dim());
         }
-        Screen::DismissingIssue { issue, input, .. } => {
-            render_issue_detail(frame, issue, &mut 0, content_area);
-            render_dismiss_modal(frame, input, frame.area());
-        }
     }
 
     let right_status =
@@ -1317,7 +1269,6 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     if app.ui.show_help {
         let keybinds = match &app.ui.screen {
             Screen::UnifiedList { .. } => KEYBINDS_LIST,
-            Screen::DismissingIssue { .. } => KEYBINDS_ISSUE_READER,
             Screen::MergingPr { .. } => KEYBINDS_PR_READER,
         };
         let text = format_keybinds(keybinds);
@@ -1949,71 +1900,6 @@ mod tests {
             ..App::default()
         };
         let buf = draw(&mut app, 80, 15);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    fn stub_issue_with_body() -> domain::Issue {
-        domain::Issue {
-            number: 42,
-            title: "Invariant violation in render pipeline".to_string(),
-            repo: domain::RepoSlug::new("ooloth", "hub"),
-            url: "https://github.com/ooloth/hub/issues/42".to_string(),
-            author: "agent".to_string(),
-            age: chrono::Duration::days(3),
-            urgency: domain::Urgency::Low,
-            labels: vec![
-                "status:needs-human-review".to_string(),
-                "area:render".to_string(),
-            ],
-            body: Some(
-                "## Summary\n\nThe render pipeline does not handle edge cases correctly.\n\n\
-                 ## Steps to reproduce\n\n1. Open the TUI\n2. Navigate to the issue list\n\
-                 3. Press Enter on an issue\n\n## Expected\n\nThe issue body is displayed.\n\n\
-                 ## Actual\n\nThe screen is blank."
-                    .to_string(),
-            ),
-        }
-    }
-
-    fn dismissing_app(issue: domain::Issue, draft: &str) -> App {
-        let mut input = tui_input::Input::default();
-        for c in draft.chars() {
-            input.handle(tui_input::InputRequest::InsertChar(c));
-        }
-        App {
-            ui: UiState {
-                screen: Screen::DismissingIssue {
-                    parent: ListSnapshot {
-                        items: vec![],
-                        selected: 0,
-                        filter: Filter::default(),
-                        expanded_groups: HashSet::new(),
-                        detail_mode: crate::state::DetailMode::Hidden,
-                    },
-                    issue,
-                    input,
-                },
-                ..UiState::default()
-            },
-            ..App::default()
-        }
-    }
-
-    // ── Full-screen DismissingIssue snapshots ─────────────────────────────────
-
-    #[test]
-    fn full_screen_dismissing_issue_empty_prompt() {
-        // D1: Dismiss modal open with empty input.
-        let mut app = dismissing_app(stub_issue_with_body(), "");
-        let buf = draw(&mut app, 120, 30);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn full_screen_dismissing_issue_with_text() {
-        // D2: Dismiss modal open with typed reason.
-        let mut app = dismissing_app(stub_issue_with_body(), "Not relevant to this project");
-        let buf = draw(&mut app, 120, 30);
         insta::assert_snapshot!(screen_text(&buf));
     }
 

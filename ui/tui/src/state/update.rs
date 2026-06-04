@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
 
-use domain::{agent_ready_labels, dismissed_labels};
+use domain::agent_ready_labels;
 
 use super::{
     Action, App, DetailMode, Effect, InvestigateAction, Msg, PrOwnership, PrPrevScreen,
@@ -237,17 +237,12 @@ impl App {
             | Action::MergePr
             | Action::CommitMerge
             | Action::CancelMerge
-            | Action::DismissIssue
-            | Action::DismissInput(_)
-            | Action::CommitDismissal
-            | Action::CancelDismissal
             | Action::Investigate
             | Action::OpenReviewPicker
             | Action::CommitReview(_)
             | Action::CancelReview => match &self.ui.screen {
                 Screen::UnifiedList { .. } => self.handle_unified_list(action),
                 Screen::MergingPr { .. } => self.handle_merging_pr(action),
-                Screen::DismissingIssue { .. } => self.handle_dismissing(action),
             },
         }
     }
@@ -516,35 +511,6 @@ impl App {
                     labels,
                 }]
             }
-            Action::DismissIssue => {
-                let Some(StatusItem::Issue(issue)) = self.ui.screen.selected_status_item() else {
-                    return vec![];
-                };
-                let Screen::UnifiedList {
-                    items,
-                    selected,
-                    filter,
-                    expanded_groups,
-                    detail_mode,
-                    ..
-                } = &self.ui.screen
-                else {
-                    return vec![];
-                };
-                let snapshot = ListSnapshot {
-                    items: items.clone(),
-                    selected: *selected,
-                    filter: filter.clone(),
-                    expanded_groups: expanded_groups.clone(),
-                    detail_mode: detail_mode.clone(),
-                };
-                self.ui.screen = Screen::DismissingIssue {
-                    parent: snapshot,
-                    issue,
-                    input: tui_input::Input::default(),
-                };
-                vec![]
-            }
             Action::Investigate => self.handle_investigate(),
             _ => unreachable!(),
         }
@@ -583,61 +549,6 @@ impl App {
                     detail_mode: snapshot.detail_mode,
                 };
                 vec![Effect::MergePullRequest { repo, number }]
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    fn handle_dismissing(&mut self, action: Action) -> Vec<Effect> {
-        match action {
-            Action::CancelDismissal => {
-                let Screen::DismissingIssue { parent, .. } = std::mem::take(&mut self.ui.screen)
-                else {
-                    return vec![];
-                };
-                self.ui.screen = Screen::UnifiedList {
-                    flat_rows: flatten(&parent.items, &parent.expanded_groups),
-                    items: parent.items,
-                    selected: parent.selected,
-                    filter: parent.filter,
-                    expanded_groups: parent.expanded_groups,
-                    detail_mode: parent.detail_mode,
-                };
-                vec![]
-            }
-            Action::CommitDismissal => {
-                let Screen::DismissingIssue {
-                    parent,
-                    issue,
-                    input,
-                } = std::mem::take(&mut self.ui.screen)
-                else {
-                    return vec![];
-                };
-                let reason = input.value().to_string();
-                let labels = dismissed_labels(&issue.labels);
-                let repo = issue.repo.to_string();
-                let number = issue.number;
-                self.ui.screen = Screen::UnifiedList {
-                    flat_rows: flatten(&parent.items, &parent.expanded_groups),
-                    items: parent.items,
-                    selected: parent.selected,
-                    filter: parent.filter,
-                    expanded_groups: parent.expanded_groups,
-                    detail_mode: parent.detail_mode,
-                };
-                vec![Effect::DismissIssue {
-                    repo,
-                    number,
-                    reason,
-                    labels,
-                }]
-            }
-            Action::DismissInput(req) => {
-                if let Screen::DismissingIssue { input, .. } = &mut self.ui.screen {
-                    input.handle(req);
-                }
-                vec![]
             }
             _ => unreachable!(),
         }
@@ -723,7 +634,6 @@ impl App {
                 FlatRow::GroupChild { item, .. } => item_url(item),
                 FlatRow::GroupHeader { .. } => None,
             },
-            Screen::DismissingIssue { issue, .. } => Some(&issue.url),
             Screen::MergingPr { pr, .. } => Some(&pr.url),
         }
     }
@@ -816,7 +726,7 @@ fn refresh_screen_in_place(screen: &mut Screen, raw: &[workflows::status::Status
             *flat_rows = flatten(&new_items, expanded_groups);
             *items = new_items;
         }
-        Screen::MergingPr { parent, .. } | Screen::DismissingIssue { parent, .. } => {
+        Screen::MergingPr { parent, .. } => {
             let new_items = build_unified(raw.to_vec(), &parent.filter);
             parent.selected = parent.selected.min(new_items.len().saturating_sub(1));
             parent.items = new_items;
@@ -1699,104 +1609,6 @@ mod tests {
         assert!(!labels.contains(&"status:needs-human-review".to_string()));
     }
 
-    // --- DismissIssue flow ---
-
-    fn app_in_dismissing() -> App {
-        let mut app = split_view_app_with_issue();
-        app.update(Action::DismissIssue);
-        app
-    }
-
-    #[test]
-    fn dismiss_issue_transitions_to_dismissing_screen() {
-        let app = app_in_dismissing();
-        assert!(matches!(
-            app.current_screen(),
-            Screen::DismissingIssue { .. }
-        ));
-    }
-
-    #[test]
-    fn dismiss_issue_preserves_parent_and_issue() {
-        let app = app_in_dismissing();
-        let Screen::DismissingIssue { issue, .. } = app.current_screen() else {
-            panic!("expected DismissingIssue");
-        };
-        assert_eq!(issue.number, 42);
-        assert_eq!(issue.repo.to_string(), "ooloth/hub");
-    }
-
-    #[test]
-    fn dismiss_input_insert_char_updates_value() {
-        let mut app = app_in_dismissing();
-        app.update(Action::DismissInput(tui_input::InputRequest::InsertChar(
-            'h',
-        )));
-        app.update(Action::DismissInput(tui_input::InputRequest::InsertChar(
-            'i',
-        )));
-        let Screen::DismissingIssue { input, .. } = app.current_screen() else {
-            panic!("expected DismissingIssue");
-        };
-        assert_eq!(input.value(), "hi");
-    }
-
-    #[test]
-    fn cancel_dismissal_returns_to_unified_list() {
-        let mut app = app_in_dismissing();
-        app.update(Action::CancelDismissal);
-        assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
-    }
-
-    #[test]
-    fn cancel_dismissal_emits_no_effects() {
-        let mut app = app_in_dismissing();
-        let effects = app.update(Action::CancelDismissal);
-        assert!(effects.is_empty());
-    }
-
-    #[test]
-    fn commit_dismissal_returns_to_unified_list() {
-        let mut app = app_in_dismissing();
-        app.update(Action::CommitDismissal);
-        assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
-    }
-
-    #[test]
-    fn commit_dismissal_emits_dismiss_issue_effect_with_correct_fields() {
-        let mut app = app_in_dismissing();
-        app.update(Action::DismissInput(tui_input::InputRequest::InsertChar(
-            'x',
-        )));
-        let effects = app.update(Action::CommitDismissal);
-        assert_eq!(effects.len(), 1);
-        let Effect::DismissIssue {
-            repo,
-            number,
-            reason,
-            labels,
-        } = effects.into_iter().next().unwrap()
-        else {
-            panic!("expected DismissIssue");
-        };
-        assert_eq!(repo, "ooloth/hub");
-        assert_eq!(number, 42);
-        assert_eq!(reason, "x");
-        assert!(labels.contains(&"wontfix".to_string()));
-        assert!(!labels.contains(&"status:needs-human-review".to_string()));
-    }
-
-    #[test]
-    fn commit_dismissal_with_empty_reason_still_emits_effect() {
-        let mut app = app_in_dismissing();
-        let effects = app.update(Action::CommitDismissal);
-        assert_eq!(effects.len(), 1);
-        let Effect::DismissIssue { reason, .. } = effects.into_iter().next().unwrap() else {
-            panic!("expected DismissIssue");
-        };
-        assert_eq!(reason, "");
-    }
-
     // --- UnifiedList refresh ---
 
     fn report_with_two_items() -> StatusReport {
@@ -1911,44 +1723,6 @@ mod tests {
             },
             ..App::default()
         }
-    }
-
-    // --- DismissingIssue refresh ---
-
-    #[test]
-    fn refresh_in_dismissing_preserves_screen_variant() {
-        let mut app = app_in_dismissing();
-        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
-        assert!(matches!(
-            app.current_screen(),
-            Screen::DismissingIssue { .. }
-        ));
-    }
-
-    #[test]
-    fn refresh_in_dismissing_preserves_input_value() {
-        let mut app = app_in_dismissing();
-        app.update(Action::DismissInput(tui_input::InputRequest::InsertChar(
-            'x',
-        )));
-        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
-        let Screen::DismissingIssue { input, .. } = app.current_screen() else {
-            panic!("expected DismissingIssue");
-        };
-        assert_eq!(input.value(), "x");
-    }
-
-    #[test]
-    fn refresh_in_dismissing_updates_parent_items() {
-        let mut app = app_in_dismissing(); // parent has stub_issue
-        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
-        let Screen::DismissingIssue { parent, .. } = app.current_screen() else {
-            panic!("expected DismissingIssue");
-        };
-        assert!(matches!(
-            parent.items[0],
-            DisplayItem::Single(workflows::status::StatusItem::Ci(_))
-        ));
     }
 
     // --- MergePr flow ---

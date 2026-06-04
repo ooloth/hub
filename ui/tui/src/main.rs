@@ -532,30 +532,6 @@ async fn run_loop(
                         }
                     }
                 }
-                Effect::DismissIssue {
-                    repo,
-                    number,
-                    reason,
-                    labels,
-                } => {
-                    match clients::github::dismiss_issue(
-                        config.github_token.expose_secret(),
-                        &repo,
-                        number,
-                        &reason,
-                        &labels,
-                    )
-                    .await
-                    {
-                        Ok(()) => {
-                            app.ui.flash = Some(format!("Dismissed #{number}"));
-                            request_refresh(app, config, tx, false, None);
-                        }
-                        Err(e) => {
-                            app.ui.flash = Some(format!("Could not dismiss #{number}: {e}"));
-                        }
-                    }
-                }
                 Effect::UpdateTaskStatus { id, status } => {
                     match workflows::tasks::update_status(&id, status) {
                         Ok(()) => {
