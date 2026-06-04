@@ -105,20 +105,27 @@ pub fn set_ready(conn: &Connection, id: &TaskId) -> Result<()> {
     Ok(())
 }
 
-/// Returns all tasks with status `backlog`, `ready`, `in-progress`, `blocked`, or `review` —
-/// the states that appear in the TUI unified list. `done` and `archived` are excluded.
+/// Terminal tasks (`done`, `cancelled`) remain visible for this many days so
+/// accidental transitions can be caught and reversed before the task disappears.
+const TERMINAL_VISIBLE_DAYS: i64 = 7;
+
+/// Returns tasks that appear in the TUI unified list: all non-terminal statuses
+/// plus `done` and `cancelled` tasks updated within the last
+/// [`TERMINAL_VISIBLE_DAYS`] days.
 pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
+    let done_cutoff = (Utc::now() - chrono::Duration::days(TERMINAL_VISIBLE_DAYS)).to_rfc3339();
     let mut stmt = conn
         .prepare(
             "SELECT id, title, status, kind, session_id, created_at
              FROM tasks
-             WHERE status IN ('backlog', 'ready', 'in-progress', 'blocked', 'review')
+             WHERE status IN ('backlog', 'ready', 'in-progress', 'blocked', 'in-review')
+                OR (status IN ('done', 'cancelled') AND COALESCE(updated_at, created_at) >= ?1)
              ORDER BY created_at ASC",
         )
         .context("failed to prepare task query")?;
 
     let rows = stmt
-        .query_map([], |row| {
+        .query_map(params![done_cutoff], |row| {
             Ok((
                 row.get::<_, i64>(0)?,
                 row.get::<_, String>(1)?,
@@ -455,17 +462,9 @@ mod tests {
     }
 
     #[test]
-    fn list_visible_includes_backlog_ready_in_progress_blocked_review_excludes_done_archived() {
+    fn list_visible_includes_all_active_statuses() {
         let conn = in_memory();
-        for status in &[
-            "backlog",
-            "ready",
-            "in-progress",
-            "blocked",
-            "review",
-            "done",
-            "archived",
-        ] {
+        for status in &["backlog", "ready", "in-progress", "blocked", "in-review"] {
             conn.execute(
                 "INSERT INTO tasks (title, status, kind, created_at) VALUES (?1, ?2, 'general', ?3)",
                 params![format!("task {status}"), status, Utc::now().to_rfc3339()],
@@ -475,18 +474,48 @@ mod tests {
         let visible = list_visible(&conn).unwrap();
         assert_eq!(visible.len(), 5);
         let statuses: Vec<String> = visible.iter().map(|t| t.status.to_string()).collect();
-        for expected in &["backlog", "ready", "in-progress", "blocked", "review"] {
+        for expected in &["backlog", "ready", "in-progress", "blocked", "in-review"] {
             assert!(
                 statuses.contains(&expected.to_string()),
                 "missing: {expected}"
             );
         }
-        for excluded in &["done", "archived"] {
-            assert!(
-                !statuses.contains(&excluded.to_string()),
-                "should be excluded: {excluded}"
-            );
+    }
+
+    #[test]
+    fn list_visible_includes_recently_done_and_cancelled_tasks() {
+        let conn = in_memory();
+        let recent = Utc::now().to_rfc3339();
+        for status in &["done", "cancelled"] {
+            conn.execute(
+                "INSERT INTO tasks (title, status, kind, created_at, updated_at) VALUES (?1, ?2, 'general', ?3, ?3)",
+                params![format!("{status} task"), status, recent],
+            )
+            .unwrap();
         }
+        let visible = list_visible(&conn).unwrap();
+        assert_eq!(visible.len(), 2);
+        let statuses: Vec<String> = visible.iter().map(|t| t.status.to_string()).collect();
+        assert!(statuses.contains(&"done".to_string()));
+        assert!(statuses.contains(&"cancelled".to_string()));
+    }
+
+    #[test]
+    fn list_visible_excludes_terminal_tasks_older_than_window() {
+        let conn = in_memory();
+        let old = (Utc::now() - chrono::Duration::days(TERMINAL_VISIBLE_DAYS + 1)).to_rfc3339();
+        for status in &["done", "cancelled"] {
+            conn.execute(
+                "INSERT INTO tasks (title, status, kind, created_at, updated_at) VALUES (?1, ?2, 'general', ?3, ?3)",
+                params![format!("old {status}"), status, old],
+            )
+            .unwrap();
+        }
+        let visible = list_visible(&conn).unwrap();
+        assert!(
+            visible.is_empty(),
+            "terminal tasks older than window should be excluded"
+        );
     }
 
     #[test]
