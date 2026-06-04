@@ -132,11 +132,12 @@ are the toolkit handed to an already-running agent session.
 
 1. `hub task get TASK-XXXX` — reads the full task as JSON: title, description, kind,
    status, linked resources, comments in chronological order. Called at session start.
-2. `hub task comment TASK-XXXX --author agent --content "..."` — appends a captain's
-   log entry: choices made, friction, trade-offs, anything the human might wonder
-   about when reviewing.
-3. `hub task update TASK-XXXX --status in-review` — signals completion (or blockage).
-   The TUI shows the task as needing human attention.
+2. `hub task comment TASK-XXXX --content "..."` — appends a captain's log entry:
+   choices made, friction, trade-offs, anything the human might wonder about when
+   reviewing.
+3. `hub task report TASK-XXXX --status in-review|blocked` — reports completion or
+   blockage. These are the only status transitions the agent owns; done, failed, and
+   cancelled are human decisions made in the TUI.
 
 All CLI output is single-line and machine-parseable. Errors go to stderr, exit 1,
 with an actionable message.
@@ -248,4 +249,4 @@ deferred to implementation.
 - TUI `cancelled` via `s` submenu from `in-progress`
 - JSONL polling for status inference (in-progress ↔ in-review auto-transitions)
 - Dispatch workflow (TUI-managed): atomic claim transaction, uuid5 session ID, Claude Code spawn
-- `hub task get`, `hub task comment` CLI commands
+- `hub task report` CLI command (replacing the old `hub task update`)

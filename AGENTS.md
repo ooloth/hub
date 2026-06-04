@@ -10,7 +10,7 @@ Hub is a personal command center that aggregates signals from multiple sources �
 
 Its two binaries serve two distinct audiences:
 - **`hub-tui`** (Ratatui dashboard) — the **human-facing surface**. Read signals, create tasks, monitor agent sessions, approve results.
-- **`hub`** (CLI) — the **agent-facing toolkit**. Agents call it to read their assigned task, signal progress, and update status. The system calls it on a polling loop to dispatch agents onto ready tasks.
+- **`hub`** (CLI) — the **agent's communication channel**. Agents call it to read their assigned task, write captain's log entries, and report status (`in-review` or `blocked`). It does not expose human-owned operations — dispatch, create, promote, approve, and cancel all belong in the TUI.
 
 The core value is cross-domain triage plus agent delegation: signals from different systems are ranked together in one list, and any signal can become a task for an agent to address.
 

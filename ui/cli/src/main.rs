@@ -1,9 +1,16 @@
-use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
-use domain::{CommentAuthor, TaskId, TaskKind, TaskStatus};
+use anyhow::Result;
+use clap::{Parser, Subcommand, ValueEnum};
+use domain::{CommentAuthor, TaskId, TaskStatus};
 
+/// Hub CLI — the agent's communication channel with hub.
+///
+/// This binary exists so agent sessions can read their assigned task, write
+/// captain's log entries, and report status back to hub. It does not expose
+/// human-owned operations (create, promote, approve, cancel, dispatch) — those
+/// belong in the TUI. The command surface here is exactly what an agent's skill
+/// file would instruct it to call, nothing more.
 #[derive(Parser)]
-#[command(version, about = "Hub CLI — agent task management and status tools")]
+#[command(version, about)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -11,68 +18,70 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Manage agent tasks
+    /// Read, report, and log — the agent's task interface
     Task {
         #[command(subcommand)]
         command: TaskCommands,
     },
 }
 
+/// The two states an agent may report.
+///
+/// These are the only status transitions an agent owns. Everything else
+/// (done, failed, cancelled, ready) is a human decision made in the TUI.
+#[derive(ValueEnum, Clone)]
+enum AgentStatus {
+    /// Work is complete — hand off to the human for review
+    #[value(name = "in-review")]
+    InReview,
+    /// Cannot continue — human attention needed
+    Blocked,
+}
+
+impl From<AgentStatus> for TaskStatus {
+    fn from(s: AgentStatus) -> Self {
+        match s {
+            AgentStatus::InReview => TaskStatus::InReview,
+            AgentStatus::Blocked => TaskStatus::Blocked,
+        }
+    }
+}
+
 #[derive(Subcommand)]
 enum TaskCommands {
-    /// Create a new task in backlog status
-    Create {
-        /// Task title
-        #[arg(long)]
-        title: String,
-
-        /// Task type: implement, debug, or general
-        #[arg(long = "type", default_value = "general")]
-        kind: TaskKind,
-
-        /// Optional description
-        #[arg(long)]
-        description: Option<String>,
-
-        /// Link to a related issue (may be specified multiple times)
-        #[arg(long = "issue-link")]
-        issue_links: Vec<String>,
-    },
-
-    /// Print a task as JSON (accepts TASK-0001 or bare integer 1)
+    /// Read a task as JSON — call this at session start
     Get {
         /// Task ID: TASK-0001 or plain integer
         id: String,
     },
 
-    /// Transition a task to a new status
-    Update {
+    /// Report status back to hub
+    ///
+    /// Use `in-review` when the work is complete; use `blocked` when the
+    /// agent cannot continue and needs human attention. Human-owned transitions
+    /// (done, failed, cancelled) are handled in the TUI — the agent does not
+    /// close its own task.
+    Report {
         /// Task ID: TASK-0001 or plain integer
         id: String,
 
-        /// New status
+        /// Status to report — only agent-owned transitions are accepted
         #[arg(long)]
-        status: String,
+        status: AgentStatus,
     },
 
-    /// Append a comment to a task
+    /// Append a captain's log entry
+    ///
+    /// Record choices made, friction encountered, trade-offs taken — anything
+    /// the human might wonder about when reviewing the session. This is a
+    /// one-way log from agent to human, not a dialogue surface.
     Comment {
         /// Task ID: TASK-0001 or plain integer
         id: String,
 
-        /// Comment author: human or agent
-        #[arg(long)]
-        author: String,
-
-        /// Comment text
+        /// Log entry text
         #[arg(long)]
         content: String,
-    },
-
-    /// Transition a task from backlog to ready status
-    Ready {
-        /// Task ID (e.g. TASK-0001)
-        id: TaskId,
     },
 }
 
@@ -81,46 +90,20 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Commands::Task { command } => match command {
-            TaskCommands::Create {
-                title,
-                kind,
-                description,
-                issue_links,
-            } => {
-                let id =
-                    workflows::tasks::create(&title, kind, description.as_deref(), &issue_links)?;
-                println!("TASK_CREATED {id}");
-            }
             TaskCommands::Get { id } => {
                 let task_id = parse_task_ref(&id)?;
                 let task = workflows::tasks::get(&task_id)?;
                 println!("{}", serde_json::to_string_pretty(&task)?);
             }
-            TaskCommands::Update { id, status } => {
+            TaskCommands::Report { id, status } => {
                 let task_id = parse_task_ref(&id)?;
-                let task_status: TaskStatus = status
-                    .parse()
-                    .map_err(|e: String| anyhow::anyhow!("{e}"))
-                    .context("invalid status")?;
-                workflows::tasks::update_status(&task_id, task_status)?;
+                workflows::tasks::update_status(&task_id, status.into())?;
                 println!("TASK_UPDATED {task_id}");
             }
-            TaskCommands::Comment {
-                id,
-                author,
-                content,
-            } => {
+            TaskCommands::Comment { id, content } => {
                 let task_id = parse_task_ref(&id)?;
-                let comment_author: CommentAuthor = author
-                    .parse()
-                    .map_err(|e: String| anyhow::anyhow!("{e}"))
-                    .context("invalid author")?;
-                workflows::tasks::add_comment(&task_id, comment_author, &content)?;
+                workflows::tasks::add_comment(&task_id, CommentAuthor::Agent, &content)?;
                 println!("TASK_UPDATED {task_id}");
-            }
-            TaskCommands::Ready { id } => {
-                workflows::tasks::set_ready(&id)?;
-                println!("TASK_UPDATED {id}");
             }
         },
     }
