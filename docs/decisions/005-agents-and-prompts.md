@@ -22,10 +22,13 @@ not be conflated:
 
 ## Decision
 
-> **Note:** The `agents/` crate section of this decision is superseded
-> by [Decision 009](009-no-scheduled-runs.md). The `agents/` crate will
-> not be built. All LLM interaction is handled via interactive prompts
-> launched from the TUI.
+> **⚠ Superseded by [Decision 012](012-task-model.md).** The investigation
+> prompt model described here — TUI keypress launches a Claude session in a
+> tmux window — is replaced by the task system. All delegated work, including
+> investigations, now flows through tasks dispatched via the `hub` CLI polling
+> loop. Skills still live in hub's repo and provide agents with zero-setup
+> context, but they are invoked through task dispatch, not direct TUI keypresses.
+> The `agents/` crate section was already superseded by Decision 009.
 
 ### Interactive investigation → `prompts/`
 

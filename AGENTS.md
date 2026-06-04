@@ -6,7 +6,13 @@ If `../hub-private/CLAUDE.md` exists, read it before writing or editing any file
 
 ## What This Is
 
-Hub is a personal command-line status dashboard that aggregates signals from multiple sources — GitHub PRs, CI status, Loki alerts, Linear issues, and more via the `private` feature — into a single urgency-ranked terminal view. Its two binaries are `hub` (CLI) and `hub-tui` (Ratatui dashboard). The core value is cross-domain triage: signals from different systems are compared in one prioritized list, and a keypress on supported items opens the right Claude Code skill pre-loaded with context so investigation starts immediately.
+Hub is a personal command center that aggregates signals from multiple sources — GitHub PRs, CI status, Loki alerts, Linear issues, and more via the `private` feature — into a single urgency-ranked terminal view, and delegates action on those signals to agents via a task queue.
+
+Its two binaries serve two distinct audiences:
+- **`hub-tui`** (Ratatui dashboard) — the **human-facing surface**. Read signals, create tasks, monitor agent sessions, approve results.
+- **`hub`** (CLI) — the **agent-facing toolkit**. Agents call it to read their assigned task, signal progress, and update status. The system calls it on a polling loop to dispatch agents onto ready tasks.
+
+The core value is cross-domain triage plus agent delegation: signals from different systems are ranked together in one list, and any signal can become a task for an agent to address.
 
 See [README.md](README.md) for the full feature list and value proposition.
 
@@ -161,8 +167,6 @@ what is actually available. Never assume a prerequisite is missing.
 | Doc                                                     | Covers                                      |
 | ------------------------------------------------------- | ------------------------------------------- |
 | `docs/playbooks/add-a-workflow.md`                      | Adding a new workflow end to end            |
-| `docs/playbooks/add-a-prompt.md`                        | Adding a Claude Code investigation prompt   |
-| `docs/playbooks/add-an-investigation.md`                | Adding a new TUI investigation type         |
 | `docs/playbooks/add-a-project.md`                       | Adding a project to a device config         |
 | `docs/playbooks/add-a-private-workflow.md`              | Adding a workflow to hub-private            |
 | `docs/playbooks/set-up-private-workflows-repository.md` | First-time or recovery setup of hub-private |

@@ -1,5 +1,14 @@
 # 009 — Hub drops scheduled runs; Tier 3 Execute is human-triggered
 
+> **⚠ Partially reversed by [Decision 012](012-task-model.md).** Scheduled runs
+> are deferred, not abandoned. They will return as recurring tasks — the same
+> `AgentTask` type, same agent polling loop, same TUI monitoring — queued on a
+> cadence rather than promoted manually by a human. The billing concern that
+> motivated this decision remains valid; recurring tasks are human-configured,
+> not self-spawning. The Tier 1/2/3 framing below is replaced by the delegation
+> loop (Surface → Create task → Delegate → Monitor → Approve/Reject) described
+> in Decision 012.
+
 ## Context
 
 Decision 006 described two launch modes for hub's investigation prompts:
@@ -67,7 +76,5 @@ the TUI + prompts model.
 - Decision 005's `agents/` section is superseded by this decision.
 - Decision 006's capability table is updated: "scheduled run" is no
   longer a launch mode.
-- `add-a-prompt.md` drops the "Automation compatibility" constraint
-  section and the `claude -p` testing step.
-- Claude Desktop Routines handles any lightweight scheduling needs that
-  arise. Hub does not compete with or duplicate that.
+- Claude Desktop Routines handles any lightweight scheduling needs until
+  recurring tasks are implemented. Hub does not compete with or duplicate that.

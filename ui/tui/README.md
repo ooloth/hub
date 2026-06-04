@@ -1,8 +1,13 @@
 # ui/tui
 
-The `hub-tui` binary. A Ratatui terminal dashboard that renders status items
-grouped by category, auto-refreshes from SQLite, and opens items in the
-browser via keyboard shortcuts.
+The `hub-tui` binary — the **human-facing surface for hub**. This is where you
+read urgency-ranked signals, create tasks to delegate work to agents, monitor
+running agent sessions, and approve or reject completed work.
+
+Agents do not interact with the TUI — they use the `hub` CLI toolkit.
+
+A Ratatui terminal dashboard that renders status items grouped by category,
+auto-refreshes from SQLite, and opens items in the browser via keyboard shortcuts.
 
 ## Architecture
 
@@ -255,7 +260,6 @@ sequence runs unconditionally before propagating any error.
 
 | Doc                                                          | Covers                              |
 | ------------------------------------------------------------ | ----------------------------------- |
-| `docs/playbooks/add-an-investigation.md`                     | Adding a new investigation type     |
 | `docs/playbooks/add-a-private-workflow.md`                   | Adding a private workflow end to end |
 | `docs/architecture/private-workflows.md`                     | Device-specific module cfg pattern  |
 

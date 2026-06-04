@@ -27,19 +27,18 @@ Other tools already surface individual signals. Hub adds three things
 they don't:
 
 1. **Cross-domain urgency ranking** — a Loki error, a failing CI run,
-   and a blocked home server download appear in one ranked list; their
-   urgency is compared for the first time, across domain boundaries
-2. **Pre-loaded investigation context** — hub.toml holds the Loki
-   endpoint, the LogQL query, the project name; a keypress launches the
-   right Claude Code skill with zero setup; the investigation starts
-   immediately
-3. **Keypress execution** — for issues labelled `status:ready-for-agent`,
-   a keypress in the TUI launches an agent in a git worktree; hub handles
-   setup so the focus is on reviewing the result, not orchestrating the run
+   and a blocked PR review appear in one ranked list; their urgency is
+   compared for the first time, across domain boundaries
+2. **One-step task delegation** — any signal can become a task in one
+   keypress; hub pre-loads context from `hub.toml` (endpoints, project
+   names, linked resources) so the agent starts with zero setup
+3. **TUI oversight** — the unified list shows agent sessions alongside
+   signals; the detail pane streams live activity; approval or rejection
+   is a single keypress, all without leaving hub
 
 The measure of success is not "shows all the things". It's "shows the
-right things, in the right order, so I can triage and act without
-hunting — and for the ready stuff, a keypress gets it moving."
+right things, in the right order, so I can triage and delegate without
+hunting — and for anything worth acting on, a task gets it moving."
 
 Agents are a first-class tool. Where rules are sufficient, use rules.
 Where judgment or scale makes agents more appropriate, use agents. The
@@ -88,10 +87,10 @@ production errors. Scripts can check disk usage. Browser tabs can
 aggregate dashboards. The monitoring itself is not the invention.
 
 Hub avoids this by adding the things source tools don't: cross-domain
-urgency ranking (a Loki error and a blocked download compared in one
-list), pre-loaded investigation context (one keypress to diagnose, not
-five minutes of setup), and keypress execution (a ready issue goes to an
-agent without leaving hub).
+urgency ranking (a Loki error and a stale PR compared in one list),
+one-step task delegation (any signal becomes a delegated task in one
+keypress), and TUI oversight (monitor agent sessions and approve results
+without leaving hub).
 
 The bar for a new workflow: does it contribute to cross-domain triage,
 speed up investigation, or enable automated proposals? A workflow that
@@ -126,88 +125,68 @@ Private workflows live in hub-private and are compiled in under
 `#[cfg(feature = "private")]`. They follow the same architecture as
 public workflows but reference infrastructure that isn't in the public repo.
 
-## Investigation
+## The delegation loop
 
-Surfacing a signal is not the same as understanding it. Hub goes one
-level deeper: when a signal warrants it, an investigation skill can
-diagnose what's happening.
+Surfacing a signal is the start, not the end. The full loop:
 
-Investigation skills are Claude Code skills that live in hub's
-`.claude/skills/` directory. They are multi-turn conversations — Claude
-uses CLI tools (`logcli`, `gh`, etc.) to query data iteratively,
-forming hypotheses and validating them, until it can produce a
-diagnosis.
+1. **Surface** — the TUI renders a ranked list of signals from all configured
+   workflows. New signal sources are added as workflows; each emits items with
+   an urgency tier it defines.
 
-Hub's role in this layer is **context provider**. Hub knows (from
-`hub.toml`) the Loki endpoint for a project's production environment,
-the LogQL query that selects the right app, the project name. A skill
-that reads this context can be invoked with zero setup — no endpoint
-to look up, no query to compose from scratch. The investigation starts
-immediately.
+2. **Create** — any signal can become a task in one keypress. The task inherits
+   context from the signal (repo, description, linked issue or CI run). The human
+   adds a title, optional description, and selects a kind (`implement`, `debug`,
+   `general`). Tasks can also be created independently of any signal — as ideas,
+   recurring maintenance work, or anything worth delegating.
 
-```
-hub status                      # "github ci (1)  ooloth/hub  CI  failure  0h"
-claude /github-ci-investigate   # fetches failed step logs and surfaces root cause
+3. **Delegate** — promoting the task to `ready` queues it for agent pickup. The
+   system polls the ready queue and spawns a Claude Code session with the task
+   context and the right skill pre-loaded from hub's config.
 
-hub status                      # "prod: 12 errors in last hour (3× baseline)"
-claude /loki-investigate        # iterates until diagnosed; hub.toml provides context (planned)
-```
+4. **Monitor** — the task appears in the unified list alongside other signals.
+   The detail pane streams live agent activity — every file edit, command, and
+   tool call — so you can watch without intervening.
 
-Hub's repo is also the right home for these skills — not each project's
-repo. A skill added to hub is immediately available for every project
-configured in `hub.toml`, without copy-pasting it across repos.
+5. **Approve** — when done, the agent sets the task to `in-review`. The human
+   reads the summary and presses `y` (done) or `n` (back to ready with
+   feedback). Nothing merges or closes without human sign-off.
 
-See [Decision 006](decisions/006-hub-as-prompt-library.md) for the full model.
+This loop applies to every signal type and every kind of delegable work:
+a failing CI run, a PR needing attention, a Linear issue, a production alert,
+a routine maintenance task. Any signal can become a task. Any task can be
+delegated.
 
-## The three tiers
+**Skills as context providers.** Hub knows (from `hub.toml`) the Loki endpoint,
+the LogQL query, the project name, the CI configuration. Skills that read this
+context start with zero setup — no endpoint to look up, no query to compose.
+Hub's repo is the right home for these skills: a skill added here is immediately
+available for every project configured in `hub.toml`.
 
-Hub responds to signals at three levels of automation. Each workflow starts at Tier 1 and
-graduates to higher tiers as the signal patterns become well understood.
+See [Decision 006](decisions/006-hub-as-prompt-library.md) for the skill model
+and [docs/architecture/tasks.md](architecture/tasks.md) for the task lifecycle.
 
-**Tier 1 — Surface.** `hub status` emits a ranked list. You see the signal; you decide
-whether to act. This is always the starting point for a new workflow.
+**Recurring tasks (future).** Tasks can be scheduled on a cadence — created and
+queued automatically, without any human promotion step. This replaces manual
+routine invocations (currently done via Claude Code Desktop Routines) with a
+tracked, observable, approvable equivalent running inside the same loop.
 
-**Tier 2 — Investigate.** A keypress on a ranked item launches the right Claude Code skill
-with `hub.toml` context pre-loaded. Claude iterates — querying logs, fetching CI output,
-checking API state — until it produces a diagnosis. You're in the loop; Claude is the
-analyst. The investigation is multi-turn and human-supervised.
+## The two surfaces
 
-**Tier 3 — Execute.** For issues labelled `status:ready-for-agent`, a keypress in the TUI
-launches an agent in a git worktree. Hub handles setup (worktree, credentials, private wiring)
-so the agent starts immediately with the right context. You watch it work in a tmux split;
-approval is always required before anything merges.
+**TUI (`hub-tui`)** — the human-facing surface. A Ratatui terminal dashboard
+with auto-refresh, keyboard navigation, and the full delegation loop: read
+signals, create tasks, monitor agent sessions, approve results. This is the
+primary place to interact with hub.
 
-Not every signal reaches Tier 3 — some require human judgment every time. The graduation path
-is: surface the signal (Tier 1), then investigate until the diagnosis steps are repeatable
-(Tier 2), then — if the fix itself is mechanical enough to delegate — add an execution action
-(Tier 3).
+**CLI (`hub`)** — the agent-facing toolkit. Agents call it during their sessions
+to read their assigned task, post progress comments, and signal completion. The
+system calls it on a polling loop to claim ready tasks and spawn Claude Code
+sessions. Humans do not use this CLI directly.
 
-## UI evolution
+Both surfaces share the same workflows and data layer. The UI is a render target,
+not where logic lives.
 
-1. **CLI** — `hub status` prints a ranked list to the terminal. Fast,
-   scriptable, works from anywhere.
-2. **TUI** — a Ratatui terminal dashboard with panels per workflow,
-   auto-refresh, and keyboard navigation. The TUI is not just a display:
-   it is a place to zoom in. You see everything you're responsible for at
-   a glance, then press a key on a signal to launch the investigation
-   skill for it — with context pre-loaded from hub's config.
-
-Both entry points share the same workflows and data layer. The UI is a
-render target, not where logic lives.
-
-The TUI is not a chat interface — Claude Code is. Hub's job is to surface
-signals and hand off to the right investigation skill with context
-pre-loaded. A keybinding that opens `claude /loki-investigate` in a new
-tmux pane, with hub.toml already providing the endpoint, query, and project
-name, is the complete agent integration story. Hub is the launcher; Claude
-Code is the investigator.
-
-The TUI is the place to dispatch, watch, and review execution work
-without leaving hub. A keypress on a ready issue sends the agent to work
-in a tmux split; a keypress on a completed job opens the PR for review.
-
-See [Decision 007](decisions/007-tui-over-web-app.md) for why TUI was
-chosen over a web app and what would legitimately change that decision.
+See [Decision 007](decisions/007-tui-over-web-app.md) for why TUI was chosen
+over a web app and what would legitimately change that decision.
 
 ## What this is not
 

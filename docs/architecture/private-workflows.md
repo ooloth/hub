@@ -41,8 +41,7 @@ hub/ui/tui/src/investigations/media.rs  →  hub-private/ui/tui/src/investigatio
 Private investigation prompts follow the same individual-file pattern:
 prompt files that reference internal endpoints or queries live in
 `hub-private/prompts/` and are symlinked individually into
-`hub/prompts/`. See the
-[add-a-prompt playbook](../playbooks/add-a-prompt.md) for the full steps.
+`hub/prompts/`.
 
 When adding a new private investigation module, add corresponding entries to
 `scripts/setup-private.sh` and `.gitignore`.
@@ -94,7 +93,7 @@ listed in `home-laptop.toml`, and vice versa.
 ## Credentials
 
 Each device file includes a `[credentials]` table with the `op://` references it
-needs. Unknown keys (private workflow credentials like `sonarr_url`) are captured
+needs. Unknown keys (private workflow credentials like `media_server_url`) are captured
 in `Config.extra_credentials` and passed to hub-private workflows — the public hub
 code never sees the key names. Having extra keys on a device is harmless; hub only
 reads what it needs.

@@ -23,6 +23,13 @@ project to hub, you also have to add the prompt to that repo.
 
 ## Decision
 
+> **⚠ Launch mechanism superseded by [Decision 012](012-task-model.md).** Hub's
+> repo remains the right home for skills, and `hub.toml` context is still how
+> agents start with zero setup. But the launch mechanism has changed: skills are
+> invoked through task dispatch (the system polling loop claims a ready task and
+> spawns an agent with the appropriate skill pre-loaded), not via direct TUI
+> keypress to a tmux session. The `add-a-prompt` playbook has been removed.
+
 Hub's repo houses a library of investigation prompts in `prompts/`.
 These prompts:
 
@@ -49,9 +56,7 @@ This is a third category of agent capability, distinct from:
 
 - Hub's `prompts/` directory is a first-class artifact,
   maintained alongside `clients/` and `workflows/`.
-- Prompts are added via the `add-a-prompt` playbook, not the
-  `add-a-workflow` playbook.
-- Prompts receive hub.toml config via the TUI item context.
+- Prompts receive hub.toml config via the agent session context.
 - The same prompt works for any project configured in `hub.toml` — no
   per-project duplication.
 - Hub's investigation capability does not require the `agents/` crate
