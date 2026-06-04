@@ -347,15 +347,15 @@ pub enum TaskStatus {
     Ready,
     InProgress,
     Blocked,
-    Review,
+    InReview,
     Done,
-    Archived,
+    Cancelled,
 }
 
 impl TaskStatus {
     pub fn urgency(self) -> Urgency {
         match self {
-            Self::Review | Self::Blocked => Urgency::High,
+            Self::InReview | Self::Blocked => Urgency::High,
             _ => Urgency::Low,
         }
     }
@@ -368,9 +368,9 @@ impl std::fmt::Display for TaskStatus {
             Self::Ready => "ready",
             Self::InProgress => "in-progress",
             Self::Blocked => "blocked",
-            Self::Review => "review",
+            Self::InReview => "in-review",
             Self::Done => "done",
-            Self::Archived => "archived",
+            Self::Cancelled => "cancelled",
         };
         f.write_str(s)
     }
@@ -385,9 +385,9 @@ impl std::str::FromStr for TaskStatus {
             "ready" => Ok(Self::Ready),
             "in-progress" => Ok(Self::InProgress),
             "blocked" => Ok(Self::Blocked),
-            "review" => Ok(Self::Review),
+            "in-review" => Ok(Self::InReview),
             "done" => Ok(Self::Done),
-            "archived" => Ok(Self::Archived),
+            "cancelled" => Ok(Self::Cancelled),
             _ => Err(format!("unknown task status: {s:?}")),
         }
     }
@@ -797,7 +797,7 @@ mod tests {
 
     #[test]
     fn task_status_review_has_high_urgency() {
-        assert_eq!(TaskStatus::Review.urgency(), Urgency::High);
+        assert_eq!(TaskStatus::InReview.urgency(), Urgency::High);
     }
 
     #[test]

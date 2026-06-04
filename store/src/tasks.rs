@@ -10,7 +10,7 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
             title       TEXT NOT NULL,
             description TEXT,
             status      TEXT NOT NULL DEFAULT 'backlog'
-                        CHECK(status IN ('backlog','ready','in-progress','blocked','review','done','archived')),
+                        CHECK(status IN ('backlog','ready','in-progress','blocked','in-review','done','cancelled')),
             kind        TEXT NOT NULL DEFAULT 'general'
                         CHECK(kind IN ('implement','debug','general')),
             session_id  TEXT,
@@ -38,6 +38,15 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
     ] {
         add_column_if_missing(conn, "tasks", col, def)?;
     }
+    // Rename old status values. PRAGMA ignore_check_constraints lets us write the new
+    // values even though the existing table's CHECK still lists the old names.
+    conn.execute_batch(
+        "PRAGMA ignore_check_constraints = ON;
+         UPDATE tasks SET status = 'cancelled' WHERE status = 'archived';
+         UPDATE tasks SET status = 'in-review' WHERE status = 'review';
+         PRAGMA ignore_check_constraints = OFF;",
+    )
+    .context("failed to migrate status renames (archived→cancelled, review→in-review)")?;
     Ok(())
 }
 
@@ -553,9 +562,9 @@ mod tests {
         let conn = in_memory();
         let id = create(&conn, "Task", TaskKind::General, None, &[]).unwrap();
         let before = get(&conn, &id).unwrap();
-        update_status(&conn, &id, TaskStatus::Review).unwrap();
+        update_status(&conn, &id, TaskStatus::InReview).unwrap();
         let after = get(&conn, &id).unwrap();
-        assert_eq!(after.status, TaskStatus::Review);
+        assert_eq!(after.status, TaskStatus::InReview);
         assert!(after.updated_at >= before.updated_at);
     }
 
@@ -563,7 +572,7 @@ mod tests {
     fn update_status_errors_on_nonexistent_task() {
         let conn = in_memory();
         let id: TaskId = "TASK-9999".parse().unwrap();
-        assert!(update_status(&conn, &id, TaskStatus::Review).is_err());
+        assert!(update_status(&conn, &id, TaskStatus::InReview).is_err());
     }
 
     // ── add_comment ───────────────────────────────────────────────────────────

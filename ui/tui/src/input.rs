@@ -120,29 +120,21 @@ fn task_status_submenu_key(
     ) {
         return Some(Action::Quit);
     }
-    let Some(status) = current_status else {
-        return Some(Action::CancelTaskStatusSubmenu);
+    let target = match key.code {
+        KeyCode::Char('b') => Some(domain::TaskStatus::Backlog),
+        KeyCode::Char('r') => Some(domain::TaskStatus::Ready),
+        KeyCode::Char('i') => Some(domain::TaskStatus::InProgress),
+        KeyCode::Char('l') => Some(domain::TaskStatus::Blocked),
+        KeyCode::Char('v') => Some(domain::TaskStatus::InReview),
+        KeyCode::Char('d') => Some(domain::TaskStatus::Done),
+        KeyCode::Char('c') => Some(domain::TaskStatus::Cancelled),
+        _ => None,
     };
-    match (status, key.code) {
-        (domain::TaskStatus::Backlog, KeyCode::Char('r')) => {
-            Some(Action::TransitionTaskStatus(domain::TaskStatus::Ready))
-        }
-        (domain::TaskStatus::Backlog, KeyCode::Char('a')) => {
-            Some(Action::TransitionTaskStatus(domain::TaskStatus::Archived))
-        }
-        (domain::TaskStatus::Ready, KeyCode::Char('b')) => {
-            Some(Action::TransitionTaskStatus(domain::TaskStatus::Backlog))
-        }
-        (domain::TaskStatus::Ready, KeyCode::Char('a')) => {
-            Some(Action::TransitionTaskStatus(domain::TaskStatus::Archived))
-        }
-        (domain::TaskStatus::Review, KeyCode::Char('d')) => {
-            Some(Action::TransitionTaskStatus(domain::TaskStatus::Done))
-        }
-        (domain::TaskStatus::Review, KeyCode::Char('r')) => {
-            Some(Action::TransitionTaskStatus(domain::TaskStatus::Ready))
-        }
-        _ => Some(Action::CancelTaskStatusSubmenu),
+    match (target, current_status) {
+        // Pressing the key for the current status cancels without changing state.
+        (Some(t), Some(current)) if t == current => Some(Action::CancelTaskStatusSubmenu),
+        (Some(t), _) => Some(Action::TransitionTaskStatus(t)),
+        (None, _) => Some(Action::CancelTaskStatusSubmenu),
     }
 }
 
@@ -191,8 +183,8 @@ fn unified_list_keys(
         (KeyCode::Char('w'), _) if split_active && item_kind == SelectedItemKind::Issue => {
             Some(Action::DismissIssue)
         }
-        // Task-specific actions available when split view is showing a task.
-        (KeyCode::Char('s'), _) if split_active && item_kind == SelectedItemKind::Task => {
+        // Task status submenu — available whenever a task row is selected.
+        (KeyCode::Char('s'), _) if item_kind == SelectedItemKind::Task => {
             Some(Action::TaskStatusSubmenu)
         }
         (KeyCode::Char('h'), _) => Some(Action::CollapseGroup),
@@ -847,50 +839,87 @@ mod tests {
         assert_eq!(key_to_action(&split_view_app_with_pr(), ch('s')), None);
     }
 
-    // K16–K21: task status submenu key mappings per status
+    // K16–K22: each key maps to its target status regardless of current status
     #[rstest]
-    #[case(
-        domain::TaskStatus::Backlog,
-        ch('r'),
-        Some(Action::TransitionTaskStatus(domain::TaskStatus::Ready))
-    )]
-    #[case(
-        domain::TaskStatus::Backlog,
-        ch('a'),
-        Some(Action::TransitionTaskStatus(domain::TaskStatus::Archived))
-    )]
-    #[case(
-        domain::TaskStatus::Ready,
-        ch('b'),
-        Some(Action::TransitionTaskStatus(domain::TaskStatus::Backlog))
-    )]
-    #[case(
-        domain::TaskStatus::Ready,
-        ch('a'),
-        Some(Action::TransitionTaskStatus(domain::TaskStatus::Archived))
-    )]
-    #[case(
-        domain::TaskStatus::Review,
-        ch('d'),
-        Some(Action::TransitionTaskStatus(domain::TaskStatus::Done))
-    )]
-    #[case(
-        domain::TaskStatus::Review,
-        ch('r'),
-        Some(Action::TransitionTaskStatus(domain::TaskStatus::Ready))
-    )]
-    fn task_status_submenu_keys_map_correctly(
-        #[case] status: domain::TaskStatus,
+    #[case(ch('b'), domain::TaskStatus::Backlog)]
+    #[case(ch('r'), domain::TaskStatus::Ready)]
+    #[case(ch('i'), domain::TaskStatus::InProgress)]
+    #[case(ch('l'), domain::TaskStatus::Blocked)]
+    #[case(ch('v'), domain::TaskStatus::InReview)]
+    #[case(ch('d'), domain::TaskStatus::Done)]
+    #[case(ch('c'), domain::TaskStatus::Cancelled)]
+    fn task_status_submenu_keys_map_to_target(
         #[case] key: KeyEvent,
-        #[case] expected: Option<Action>,
+        #[case] target: domain::TaskStatus,
     ) {
+        // Use a different current status so we don't hit the same-status cancel path.
+        let current = if target == domain::TaskStatus::Backlog {
+            domain::TaskStatus::Ready
+        } else {
+            domain::TaskStatus::Backlog
+        };
         assert_eq!(
-            key_to_action(&pending_task_status_app(status), key),
-            expected
+            key_to_action(&pending_task_status_app(current), key),
+            Some(Action::TransitionTaskStatus(target))
         );
     }
 
-    // K22: unrecognized key in task status submenu → cancel
+    // K23: pressing the key for the current status cancels without transitioning
+    #[test]
+    fn task_status_submenu_same_status_key_cancels() {
+        assert_eq!(
+            key_to_action(
+                &pending_task_status_app(domain::TaskStatus::Backlog),
+                ch('b')
+            ),
+            Some(Action::CancelTaskStatusSubmenu)
+        );
+    }
+
+    // K24: s is available without split view for tasks
+    #[test]
+    fn s_on_task_without_split_view_arms_submenu() {
+        use crate::display::{flatten, DisplayItem};
+        let item = workflows::status::StatusItem::AgentSession(domain::Task {
+            id: "TASK-0001".parse().unwrap(),
+            title: "Task".to_string(),
+            description: None,
+            status: domain::TaskStatus::InProgress,
+            kind: domain::TaskKind::General,
+            session_id: None,
+            issue_links: vec![],
+            pr_links: vec![],
+            doc_links: vec![],
+            created_at: String::new(),
+            updated_at: String::new(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+            comments: vec![],
+        });
+        let items = vec![DisplayItem::Single(item)];
+        let expanded = std::collections::HashSet::new();
+        let flat_rows = flatten(&items, &expanded);
+        let app = App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    flat_rows,
+                    items,
+                    selected: 0,
+                    filter: Filter::default(),
+                    expanded_groups: expanded,
+                    detail_mode: crate::state::DetailMode::Hidden, // no split view
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        };
+        assert_eq!(
+            key_to_action(&app, ch('s')),
+            Some(Action::TaskStatusSubmenu)
+        );
+    }
+
+    // K25: unrecognised key in submenu → cancel
     #[test]
     fn unrecognized_key_in_task_status_submenu_cancels() {
         assert_eq!(
@@ -902,7 +931,7 @@ mod tests {
         );
     }
 
-    // K23: Esc in task status submenu → cancel
+    // K26: Esc in task status submenu → cancel
     #[test]
     fn esc_in_task_status_submenu_cancels() {
         assert_eq!(
@@ -914,7 +943,7 @@ mod tests {
         );
     }
 
-    // K24: Ctrl-C in task status submenu → Quit
+    // K27: Ctrl-C in task status submenu → Quit
     #[test]
     fn ctrl_c_quits_during_task_status_submenu() {
         assert_eq!(

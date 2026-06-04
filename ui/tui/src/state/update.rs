@@ -170,16 +170,8 @@ impl App {
             // pending_pr_action is already cleared by the prologue for any non-submenu action.
             Action::CancelPrSubmenu => vec![],
             Action::TaskStatusSubmenu => {
-                if let Some(StatusItem::AgentSession(task)) = self.ui.screen.selected_status_item()
-                {
-                    match task.status {
-                        domain::TaskStatus::Backlog
-                        | domain::TaskStatus::Ready
-                        | domain::TaskStatus::Review => {
-                            self.ui.pending_task_status = true;
-                        }
-                        _ => {} // no manual transitions for agent-owned statuses
-                    }
+                if let Some(StatusItem::AgentSession(_)) = self.ui.screen.selected_status_item() {
+                    self.ui.pending_task_status = true;
                 }
                 vec![]
             }

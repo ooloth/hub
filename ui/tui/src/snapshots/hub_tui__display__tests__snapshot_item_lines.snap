@@ -17,5 +17,5 @@ linear:      Do the thing (ENG-99)
 loki:        MemoryError · OOM killed
 gcp:         errors · something broke
 agent_in_progress: TASK-0042 · Fix auth bug in-progress · implement
-agent_review:      TASK-0043 · Update README review · general
+agent_review:      TASK-0043 · Update README in-review · general
 group_3:     MemoryError · OOM killed (3)

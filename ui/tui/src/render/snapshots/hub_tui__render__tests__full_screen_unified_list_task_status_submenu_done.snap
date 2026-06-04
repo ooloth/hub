@@ -3,12 +3,12 @@ source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
 ╭ All ─────────────────────────────────────────────────────────────────────────╮
-│Agent · TASK-0001 · Implement feature X in-review · implement              now│
+│Agent · TASK-0001 · Implement feature X done · implement                   now│
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭───────────────────────────────────────────────┬──────────────────────────────╮
 │No session data yet.                           │ TASK-0001 · Implement feature│
 │                                               │                              │
-│                                               │ status  in-review            │
+│                                               │ status  done                 │
 │                                               │ kind    implement            │
 │                                               │                              │
 │                                               │ age     now                  │
@@ -16,4 +16,4 @@ expression: screen_text(&buf)
 │                                               │                              │
 │                                               │                              │
 ╰───────────────────────────────────────────────┴──────────────────────────────╯
- TASK-0001 · status  [b] backlog · [l] blocked · [c] cancelled · [d] done · [i]
+ TASK-0001 · status  [b] backlog · [l] blocked · [c] cancelled · [i] in-progres

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::HashMap;
 
-pub const SCHEMA_VERSION: i32 = 15;
+pub const SCHEMA_VERSION: i32 = 16;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum StatusItem {

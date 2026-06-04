@@ -293,6 +293,26 @@ fn position_label(screen: &Screen) -> String {
     }
 }
 
+/// Builds the task status submenu hint, listing all statuses except the current one.
+fn task_status_hints(current: domain::TaskStatus) -> String {
+    const ENTRIES: &[(char, domain::TaskStatus, &str)] = &[
+        ('b', domain::TaskStatus::Backlog, "backlog"),
+        ('l', domain::TaskStatus::Blocked, "blocked"),
+        ('c', domain::TaskStatus::Cancelled, "cancelled"),
+        ('d', domain::TaskStatus::Done, "done"),
+        ('i', domain::TaskStatus::InProgress, "in-progress"),
+        ('v', domain::TaskStatus::InReview, "in-review"),
+        ('r', domain::TaskStatus::Ready, "ready"),
+    ];
+    let mut parts: Vec<String> = ENTRIES
+        .iter()
+        .filter(|(_, s, _)| *s != current)
+        .map(|(k, _, name)| format!("[{k}] {name}"))
+        .collect();
+    parts.push("[Esc] cancel".to_string());
+    format!("  {}", parts.join(" · "))
+}
+
 fn investigate_hint(investigate: &InvestigateAction) -> &'static str {
     if matches!(investigate, InvestigateAction::None) {
         ""
@@ -337,6 +357,16 @@ fn status_bar_left(app: &App) -> String {
         let inv = compute_investigate_action(app);
         match detail_mode {
             DetailMode::Hidden => {
+                let item_kind = app
+                    .current_screen()
+                    .selected_status_item()
+                    .map(|i| SelectedItemKind::from_item(&i))
+                    .unwrap_or(SelectedItemKind::Other);
+                let task_hint = if item_kind == SelectedItemKind::Task {
+                    " · [s] status"
+                } else {
+                    ""
+                };
                 let inv_hint = investigate_hint(&inv);
                 let group_hint = match flat_rows.get(*selected) {
                     Some(FlatRow::GroupHeader {
@@ -347,7 +377,7 @@ fn status_bar_left(app: &App) -> String {
                     _ => "",
                 };
                 format!(
-                    "{pos} · [↩] details · [p] prs · [O] issues · [e] errors · [/] search{inv_hint}{group_hint}"
+                    "{pos} · [↩] details{task_hint} · [p] prs · [O] issues · [e] errors · [/] search{inv_hint}{group_hint}"
                 )
             }
             DetailMode::Visible { .. } => {
@@ -363,26 +393,7 @@ fn status_bar_left(app: &App) -> String {
                     SelectedItemKind::Issue => format!(
                         "{pos} · [o] open · [w] dismiss · [a] approve · [i] investigate · [Esc] back"
                     ),
-                    SelectedItemKind::Task => {
-                        let has_transitions = app
-                            .current_screen()
-                            .selected_status_item()
-                            .map(|item| {
-                                matches!(
-                                    item,
-                                    workflows::status::StatusItem::AgentSession(ref t)
-                                    if matches!(
-                                        t.status,
-                                        domain::TaskStatus::Backlog
-                                            | domain::TaskStatus::Ready
-                                            | domain::TaskStatus::Review
-                                    )
-                                )
-                            })
-                            .unwrap_or(false);
-                        let status_hint = if has_transitions { " · [s] status" } else { "" };
-                        format!("{pos}{status_hint} · [Esc] back")
-                    }
+                    SelectedItemKind::Task => format!("{pos} · [s] status · [Esc] back"),
                     SelectedItemKind::Other => {
                         let inv_hint = investigate_hint(&inv);
                         format!("{pos} · [o] open{inv_hint} · [Esc] back")
@@ -1051,7 +1062,7 @@ fn render_agent_session_detail(
 
     // Info pane (right)
     let status_color = match task.status {
-        domain::TaskStatus::Review => YELLOW,
+        domain::TaskStatus::InReview => YELLOW,
         domain::TaskStatus::Blocked => Color::Red,
         domain::TaskStatus::InProgress => Color::Cyan,
         _ => Color::Gray,
@@ -1250,26 +1261,21 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         ]);
         frame.render_widget(Paragraph::new(line), bar_left);
     } else if app.ui.pending_task_status {
-        let (task_label, hints) = app
+        let (task_label, hints_str) = app
             .current_screen()
             .selected_status_item()
             .and_then(|item| {
                 if let workflows::status::StatusItem::AgentSession(task) = item {
-                    let hints = match task.status {
-                        domain::TaskStatus::Backlog => "  [r] ready · [a] archive · [Esc] cancel",
-                        domain::TaskStatus::Ready => "  [b] backlog · [a] archive · [Esc] cancel",
-                        domain::TaskStatus::Review => "  [d] done · [r] re-queue · [Esc] cancel",
-                        _ => "  [Esc] cancel",
-                    };
+                    let hints = task_status_hints(task.status);
                     Some((format!(" {} · status", task.id), hints))
                 } else {
                     None
                 }
             })
-            .unwrap_or_else(|| (" status".to_string(), "  [Esc] cancel"));
+            .unwrap_or_else(|| (" status".to_string(), "  [Esc] cancel".to_string()));
         let line = Line::from(vec![
             Span::styled(task_label, Style::default().fg(YELLOW)),
-            Span::styled(hints, dim()),
+            Span::styled(hints_str, dim()),
         ]);
         frame.render_widget(Paragraph::new(line), bar_left);
     } else if app.ui.pending_review_action {
@@ -2360,7 +2366,15 @@ mod tests {
     #[test]
     fn full_screen_unified_list_task_status_submenu_review() {
         // U14: Status submenu open on a review task — locks in "d done · r re-queue · Esc cancel" hint.
-        let mut app = task_submenu_app(domain::TaskStatus::Review);
+        let mut app = task_submenu_app(domain::TaskStatus::InReview);
+        let buf = draw(&mut app, 80, 15);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_unified_list_task_status_submenu_done() {
+        // U15: Status submenu open on a done task — locks in "r re-queue · Esc cancel" hint.
+        let mut app = task_submenu_app(domain::TaskStatus::Done);
         let buf = draw(&mut app, 80, 15);
         insta::assert_snapshot!(screen_text(&buf));
     }

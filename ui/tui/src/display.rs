@@ -944,7 +944,7 @@ mod tests {
             id: "TASK-0043".parse().unwrap(),
             title: "Update README".to_string(),
             description: None,
-            status: domain::TaskStatus::Review,
+            status: domain::TaskStatus::InReview,
             kind: domain::TaskKind::General,
             session_id: None,
             issue_links: vec![],
