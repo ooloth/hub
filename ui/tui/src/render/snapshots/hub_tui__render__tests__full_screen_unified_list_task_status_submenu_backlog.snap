@@ -16,4 +16,4 @@ expression: screen_text(&buf)
 │                                               │                              │
 │                                               │                              │
 ╰───────────────────────────────────────────────┴──────────────────────────────╯
- TASK-0001 · status  [l] blocked · [c] cancelled · [d] done · [i] in-progress ·
+ TASK-0001 · status  [l] blocked · [c] cancelled · [d] done · [f] failed · [i]

@@ -300,6 +300,7 @@ fn task_status_hints(current: domain::TaskStatus) -> String {
         ('l', domain::TaskStatus::Blocked, "blocked"),
         ('c', domain::TaskStatus::Cancelled, "cancelled"),
         ('d', domain::TaskStatus::Done, "done"),
+        ('f', domain::TaskStatus::Failed, "failed"),
         ('i', domain::TaskStatus::InProgress, "in-progress"),
         ('v', domain::TaskStatus::InReview, "in-review"),
         ('r', domain::TaskStatus::Ready, "ready"),
@@ -1065,6 +1066,7 @@ fn render_agent_session_detail(
         domain::TaskStatus::InReview => YELLOW,
         domain::TaskStatus::Blocked => Color::Red,
         domain::TaskStatus::InProgress => Color::Cyan,
+        domain::TaskStatus::Failed => Color::Red,
         _ => Color::Gray,
     };
     let info_lines: Vec<Line<'static>> = vec![

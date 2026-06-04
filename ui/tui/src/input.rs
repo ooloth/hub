@@ -127,6 +127,7 @@ fn task_status_submenu_key(
         KeyCode::Char('l') => Some(domain::TaskStatus::Blocked),
         KeyCode::Char('v') => Some(domain::TaskStatus::InReview),
         KeyCode::Char('d') => Some(domain::TaskStatus::Done),
+        KeyCode::Char('f') => Some(domain::TaskStatus::Failed),
         KeyCode::Char('c') => Some(domain::TaskStatus::Cancelled),
         _ => None,
     };

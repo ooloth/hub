@@ -10,7 +10,7 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
             title       TEXT NOT NULL,
             description TEXT,
             status      TEXT NOT NULL DEFAULT 'backlog'
-                        CHECK(status IN ('backlog','ready','in-progress','blocked','in-review','done','cancelled')),
+                        CHECK(status IN ('backlog','ready','in-progress','blocked','in-review','done','failed','cancelled')),
             kind        TEXT NOT NULL DEFAULT 'general'
                         CHECK(kind IN ('implement','debug','general')),
             session_id  TEXT,
@@ -47,6 +47,54 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
          PRAGMA ignore_check_constraints = OFF;",
     )
     .context("failed to migrate status renames (archived→cancelled, review→in-review)")?;
+    migrate_add_failed_status(conn)?;
+    Ok(())
+}
+
+/// Adds `'failed'` to the tasks CHECK constraint via table recreation.
+///
+/// Existing databases have `CHECK(status IN (...without 'failed'...))` baked into
+/// the table definition. SQLite doesn't support ALTER TABLE to modify constraints,
+/// so we recreate the table with the updated CHECK. Idempotent: skips if `'failed'`
+/// is already present in the schema.
+fn migrate_add_failed_status(conn: &Connection) -> Result<()> {
+    let schema: String = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='tasks'",
+            [],
+            |row| row.get(0),
+        )
+        .context("failed to read tasks schema from sqlite_master")?;
+
+    if schema.contains("'failed'") {
+        return Ok(());
+    }
+
+    conn.execute_batch(
+        "BEGIN;
+         CREATE TABLE tasks_new (
+             id          INTEGER PRIMARY KEY AUTOINCREMENT,
+             title       TEXT NOT NULL,
+             description TEXT,
+             status      TEXT NOT NULL DEFAULT 'backlog'
+                         CHECK(status IN ('backlog','ready','in-progress','blocked','in-review','done','failed','cancelled')),
+             kind        TEXT NOT NULL DEFAULT 'general'
+                         CHECK(kind IN ('implement','debug','general')),
+             session_id  TEXT,
+             issue_links TEXT,
+             pr_links    TEXT,
+             doc_links   TEXT,
+             created_at  TEXT NOT NULL,
+             updated_at  TEXT
+         );
+         INSERT INTO tasks_new SELECT id, title, description, status, kind, session_id,
+             issue_links, pr_links, doc_links, created_at, updated_at FROM tasks;
+         DROP TABLE tasks;
+         ALTER TABLE tasks_new RENAME TO tasks;
+         COMMIT;",
+    )
+    .context("failed to migrate tasks schema to add 'failed' status")?;
+
     Ok(())
 }
 
@@ -105,12 +153,12 @@ pub fn set_ready(conn: &Connection, id: &TaskId) -> Result<()> {
     Ok(())
 }
 
-/// Terminal tasks (`done`, `cancelled`) remain visible for this many days so
+/// Terminal tasks (`done`, `failed`, `cancelled`) remain visible for this many days so
 /// accidental transitions can be caught and reversed before the task disappears.
 const TERMINAL_VISIBLE_DAYS: i64 = 7;
 
 /// Returns tasks that appear in the TUI unified list: all non-terminal statuses
-/// plus `done` and `cancelled` tasks updated within the last
+/// plus `done`, `failed`, and `cancelled` tasks updated within the last
 /// [`TERMINAL_VISIBLE_DAYS`] days.
 pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
     let done_cutoff = (Utc::now() - chrono::Duration::days(TERMINAL_VISIBLE_DAYS)).to_rfc3339();
@@ -119,7 +167,7 @@ pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
             "SELECT id, title, status, kind, session_id, created_at
              FROM tasks
              WHERE status IN ('backlog', 'ready', 'in-progress', 'blocked', 'in-review')
-                OR (status IN ('done', 'cancelled') AND COALESCE(updated_at, created_at) >= ?1)
+                OR (status IN ('done', 'failed', 'cancelled') AND COALESCE(updated_at, created_at) >= ?1)
              ORDER BY created_at ASC",
         )
         .context("failed to prepare task query")?;
@@ -407,6 +455,37 @@ mod tests {
     }
 
     #[test]
+    fn ensure_table_migrates_old_schema_to_accept_failed_status() {
+        // Simulate a database created before 'failed' was added to the CHECK constraint.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE tasks (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                title       TEXT NOT NULL,
+                description TEXT,
+                status      TEXT NOT NULL DEFAULT 'backlog'
+                            CHECK(status IN ('backlog','ready','in-progress','blocked','in-review','done','cancelled')),
+                kind        TEXT NOT NULL DEFAULT 'general'
+                            CHECK(kind IN ('implement','debug','general')),
+                session_id  TEXT,
+                issue_links TEXT,
+                pr_links    TEXT,
+                doc_links   TEXT,
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT
+            );",
+        )
+        .unwrap();
+        ensure_table(&conn).unwrap();
+        // After migration, inserting 'failed' must succeed.
+        conn.execute(
+            "INSERT INTO tasks (title, status, kind, created_at) VALUES ('t', 'failed', 'general', '2024-01-01T00:00:00Z')",
+            [],
+        )
+        .expect("insert with 'failed' status should succeed after migration");
+    }
+
+    #[test]
     fn ensure_table_creates_task_comments_table() {
         let conn = Connection::open_in_memory().unwrap();
         ensure_table(&conn).unwrap();
@@ -483,10 +562,10 @@ mod tests {
     }
 
     #[test]
-    fn list_visible_includes_recently_done_and_cancelled_tasks() {
+    fn list_visible_includes_recently_terminal_tasks() {
         let conn = in_memory();
         let recent = Utc::now().to_rfc3339();
-        for status in &["done", "cancelled"] {
+        for status in &["done", "failed", "cancelled"] {
             conn.execute(
                 "INSERT INTO tasks (title, status, kind, created_at, updated_at) VALUES (?1, ?2, 'general', ?3, ?3)",
                 params![format!("{status} task"), status, recent],
@@ -494,9 +573,10 @@ mod tests {
             .unwrap();
         }
         let visible = list_visible(&conn).unwrap();
-        assert_eq!(visible.len(), 2);
+        assert_eq!(visible.len(), 3);
         let statuses: Vec<String> = visible.iter().map(|t| t.status.to_string()).collect();
         assert!(statuses.contains(&"done".to_string()));
+        assert!(statuses.contains(&"failed".to_string()));
         assert!(statuses.contains(&"cancelled".to_string()));
     }
 
@@ -504,7 +584,7 @@ mod tests {
     fn list_visible_excludes_terminal_tasks_older_than_window() {
         let conn = in_memory();
         let old = (Utc::now() - chrono::Duration::days(TERMINAL_VISIBLE_DAYS + 1)).to_rfc3339();
-        for status in &["done", "cancelled"] {
+        for status in &["done", "failed", "cancelled"] {
             conn.execute(
                 "INSERT INTO tasks (title, status, kind, created_at, updated_at) VALUES (?1, ?2, 'general', ?3, ?3)",
                 params![format!("old {status}"), status, old],

@@ -349,6 +349,7 @@ pub enum TaskStatus {
     Blocked,
     InReview,
     Done,
+    Failed,
     Cancelled,
 }
 
@@ -358,6 +359,10 @@ impl TaskStatus {
             Self::InReview | Self::Blocked => Urgency::High,
             _ => Urgency::Low,
         }
+    }
+
+    pub fn is_terminal(self) -> bool {
+        matches!(self, Self::Done | Self::Failed | Self::Cancelled)
     }
 }
 
@@ -370,6 +375,7 @@ impl std::fmt::Display for TaskStatus {
             Self::Blocked => "blocked",
             Self::InReview => "in-review",
             Self::Done => "done",
+            Self::Failed => "failed",
             Self::Cancelled => "cancelled",
         };
         f.write_str(s)
@@ -387,6 +393,7 @@ impl std::str::FromStr for TaskStatus {
             "blocked" => Ok(Self::Blocked),
             "in-review" => Ok(Self::InReview),
             "done" => Ok(Self::Done),
+            "failed" => Ok(Self::Failed),
             "cancelled" => Ok(Self::Cancelled),
             _ => Err(format!("unknown task status: {s:?}")),
         }
@@ -808,6 +815,47 @@ mod tests {
     #[test]
     fn task_status_in_progress_has_low_urgency() {
         assert_eq!(TaskStatus::InProgress.urgency(), Urgency::Low);
+    }
+
+    #[test]
+    fn task_status_failed_has_low_urgency() {
+        assert_eq!(TaskStatus::Failed.urgency(), Urgency::Low);
+    }
+
+    // ── task_status_is_terminal ───────────────────────────────────────────────
+
+    #[rstest::rstest]
+    #[case(TaskStatus::Done, true)]
+    #[case(TaskStatus::Failed, true)]
+    #[case(TaskStatus::Cancelled, true)]
+    #[case(TaskStatus::Backlog, false)]
+    #[case(TaskStatus::Ready, false)]
+    #[case(TaskStatus::InProgress, false)]
+    #[case(TaskStatus::Blocked, false)]
+    #[case(TaskStatus::InReview, false)]
+    fn task_status_is_terminal(#[case] status: TaskStatus, #[case] expected: bool) {
+        assert_eq!(status.is_terminal(), expected);
+    }
+
+    // ── task_status_display_and_fromstr ───────────────────────────────────────
+
+    #[rstest::rstest]
+    #[case(TaskStatus::Backlog, "backlog")]
+    #[case(TaskStatus::Ready, "ready")]
+    #[case(TaskStatus::InProgress, "in-progress")]
+    #[case(TaskStatus::Blocked, "blocked")]
+    #[case(TaskStatus::InReview, "in-review")]
+    #[case(TaskStatus::Done, "done")]
+    #[case(TaskStatus::Failed, "failed")]
+    #[case(TaskStatus::Cancelled, "cancelled")]
+    fn task_status_display_and_fromstr_roundtrip(#[case] status: TaskStatus, #[case] s: &str) {
+        assert_eq!(status.to_string(), s);
+        assert_eq!(s.parse::<TaskStatus>(), Ok(status));
+    }
+
+    #[test]
+    fn task_status_fromstr_rejects_unknown() {
+        assert!("unknown".parse::<TaskStatus>().is_err());
     }
 
     // ── repo_slug ─────────────────────────────────────────────────────────────
