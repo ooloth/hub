@@ -363,6 +363,26 @@ fn status_bar_left(app: &App) -> String {
                     SelectedItemKind::Issue => format!(
                         "{pos} · [o] open · [w] dismiss · [a] approve · [i] investigate · [Esc] back"
                     ),
+                    SelectedItemKind::Task => {
+                        let has_transitions = app
+                            .current_screen()
+                            .selected_status_item()
+                            .map(|item| {
+                                matches!(
+                                    item,
+                                    workflows::status::StatusItem::AgentSession(ref t)
+                                    if matches!(
+                                        t.status,
+                                        domain::TaskStatus::Backlog
+                                            | domain::TaskStatus::Ready
+                                            | domain::TaskStatus::Review
+                                    )
+                                )
+                            })
+                            .unwrap_or(false);
+                        let status_hint = if has_transitions { " · [s] status" } else { "" };
+                        format!("{pos}{status_hint} · [Esc] back")
+                    }
                     SelectedItemKind::Other => {
                         let inv_hint = investigate_hint(&inv);
                         format!("{pos} · [o] open{inv_hint} · [Esc] back")
@@ -1227,6 +1247,29 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         let line = Line::from(vec![
             Span::styled(pr_label, Style::default().fg(YELLOW)),
             Span::styled("  [d] delta · [l] lazygit · [o] octo · [Esc] cancel", dim()),
+        ]);
+        frame.render_widget(Paragraph::new(line), bar_left);
+    } else if app.ui.pending_task_status {
+        let (task_label, hints) = app
+            .current_screen()
+            .selected_status_item()
+            .and_then(|item| {
+                if let workflows::status::StatusItem::AgentSession(task) = item {
+                    let hints = match task.status {
+                        domain::TaskStatus::Backlog => "  [r] ready · [a] archive · [Esc] cancel",
+                        domain::TaskStatus::Ready => "  [b] backlog · [a] archive · [Esc] cancel",
+                        domain::TaskStatus::Review => "  [d] done · [r] re-queue · [Esc] cancel",
+                        _ => "  [Esc] cancel",
+                    };
+                    Some((format!(" {} · status", task.id), hints))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| (" status".to_string(), "  [Esc] cancel"));
+        let line = Line::from(vec![
+            Span::styled(task_label, Style::default().fg(YELLOW)),
+            Span::styled(hints, dim()),
         ]);
         frame.render_widget(Paragraph::new(line), bar_left);
     } else if app.ui.pending_review_action {
@@ -2272,6 +2315,21 @@ mod tests {
         insta::assert_snapshot!(screen_text(&buf));
     }
 
+    fn task_submenu_app(status: domain::TaskStatus) -> App {
+        let urgency = status.urgency();
+        let mut app = unified_list_app(vec![DisplayItem::Single(task_item(status, urgency))]);
+        // Simulate split view open
+        if let Screen::UnifiedList {
+            ref mut detail_mode,
+            ..
+        } = app.ui.screen
+        {
+            *detail_mode = DetailMode::Visible { detail_scroll: 0 };
+        }
+        app.ui.pending_task_status = true;
+        app
+    }
+
     fn task_item(status: domain::TaskStatus, urgency: domain::Urgency) -> StatusItem {
         StatusItem::AgentSession(domain::Task {
             id: "TASK-0001".parse().unwrap(),
@@ -2289,6 +2347,22 @@ mod tests {
             urgency,
             comments: vec![],
         })
+    }
+
+    #[test]
+    fn full_screen_unified_list_task_status_submenu_backlog() {
+        // U13: Status submenu open on a backlog task — locks in "r ready · a archive · Esc cancel" hint.
+        let mut app = task_submenu_app(domain::TaskStatus::Backlog);
+        let buf = draw(&mut app, 80, 15);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    #[test]
+    fn full_screen_unified_list_task_status_submenu_review() {
+        // U14: Status submenu open on a review task — locks in "d done · r re-queue · Esc cancel" hint.
+        let mut app = task_submenu_app(domain::TaskStatus::Review);
+        let buf = draw(&mut app, 80, 15);
+        insta::assert_snapshot!(screen_text(&buf));
     }
 
     #[test]

@@ -266,6 +266,7 @@ impl LineParts {
 pub(crate) enum SelectedItemKind {
     Pr,
     Issue,
+    Task,
     Other,
 }
 
@@ -274,6 +275,7 @@ impl SelectedItemKind {
         match item {
             StatusItem::Pr(_) => SelectedItemKind::Pr,
             StatusItem::Issue(_) => SelectedItemKind::Issue,
+            StatusItem::AgentSession(_) => SelectedItemKind::Task,
             _ => SelectedItemKind::Other,
         }
     }

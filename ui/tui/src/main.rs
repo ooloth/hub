@@ -556,6 +556,17 @@ async fn run_loop(
                         }
                     }
                 }
+                Effect::UpdateTaskStatus { id, status } => {
+                    match workflows::tasks::update_status(&id, status) {
+                        Ok(()) => {
+                            app.ui.flash = Some(format!("{id} → {status}"));
+                            request_refresh(app, config, tx, false, None);
+                        }
+                        Err(e) => {
+                            app.ui.flash = Some(format!("Could not update {id}: {e}"));
+                        }
+                    }
+                }
                 Effect::StartRefresh => {
                     request_refresh(app, config, tx, true, None);
                 }

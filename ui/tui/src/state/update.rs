@@ -31,6 +31,13 @@ impl App {
         if !matches!(action, Action::OpenReviewPicker) {
             self.ui.pending_review_action = false;
         }
+        // Clear the task status submenu on any action that isn't part of it.
+        if !matches!(
+            action,
+            Action::TaskStatusSubmenu | Action::TransitionTaskStatus(_)
+        ) {
+            self.ui.pending_task_status = false;
+        }
         match action {
             Action::Quit => vec![Effect::Quit],
             Action::ToggleHelp => {
@@ -162,6 +169,33 @@ impl App {
             // CancelPrSubmenu dismisses the d-submenu without collapsing the split view.
             // pending_pr_action is already cleared by the prologue for any non-submenu action.
             Action::CancelPrSubmenu => vec![],
+            Action::TaskStatusSubmenu => {
+                if let Some(StatusItem::AgentSession(task)) = self.ui.screen.selected_status_item()
+                {
+                    match task.status {
+                        domain::TaskStatus::Backlog
+                        | domain::TaskStatus::Ready
+                        | domain::TaskStatus::Review => {
+                            self.ui.pending_task_status = true;
+                        }
+                        _ => {} // no manual transitions for agent-owned statuses
+                    }
+                }
+                vec![]
+            }
+            // CancelTaskStatusSubmenu dismisses the submenu; flag already cleared by prologue.
+            Action::CancelTaskStatusSubmenu => vec![],
+            Action::TransitionTaskStatus(status) => {
+                if let Some(StatusItem::AgentSession(task)) = self.ui.screen.selected_status_item()
+                {
+                    vec![Effect::UpdateTaskStatus {
+                        id: task.id,
+                        status,
+                    }]
+                } else {
+                    vec![]
+                }
+            }
             Action::OpenPrDiffInDelta => {
                 self.ui.pending_pr_action = false;
                 if let Some(StatusItem::Pr(pr)) = self.ui.screen.selected_status_item() {

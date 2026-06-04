@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use domain::{Issue, PrKind, PullRequest, ReviewDecision};
+use domain::{Issue, PrKind, PullRequest, ReviewDecision, TaskId, TaskStatus};
 use workflows::status::{StatusItem, StatusReport};
 
 use crate::display::{Category, DisplayItem, Filter, FlatRow, GroupKey, ListSnapshot};
@@ -199,6 +199,9 @@ pub(crate) enum Action {
     DismissInput(tui_input::InputRequest),
     CommitDismissal,
     CancelDismissal,
+    TaskStatusSubmenu,
+    CancelTaskStatusSubmenu,
+    TransitionTaskStatus(TaskStatus),
     ScrollDetailDown,
     ScrollDetailUp,
     // Filter actions — only take effect from UnifiedList in normal mode.
@@ -291,6 +294,10 @@ pub(crate) enum Effect {
     },
     StartRefresh,
     WriteCache(String),
+    UpdateTaskStatus {
+        id: TaskId,
+        status: TaskStatus,
+    },
 }
 
 pub(crate) enum Msg {

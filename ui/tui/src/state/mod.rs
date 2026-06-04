@@ -24,6 +24,9 @@ pub(crate) struct UiState {
     /// True while the review picker submenu is showing (v was pressed on a PR in split view).
     /// The next keypress either commits a review skill or cancels.
     pub(crate) pending_review_action: bool,
+    /// True while the task status submenu is showing (s was pressed on a task in split view).
+    /// The next keypress either transitions to a new status or cancels.
+    pub(crate) pending_task_status: bool,
 }
 
 #[derive(Debug, Default)]

@@ -1,0 +1,19 @@
+---
+source: ui/tui/src/render/mod.rs
+expression: screen_text(&buf)
+---
+╭ All ─────────────────────────────────────────────────────────────────────────╮
+│Agent · TASK-0001 · Implement feature X review · implement                 now│
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────┬──────────────────────────────╮
+│No session data yet.                           │ TASK-0001 · Implement feature│
+│                                               │                              │
+│                                               │ status  review               │
+│                                               │ kind    implement            │
+│                                               │                              │
+│                                               │ age     now                  │
+│                                               │                              │
+│                                               │                              │
+│                                               │                              │
+╰───────────────────────────────────────────────┴──────────────────────────────╯
+ TASK-0001 · status  [d] done · [r] re-queue · [Esc] cancel
