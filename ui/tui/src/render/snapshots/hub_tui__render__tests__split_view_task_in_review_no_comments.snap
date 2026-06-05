@@ -11,9 +11,9 @@ expression: screen_text(&buf)
 │                                                                       │ status  in-review                            │
 │                                                                       │ kind    implement                            │
 │                                                                       │                                              │
+│                                                                       │ created                                      │
+│                                                                       │ updated                                      │
 │                                                                       │ age     now                                  │
-│                                                                       │                                              │
-│                                                                       │                                              │
 │                                                                       │                                              │
 │                                                                       │                                              │
 │                                                                       │                                              │

@@ -11,9 +11,9 @@ expression: screen_text(&buf)
 │                                               │ status  backlog              │
 │                                               │ kind    implement            │
 │                                               │                              │
+│                                               │ created                      │
+│                                               │ updated                      │
 │                                               │ age     now                  │
-│                                               │                              │
-│                                               │                              │
 │                                               │                              │
 ╰───────────────────────────────────────────────┴──────────────────────────────╯
  TASK-0001 · status  [l] blocked · [c] cancelled · [d] done · [f] failed · [i]

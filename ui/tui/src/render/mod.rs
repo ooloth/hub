@@ -9,7 +9,7 @@ use ratatui::{
 };
 
 use crate::display::{
-    flat_row_line, flat_row_urgency, format_age_short, log_detail_view_from_group,
+    flat_row_line, flat_row_urgency, fmt_ts, format_age_short, log_detail_view_from_group,
     log_detail_view_from_item, DisplayItem, Filter, FlatRow, LineParts, LogDetailView, LogLine,
     RowSeparator, SelectedItemKind,
 };
@@ -1028,11 +1028,19 @@ fn render_agent_session_detail(
         domain::TaskStatus::Failed => Color::Red,
         _ => Color::Gray,
     };
-    let info_lines: Vec<Line<'static>> = vec![
-        Line::from(Span::styled(
-            format!("{} · {}", task.id, task.title),
-            Style::default().add_modifier(Modifier::BOLD),
-        )),
+    let mut info_lines: Vec<Line<'static>> = vec![Line::from(Span::styled(
+        format!("{} · {}", task.id, task.title),
+        Style::default().add_modifier(Modifier::BOLD),
+    ))];
+
+    if let Some(desc) = &task.description {
+        info_lines.push(Line::raw(""));
+        for line in desc.split('\n') {
+            info_lines.push(Line::raw(line.to_string()));
+        }
+    }
+
+    info_lines.extend([
         Line::raw(""),
         Line::from(vec![
             Span::styled("status  ", Style::default().add_modifier(Modifier::DIM)),
@@ -1044,10 +1052,25 @@ fn render_agent_session_detail(
         ]),
         Line::raw(""),
         Line::from(vec![
+            Span::styled("created ", Style::default().add_modifier(Modifier::DIM)),
+            Span::raw(fmt_ts(&task.created_at)),
+        ]),
+        Line::from(vec![
+            Span::styled("updated ", Style::default().add_modifier(Modifier::DIM)),
+            Span::raw(fmt_ts(&task.updated_at)),
+        ]),
+        Line::from(vec![
             Span::styled("age     ", Style::default().add_modifier(Modifier::DIM)),
             Span::raw(format_age_short(task.age)),
         ]),
-    ];
+    ]);
+
+    if !task.links.is_empty() {
+        info_lines.push(Line::raw(""));
+        for link in &task.links {
+            info_lines.push(Line::raw(link.clone()));
+        }
+    }
 
     let mut all_lines = info_lines;
     if !task.comments.is_empty() {
@@ -1058,11 +1081,7 @@ fn render_agent_session_detail(
         ));
         for comment in &task.comments {
             all_lines.push(Line::raw(""));
-            let ts = if comment.created_at.len() >= 16 {
-                comment.created_at[..16].replace('T', " ")
-            } else {
-                comment.created_at.clone()
-            };
+            let ts = fmt_ts(&comment.created_at);
             let author = comment.author.to_string();
             all_lines.push(Line::styled(
                 format!("{ts}  {author}"),
@@ -2250,19 +2269,20 @@ mod tests {
         insta::assert_snapshot!(screen_text(&buf));
     }
 
-    // SV7: Split view with an in-review task with comments — comment thread renders in right pane.
+    // SV7: Split view with an in-review task — description, links, timestamps, and comment
+    // thread all render in the right pane.
     #[test]
     fn split_view_task_in_review_with_comments() {
         let item = StatusItem::AgentSession(domain::Task {
             id: "TASK-0001".parse().unwrap(),
             title: "Fix auth bug".to_string(),
-            description: None,
+            description: Some("OAuth token refresh was not wired\nin the middleware.".to_string()),
             status: domain::TaskStatus::InReview,
             kind: domain::TaskKind::Implement,
             session_id: None,
-            links: vec![],
-            created_at: String::new(),
-            updated_at: String::new(),
+            links: vec!["https://github.com/org/hub/pull/42".to_string()],
+            created_at: "2026-06-04T10:00:00Z".to_string(),
+            updated_at: "2026-06-04T11:00:00Z".to_string(),
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::Low,
             comments: vec![

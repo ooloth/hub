@@ -145,7 +145,9 @@ pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
     let done_cutoff = (Utc::now() - chrono::Duration::days(TERMINAL_VISIBLE_DAYS)).to_rfc3339();
     let mut stmt = conn
         .prepare(
-            "SELECT id, title, status, kind, session_id, created_at
+            "SELECT id, title, status, kind, session_id,
+                    description, links, created_at,
+                    COALESCE(updated_at, created_at)
              FROM tasks
              WHERE status IN ('backlog', 'ready', 'in-progress', 'blocked', 'in-review')
                 OR (status IN ('done', 'failed', 'cancelled') AND COALESCE(updated_at, created_at) >= ?1)
@@ -161,7 +163,10 @@ pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
                 row.get::<_, String>(2)?,
                 row.get::<_, String>(3)?,
                 row.get::<_, Option<String>>(4)?,
-                row.get::<_, String>(5)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, Option<String>>(6)?,
+                row.get::<_, String>(7)?,
+                row.get::<_, String>(8)?,
             ))
         })
         .context("failed to query tasks")?
@@ -171,7 +176,17 @@ pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
     let now = Utc::now();
     rows.into_iter()
         .map(
-            |(id, title, status_str, kind_str, session_id, created_at_str)| {
+            |(
+                id,
+                title,
+                status_str,
+                kind_str,
+                session_id,
+                description,
+                links_str,
+                created_at_str,
+                updated_at_str,
+            )| {
                 let task_id = TaskId::from_db(format!("TASK-{id:04}"));
                 let status: TaskStatus = status_str
                     .parse()
@@ -190,12 +205,12 @@ pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
                 Ok(Task {
                     id: task_id,
                     title,
-                    description: None,
+                    description,
                     status,
                     kind,
                     session_id,
-                    links: vec![],
-                    updated_at: created_at_str.clone(),
+                    links: links_from_db(links_str),
+                    updated_at: updated_at_str,
                     created_at: created_at_str,
                     age,
                     urgency,

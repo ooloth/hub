@@ -301,6 +301,15 @@ pub(crate) fn item_url(item: &StatusItem) -> Option<&str> {
     }
 }
 
+/// Formats an RFC3339 timestamp as `YYYY-MM-DD HH:MM` for display.
+pub(crate) fn fmt_ts(ts: &str) -> String {
+    if ts.len() >= 16 {
+        ts[..16].replace('T', " ")
+    } else {
+        ts.to_string()
+    }
+}
+
 pub(crate) fn format_age_short(d: chrono::Duration) -> String {
     let secs = d.num_seconds();
     if secs < 60 {
