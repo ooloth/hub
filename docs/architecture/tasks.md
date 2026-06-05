@@ -238,15 +238,31 @@ deferred to implementation.
 
 ## What is not yet built
 
-- `description`, `issue_links`, `pr_links`, `doc_links`, `updated_at` columns (partial)
-- `task_comments` table
-- TUI task creation modal (S5): `n` opens multi-field form
-- TUI task creation from signal row (S6): pre-populated form
+### Dispatch pipeline (see [task-dispatch.md](task-dispatch.md) and [Decision 014](../decisions/014-task-dispatch.md))
+
+- **S0** — Task workspace infrastructure: `ensure_task_worktree()` creates
+  `~/.hub/workspaces/TASK-XXXX/<project>/` on branch `agent/TASK-XXXX`; deferred
+  periodic cleanup (72h + no unpushed commits guard)
+- **S1** — Dispatch loop: 30s TUI tick, atomic `claim_for_dispatch()` SQL transaction,
+  uuid5 session ID, `tmux new-window -d -n TASK-XXXX` claude spawn
+- **S2** — Prompt surface: `prompts/implement-task.md`, `review-task.md`, `debug-task.md`;
+  `HUB_TASK_PROMPT` built from task fields; `hub task link TASK-XXXX <value>` CLI
+  command (new subcommand so agents can register session log file paths)
+- **S3** — Completion + stall detection: tmux window existence poll → `in-review`
+  fallback; JSONL mtime stall >5m → `blocked`; new activity → self-heal to `in-progress`
+
+### TUI task surface (from issue #268, now closed)
+
+- TUI task creation modal: `n` opens multi-field form
+- TUI task creation from signal row: pre-populated form
 - TUI detail pane for `backlog`/`ready` tasks
 - TUI agent comment thread (read-only) in detail pane
-- TUI `o` key: open session in tmux
+- TUI `o` key: open session in tmux (`claude --resume <session_id>`)
 - TUI `done`/`failed`/`cancelled` via `s` submenu from `in-review`
 - TUI `cancelled` via `s` submenu from `in-progress`
-- JSONL polling for status inference (in-progress ↔ in-review auto-transitions)
-- Dispatch workflow (TUI-managed): atomic claim transaction, uuid5 session ID, Claude Code spawn
-- `hub task report` CLI command (replacing the old `hub task update`)
+
+### Infrastructure
+
+- JSONL mtime polling extended to all in-progress tasks (currently selection-scoped only)
+- Database migration: move `hub.db` from `~/Library/Application Support/hub/` to
+  `~/.hub/hub.db` (separate issue; not blocking dispatch)
