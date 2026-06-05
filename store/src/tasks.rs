@@ -186,6 +186,7 @@ pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
                     .with_context(|| format!("invalid created_at for task {id}: {created_at_str}"))?
                     .with_timezone(&Utc);
                 let age = now - created_at;
+                let comments = get_comments(conn, id)?;
                 Ok(Task {
                     id: task_id,
                     title,
@@ -198,7 +199,7 @@ pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
                     created_at: created_at_str,
                     age,
                     urgency,
-                    comments: vec![],
+                    comments,
                 })
             },
         )
@@ -579,6 +580,30 @@ mod tests {
         let conn = in_memory();
         let tasks = list_visible(&conn).unwrap();
         assert!(tasks.is_empty());
+    }
+
+    #[test]
+    fn list_visible_populates_comments_from_db() {
+        let conn = in_memory();
+        let id = create(&conn, "Fix auth bug", TaskKind::Implement, None, &[]).unwrap();
+        add_comment(&conn, &id, domain::CommentAuthor::Agent, "Found the issue").unwrap();
+        let tasks = list_visible(&conn).unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].comments.len(), 1);
+        assert_eq!(tasks[0].comments[0].content, "Found the issue");
+        assert!(matches!(
+            tasks[0].comments[0].author,
+            domain::CommentAuthor::Agent
+        ));
+    }
+
+    #[test]
+    fn list_visible_returns_empty_comments_when_none_added() {
+        let conn = in_memory();
+        create(&conn, "No comments task", TaskKind::Debug, None, &[]).unwrap();
+        let tasks = list_visible(&conn).unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert!(tasks[0].comments.is_empty());
     }
 
     // ── create (extended) ─────────────────────────────────────────────────────

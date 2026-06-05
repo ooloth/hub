@@ -1048,7 +1048,33 @@ fn render_agent_session_detail(
             Span::raw(format_age_short(task.age)),
         ]),
     ];
-    frame.render_widget(Paragraph::new(info_lines), meta_area);
+
+    let mut all_lines = info_lines;
+    if !task.comments.is_empty() {
+        all_lines.push(Line::raw(""));
+        all_lines.push(Line::styled(
+            "── comments ──────────────────────",
+            Style::default().add_modifier(Modifier::DIM),
+        ));
+        for comment in &task.comments {
+            all_lines.push(Line::raw(""));
+            let ts = if comment.created_at.len() >= 16 {
+                comment.created_at[..16].replace('T', " ")
+            } else {
+                comment.created_at.clone()
+            };
+            let author = comment.author.to_string();
+            all_lines.push(Line::styled(
+                format!("{ts}  {author}"),
+                Style::default().add_modifier(Modifier::DIM),
+            ));
+            for line in comment.content.split('\n') {
+                all_lines.push(Line::raw(line.to_string()));
+            }
+        }
+    }
+
+    frame.render_widget(Paragraph::new(all_lines), meta_area);
 }
 
 fn render_split_detail_pane(
@@ -2221,6 +2247,57 @@ mod tests {
         let items = vec![DisplayItem::Single(pr()), DisplayItem::Single(ci_item())];
         let mut app = unified_list_app(items);
         let buf = draw(&mut app, 120, 20);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    // SV7: Split view with an in-review task with comments — comment thread renders in right pane.
+    #[test]
+    fn split_view_task_in_review_with_comments() {
+        let item = StatusItem::AgentSession(domain::Task {
+            id: "TASK-0001".parse().unwrap(),
+            title: "Fix auth bug".to_string(),
+            description: None,
+            status: domain::TaskStatus::InReview,
+            kind: domain::TaskKind::Implement,
+            session_id: None,
+            links: vec![],
+            created_at: String::new(),
+            updated_at: String::new(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+            comments: vec![
+                domain::TaskComment {
+                    id: 1,
+                    author: domain::CommentAuthor::Agent,
+                    content: "Found the issue in auth.rs.".to_string(),
+                    created_at: "2026-06-04T10:30:00Z".to_string(),
+                },
+                domain::TaskComment {
+                    id: 2,
+                    author: domain::CommentAuthor::Agent,
+                    content: "Fixed. Token refresh wired in middleware.\nAll tests pass."
+                        .to_string(),
+                    created_at: "2026-06-04T11:00:00Z".to_string(),
+                },
+            ],
+        });
+        let mut app = split_view_app(vec![DisplayItem::Single(item)], 0, 0);
+        let buf = draw(&mut app, 120, 30);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    // SV8: Split view with an in-review task with no comments — no stray comment separator.
+    #[test]
+    fn split_view_task_in_review_no_comments() {
+        let mut app = split_view_app(
+            vec![DisplayItem::Single(task_item(
+                domain::TaskStatus::InReview,
+                domain::Urgency::Low,
+            ))],
+            0,
+            0,
+        );
+        let buf = draw(&mut app, 120, 30);
         insta::assert_snapshot!(screen_text(&buf));
     }
 
