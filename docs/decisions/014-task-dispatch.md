@@ -119,34 +119,44 @@ Key choices:
   read from `prompts/implement-task.md`, `review-task.md`, or `debug-task.md`.
 - `"$HUB_TASK_PROMPT"` — the positional `prompt` argument (first user message): task
   title, description, links, agent comment thread, and the done-when instruction
-  (`hub task update TASK-XXXX --status in-review`).
+  (`hub task report TASK-XXXX --status in-review`).
 
 Both are passed as tmux `-e` environment variables to avoid OS argument-size limits.
 
-### Completion detection: tmux window existence (not `result` event)
+### Completion detection: session file polling (not `result` event or window close)
 
-Interactive sessions do not emit a `{"type": "result", ...}` event. Decision 013's
-JSONL-based completion inference assumed this event; that assumption is now void.
+Interactive `claude` (no `-p`) **never exits when the agent finishes a turn** — the
+process stays alive at an idle prompt. Neither the `result` event (assumed in 013)
+nor tmux window disappearance (this decision's original fallback) reliably indicates
+task completion. Both were invalidated by a lifecycle spike. The correct signals come
+from `~/.claude/sessions/<pid>.json`, which Claude Code writes for every running
+process.
 
 **Revised signals:**
 
 | Signal | Mechanism | Action |
 |---|---|---|
-| Agent calls `hub task update --status in-review` | CLI → DB write | Primary: immediate in-review |
-| tmux window `TASK-XXXX` disappears | TUI polls `tmux list-windows` | Fallback: transition to in-review |
-| JSONL mtime stale >5 min + window still exists | TUI polls mtime | Transition to `blocked` |
-| New JSONL activity + was blocked | TUI polls mtime | Self-heal: transition back to in-progress |
+| Agent calls `hub task report TASK-XXXX --status in-review` | CLI → DB write | Primary: immediate in-review |
+| Session file `status: "idle"` >30s, no in-review in DB | TUI scans `~/.claude/sessions/` by `sessionId` | Fallback: transition to in-review |
+| Session file absent, no in-review in DB | TUI scans session files | Crash recovery: transition to in-review |
+| Session file `status: "busy"` + `updatedAt` stale >15 min | TUI polls `updatedAt` | Transition to `blocked` |
+| Session file `status: "busy"` + fresh `updatedAt`, was blocked | TUI polls `updatedAt` | Self-heal: back to in-progress |
 
-The tmux window fallback is load-bearing: `remain-on-exit off` must stay the default
-in tmux.conf. When a process exits, its window closes. The TUI interprets a missing
-`TASK-XXXX` window as a completed session. A comment in `~/.config/tmux/tmux.conf`
-documents this dependency.
+The session file `status` field transitions `"busy" → "idle"` when the agent finishes
+a turn. `updatedAt` is epoch-ms and advances on every status change.
 
-**Stall detection and self-heal**: if the JSONL file has not grown in >5 minutes but
-the window still exists, the session is likely blocked (at an unexpected prompt, in a
-compile loop, or genuinely stuck). The TUI auto-transitions to `blocked` (High urgency)
-so the human notices. If the JSONL starts growing again (the session resumed, the
-human intervened), the TUI self-heals back to `in-progress`. `blocked → in-progress`
+**Window reaping**: when the task transitions to `in-review`, the TUI schedules
+`tmux kill-window -t TASK-XXXX` after a 5-minute buffer. If the task is manually moved
+away from `in-review` within those 5 minutes (correction), the reap is cancelled.
+Session resume is always possible via `claude --resume <session_id>`.
+
+**`~/.claude/sessions/` is undocumented internal API.** If polling fails, tasks stay
+`in-progress` until manual correction via the `s` submenu.
+
+**Stall detection and self-heal**: if `updatedAt` has not advanced in >15 minutes while
+`status` is `"busy"`, the session is likely stuck. The TUI auto-transitions to `blocked`
+(High urgency). When `updatedAt` advances again, self-heal to `in-progress`. 15 minutes
+avoids false positives from long Rust builds or slow clones. `blocked → in-progress`
 is a fully automatic round-trip.
 
 ### Agent session logs live in `~/.hub/agent-session-logs/`
@@ -171,7 +181,7 @@ cat > ~/.hub/agent-session-logs/TASK-XXXX-<slug>.md << 'EOF'
 EOF
 
 # Agent registers the path
-hub task update TASK-XXXX --link ~/.hub/agent-session-logs/TASK-XXXX-<slug>.md
+hub task link TASK-XXXX ~/.hub/agent-session-logs/TASK-XXXX-<slug>.md
 ```
 
 **Why `~/.hub/`**: colocated with all other hub system data; not inside the worktree
@@ -210,14 +220,13 @@ migration; no schema changes are needed.
 ## Consequences for Decision 013
 
 - The `{"type": "result", ...}` event mentioned in 013 as the JSONL completion signal
-  is superseded. Completion is now detected via tmux window disappearance (fallback) or
-  agent CLI call (primary).
+  is superseded. Completion is now detected via session file `status: "idle"` polling
+  (fallback) or agent CLI call (primary).
 - `blocked` is now a meaningful auto-managed status: the TUI transitions to it on stall
-  detection and self-heals on activity. Prior decisions treated `blocked` as purely
-  human-set.
-- The JSONL mtime poll described in 013 is extended to cover all in-progress tasks
-  (not just the selected task), because stall detection requires watching every active
-  session.
+  detection (`updatedAt` stale >15 min) and self-heals on activity. Prior decisions
+  treated `blocked` as purely human-set.
+- The JSONL mtime poll described in 013 is replaced by session file `status`/`updatedAt`
+  polling across all in-progress tasks.
 
 ---
 
@@ -230,5 +239,5 @@ migration; no schema changes are needed.
 - **Prompt content**: `prompts/implement-task.md`, `review-task.md`, `debug-task.md`
   need to be written. The structure is decided (kind-specific system prompt +
   task-context user message); the content is authoring work, not a design decision.
-- **`hub task update --link`**: the CLI surface for populating `links` with a file path
-  may need a flag or auto-detection. Deferred to implementation.
+- **`hub task link TASK-XXXX <path>`**: the CLI subcommand for populating `links` with
+  a file path or URL. Deferred to implementation (issue #280).

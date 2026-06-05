@@ -16,7 +16,7 @@ during implementation of the TUI task management surface (issue #268):
 
 3. **How does hub know whether a session is active or complete without trusting agent
    obedience?** 012 was silent on this; the implicit assumption was that agents would
-   reliably call `hub task update --status in-review` when done.
+   reliably call `hub task report TASK-XXXX --status in-review` when done.
 
 4. **What are the terminal states and what do they mean?** 012 had `done` and
    `archived` (since renamed `cancelled`). A third terminal state — tasks where the
@@ -78,26 +78,33 @@ No partial state is possible.
 
 ### JSONL polling as truth source for session liveness
 
-The TUI derives session state by polling the session's JSONL file alongside the task
-DB:
+**Superseded (this section only):** The JSONL-based completion model below was
+invalidated by a lifecycle spike: interactive sessions never emit `result` events,
+and JSONL mtime polling was replaced by `~/.claude/sessions/<pid>.json` status field
+polling. The correct model is in [Decision 014](014-task-dispatch.md) and
+[docs/architecture/task-dispatch.md](../architecture/task-dispatch.md). The rest of
+this decision (session model, comments, UUID5, terminal states) remains valid.
 
-- JSONL file mtime recently changed → session is active (in-progress)
-- `{"type": "result", ...}` event present in JSONL → session completed → treat as
-  in-review, regardless of DB status
+~~The TUI derives session state by polling the session's JSONL file alongside the task
+DB:~~
 
-Agent CLI calls (`hub task update --status in-review`) remain the primary completion
-signal — they are fast and explicit. JSONL polling is the robust fallback: if the
-agent crashes, fails to run the CLI, or the human resumes the session interactively,
-the TUI still reflects reality.
+- ~~JSONL file mtime recently changed → session is active (in-progress)~~
+- ~~`{"type": "result", ...}` event present in JSONL → session completed → treat as
+  in-review, regardless of DB status~~
+
+Agent CLI calls (`hub task report TASK-XXXX --status in-review`) remain the primary
+completion signal — they are fast and explicit. Session file polling is the robust
+fallback: if the agent crashes, fails to run the CLI, or the human resumes the session
+interactively, the TUI still reflects reality.
 
 **Why:** Depending solely on agent obedience creates a class of bugs where tasks stay
 stuck in `in-progress` forever if a session exits uncleanly.
 
 **Consequences:**
-- When the human presses `o` to resume a session in tmux, the JSONL file starts
-  growing → TUI auto-transitions `in-review → in-progress`.
-- When the resumed session exits, `result` event → TUI auto-transitions back to
-  `in-review`.
+- When the human presses `o` to resume a session in tmux, the session file transitions
+  `status: "idle" → "busy"` → TUI auto-transitions `in-review → in-progress`.
+- When the resumed session's turn ends, `status: "idle"` + no new activity → TUI
+  auto-transitions back to `in-review` after the grace period.
 - Manual status changes via the `s` submenu remain available as an escape hatch.
 
 ### Three terminal states: done, failed, cancelled
