@@ -11,7 +11,9 @@ Hub is a personal command center that aggregates signals from multiple sources �
 Its two binaries serve two distinct audiences:
 
 - **`hub-tui`** (Ratatui dashboard) — the **human-facing surface**. Read signals, create tasks, monitor agent sessions, approve results.
-- **`hub`** (CLI) — the **agent's communication channel**. Agents call it to read their assigned task, write captain's log entries, and report status (`in-review` or `blocked`). It does not expose human-owned operations — dispatch, create, promote, approve, and cancel all belong in the TUI.
+- **`hub`** (CLI) — the **agent's toolkit**. Agents call it *during a session* to read their task context, write captain's log entries, and report status back to hub. It is **not** how agents receive tasks — task assignment happens via the prompt injected at dispatch time. It does not expose human-owned operations — dispatch, create, promote, approve, and cancel all belong in the TUI.
+
+The dispatch system is the bridge: the TUI creates and promotes tasks; dispatch spawns a Claude Code session in an isolated worktree with the task context injected as the opening prompt; the CLI is how the agent reports back.
 
 The core value is cross-domain triage plus agent delegation: signals from different systems are ranked together in one list, and any signal can become a task for an agent to address.
 
@@ -97,6 +99,7 @@ just tui     # run the TUI
 
 | Doc                                      | Covers                                                |
 | ---------------------------------------- | ----------------------------------------------------- |
+| `docs/architecture/task-dispatch.md`     | Task dispatch: state machine, session file signals, component diagram — **read this first** for any dispatch work |
 | `docs/architecture/secrets.md`           | 1Password → op read → Secret<String> model            |
 | `docs/architecture/private-workflows.md` | Two-repo model for private workflows                  |
 | `clients/README.md`                      | reqwest pattern for HTTP clients                      |
