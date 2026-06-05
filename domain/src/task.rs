@@ -1,7 +1,15 @@
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::urgency::Urgency;
+
+/// Namespace UUID for deriving deterministic Claude Code session IDs via uuid5.
+/// Using this constant ensures the same task always maps to the same session ID,
+/// making session resume reliable across re-dispatches.
+pub const TASK_DISPATCH_NS: Uuid = Uuid::from_bytes([
+    0x6b, 0xa7, 0xb8, 0x14, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8,
+]);
 
 /// A task managed by hub's agent dispatch system, e.g. "TASK-0001".
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -37,6 +45,15 @@ impl std::str::FromStr for TaskId {
 impl std::fmt::Display for TaskId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.0)
+    }
+}
+
+impl TaskId {
+    /// Returns a deterministic UUID v5 for this task's Claude Code session.
+    /// The same task ID always produces the same UUID, enabling reliable resume
+    /// via `claude --resume <session-id>` after a crash or re-dispatch.
+    pub fn session_id(&self) -> Uuid {
+        Uuid::new_v5(&TASK_DISPATCH_NS, self.0.as_bytes())
     }
 }
 
@@ -207,6 +224,15 @@ pub struct Task {
     pub comments: Vec<TaskComment>,
 }
 
+/// A task that is ready to be dispatched — the minimal data dispatch needs.
+/// Returned by the store when querying for the next claimable task.
+#[derive(Clone, Debug)]
+pub struct ReadyTask {
+    pub id: TaskId,
+    pub repo: Option<crate::pr::RepoSlug>,
+    pub kind: TaskKind,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -217,5 +243,24 @@ mod tests {
     #[case(TaskKind::Review, "claude-sonnet-4-6")]
     fn task_kind_model(#[case] kind: TaskKind, #[case] expected: &str) {
         assert_eq!(kind.model(), expected);
+    }
+
+    #[test]
+    fn session_id_is_deterministic() {
+        let id: TaskId = "TASK-0001".parse().unwrap();
+        assert_eq!(id.session_id(), id.session_id());
+    }
+
+    #[test]
+    fn session_id_differs_across_tasks() {
+        let a: TaskId = "TASK-0001".parse().unwrap();
+        let b: TaskId = "TASK-0002".parse().unwrap();
+        assert_ne!(a.session_id(), b.session_id());
+    }
+
+    #[test]
+    fn session_id_is_uuid_v5() {
+        let id: TaskId = "TASK-0001".parse().unwrap();
+        assert_eq!(id.session_id().get_version_num(), 5);
     }
 }
