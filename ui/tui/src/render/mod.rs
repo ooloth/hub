@@ -1210,21 +1210,23 @@ fn render_task_creation_modal(frame: &mut ratatui::Frame, modal: &TaskCreationMo
     );
     frame.render_widget(link_w, link_area);
 
-    let submit_text_style = if modal.focused_field == TaskFormField::Submit {
-        Style::default().fg(FOCUS_COLOR)
+    let focused_submit = modal.focused_field == TaskFormField::Submit;
+    let submit_text_color = if focused_submit {
+        FOCUS_COLOR
     } else {
-        dim()
+        Color::White
     };
+    let submit_block = Block::new()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(submit_text_color));
+    let submit_inner = submit_block.inner(submit_area);
+    frame.render_widget(submit_block, submit_area);
     frame.render_widget(
-        Paragraph::new("  [ Ctrl+Enter to create ]")
-            .block(
-                Block::new()
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .border_style(border_style(TaskFormField::Submit)),
-            )
-            .style(submit_text_style),
-        submit_area,
+        Paragraph::new("SUBMIT")
+            .alignment(ratatui::layout::Alignment::Center)
+            .style(Style::default().fg(submit_text_color)),
+        submit_inner,
     );
 }
 

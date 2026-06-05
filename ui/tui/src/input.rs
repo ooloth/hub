@@ -212,7 +212,6 @@ fn modal_key(key: KeyEvent, focused: TaskFormField) -> Option<Action> {
     }
     match (key.code, key.modifiers) {
         (KeyCode::Esc, _) => Some(Action::CancelTaskCreation),
-        (KeyCode::Enter, KeyModifiers::CONTROL) => Some(Action::CommitTaskCreation),
         (KeyCode::Tab, _) => Some(Action::FocusNextField),
         (KeyCode::BackTab, _) => Some(Action::FocusPrevField),
         (KeyCode::Enter, _) if focused == TaskFormField::Submit => Some(Action::CommitTaskCreation),
@@ -894,15 +893,16 @@ mod tests {
         );
     }
 
-    // K31: Ctrl+Enter while modal is open → CommitTaskCreation
+    // K31: Ctrl+Enter while modal is open (Title focused) → FocusNextField
+    // Ctrl+Enter is not a distinct commit shortcut; Enter on Submit is the trigger.
     #[test]
-    fn ctrl_enter_while_modal_open_commits_creation() {
+    fn ctrl_enter_while_modal_open_advances_focus() {
         assert_eq!(
             key_to_action(
                 &modal_open_app(),
                 KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL)
             ),
-            Some(Action::CommitTaskCreation)
+            Some(Action::FocusNextField)
         );
     }
 
