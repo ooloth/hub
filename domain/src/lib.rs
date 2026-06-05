@@ -403,17 +403,17 @@ impl std::str::FromStr for TaskStatus {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TaskKind {
+    Review,
     Implement,
     Debug,
-    General,
 }
 
 impl std::fmt::Display for TaskKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
+            Self::Review => "review",
             Self::Implement => "implement",
             Self::Debug => "debug",
-            Self::General => "general",
         };
         f.write_str(s)
     }
@@ -424,9 +424,9 @@ impl std::str::FromStr for TaskKind {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
+            "review" => Ok(Self::Review),
             "implement" => Ok(Self::Implement),
             "debug" => Ok(Self::Debug),
-            "general" => Ok(Self::General),
             _ => Err(format!("unknown task kind: {s:?}")),
         }
     }
@@ -478,11 +478,7 @@ pub struct Task {
     pub kind: TaskKind,
     pub session_id: Option<String>,
     #[serde(default)]
-    pub issue_links: Vec<String>,
-    #[serde(default)]
-    pub pr_links: Vec<String>,
-    #[serde(default)]
-    pub doc_links: Vec<String>,
+    pub links: Vec<String>,
     #[serde(default)]
     pub created_at: String,
     #[serde(default)]

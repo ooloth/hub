@@ -6,11 +6,11 @@ pub fn create(
     title: &str,
     kind: TaskKind,
     description: Option<&str>,
-    issue_links: &[String],
+    links: &[String],
 ) -> Result<TaskId> {
     let conn = store::status::connect()?;
     store::tasks::ensure_table(&conn)?;
-    store::tasks::create(&conn, title, kind, description, issue_links)
+    store::tasks::create(&conn, title, kind, description, links)
 }
 
 /// Returns the full task including all fields and its comment thread.

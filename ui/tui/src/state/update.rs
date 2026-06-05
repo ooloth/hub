@@ -4,7 +4,7 @@ use chrono::Utc;
 use domain::agent_ready_labels;
 
 use super::{
-    modal::{cycle_task_kind, TaskFormField},
+    modal::{cycle_task_kind, seed_from_item, TaskFormField},
     Action, App, DetailMode, Effect, InvestigateAction, Msg, PrOwnership, PrPrevScreen,
     RefreshState, Screen, TaskCreationModal,
 };
@@ -190,7 +190,12 @@ impl App {
                 }
             }
             Action::OpenTaskCreationForm => {
-                self.ui.modal = Some(TaskCreationModal::blank());
+                let seed = self
+                    .ui
+                    .screen
+                    .selected_status_item()
+                    .and_then(|item| seed_from_item(&item));
+                self.ui.modal = Some(TaskCreationModal::with_seed(seed));
                 vec![]
             }
             Action::CancelTaskCreation => {
@@ -224,8 +229,8 @@ impl App {
                         TaskFormField::Description => {
                             modal.description.input(key);
                         }
-                        TaskFormField::IssueLink => {
-                            modal.issue_link.input(key);
+                        TaskFormField::Link => {
+                            modal.link.input(key);
                         }
                         TaskFormField::Kind | TaskFormField::Submit => {}
                     }
@@ -247,7 +252,7 @@ impl App {
                             title: req.title.as_str().to_owned(),
                             description: req.description,
                             kind: req.kind,
-                            issue_links: req.issue_links,
+                            links: req.links,
                         }]
                     }
                 }
@@ -1918,8 +1923,10 @@ mod tests {
     }
 
     #[test]
-    fn cycle_task_kind_advances_from_general_to_implement() {
+    fn cycle_task_kind_advances_from_review_to_implement() {
         let mut app = modal_app();
+        // blank() defaults to Implement; set to Review to test the cycle start
+        app.ui.modal.as_mut().unwrap().kind = domain::TaskKind::Review;
         app.update(Action::CycleTaskKind);
         assert_eq!(
             app.ui.modal.as_ref().unwrap().kind,
@@ -1956,15 +1963,15 @@ mod tests {
             title,
             description,
             kind,
-            issue_links,
+            links,
         } = effects.into_iter().next().unwrap()
         else {
             panic!("expected CreateTask");
         };
         assert_eq!(title, "Fix auth bug");
         assert!(description.is_none());
-        assert_eq!(kind, domain::TaskKind::General);
-        assert!(issue_links.is_empty());
+        assert_eq!(kind, domain::TaskKind::Implement);
+        assert!(links.is_empty());
     }
 
     #[test]
@@ -1975,7 +1982,7 @@ mod tests {
         modal.title = TextArea::new(vec!["Fix auth bug".to_string()]);
         modal.description = TextArea::new(vec!["Auth is broken".to_string()]);
         modal.kind = domain::TaskKind::Debug;
-        modal.issue_link = TextArea::new(vec!["https://github.com/org/repo/issues/1".to_string()]);
+        modal.link = TextArea::new(vec!["https://github.com/org/repo/issues/1".to_string()]);
         let mut app = App {
             ui: UiState {
                 modal: Some(modal),
@@ -1988,7 +1995,7 @@ mod tests {
             title,
             description,
             kind,
-            issue_links,
+            links,
         } = effects.into_iter().next().unwrap()
         else {
             panic!("expected CreateTask");
@@ -1996,7 +2003,7 @@ mod tests {
         assert_eq!(title, "Fix auth bug");
         assert_eq!(description.as_deref(), Some("Auth is broken"));
         assert_eq!(kind, domain::TaskKind::Debug);
-        assert_eq!(issue_links, vec!["https://github.com/org/repo/issues/1"]);
+        assert_eq!(links, vec!["https://github.com/org/repo/issues/1"]);
     }
 
     // --- OpenInOcto / OpenInLazygit from split view ---

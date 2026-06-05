@@ -1,5 +1,6 @@
 use domain::TaskKind;
 use tui_textarea::TextArea;
+use workflows::status::StatusItem;
 
 /// Proof that a task title is non-empty and trimmed.
 /// Only constructable via `TaskTitle::parse()`.
@@ -26,13 +27,15 @@ pub(crate) struct TaskCreationRequest {
     pub(crate) title: TaskTitle,
     pub(crate) description: Option<String>,
     pub(crate) kind: TaskKind,
-    pub(crate) issue_links: Vec<String>,
+    pub(crate) links: Vec<String>,
 }
 
-/// Pre-population seed for the creation form (S6 wired later).
+/// Pre-population seed for the creation form.
 pub(crate) struct TaskCreationSeed {
     pub(crate) title: Option<String>,
-    pub(crate) issue_link: Option<String>,
+    pub(crate) description: Option<String>,
+    pub(crate) kind: Option<TaskKind>,
+    pub(crate) link: Option<String>,
 }
 
 /// Which field currently has focus in the creation modal.
@@ -41,7 +44,7 @@ pub(crate) enum TaskFormField {
     Title,
     Description,
     Kind,
-    IssueLink,
+    Link,
     Submit,
 }
 
@@ -50,8 +53,8 @@ impl TaskFormField {
         match self {
             Self::Title => Self::Description,
             Self::Description => Self::Kind,
-            Self::Kind => Self::IssueLink,
-            Self::IssueLink => Self::Submit,
+            Self::Kind => Self::Link,
+            Self::Link => Self::Submit,
             Self::Submit => Self::Title,
         }
     }
@@ -61,8 +64,8 @@ impl TaskFormField {
             Self::Title => Self::Submit,
             Self::Description => Self::Title,
             Self::Kind => Self::Description,
-            Self::IssueLink => Self::Kind,
-            Self::Submit => Self::IssueLink,
+            Self::Link => Self::Kind,
+            Self::Submit => Self::Link,
         }
     }
 }
@@ -74,31 +77,40 @@ pub(crate) struct TaskCreationModal {
     pub(crate) title: TextArea<'static>,
     pub(crate) description: TextArea<'static>,
     pub(crate) kind: TaskKind,
-    pub(crate) issue_link: TextArea<'static>,
+    pub(crate) link: TextArea<'static>,
 }
 
 impl TaskCreationModal {
+    #[cfg(test)]
     pub(crate) fn blank() -> Self {
         Self::with_seed(None)
     }
 
     pub(crate) fn with_seed(seed: Option<TaskCreationSeed>) -> Self {
         let mut title_ta = TextArea::default();
-        let mut issue_link_ta = TextArea::default();
+        let mut desc_ta = TextArea::default();
+        let mut link_ta = TextArea::default();
+        let mut kind = TaskKind::Implement;
         if let Some(s) = seed {
             if let Some(t) = s.title {
                 title_ta = TextArea::new(vec![t]);
             }
-            if let Some(l) = s.issue_link {
-                issue_link_ta = TextArea::new(vec![l]);
+            if let Some(d) = s.description {
+                desc_ta = TextArea::new(vec![d]);
+            }
+            if let Some(k) = s.kind {
+                kind = k;
+            }
+            if let Some(l) = s.link {
+                link_ta = TextArea::new(vec![l]);
             }
         }
         Self {
             focused_field: TaskFormField::Title,
             title: title_ta,
-            description: TextArea::default(),
-            kind: TaskKind::General,
-            issue_link: issue_link_ta,
+            description: desc_ta,
+            kind,
+            link: link_ta,
         }
     }
 
@@ -115,8 +127,8 @@ impl TaskCreationModal {
                 Some(s)
             }
         };
-        let raw_link = self.issue_link.lines().join("\n");
-        let issue_links = {
+        let raw_link = self.link.lines().join("\n");
+        let links = {
             let s = raw_link.trim().to_owned();
             if s.is_empty() {
                 vec![]
@@ -128,16 +140,123 @@ impl TaskCreationModal {
             title,
             description,
             kind: self.kind,
-            issue_links,
+            links,
         })
+    }
+}
+
+/// Derives a creation seed from a selected signal row.
+/// Returns `None` for task rows and media-backlog rows (opens a blank form).
+pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
+    match item {
+        StatusItem::Pr(pr) => {
+            let review_decision = match pr.review_decision {
+                Some(domain::ReviewDecision::Approved) => match pr.approval_count {
+                    1 => "approved (1)".to_string(),
+                    n => format!("approved ({n})"),
+                },
+                Some(domain::ReviewDecision::ChangesRequested) => "changes requested".to_string(),
+                None => "no reviews".to_string(),
+            };
+            Some(TaskCreationSeed {
+                title: Some(pr.title.clone()),
+                description: Some(format!(
+                    "PR #{} · {}\nauthor: {}\nbranch: {} → {}\nstatus: {}",
+                    pr.number, pr.repo, pr.author, pr.head_branch, pr.base_branch, review_decision
+                )),
+                kind: Some(TaskKind::Review),
+                link: Some(pr.url.clone()),
+            })
+        }
+        StatusItem::Issue(issue) => Some(TaskCreationSeed {
+            title: Some(issue.title.clone()),
+            description: Some(format!(
+                "Issue #{} · {}\nauthor: {}",
+                issue.number, issue.repo, issue.author
+            )),
+            kind: Some(TaskKind::Implement),
+            link: Some(issue.url.clone()),
+        }),
+        StatusItem::Linear(l) => Some(TaskCreationSeed {
+            title: Some(l.title.clone()),
+            description: Some(format!("Linear {} · {}", l.identifier, l.state)),
+            kind: Some(TaskKind::Implement),
+            link: Some(l.url.clone()),
+        }),
+        StatusItem::Ci(ci) => {
+            let title = match (&ci.job_name, &ci.step_name) {
+                (Some(job), Some(step)) => format!("{}: {} / {}", ci.repo, job, step),
+                (Some(job), None) => format!("{}: {}", ci.repo, job),
+                _ => format!("{}: CI failed", ci.repo),
+            };
+            let mut desc = format!("CI failure · {}\nworkflow: {}", ci.repo, ci.workflow_name);
+            if let (Some(job), Some(step)) = (&ci.job_name, &ci.step_name) {
+                desc.push_str(&format!("\njob: {} / {}", job, step));
+            } else if let Some(job) = &ci.job_name {
+                desc.push_str(&format!("\njob: {}", job));
+            }
+            if let Some(err) = &ci.error {
+                desc.push_str(&format!("\nerror: {}", err));
+            }
+            Some(TaskCreationSeed {
+                title: Some(title),
+                description: Some(desc),
+                kind: Some(TaskKind::Debug),
+                link: Some(ci.url.clone()),
+            })
+        }
+        StatusItem::Loki(l) => Some(TaskCreationSeed {
+            title: Some(format!("{}:{} — {}", l.project, l.env, l.title)),
+            description: Some(format!(
+                "Loki alert · {} ({})\nalert: {}\nmessage: {}\nline: {}\nlookback: {}",
+                l.project, l.env, l.title, l.message, l.line, l.lookback
+            )),
+            kind: Some(TaskKind::Debug),
+            link: (!l.url.is_empty()).then(|| l.url.clone()),
+        }),
+        StatusItem::Gcp(g) => Some(TaskCreationSeed {
+            title: Some(format!("{}:{} — {}", g.project, g.env, g.title)),
+            description: Some(format!(
+                "GCP alert · {} ({})\nalert: {}\nmessage: {}\nline: {}\nlookback: {}",
+                g.project, g.env, g.title, g.message, g.line, g.lookback
+            )),
+            kind: Some(TaskKind::Debug),
+            link: (!g.url.is_empty()).then(|| g.url.clone()),
+        }),
+        // Task rows open a blank form (no pre-population).
+        StatusItem::AgentSession(_) => None,
+        #[cfg(feature = "private")]
+        StatusItem::MediaBlocked(b) => Some(TaskCreationSeed {
+            title: Some(b.title.clone()),
+            description: Some(format!("Import blocked · {}\nerror: {}", b.source, b.error)),
+            kind: Some(TaskKind::Debug),
+            link: Some(b.url.clone()),
+        }),
+        #[cfg(feature = "private")]
+        StatusItem::MediaMissing(m) => Some(TaskCreationSeed {
+            title: Some(m.title.clone()),
+            description: Some(format!("Missing · {}\naired: {}", m.source, m.air_date)),
+            kind: Some(TaskKind::Debug),
+            link: Some(m.url.clone()),
+        }),
+        #[cfg(feature = "private")]
+        StatusItem::MediaHealth(h) => Some(TaskCreationSeed {
+            title: Some(h.message.clone()),
+            description: Some(format!("Health · {}", h.source)),
+            kind: Some(TaskKind::Debug),
+            link: (!h.url.is_empty()).then(|| h.url.clone()),
+        }),
+        // Backlog rows carry no actionable identity — blank form.
+        #[cfg(feature = "private")]
+        StatusItem::MediaBacklog { .. } => None,
     }
 }
 
 pub(crate) fn cycle_task_kind(kind: TaskKind) -> TaskKind {
     match kind {
-        TaskKind::General => TaskKind::Implement,
+        TaskKind::Review => TaskKind::Implement,
         TaskKind::Implement => TaskKind::Debug,
-        TaskKind::Debug => TaskKind::General,
+        TaskKind::Debug => TaskKind::Review,
     }
 }
 
@@ -176,7 +295,7 @@ mod tests {
         let sequence = [
             TaskFormField::Description,
             TaskFormField::Kind,
-            TaskFormField::IssueLink,
+            TaskFormField::Link,
             TaskFormField::Submit,
             TaskFormField::Title,
         ];
@@ -191,7 +310,7 @@ mod tests {
     fn shift_tab_retreats_through_all_five_fields_and_wraps() {
         let sequence = [
             TaskFormField::Submit,
-            TaskFormField::IssueLink,
+            TaskFormField::Link,
             TaskFormField::Kind,
             TaskFormField::Description,
             TaskFormField::Title,
@@ -225,8 +344,8 @@ mod tests {
         let req = modal.try_into_request().unwrap();
         assert_eq!(req.title.as_str(), "Fix bug");
         assert!(req.description.is_none());
-        assert_eq!(req.kind, TaskKind::General);
-        assert!(req.issue_links.is_empty());
+        assert_eq!(req.kind, TaskKind::Implement);
+        assert!(req.links.is_empty());
     }
 
     #[test]
@@ -248,30 +367,27 @@ mod tests {
     }
 
     #[test]
-    fn try_into_request_issue_link_empty_yields_no_links() {
+    fn try_into_request_link_empty_yields_no_links() {
         let mut modal = TaskCreationModal::blank();
         modal.title = TextArea::new(vec!["Fix bug".to_string()]);
         let req = modal.try_into_request().unwrap();
-        assert!(req.issue_links.is_empty());
+        assert!(req.links.is_empty());
     }
 
     #[test]
-    fn try_into_request_issue_link_non_empty_yields_one_element_vec() {
+    fn try_into_request_link_non_empty_yields_one_element_vec() {
         let mut modal = TaskCreationModal::blank();
         modal.title = TextArea::new(vec!["Fix bug".to_string()]);
-        modal.issue_link = TextArea::new(vec!["https://github.com/org/repo/issues/1".to_string()]);
+        modal.link = TextArea::new(vec!["https://github.com/org/repo/issues/1".to_string()]);
         let req = modal.try_into_request().unwrap();
-        assert_eq!(
-            req.issue_links,
-            vec!["https://github.com/org/repo/issues/1"]
-        );
+        assert_eq!(req.links, vec!["https://github.com/org/repo/issues/1"]);
     }
 
     // ── cycle_task_kind ──────────────────────────────────────────────────────
 
     #[test]
-    fn cycle_task_kind_general_becomes_implement() {
-        assert_eq!(cycle_task_kind(TaskKind::General), TaskKind::Implement);
+    fn cycle_task_kind_review_becomes_implement() {
+        assert_eq!(cycle_task_kind(TaskKind::Review), TaskKind::Implement);
     }
 
     #[test]
@@ -280,7 +396,170 @@ mod tests {
     }
 
     #[test]
-    fn cycle_task_kind_debug_becomes_general() {
-        assert_eq!(cycle_task_kind(TaskKind::Debug), TaskKind::General);
+    fn cycle_task_kind_debug_becomes_review() {
+        assert_eq!(cycle_task_kind(TaskKind::Debug), TaskKind::Review);
+    }
+
+    // ── seed_from_item ───────────────────────────────────────────────────────
+
+    fn make_pr(kind: domain::PrKind) -> StatusItem {
+        StatusItem::Pr(domain::PullRequest {
+            number: 42,
+            title: "Add dark mode".to_string(),
+            repo: domain::RepoSlug::new("org", "hub"),
+            url: "https://github.com/org/hub/pull/42".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+            kind,
+            author: "alice".to_string(),
+            review_decision: None,
+            approval_count: 0,
+            comment_count: 0,
+            head_branch: "feat/dark-mode".to_string(),
+            base_branch: "main".to_string(),
+            body: None,
+            ci_status: None,
+            changed_files: vec![],
+            total_changed_files: 0,
+            review_threads: vec![],
+            pr_comments: vec![],
+            merge_blocker: None,
+        })
+    }
+
+    fn make_issue() -> StatusItem {
+        StatusItem::Issue(domain::Issue {
+            number: 7,
+            title: "Button misaligned".to_string(),
+            repo: domain::RepoSlug::new("org", "hub"),
+            url: "https://github.com/org/hub/issues/7".to_string(),
+            author: "bob".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+            labels: vec![],
+            body: None,
+        })
+    }
+
+    fn make_ci(job: Option<&str>, step: Option<&str>, error: Option<&str>) -> StatusItem {
+        StatusItem::Ci(domain::CiFailure {
+            repo: domain::RepoSlug::new("org", "hub"),
+            workflow_name: "CI".to_string(),
+            job_name: job.map(str::to_string),
+            step_name: step.map(str::to_string),
+            error: error.map(str::to_string),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::High,
+            url: "https://github.com/org/hub/actions/runs/99".to_string(),
+        })
+    }
+
+    fn make_loki(url: &str) -> StatusItem {
+        StatusItem::Loki(domain::LokiEntry {
+            title: "High error rate".to_string(),
+            project: "myapp".to_string(),
+            env: "prod".to_string(),
+            message: "connection refused".to_string(),
+            line: r#"{"level":"error"}"#.to_string(),
+            lookback: "15m".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Critical,
+            url: url.to_string(),
+        })
+    }
+
+    #[test]
+    fn seed_from_pr_to_review_gives_review_kind_and_pr_url() {
+        let seed = seed_from_item(&make_pr(domain::PrKind::ToReview)).unwrap();
+        assert_eq!(seed.kind, Some(TaskKind::Review));
+        assert_eq!(seed.title.as_deref(), Some("Add dark mode"));
+        assert_eq!(
+            seed.link.as_deref(),
+            Some("https://github.com/org/hub/pull/42")
+        );
+        assert!(seed.description.as_deref().unwrap().contains("org/hub"));
+        assert!(seed.description.as_deref().unwrap().contains("alice"));
+    }
+
+    #[test]
+    fn seed_from_own_pr_also_gives_review_kind() {
+        let seed = seed_from_item(&make_pr(domain::PrKind::Mine)).unwrap();
+        assert_eq!(seed.kind, Some(TaskKind::Review));
+    }
+
+    #[test]
+    fn seed_from_issue_gives_implement_kind_and_issue_url() {
+        let seed = seed_from_item(&make_issue()).unwrap();
+        assert_eq!(seed.kind, Some(TaskKind::Implement));
+        assert_eq!(seed.title.as_deref(), Some("Button misaligned"));
+        assert_eq!(
+            seed.link.as_deref(),
+            Some("https://github.com/org/hub/issues/7")
+        );
+    }
+
+    #[test]
+    fn seed_from_ci_with_job_and_step_formats_title_and_debug_kind() {
+        let seed =
+            seed_from_item(&make_ci(Some("build"), Some("run tests"), Some("panicked"))).unwrap();
+        assert_eq!(seed.kind, Some(TaskKind::Debug));
+        assert_eq!(seed.title.as_deref(), Some("org/hub: build / run tests"));
+        let desc = seed.description.unwrap();
+        assert!(desc.contains("panicked"));
+        assert_eq!(
+            seed.link.as_deref(),
+            Some("https://github.com/org/hub/actions/runs/99")
+        );
+    }
+
+    #[test]
+    fn seed_from_ci_without_job_falls_back_to_ci_failed_title() {
+        let seed = seed_from_item(&make_ci(None, None, None)).unwrap();
+        assert_eq!(seed.title.as_deref(), Some("org/hub: CI failed"));
+    }
+
+    #[test]
+    fn seed_from_ci_without_error_omits_error_line_from_description() {
+        let seed = seed_from_item(&make_ci(Some("build"), Some("test"), None)).unwrap();
+        let desc = seed.description.unwrap();
+        assert!(!desc.contains("error:"));
+    }
+
+    #[test]
+    fn seed_from_loki_with_url_gives_link() {
+        let seed = seed_from_item(&make_loki("https://grafana.example.com/d/123")).unwrap();
+        assert_eq!(seed.kind, Some(TaskKind::Debug));
+        assert_eq!(
+            seed.link.as_deref(),
+            Some("https://grafana.example.com/d/123")
+        );
+        let desc = seed.description.unwrap();
+        assert!(desc.contains("connection refused"));
+        assert!(desc.contains("15m"));
+    }
+
+    #[test]
+    fn seed_from_loki_with_empty_url_gives_no_link() {
+        let seed = seed_from_item(&make_loki("")).unwrap();
+        assert!(seed.link.is_none());
+    }
+
+    #[test]
+    fn seed_from_agent_session_returns_none() {
+        let task = StatusItem::AgentSession(domain::Task {
+            id: "TASK-0001".parse().unwrap(),
+            title: "some task".to_string(),
+            description: None,
+            status: domain::TaskStatus::InProgress,
+            kind: TaskKind::Debug,
+            session_id: None,
+            links: vec![],
+            created_at: String::new(),
+            updated_at: String::new(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+            comments: vec![],
+        });
+        assert!(seed_from_item(&task).is_none());
     }
 }

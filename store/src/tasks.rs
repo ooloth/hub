@@ -1,9 +1,10 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
 use domain::{CommentAuthor, Task, TaskComment, TaskId, TaskKind, TaskStatus};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 
 pub fn ensure_table(conn: &Connection) -> Result<()> {
+    migrate_consolidate_links_and_kind(conn)?;
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS tasks (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -11,12 +12,10 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
             description TEXT,
             status      TEXT NOT NULL DEFAULT 'backlog'
                         CHECK(status IN ('backlog','ready','in-progress','blocked','in-review','done','failed','cancelled')),
-            kind        TEXT NOT NULL DEFAULT 'general'
-                        CHECK(kind IN ('implement','debug','general')),
+            kind        TEXT NOT NULL DEFAULT 'implement'
+                        CHECK(kind IN ('review','implement','debug')),
             session_id  TEXT,
-            issue_links TEXT,
-            pr_links    TEXT,
-            doc_links   TEXT,
+            links       TEXT,
             created_at  TEXT NOT NULL,
             updated_at  TEXT
         );
@@ -31,10 +30,8 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
     .context("failed to ensure tasks schema")?;
     for (col, def) in &[
         ("description", "TEXT"),
-        ("issue_links", "TEXT"),
-        ("pr_links", "TEXT"),
-        ("doc_links", "TEXT"),
         ("updated_at", "TEXT"),
+        ("links", "TEXT"),
     ] {
         add_column_if_missing(conn, "tasks", col, def)?;
     }
@@ -47,53 +44,37 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
          PRAGMA ignore_check_constraints = OFF;",
     )
     .context("failed to migrate status renames (archived→cancelled, review→in-review)")?;
-    migrate_add_failed_status(conn)?;
     Ok(())
 }
 
-/// Adds `'failed'` to the tasks CHECK constraint via table recreation.
-///
-/// Existing databases have `CHECK(status IN (...without 'failed'...))` baked into
-/// the table definition. SQLite doesn't support ALTER TABLE to modify constraints,
-/// so we recreate the table with the updated CHECK. Idempotent: skips if `'failed'`
-/// is already present in the schema.
-fn migrate_add_failed_status(conn: &Connection) -> Result<()> {
-    let schema: String = conn
+/// Drops and recreates the tasks tables when the old multi-column link schema
+/// (issue_links / pr_links / doc_links) or the old 'implement' kind is detected.
+/// All data is test data — drop and regenerate is safe.
+/// Idempotent: no-op when the new schema is already in place.
+fn migrate_consolidate_links_and_kind(conn: &Connection) -> Result<()> {
+    let schema: Option<String> = conn
         .query_row(
             "SELECT sql FROM sqlite_master WHERE type='table' AND name='tasks'",
             [],
             |row| row.get(0),
         )
+        .optional()
         .context("failed to read tasks schema from sqlite_master")?;
 
-    if schema.contains("'failed'") {
+    let needs_migration = match &schema {
+        None => false,
+        Some(s) => s.contains("issue_links") || s.contains("'implement'"),
+    };
+
+    if !needs_migration {
         return Ok(());
     }
 
     conn.execute_batch(
-        "BEGIN;
-         CREATE TABLE tasks_new (
-             id          INTEGER PRIMARY KEY AUTOINCREMENT,
-             title       TEXT NOT NULL,
-             description TEXT,
-             status      TEXT NOT NULL DEFAULT 'backlog'
-                         CHECK(status IN ('backlog','ready','in-progress','blocked','in-review','done','failed','cancelled')),
-             kind        TEXT NOT NULL DEFAULT 'general'
-                         CHECK(kind IN ('implement','debug','general')),
-             session_id  TEXT,
-             issue_links TEXT,
-             pr_links    TEXT,
-             doc_links   TEXT,
-             created_at  TEXT NOT NULL,
-             updated_at  TEXT
-         );
-         INSERT INTO tasks_new SELECT id, title, description, status, kind, session_id,
-             issue_links, pr_links, doc_links, created_at, updated_at FROM tasks;
-         DROP TABLE tasks;
-         ALTER TABLE tasks_new RENAME TO tasks;
-         COMMIT;",
+        "DROP TABLE IF EXISTS task_comments;
+         DROP TABLE IF EXISTS tasks;",
     )
-    .context("failed to migrate tasks schema to add 'failed' status")?;
+    .context("failed to drop tasks tables for schema migration")?;
 
     Ok(())
 }
@@ -120,14 +101,14 @@ pub fn create(
     title: &str,
     kind: TaskKind,
     description: Option<&str>,
-    issue_links: &[String],
+    links: &[String],
 ) -> Result<TaskId> {
     let now = Utc::now().to_rfc3339();
-    let issue_links_str = links_to_db(issue_links);
+    let links_str = links_to_db(links);
     conn.execute(
-        "INSERT INTO tasks (title, kind, description, issue_links, created_at, updated_at)
+        "INSERT INTO tasks (title, kind, description, links, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?5)",
-        params![title, kind.to_string(), description, issue_links_str, now],
+        params![title, kind.to_string(), description, links_str, now],
     )
     .context("failed to insert task")?;
     let row_id = conn.last_insert_rowid();
@@ -212,9 +193,7 @@ pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
                     status,
                     kind,
                     session_id,
-                    issue_links: vec![],
-                    pr_links: vec![],
-                    doc_links: vec![],
+                    links: vec![],
                     updated_at: created_at_str.clone(),
                     created_at: created_at_str,
                     age,
@@ -235,15 +214,13 @@ pub fn get(conn: &Connection, id: &TaskId) -> Result<Task> {
         status_str,
         kind_str,
         session_id,
-        issue_links_str,
-        pr_links_str,
-        doc_links_str,
+        links_str,
         created_at_str,
         updated_at_opt,
     ) = conn
         .query_row(
             "SELECT title, description, status, kind, session_id,
-                    issue_links, pr_links, doc_links, created_at,
+                    links, created_at,
                     COALESCE(updated_at, created_at)
              FROM tasks WHERE id = ?1",
             params![row_id],
@@ -255,10 +232,8 @@ pub fn get(conn: &Connection, id: &TaskId) -> Result<Task> {
                     row.get::<_, String>(3)?,
                     row.get::<_, Option<String>>(4)?,
                     row.get::<_, Option<String>>(5)?,
-                    row.get::<_, Option<String>>(6)?,
-                    row.get::<_, Option<String>>(7)?,
-                    row.get::<_, String>(8)?,
-                    row.get::<_, String>(9)?,
+                    row.get::<_, String>(6)?,
+                    row.get::<_, String>(7)?,
                 ))
             },
         )
@@ -287,9 +262,7 @@ pub fn get(conn: &Connection, id: &TaskId) -> Result<Task> {
         status,
         kind,
         session_id,
-        issue_links: links_from_db(issue_links_str),
-        pr_links: links_from_db(pr_links_str),
-        doc_links: links_from_db(doc_links_str),
+        links: links_from_db(links_str),
         created_at: created_at_str,
         updated_at: updated_at_opt,
         age,
@@ -419,16 +392,46 @@ mod tests {
     }
 
     #[test]
-    fn ensure_table_adds_new_columns_to_existing_old_schema() {
+    fn ensure_table_creates_expected_columns() {
+        let conn = Connection::open_in_memory().unwrap();
+        ensure_table(&conn).unwrap();
+        let column_names: Vec<String> = conn
+            .prepare("PRAGMA table_info(tasks)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        for col in &["description", "links", "updated_at"] {
+            assert!(
+                column_names.contains(&col.to_string()),
+                "missing column: {col}"
+            );
+        }
+        for old_col in &["issue_links", "pr_links", "doc_links"] {
+            assert!(
+                !column_names.contains(&old_col.to_string()),
+                "old column should not exist: {old_col}"
+            );
+        }
+    }
+
+    #[test]
+    fn ensure_table_drops_old_link_columns_and_recreates() {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(
             "CREATE TABLE tasks (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                title      TEXT NOT NULL,
-                status     TEXT NOT NULL DEFAULT 'backlog',
-                kind       TEXT NOT NULL DEFAULT 'general',
-                session_id TEXT,
-                created_at TEXT NOT NULL
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                title       TEXT NOT NULL,
+                description TEXT,
+                status      TEXT NOT NULL DEFAULT 'backlog',
+                kind        TEXT NOT NULL DEFAULT 'implement',
+                session_id  TEXT,
+                issue_links TEXT,
+                pr_links    TEXT,
+                doc_links   TEXT,
+                created_at  TEXT NOT NULL,
+                updated_at  TEXT
             );",
         )
         .unwrap();
@@ -440,49 +443,8 @@ mod tests {
             .unwrap()
             .map(|r| r.unwrap())
             .collect();
-        for col in &[
-            "description",
-            "issue_links",
-            "pr_links",
-            "doc_links",
-            "updated_at",
-        ] {
-            assert!(
-                column_names.contains(&col.to_string()),
-                "missing column: {col}"
-            );
-        }
-    }
-
-    #[test]
-    fn ensure_table_migrates_old_schema_to_accept_failed_status() {
-        // Simulate a database created before 'failed' was added to the CHECK constraint.
-        let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE tasks (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                title       TEXT NOT NULL,
-                description TEXT,
-                status      TEXT NOT NULL DEFAULT 'backlog'
-                            CHECK(status IN ('backlog','ready','in-progress','blocked','in-review','done','cancelled')),
-                kind        TEXT NOT NULL DEFAULT 'general'
-                            CHECK(kind IN ('implement','debug','general')),
-                session_id  TEXT,
-                issue_links TEXT,
-                pr_links    TEXT,
-                doc_links   TEXT,
-                created_at  TEXT NOT NULL,
-                updated_at  TEXT
-            );",
-        )
-        .unwrap();
-        ensure_table(&conn).unwrap();
-        // After migration, inserting 'failed' must succeed.
-        conn.execute(
-            "INSERT INTO tasks (title, status, kind, created_at) VALUES ('t', 'failed', 'general', '2024-01-01T00:00:00Z')",
-            [],
-        )
-        .expect("insert with 'failed' status should succeed after migration");
+        assert!(column_names.contains(&"links".to_string()));
+        assert!(!column_names.contains(&"issue_links".to_string()));
     }
 
     #[test]
@@ -510,7 +472,7 @@ mod tests {
     #[test]
     fn create_multiple_tasks_produces_sequential_keys() {
         let conn = in_memory();
-        let id1 = create(&conn, "First task", TaskKind::General, None, &[]).unwrap();
+        let id1 = create(&conn, "First task", TaskKind::Implement, None, &[]).unwrap();
         let id2 = create(&conn, "Second task", TaskKind::Debug, None, &[]).unwrap();
         assert_eq!(id1.to_string(), "TASK-0001");
         assert_eq!(id2.to_string(), "TASK-0002");
@@ -545,7 +507,7 @@ mod tests {
         let conn = in_memory();
         for status in &["backlog", "ready", "in-progress", "blocked", "in-review"] {
             conn.execute(
-                "INSERT INTO tasks (title, status, kind, created_at) VALUES (?1, ?2, 'general', ?3)",
+                "INSERT INTO tasks (title, status, kind, created_at) VALUES (?1, ?2, 'implement', ?3)",
                 params![format!("task {status}"), status, Utc::now().to_rfc3339()],
             )
             .unwrap();
@@ -567,7 +529,7 @@ mod tests {
         let recent = Utc::now().to_rfc3339();
         for status in &["done", "failed", "cancelled"] {
             conn.execute(
-                "INSERT INTO tasks (title, status, kind, created_at, updated_at) VALUES (?1, ?2, 'general', ?3, ?3)",
+                "INSERT INTO tasks (title, status, kind, created_at, updated_at) VALUES (?1, ?2, 'implement', ?3, ?3)",
                 params![format!("{status} task"), status, recent],
             )
             .unwrap();
@@ -586,7 +548,7 @@ mod tests {
         let old = (Utc::now() - chrono::Duration::days(TERMINAL_VISIBLE_DAYS + 1)).to_rfc3339();
         for status in &["done", "failed", "cancelled"] {
             conn.execute(
-                "INSERT INTO tasks (title, status, kind, created_at, updated_at) VALUES (?1, ?2, 'general', ?3, ?3)",
+                "INSERT INTO tasks (title, status, kind, created_at, updated_at) VALUES (?1, ?2, 'implement', ?3, ?3)",
                 params![format!("old {status}"), status, old],
             )
             .unwrap();
@@ -626,7 +588,7 @@ mod tests {
     }
 
     #[test]
-    fn create_with_issue_link_stores_and_returns_via_get() {
+    fn create_with_link_stores_and_returns_via_get() {
         let conn = in_memory();
         let id = create(
             &conn,
@@ -637,21 +599,16 @@ mod tests {
         )
         .unwrap();
         let task = get(&conn, &id).unwrap();
-        assert_eq!(
-            task.issue_links,
-            vec!["https://github.com/owner/repo/issues/1"]
-        );
+        assert_eq!(task.links, vec!["https://github.com/owner/repo/issues/1"]);
     }
 
     #[test]
     fn create_without_optional_fields_returns_empty_defaults() {
         let conn = in_memory();
-        let id = create(&conn, "Task", TaskKind::General, None, &[]).unwrap();
+        let id = create(&conn, "Task", TaskKind::Implement, None, &[]).unwrap();
         let task = get(&conn, &id).unwrap();
         assert!(task.description.is_none());
-        assert!(task.issue_links.is_empty());
-        assert!(task.pr_links.is_empty());
-        assert!(task.doc_links.is_empty());
+        assert!(task.links.is_empty());
         assert!(task.comments.is_empty());
     }
 
@@ -669,7 +626,7 @@ mod tests {
     #[test]
     fn update_status_changes_status_and_refreshes_updated_at() {
         let conn = in_memory();
-        let id = create(&conn, "Task", TaskKind::General, None, &[]).unwrap();
+        let id = create(&conn, "Task", TaskKind::Implement, None, &[]).unwrap();
         let before = get(&conn, &id).unwrap();
         update_status(&conn, &id, TaskStatus::InReview).unwrap();
         let after = get(&conn, &id).unwrap();
@@ -689,7 +646,7 @@ mod tests {
     #[test]
     fn add_comment_appends_in_chronological_order() {
         let conn = in_memory();
-        let id = create(&conn, "Task", TaskKind::General, None, &[]).unwrap();
+        let id = create(&conn, "Task", TaskKind::Implement, None, &[]).unwrap();
         add_comment(
             &conn,
             &id,
@@ -707,7 +664,7 @@ mod tests {
     #[test]
     fn add_comment_updates_task_updated_at() {
         let conn = in_memory();
-        let id = create(&conn, "Task", TaskKind::General, None, &[]).unwrap();
+        let id = create(&conn, "Task", TaskKind::Implement, None, &[]).unwrap();
         let before = get(&conn, &id).unwrap();
         add_comment(&conn, &id, domain::CommentAuthor::Agent, "Progress note").unwrap();
         let after = get(&conn, &id).unwrap();

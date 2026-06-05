@@ -1190,7 +1190,7 @@ fn render_task_creation_modal(frame: &mut ratatui::Frame, modal: &mut TaskCreati
     frame.render_widget(&modal.description, desc_area);
 
     let kind_name = match modal.kind {
-        domain::TaskKind::General => "General",
+        domain::TaskKind::Review => "Review",
         domain::TaskKind::Implement => "Implement",
         domain::TaskKind::Debug => "Debug",
     };
@@ -1205,15 +1205,15 @@ fn render_task_creation_modal(frame: &mut ratatui::Frame, modal: &mut TaskCreati
         kind_area,
     );
 
-    apply_cursor(&mut modal.issue_link, TaskFormField::IssueLink);
-    modal.issue_link.set_block(
+    apply_cursor(&mut modal.link, TaskFormField::Link);
+    modal.link.set_block(
         Block::new()
-            .title(" Issue link ")
+            .title(" Link ")
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(border_style(TaskFormField::IssueLink)),
+            .border_style(border_style(TaskFormField::Link)),
     );
-    frame.render_widget(&modal.issue_link, link_area);
+    frame.render_widget(&modal.link, link_area);
 
     let focused_submit = modal.focused_field == TaskFormField::Submit;
     let submit_text_color = if focused_submit {
@@ -2337,9 +2337,7 @@ mod tests {
             status,
             kind: domain::TaskKind::Implement,
             session_id: None,
-            issue_links: vec![],
-            pr_links: vec![],
-            doc_links: vec![],
+            links: vec![],
             created_at: String::new(),
             updated_at: String::new(),
             age: chrono::Duration::zero(),
@@ -2392,7 +2390,7 @@ mod tests {
         modal.title = TextArea::new(vec!["Fix auth bug".to_string()]);
         modal.description = TextArea::new(vec!["Auth is broken in prod".to_string()]);
         modal.kind = domain::TaskKind::Debug;
-        modal.issue_link = TextArea::new(vec!["https://github.com/org/repo/issues/1".to_string()]);
+        modal.link = TextArea::new(vec!["https://github.com/org/repo/issues/1".to_string()]);
         modal.focused_field = TaskFormField::Submit;
         App {
             ui: UiState {

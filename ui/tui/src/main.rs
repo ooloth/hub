@@ -547,23 +547,16 @@ async fn run_loop(
                     title,
                     description,
                     kind,
-                    issue_links,
-                } => {
-                    match workflows::tasks::create(
-                        &title,
-                        kind,
-                        description.as_deref(),
-                        &issue_links,
-                    ) {
-                        Ok(id) => {
-                            app.ui.flash = Some(format!("{id} created"));
-                            request_refresh(app, config, tx, false, None);
-                        }
-                        Err(e) => {
-                            app.ui.flash = Some(format!("Could not create task: {e}"));
-                        }
+                    links,
+                } => match workflows::tasks::create(&title, kind, description.as_deref(), &links) {
+                    Ok(id) => {
+                        app.ui.flash = Some(format!("{id} created"));
+                        request_refresh(app, config, tx, false, None);
                     }
-                }
+                    Err(e) => {
+                        app.ui.flash = Some(format!("Could not create task: {e}"));
+                    }
+                },
                 Effect::StartRefresh => {
                     request_refresh(app, config, tx, true, None);
                 }

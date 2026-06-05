@@ -294,7 +294,7 @@ pub(crate) enum Effect {
         title: String,
         description: Option<String>,
         kind: domain::TaskKind,
-        issue_links: Vec<String>,
+        links: Vec<String>,
     },
 }
 
