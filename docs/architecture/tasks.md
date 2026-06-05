@@ -187,23 +187,30 @@ session is ever lost.
 
 ---
 
-## JSONL-driven status inference
+## Session file-driven status inference
 
-The TUI does not depend solely on agent CLI calls to know session state. It polls the
-session's JSONL file at `~/.claude/projects/<encoded-path>/<session_id>.jsonl`:
+The TUI does not depend solely on agent CLI calls to know session state. It polls
+`~/.claude/sessions/<pid>.json` — a file Claude Code writes for every running process —
+using the task's stored `session_id` to find the matching file:
 
-- **File mtime recently changed** → session is active; ensure task is `in-progress`
-- **`{"type": "result", ...}` event present** → session completed; treat task as
-  `in-review` even if the agent did not call `hub task update`
+- **`status: "busy"`, `updatedAt` advancing** → session is active; ensure task is `in-progress`
+- **`status: "idle"` for >30s, no `in-review` in DB** → turn complete; transition to `in-review`
+- **File absent, no `in-review` in DB** → process exited; transition to `in-review` (crash recovery)
+- **`status: "busy"`, `updatedAt` stale >15 min** → session stalled; transition to `blocked`
+- **`status: "busy"` with fresh `updatedAt`, was `blocked`** → self-heal to `in-progress`
 
 This makes status tracking robust to crashes and unclean exits. It also handles the
 interactive resume case: when the human presses `o` to resume a session in tmux, the
-JSONL file starts growing again and the TUI automatically transitions the task from
-`in-review` back to `in-progress`. When that session exits, the `result` event
-triggers the reverse transition.
+session file transitions `status: "idle" → "busy"` and the TUI automatically transitions
+the task from `in-review` back to `in-progress`.
 
-Manual status changes via the `s` submenu remain available as an escape hatch for
-any case JSONL polling cannot resolve.
+Manual status changes via the `s` submenu remain available as an escape hatch.
+
+`~/.claude/sessions/` is an undocumented internal API. If polling fails, tasks stay
+`in-progress` until manual correction. The primary signal (`hub task report` CLI call)
+is independent and always works.
+
+See [task-dispatch.md](task-dispatch.md) for the full session file signal reference.
 
 ---
 
@@ -248,8 +255,9 @@ deferred to implementation.
 - **S2** — Prompt surface: `prompts/implement-task.md`, `review-task.md`, `debug-task.md`;
   `HUB_TASK_PROMPT` built from task fields; `hub task link TASK-XXXX <value>` CLI
   command (new subcommand so agents can register session log file paths)
-- **S3** — Completion + stall detection: tmux window existence poll → `in-review`
-  fallback; JSONL mtime stall >5m → `blocked`; new activity → self-heal to `in-progress`
+- **S3** — Completion + stall detection: session file `status: "idle"` >30s → `in-review`
+  fallback; file absent → `in-review` (crash); `updatedAt` stale >15m → `blocked`;
+  fresh `updatedAt` → self-heal to `in-progress`; 5-min window reap on `in-review`
 
 ### TUI task surface (from issue #268, now closed)
 
@@ -263,6 +271,6 @@ deferred to implementation.
 
 ### Infrastructure
 
-- JSONL mtime polling extended to all in-progress tasks (currently selection-scoped only)
+- Session file polling extended to all in-progress tasks (currently selection-scoped only; `stream_interval`)
 - Database migration: move `hub.db` from `~/Library/Application Support/hub/` to
   `~/.hub/hub.db` (separate issue; not blocking dispatch)
