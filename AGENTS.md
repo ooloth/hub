@@ -118,6 +118,10 @@ just tui     # run the TUI
 - `AGENTS.md` and `CLAUDE.md` are symlinked
 - `.agents/skills/` and `.claude/skills/` are symlinked
 
+## File and module boundaries
+
+Every `lib.rs` and `mod.rs` is navigation only — module declarations and re-exports, nothing else. Every concept lives in a file named after it; `ls src/` should read as a glossary. Files over ~400 lines are a signal that a boundary exists and wants a name.
+
 ## Directory notes
 
 `.agents/` is the agent harness tracking directory — it holds skill files and
