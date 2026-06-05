@@ -1,3 +1,21 @@
+//! PR investigation worktrees — fetch, create, and clean up worktrees for
+//! human-initiated PR review and fix sessions.
+//!
+//! # Two worktree systems — do not conflate
+//!
+//! Hub has two distinct worktree systems with different locations, branch naming,
+//! lifetimes, and cleanup logic. See `docs/architecture/worktrees.md`.
+//!
+//! | System | Location | Owned by |
+//! |---|---|---|
+//! | **PR investigation** (this file) | `~/.hub/repos/<project>/pr-<N>/` | `fetch.rs` |
+//! | **Task dispatch** (not yet built) | `~/.hub/workspaces/TASK-XXXX/<project>/` | `dispatch.rs` (planned) |
+//!
+//! PR investigation worktrees are ephemeral: created on demand for a human
+//! session and cleaned up when the remote head branch is deleted.
+//! Task worktrees are persistent: they survive session termination and are only
+//! removed after 72 hours in a terminal state with no unpushed commits.
+
 use anyhow::{Context, Result};
 use std::{path::Path, path::PathBuf};
 use tokio::process::Command;

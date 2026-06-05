@@ -100,6 +100,7 @@ just tui     # run the TUI
 | Doc                                      | Covers                                                |
 | ---------------------------------------- | ----------------------------------------------------- |
 | `docs/architecture/task-dispatch.md`     | Task dispatch: state machine, session file signals, component diagram — **read this first** for any dispatch work |
+| `docs/architecture/worktrees.md`         | Two worktree systems (PR investigations vs task dispatch) — read before touching `fetch.rs` or `dispatch.rs` |
 | `docs/architecture/secrets.md`           | 1Password → op read → Secret<String> model            |
 | `docs/architecture/private-workflows.md` | Two-repo model for private workflows                  |
 | `clients/README.md`                      | reqwest pattern for HTTP clients                      |

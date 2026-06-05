@@ -15,7 +15,15 @@ pub(crate) struct LaunchConfig {
     pub(crate) env: Vec<(String, String)>,
 }
 
-/// Describes the git worktree context an investigation agent runs in.
+/// Describes the git worktree context an **investigation** agent runs in.
+///
+/// # This enum is for human-interactive investigation sessions only
+///
+/// `WorktreeSpec` is consumed by `launch()` → `open_in_lazygit` / `open_in_octo`.
+/// It is **not** the dispatch path for agent tasks. Task dispatch (issues #278–#281)
+/// creates task worktrees independently via `workflows::dispatch` — a separate code
+/// path with different location, branch naming, and cleanup logic. Do not add a
+/// `Task` variant here; see `docs/architecture/worktrees.md` for the full picture.
 ///
 /// # Choosing the right variant
 ///
