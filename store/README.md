@@ -11,14 +11,14 @@ Local SQLite access. Reads and writes domain entities to the local database.
 
 ## Database path
 
-`store::status::connect()` resolves the path in this order:
+`store::status_cache::connect()` always uses `~/.hub/hub.db`.
 
-1. `HUB_DB_PATH` env var (set to any absolute path to override)
-2. Platform default via `dirs::data_local_dir()`:
-   - macOS: `~/Library/Application Support/hub/hub.db`
-   - Linux: `~/.local/share/hub/hub.db`
+On first run after upgrading from an older build, `connect()` automatically copies the
+legacy platform path (`~/Library/Application Support/hub/hub.db` on macOS) to the new
+location via `VACUUM INTO` — a WAL-safe, one-time migration. The legacy file is left in
+place. Subsequent runs skip the migration because the new path already exists.
 
-The parent directory is created automatically on first run. The `bundled`
+The parent directory (`~/.hub/`) is created automatically if absent. The `bundled`
 feature compiles SQLite in — no system dependency.
 
 ## SQLite (rusqlite)

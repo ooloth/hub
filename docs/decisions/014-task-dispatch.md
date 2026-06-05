@@ -202,18 +202,17 @@ improvement opportunities. These files are not gitignored — they are kept loca
 
 Current: `~/Library/Application Support/hub/hub.db` (via `dirs::data_local_dir()`).
 
-Decision: move the default to `~/.hub/hub.db`. The `HUB_DB_PATH` env var already
-supports overrides; changing the default in `store/status.rs::connect()` is the only
-code change required.
+Decision: move the default to `~/.hub/hub.db`, hard-coded in `store/src/status_cache.rs::db_path()`.
 
 **Why**: `~/.hub/` is hub's system home. Having the database elsewhere breaks the
 "all hub data in one place" principle and makes it harder to find, inspect, back up,
 or migrate. The macOS-specific path is also inappropriate for a tool that may run on
 Linux.
 
-**Migration**: `store::connect()` checks whether the old path exists and copies it to
-the new location on first run with the new default. This is a one-way, one-time
-migration; no schema changes are needed.
+**Migration**: `store::connect()` checks whether the old `data_local_dir()` path exists
+and copies it to the new location via `VACUUM INTO` (WAL-safe) on first run. This is a
+one-way, one-time migration; no schema changes are needed. The legacy file is left in
+place.
 
 ---
 

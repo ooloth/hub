@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub struct CachedStatus {
     pub refreshed_at: DateTime<Utc>,
@@ -10,23 +10,44 @@ pub struct CachedStatus {
 }
 
 pub fn connect() -> Result<Connection> {
-    let path = std::env::var("HUB_DB_PATH")
-        .ok()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            dirs::data_local_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join("hub")
-                .join("hub.db")
-        });
+    let path = db_path()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("failed to create db directory: {}", parent.display()))?;
     }
+    maybe_migrate(&legacy_db_path(), &path)?;
     let conn = Connection::open(&path)
         .with_context(|| format!("failed to open db at {}", path.display()))?;
     apply_pragmas(&conn).context("failed to configure connection pragmas")?;
     Ok(conn)
+}
+
+fn db_path() -> Result<PathBuf> {
+    dirs::home_dir()
+        .context("failed to resolve home directory")
+        .map(|h| h.join(".hub").join("hub.db"))
+}
+
+fn legacy_db_path() -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("hub")
+        .join("hub.db")
+}
+
+/// Copies `legacy` to `new` via VACUUM INTO (WAL-safe) on first run after the path move.
+/// No-op when legacy is absent or new already exists.
+fn maybe_migrate(legacy: &Path, new: &Path) -> Result<()> {
+    if !legacy.exists() || new.exists() {
+        return Ok(());
+    }
+    let src = Connection::open(legacy)
+        .with_context(|| format!("failed to open legacy db at {}", legacy.display()))?;
+    // VACUUM INTO requires a literal filename; new comes from db_path(), not user input.
+    let dest = new.to_str().context("db path is not valid UTF-8")?;
+    src.execute_batch(&format!("VACUUM INTO '{dest}'"))
+        .with_context(|| format!("failed to migrate db to {}", new.display()))?;
+    Ok(())
 }
 
 fn apply_pragmas(conn: &Connection) -> Result<()> {
@@ -216,5 +237,75 @@ mod tests {
             .join()
             .expect("writer2 must not panic with SQLITE_BUSY");
         assert!(writer2_finished.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn db_path_ends_with_dot_hub_hub_db() {
+        let path = db_path().unwrap();
+        assert!(
+            path.ends_with(".hub/hub.db"),
+            "expected path ending in .hub/hub.db, got {path:?}"
+        );
+    }
+
+    #[test]
+    fn maybe_migrate_copies_data_from_legacy_to_new_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let legacy = tmp.path().join("legacy.db");
+        let new = tmp.path().join("new.db");
+
+        // Seed legacy with one row
+        let src = Connection::open(&legacy).unwrap();
+        ensure_table(&src).unwrap();
+        upsert(&src, r#"{"items":[42]}"#, 7).unwrap();
+        drop(src);
+
+        maybe_migrate(&legacy, &new).unwrap();
+
+        let dst = Connection::open(&new).unwrap();
+        let cached = read(&dst).unwrap().unwrap();
+        assert_eq!(cached.payload, r#"{"items":[42]}"#);
+        assert_eq!(cached.schema_version, 7);
+    }
+
+    #[test]
+    fn maybe_migrate_is_idempotent_when_new_already_exists() {
+        let tmp = tempfile::tempdir().unwrap();
+        let legacy = tmp.path().join("legacy.db");
+        let new = tmp.path().join("new.db");
+
+        let src = Connection::open(&legacy).unwrap();
+        ensure_table(&src).unwrap();
+        upsert(&src, r#"{"items":[1]}"#, 1).unwrap();
+        drop(src);
+
+        let dst = Connection::open(&new).unwrap();
+        ensure_table(&dst).unwrap();
+        upsert(&dst, r#"{"items":[99]}"#, 99).unwrap();
+        drop(dst);
+
+        // Second call must not overwrite the existing new DB
+        maybe_migrate(&legacy, &new).unwrap();
+
+        let dst = Connection::open(&new).unwrap();
+        let cached = read(&dst).unwrap().unwrap();
+        assert_eq!(
+            cached.schema_version, 99,
+            "existing new DB must be untouched"
+        );
+    }
+
+    #[test]
+    fn maybe_migrate_is_no_op_when_legacy_absent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let legacy = tmp.path().join("nonexistent.db");
+        let new = tmp.path().join("new.db");
+
+        maybe_migrate(&legacy, &new).unwrap();
+
+        assert!(
+            !new.exists(),
+            "new DB must not be created when legacy is absent"
+        );
     }
 }
