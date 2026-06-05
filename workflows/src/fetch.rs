@@ -20,6 +20,8 @@ use anyhow::{Context, Result};
 use std::{path::Path, path::PathBuf};
 use tokio::process::Command;
 
+use crate::git::{add_worktree_or_recover, read_default_branch};
+
 pub fn repos_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
     PathBuf::from(home).join(".hub").join("repos")
@@ -31,12 +33,6 @@ pub fn default_branch_worktree(repos_dir: &Path, name: &str) -> Option<PathBuf> 
     let branch = read_default_branch(&bare)?;
     let worktree = bare.join(branch);
     worktree.is_dir().then_some(worktree)
-}
-
-fn read_default_branch(bare: &Path) -> Option<String> {
-    let head = std::fs::read_to_string(bare.join("HEAD")).ok()?;
-    let branch = head.trim().strip_prefix("ref: refs/heads/")?;
-    Some(branch.to_owned())
 }
 
 /// Creates or updates a bare clone for each project under `~/.hub/repos/<name>/`.
@@ -120,27 +116,6 @@ async fn fetch_project(name: &str, repo: &str, repos_dir: &Path) -> Result<()> {
     }
 
     Ok(())
-}
-
-/// Runs `git worktree add <worktree> <branch>` in `bare_str`. If the add fails
-/// but the worktree directory now exists, treats it as success — another
-/// process won the race between our pre-check and our add. Otherwise surfaces
-/// the original git error.
-async fn add_worktree_or_recover(bare_str: &str, worktree: &Path, branch: &str) -> Result<()> {
-    let worktree_str = worktree.to_string_lossy();
-    let add = Command::new("git")
-        .args(["-C", bare_str, "worktree", "add", &worktree_str, branch])
-        .output()
-        .await
-        .context("git worktree add invocation failed")?;
-    if add.status.success() {
-        return Ok(());
-    }
-    if worktree.is_dir() {
-        return Ok(());
-    }
-    let stderr = String::from_utf8_lossy(&add.stderr);
-    anyhow::bail!("git worktree add failed: {stderr}")
 }
 
 /// Creates a linked worktree for a PR at `<bare>/pr-<number>/` and returns its path.
@@ -433,123 +408,7 @@ fn parse_worktree_list(output: &str) -> Vec<(String, Option<String>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // --- integration test helpers ---
-
-    async fn run_git(args: &[&str]) {
-        let out = tokio::process::Command::new("git")
-            .args(args)
-            .output()
-            .await
-            .expect("git not found");
-        assert!(
-            out.status.success(),
-            "git {} failed: {}",
-            args.join(" "),
-            String::from_utf8_lossy(&out.stderr)
-        );
-    }
-
-    async fn git_rev_parse(dir: &Path, refname: &str) -> String {
-        let out = tokio::process::Command::new("git")
-            .args(["-C", &dir.to_string_lossy(), "rev-parse", refname])
-            .output()
-            .await
-            .unwrap();
-        String::from_utf8_lossy(&out.stdout).trim().to_string()
-    }
-
-    /// Creates an origin repo with one commit and a properly-configured bare
-    /// clone that mirrors the production setup (refs/remotes/origin/* refspec).
-    async fn setup_origin_and_bare(tmp: &Path) -> (PathBuf, PathBuf) {
-        let origin = tmp.join("origin");
-        let bare = tmp.join("bare");
-        let origin_str = origin.to_string_lossy().into_owned();
-        let bare_str = bare.to_string_lossy().into_owned();
-
-        run_git(&["-c", "init.defaultBranch=main", "init", &origin_str]).await;
-        run_git(&["-C", &origin_str, "config", "user.email", "t@t.com"]).await;
-        run_git(&["-C", &origin_str, "config", "user.name", "Test"]).await;
-        run_git(&["-C", &origin_str, "commit", "--allow-empty", "-m", "init"]).await;
-
-        run_git(&["clone", "--bare", &origin_str, &bare_str]).await;
-        run_git(&[
-            "-C",
-            &bare_str,
-            "config",
-            "remote.origin.fetch",
-            "+refs/heads/*:refs/remotes/origin/*",
-        ])
-        .await;
-        run_git(&["-C", &bare_str, "fetch", "origin"]).await;
-
-        (origin, bare)
-    }
-
-    /// Pushes an empty commit to origin and returns its SHA.
-    async fn push_commit(origin: &Path, message: &str) -> String {
-        let origin_str = origin.to_string_lossy().into_owned();
-        run_git(&["-C", &origin_str, "commit", "--allow-empty", "-m", message]).await;
-        git_rev_parse(origin, "HEAD").await
-    }
-
-    // --- failing tests (pass after changes) ---
-
-    #[tokio::test]
-    async fn add_worktree_or_recover_succeeds_on_fresh_bare() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (origin, bare) = setup_origin_and_bare(tmp.path()).await;
-        let origin_str = origin.to_string_lossy().into_owned();
-        let bare_str = bare.to_string_lossy().into_owned();
-
-        run_git(&["-C", &origin_str, "checkout", "-b", "feat/x"]).await;
-        run_git(&["-C", &origin_str, "commit", "--allow-empty", "-m", "x"]).await;
-        run_git(&["-C", &bare_str, "fetch", "origin"]).await;
-        run_git(&[
-            "-C",
-            &bare_str,
-            "branch",
-            "pr-9",
-            "refs/remotes/origin/feat/x",
-        ])
-        .await;
-
-        let worktree = bare.join("pr-9");
-        add_worktree_or_recover(&bare_str, &worktree, "pr-9")
-            .await
-            .unwrap();
-        assert!(worktree.is_dir(), "worktree must be created");
-    }
-
-    #[tokio::test]
-    async fn add_worktree_or_recover_returns_ok_when_directory_already_exists() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (_origin, bare) = setup_origin_and_bare(tmp.path()).await;
-        let bare_str = bare.to_string_lossy().into_owned();
-
-        // Simulate another instance having already created the worktree
-        // directory between our pre-check and our worktree add call.
-        let worktree = bare.join("pr-7");
-        std::fs::create_dir(&worktree).unwrap();
-
-        // pr-7 branch doesn't exist; add would fail with "fatal: invalid
-        // reference: pr-7". The recovery branch must swallow it because the
-        // directory exists (other instance's success state).
-        let result = add_worktree_or_recover(&bare_str, &worktree, "pr-7").await;
-        assert!(result.is_ok(), "expected Ok, got {result:?}");
-    }
-
-    #[tokio::test]
-    async fn add_worktree_or_recover_propagates_error_when_directory_absent() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (_origin, bare) = setup_origin_and_bare(tmp.path()).await;
-        let bare_str = bare.to_string_lossy().into_owned();
-
-        // Branch doesn't exist; directory doesn't exist; recovery must not fire.
-        let worktree = bare.join("pr-nope");
-        let result = add_worktree_or_recover(&bare_str, &worktree, "nonexistent-branch").await;
-        assert!(result.is_err(), "expected Err, got {result:?}");
-    }
+    use crate::git::test_helpers::{git_rev_parse, push_commit, run_git, setup_origin_and_bare};
 
     #[tokio::test]
     async fn ensure_pr_worktree_reentry_fetches_remote_tracking_refs() {
@@ -600,20 +459,6 @@ mod tests {
         assert_eq!(remote_after, new_sha, "remote tracking ref must be updated");
         let wt_after = git_rev_parse(&worktree, "HEAD").await;
         assert_eq!(wt_after, new_sha, "worktree HEAD must be reset to latest");
-    }
-
-    #[test]
-    fn read_default_branch_extracts_branch_name() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("HEAD"), "ref: refs/heads/main\n").unwrap();
-        assert_eq!(read_default_branch(dir.path()).as_deref(), Some("main"));
-    }
-
-    #[test]
-    fn read_default_branch_returns_none_for_detached_head() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("HEAD"), "abc1234567890abcdef\n").unwrap();
-        assert!(read_default_branch(dir.path()).is_none());
     }
 
     #[test]
