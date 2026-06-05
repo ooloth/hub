@@ -196,6 +196,7 @@ fn unified_list_keys(
         (KeyCode::Char('o'), _) => Some(Action::OpenUrl),
         (KeyCode::Char('O'), _) => Some(Action::FilterCategory(Category::Issues)),
         (KeyCode::Char('n'), _) => Some(Action::OpenTaskCreationForm),
+        (KeyCode::Char('N'), _) => Some(Action::OpenBlankTaskCreationForm),
         (KeyCode::Char('t'), _) => Some(Action::FilterCategory(Category::Tasks)),
         (KeyCode::Char('a'), _) => Some(Action::ClearFilter),
         (KeyCode::Char('/'), _) => Some(Action::StartQuery),
@@ -868,6 +869,15 @@ mod tests {
         assert_eq!(
             key_to_action(&App::default(), ch('n')),
             Some(Action::OpenTaskCreationForm)
+        );
+    }
+
+    // K28b: N in unified list → OpenBlankTaskCreationForm
+    #[test]
+    fn shift_n_in_unified_list_opens_blank_task_creation_form() {
+        assert_eq!(
+            key_to_action(&App::default(), ch('N')),
+            Some(Action::OpenBlankTaskCreationForm)
         );
     }
 

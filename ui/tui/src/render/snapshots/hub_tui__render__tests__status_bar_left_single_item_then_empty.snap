@@ -2,4 +2,4 @@
 source: ui/tui/src/render/mod.rs
 expression: status_row(&buf)
 ---
-  · [↩] details · [p] prs · [O] issues · [e] errors · [/] search
+  · [↩] details · [n/N] new task · [p] prs · [O] issues · [e] errors · [/] search

@@ -110,6 +110,23 @@ impl Screen {
             Screen::MergingPr { pr, .. } => Some(StatusItem::Pr(pr.clone())),
         }
     }
+
+    /// Like `selected_status_item`, but returns the `first_item` of a `GroupHeader`
+    /// rather than `None` — used to seed the task creation form from grouped rows.
+    pub(crate) fn selected_item_for_seeding(&self) -> Option<StatusItem> {
+        match self {
+            Screen::UnifiedList {
+                flat_rows,
+                selected,
+                ..
+            } => match flat_rows.get(*selected)? {
+                FlatRow::Single(item) => Some(item.clone()),
+                FlatRow::GroupChild { item, .. } => Some(item.clone()),
+                FlatRow::GroupHeader { first_item, .. } => Some(first_item.clone()),
+            },
+            Screen::MergingPr { pr, .. } => Some(StatusItem::Pr(pr.clone())),
+        }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -194,6 +211,7 @@ pub(crate) enum Action {
     TransitionTaskStatus(TaskStatus),
     // Task creation modal
     OpenTaskCreationForm,
+    OpenBlankTaskCreationForm,
     CancelTaskCreation,
     FocusNextField,
     FocusPrevField,

@@ -101,6 +101,8 @@ const KEYBINDS_LIST: &[(&str, &str)] = &[
     ("h / l", "collapse / expand group"),
     ("Enter", "open"),
     ("i", "investigate"),
+    ("n", "new task (seeded from selected row)"),
+    ("N", "new task (blank)"),
     ("p / e / o", "filter PRs / Errors / Issues"),
     ("/", "search"),
     ("a / Esc", "clear filter"),
@@ -362,7 +364,7 @@ fn status_bar_left(app: &App) -> String {
                     _ => "",
                 };
                 format!(
-                    "{pos} · [↩] details{task_hint} · [p] prs · [O] issues · [e] errors · [/] search{inv_hint}{group_hint}"
+                    "{pos} · [↩] details{task_hint} · [n/N] new task · [p] prs · [O] issues · [e] errors · [/] search{inv_hint}{group_hint}"
                 )
             }
             DetailMode::Visible { .. } => {
@@ -1195,7 +1197,7 @@ fn render_task_creation_modal(frame: &mut ratatui::Frame, modal: &mut TaskCreati
         domain::TaskKind::Debug => "Debug",
     };
     frame.render_widget(
-        Paragraph::new(format!("  {kind_name}")).block(
+        Paragraph::new(kind_name).block(
             Block::new()
                 .title(" Kind  [Space] cycle ")
                 .borders(Borders::ALL)
@@ -2414,6 +2416,99 @@ mod tests {
     fn task_creation_modal_all_fields_submit_focused() {
         let mut app = modal_app_submit_focused();
         let buf = draw(&mut app, 80, 24);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    fn seeded_modal_app(item: workflows::status::StatusItem) -> App {
+        use crate::state::{modal, TaskCreationModal};
+        App {
+            ui: UiState {
+                modal: Some(TaskCreationModal::with_seed(modal::seed_from_item(&item))),
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    // M3: seeded from a CI failure — description renders as separate lines; kind=Debug; link=run URL.
+    #[test]
+    fn task_creation_modal_seeded_from_ci_row() {
+        let item = workflows::status::StatusItem::Ci(domain::CiFailure {
+            repo: domain::RepoSlug::new("org", "hub"),
+            workflow_name: "CI".to_string(),
+            job_name: Some("build".to_string()),
+            step_name: Some("run tests".to_string()),
+            error: Some("panicked at assertion failed".to_string()),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::High,
+            url: "https://github.com/org/hub/actions/runs/99".to_string(),
+        });
+        let buf = draw(&mut seeded_modal_app(item), 80, 24);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    // M4: seeded from a PR — kind=Review; description shows author/branch/status.
+    #[test]
+    fn task_creation_modal_seeded_from_pr_row() {
+        let item = workflows::status::StatusItem::Pr(domain::PullRequest {
+            number: 42,
+            title: "Add dark mode".to_string(),
+            repo: domain::RepoSlug::new("org", "hub"),
+            url: "https://github.com/org/hub/pull/42".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+            kind: domain::PrKind::ToReview,
+            author: "alice".to_string(),
+            review_decision: Some(domain::ReviewDecision::ChangesRequested),
+            approval_count: 0,
+            comment_count: 0,
+            head_branch: "feat/dark-mode".to_string(),
+            base_branch: "main".to_string(),
+            body: None,
+            ci_status: None,
+            changed_files: vec![],
+            total_changed_files: 0,
+            review_threads: vec![],
+            pr_comments: vec![],
+            merge_blocker: None,
+        });
+        let buf = draw(&mut seeded_modal_app(item), 80, 24);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    // M5: seeded from a GitHub issue — kind=Implement; description shows repo/author.
+    #[test]
+    fn task_creation_modal_seeded_from_issue_row() {
+        let item = workflows::status::StatusItem::Issue(domain::Issue {
+            number: 7,
+            title: "Button misaligned on mobile".to_string(),
+            repo: domain::RepoSlug::new("org", "hub"),
+            url: "https://github.com/org/hub/issues/7".to_string(),
+            author: "bob".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+            labels: vec!["bug".to_string()],
+            body: None,
+        });
+        let buf = draw(&mut seeded_modal_app(item), 80, 24);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    // M6: seeded from a Loki alert — kind=Debug; description shows alert/message/line/lookback.
+    #[test]
+    fn task_creation_modal_seeded_from_loki_row() {
+        let item = workflows::status::StatusItem::Loki(domain::LokiEntry {
+            title: "High error rate".to_string(),
+            project: "myapp".to_string(),
+            env: "prod".to_string(),
+            message: "connection refused".to_string(),
+            line: r#"{"level":"error","msg":"connection refused"}"#.to_string(),
+            lookback: "15m".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Critical,
+            url: "https://grafana.example.com/d/abc".to_string(),
+        });
+        let buf = draw(&mut seeded_modal_app(item), 80, 24);
         insta::assert_snapshot!(screen_text(&buf));
     }
 

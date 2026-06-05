@@ -193,9 +193,13 @@ impl App {
                 let seed = self
                     .ui
                     .screen
-                    .selected_status_item()
+                    .selected_item_for_seeding()
                     .and_then(|item| seed_from_item(&item));
                 self.ui.modal = Some(TaskCreationModal::with_seed(seed));
+                vec![]
+            }
+            Action::OpenBlankTaskCreationForm => {
+                self.ui.modal = Some(TaskCreationModal::with_seed(None));
                 vec![]
             }
             Action::CancelTaskCreation => {
@@ -1891,6 +1895,16 @@ mod tests {
         let mut app = App::default();
         app.update(Action::OpenTaskCreationForm);
         assert!(app.ui.modal.is_some());
+    }
+
+    #[test]
+    fn open_blank_task_creation_form_sets_modal_with_no_seed() {
+        let mut app = App::default();
+        app.update(Action::OpenBlankTaskCreationForm);
+        let modal = app.ui.modal.as_ref().unwrap();
+        assert!(modal.title.lines().join("").is_empty());
+        assert!(modal.description.lines().join("").is_empty());
+        assert_eq!(modal.kind, domain::TaskKind::Implement);
     }
 
     #[test]

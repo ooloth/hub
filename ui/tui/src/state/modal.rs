@@ -96,7 +96,7 @@ impl TaskCreationModal {
                 title_ta = TextArea::new(vec![t]);
             }
             if let Some(d) = s.description {
-                desc_ta = TextArea::new(vec![d]);
+                desc_ta = TextArea::new(d.lines().map(str::to_string).collect());
             }
             if let Some(k) = s.kind {
                 kind = k;
