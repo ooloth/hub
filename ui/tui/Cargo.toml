@@ -11,7 +11,8 @@
   private = ["workflows/private"]
 
 [dependencies]
-  ansi-to-tui = "8"
+  # Pinned in sync with ratatui below — see that comment before upgrading either.
+  ansi-to-tui = "7"
   anyhow = "1"
   chrono = "0.4"
   clients = { path = "../../clients" }
@@ -22,7 +23,13 @@
   itertools = "0.14"
   open = "5"
   pulldown-cmark = { version = "0.13", default-features = false }
-  ratatui = "0.30"
+  # Pinned to 0.29 to unify with tui-textarea 0.7, which also depends on 0.29.
+  # tui-textarea 0.7 implements ratatui 0.29's Widget trait; ratatui 0.30 moved
+  # Widget into a new ratatui-core crate, making set_block() and direct TextArea
+  # rendering fail to compile. Before bumping this, check that the target
+  # tui-textarea version also supports the new ratatui version — and keep
+  # ansi-to-tui in sync (v8 switched to ratatui-core; v7 uses ratatui 0.29).
+  ratatui = "0.29"
   rusqlite = { version = "0.31", features = ["bundled"] }
   secrecy = "0.8"
   serde_json = "1"

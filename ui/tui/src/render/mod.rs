@@ -1135,7 +1135,7 @@ fn unified_list_height(rows: &[FlatRow], max_height: u16) -> u16 {
     unified_list_height_from_counts(rows.len(), divider_count, max_height)
 }
 
-fn render_task_creation_modal(frame: &mut ratatui::Frame, modal: &TaskCreationModal) {
+fn render_task_creation_modal(frame: &mut ratatui::Frame, modal: &mut TaskCreationModal) {
     let popup = popup_area(frame.area(), 15, 62);
     frame.render_widget(Clear, popup);
 
@@ -1148,43 +1148,46 @@ fn render_task_creation_modal(frame: &mut ratatui::Frame, modal: &TaskCreationMo
     ])
     .areas(popup);
 
+    let focused = modal.focused_field;
+
     let border_style = |f: TaskFormField| {
-        if modal.focused_field == f {
+        if focused == f {
             Style::default().fg(FOCUS_COLOR)
         } else {
             Style::default()
         }
     };
 
-    // Render a TextArea's text inside a bordered block.
-    // We extract text via .lines() and render as a Paragraph to avoid the
-    // ratatui 0.29/0.30 widget-trait incompatibility with tui-textarea 0.7.
-    let textarea_text = |ta: &tui_textarea::TextArea<'static>| ta.lines().join("\n");
-
-    let text_field = |title, field, text: String, area: Rect| {
-        let block = Block::new()
-            .title(title)
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(border_style(field));
-        (Paragraph::new(text).block(block), area)
+    // Apply cursor styling per-field: purple block on the focused field,
+    // hidden on all others so only one cursor is visible at a time.
+    let apply_cursor = |ta: &mut tui_textarea::TextArea<'static>, f: TaskFormField| {
+        if focused == f {
+            ta.set_cursor_style(Style::default().bg(FOCUS_COLOR));
+        } else {
+            ta.set_cursor_style(Style::default());
+        }
+        ta.set_cursor_line_style(Style::default());
     };
 
-    let (title_w, _) = text_field(
-        " Title ",
-        TaskFormField::Title,
-        textarea_text(&modal.title),
-        title_area,
+    apply_cursor(&mut modal.title, TaskFormField::Title);
+    modal.title.set_block(
+        Block::new()
+            .title(" Title ")
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(border_style(TaskFormField::Title)),
     );
-    frame.render_widget(title_w, title_area);
+    frame.render_widget(&modal.title, title_area);
 
-    let (desc_w, _) = text_field(
-        " Description ",
-        TaskFormField::Description,
-        textarea_text(&modal.description),
-        desc_area,
+    apply_cursor(&mut modal.description, TaskFormField::Description);
+    modal.description.set_block(
+        Block::new()
+            .title(" Description ")
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(border_style(TaskFormField::Description)),
     );
-    frame.render_widget(desc_w, desc_area);
+    frame.render_widget(&modal.description, desc_area);
 
     let kind_name = match modal.kind {
         domain::TaskKind::General => "General",
@@ -1202,13 +1205,15 @@ fn render_task_creation_modal(frame: &mut ratatui::Frame, modal: &TaskCreationMo
         kind_area,
     );
 
-    let (link_w, _) = text_field(
-        " Issue link ",
-        TaskFormField::IssueLink,
-        textarea_text(&modal.issue_link),
-        link_area,
+    apply_cursor(&mut modal.issue_link, TaskFormField::IssueLink);
+    modal.issue_link.set_block(
+        Block::new()
+            .title(" Issue link ")
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(border_style(TaskFormField::IssueLink)),
     );
-    frame.render_widget(link_w, link_area);
+    frame.render_widget(&modal.issue_link, link_area);
 
     let focused_submit = modal.focused_field == TaskFormField::Submit;
     let submit_text_color = if focused_submit {
@@ -1362,7 +1367,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         bar_right,
     );
 
-    if let Some(modal) = &app.ui.modal {
+    if let Some(modal) = &mut app.ui.modal {
         render_task_creation_modal(frame, modal);
     }
 
