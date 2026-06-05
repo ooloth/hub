@@ -3,9 +3,14 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::display::{Category, SelectedItemKind};
 use workflows::status::StatusItem;
 
-use crate::state::{Action, App, ReviewSkill, Screen};
+use crate::state::{Action, App, ReviewSkill, Screen, TaskFormField};
 
 pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
+    // Modal intercepts all keys while open.
+    if let Some(modal) = &app.ui.modal {
+        return modal_key(key, modal.focused_field);
+    }
+
     // Review picker submenu intercepts all keys while pending.
     if app.ui.pending_review_action {
         return review_picker_submenu_key(key);
@@ -190,10 +195,34 @@ fn unified_list_keys(
         (KeyCode::Char('e'), _) => Some(Action::FilterCategory(Category::Errors)),
         (KeyCode::Char('o'), _) => Some(Action::OpenUrl),
         (KeyCode::Char('O'), _) => Some(Action::FilterCategory(Category::Issues)),
+        (KeyCode::Char('n'), _) => Some(Action::OpenTaskCreationForm),
         (KeyCode::Char('t'), _) => Some(Action::FilterCategory(Category::Tasks)),
         (KeyCode::Char('a'), _) => Some(Action::ClearFilter),
         (KeyCode::Char('/'), _) => Some(Action::StartQuery),
         _ => None,
+    }
+}
+
+fn modal_key(key: KeyEvent, focused: TaskFormField) -> Option<Action> {
+    if matches!(
+        (key.code, key.modifiers),
+        (KeyCode::Char('c'), KeyModifiers::CONTROL)
+    ) {
+        return Some(Action::Quit);
+    }
+    match (key.code, key.modifiers) {
+        (KeyCode::Esc, _) => Some(Action::CancelTaskCreation),
+        (KeyCode::Enter, KeyModifiers::CONTROL) => Some(Action::CommitTaskCreation),
+        (KeyCode::Tab, _) => Some(Action::FocusNextField),
+        (KeyCode::BackTab, _) => Some(Action::FocusPrevField),
+        (KeyCode::Enter, _) if focused == TaskFormField::Submit => Some(Action::CommitTaskCreation),
+        (KeyCode::Enter, _) if focused == TaskFormField::Description => {
+            Some(Action::ModalTextInput(key))
+        }
+        (KeyCode::Enter, _) => Some(Action::FocusNextField),
+        (KeyCode::Char(' '), _) if focused == TaskFormField::Kind => Some(Action::CycleTaskKind),
+        _ if focused == TaskFormField::Kind || focused == TaskFormField::Submit => None,
+        _ => Some(Action::ModalTextInput(key)),
     }
 }
 
@@ -822,6 +851,96 @@ mod tests {
                 ctrl('c')
             ),
             Some(Action::Quit)
+        );
+    }
+
+    // ── Modal intercept ──────────────────────────────────────────────────────
+
+    fn modal_open_app() -> App {
+        use crate::state::TaskCreationModal;
+        App {
+            ui: crate::state::UiState {
+                modal: Some(TaskCreationModal::blank()),
+                ..crate::state::UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    // K28: n in unified list (no modal) → OpenTaskCreationForm
+    #[test]
+    fn n_in_unified_list_opens_task_creation_form() {
+        assert_eq!(
+            key_to_action(&App::default(), ch('n')),
+            Some(Action::OpenTaskCreationForm)
+        );
+    }
+
+    // K29: Esc while modal is open → CancelTaskCreation
+    #[test]
+    fn esc_while_modal_open_cancels_creation() {
+        assert_eq!(
+            key_to_action(&modal_open_app(), k(KeyCode::Esc)),
+            Some(Action::CancelTaskCreation)
+        );
+    }
+
+    // K30: Tab while modal is open → FocusNextField
+    #[test]
+    fn tab_while_modal_open_focuses_next_field() {
+        assert_eq!(
+            key_to_action(&modal_open_app(), k(KeyCode::Tab)),
+            Some(Action::FocusNextField)
+        );
+    }
+
+    // K31: Ctrl+Enter while modal is open → CommitTaskCreation
+    #[test]
+    fn ctrl_enter_while_modal_open_commits_creation() {
+        assert_eq!(
+            key_to_action(
+                &modal_open_app(),
+                KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL)
+            ),
+            Some(Action::CommitTaskCreation)
+        );
+    }
+
+    // K32: Ctrl-C while modal is open → Quit
+    #[test]
+    fn ctrl_c_quits_while_modal_open() {
+        assert_eq!(
+            key_to_action(&modal_open_app(), ctrl('c')),
+            Some(Action::Quit)
+        );
+    }
+
+    // K33: regular char while modal is open → ModalTextInput
+    #[test]
+    fn regular_char_while_modal_open_produces_modal_text_input() {
+        let key = ch('x');
+        assert_eq!(
+            key_to_action(&modal_open_app(), key),
+            Some(Action::ModalTextInput(key))
+        );
+    }
+
+    // K34: modal intercept fires even when query or task-status would normally intercept
+    #[test]
+    fn modal_intercept_takes_priority_over_query_mode() {
+        use crate::state::TaskCreationModal;
+        let app = App {
+            ui: crate::state::UiState {
+                modal: Some(TaskCreationModal::blank()),
+                query_input: Some("hub".to_string()),
+                ..crate::state::UiState::default()
+            },
+            ..App::default()
+        };
+        // 'j' in query mode would produce AppendQuery('j'), but modal intercepts first.
+        assert_eq!(
+            key_to_action(&app, ch('j')),
+            Some(Action::ModalTextInput(ch('j')))
         );
     }
 }

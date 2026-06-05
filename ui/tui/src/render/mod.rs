@@ -14,7 +14,8 @@ use crate::display::{
     RowSeparator, SelectedItemKind,
 };
 use crate::state::{
-    compute_investigate_action, App, DetailMode, InvestigateAction, RefreshState, Screen,
+    compute_investigate_action, modal::TaskFormField, App, DetailMode, InvestigateAction,
+    RefreshState, Screen, TaskCreationModal,
 };
 
 pub(super) const FOCUS_COLOR: Color = Color::Rgb(203, 166, 247); // Catppuccin Mocha Mauve
@@ -1134,6 +1135,99 @@ fn unified_list_height(rows: &[FlatRow], max_height: u16) -> u16 {
     unified_list_height_from_counts(rows.len(), divider_count, max_height)
 }
 
+fn render_task_creation_modal(frame: &mut ratatui::Frame, modal: &TaskCreationModal) {
+    let popup = popup_area(frame.area(), 15, 62);
+    frame.render_widget(Clear, popup);
+
+    let [title_area, desc_area, kind_area, link_area, submit_area] = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Length(5),
+        Constraint::Length(3),
+        Constraint::Length(3),
+        Constraint::Length(3),
+    ])
+    .areas(popup);
+
+    let border_style = |f: TaskFormField| {
+        if modal.focused_field == f {
+            Style::default().fg(FOCUS_COLOR)
+        } else {
+            Style::default()
+        }
+    };
+
+    // Render a TextArea's text inside a bordered block.
+    // We extract text via .lines() and render as a Paragraph to avoid the
+    // ratatui 0.29/0.30 widget-trait incompatibility with tui-textarea 0.7.
+    let textarea_text = |ta: &tui_textarea::TextArea<'static>| ta.lines().join("\n");
+
+    let text_field = |title, field, text: String, area: Rect| {
+        let block = Block::new()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(border_style(field));
+        (Paragraph::new(text).block(block), area)
+    };
+
+    let (title_w, _) = text_field(
+        " Title ",
+        TaskFormField::Title,
+        textarea_text(&modal.title),
+        title_area,
+    );
+    frame.render_widget(title_w, title_area);
+
+    let (desc_w, _) = text_field(
+        " Description ",
+        TaskFormField::Description,
+        textarea_text(&modal.description),
+        desc_area,
+    );
+    frame.render_widget(desc_w, desc_area);
+
+    let kind_name = match modal.kind {
+        domain::TaskKind::General => "General",
+        domain::TaskKind::Implement => "Implement",
+        domain::TaskKind::Debug => "Debug",
+    };
+    frame.render_widget(
+        Paragraph::new(format!("  {kind_name}")).block(
+            Block::new()
+                .title(" Kind  [Space] cycle ")
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(border_style(TaskFormField::Kind)),
+        ),
+        kind_area,
+    );
+
+    let (link_w, _) = text_field(
+        " Issue link ",
+        TaskFormField::IssueLink,
+        textarea_text(&modal.issue_link),
+        link_area,
+    );
+    frame.render_widget(link_w, link_area);
+
+    let submit_text_style = if modal.focused_field == TaskFormField::Submit {
+        Style::default().fg(FOCUS_COLOR)
+    } else {
+        dim()
+    };
+    frame.render_widget(
+        Paragraph::new("  [ Ctrl+Enter to create ]")
+            .block(
+                Block::new()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(border_style(TaskFormField::Submit)),
+            )
+            .style(submit_text_style),
+        submit_area,
+    );
+}
+
 pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let [content_area, bar_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
@@ -1265,6 +1359,10 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         Paragraph::new(format!("{right_status} ")).style(dim()),
         bar_right,
     );
+
+    if let Some(modal) = &app.ui.modal {
+        render_task_creation_modal(frame, modal);
+    }
 
     if app.ui.show_help {
         let keybinds = match &app.ui.screen {
@@ -2264,6 +2362,53 @@ mod tests {
         // U15: Status submenu open on a done task — locks in "r re-queue · Esc cancel" hint.
         let mut app = task_submenu_app(domain::TaskStatus::Done);
         let buf = draw(&mut app, 80, 15);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    // ── Task creation modal snapshots ────────────────────────────────────────
+
+    fn modal_app_blank() -> App {
+        use crate::state::TaskCreationModal;
+        App {
+            ui: UiState {
+                modal: Some(TaskCreationModal::blank()),
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    fn modal_app_submit_focused() -> App {
+        use crate::state::{TaskCreationModal, TaskFormField};
+        use tui_textarea::TextArea;
+        let mut modal = TaskCreationModal::blank();
+        modal.title = TextArea::new(vec!["Fix auth bug".to_string()]);
+        modal.description = TextArea::new(vec!["Auth is broken in prod".to_string()]);
+        modal.kind = domain::TaskKind::Debug;
+        modal.issue_link = TextArea::new(vec!["https://github.com/org/repo/issues/1".to_string()]);
+        modal.focused_field = TaskFormField::Submit;
+        App {
+            ui: UiState {
+                modal: Some(modal),
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    // M1: blank modal, Title focused — baseline layout snapshot.
+    #[test]
+    fn task_creation_modal_blank_title_focused() {
+        let mut app = modal_app_blank();
+        let buf = draw(&mut app, 80, 24);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    // M2: all fields populated, Submit focused — "ready to create" state.
+    #[test]
+    fn task_creation_modal_all_fields_submit_focused() {
+        let mut app = modal_app_submit_focused();
+        let buf = draw(&mut app, 80, 24);
         insta::assert_snapshot!(screen_text(&buf));
     }
 

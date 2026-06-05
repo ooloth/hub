@@ -2,9 +2,11 @@ use chrono::{DateTime, Utc};
 use domain::StreamBlock;
 use workflows::status::StatusItem;
 
+pub(crate) mod modal;
 mod types;
 mod update;
 
+pub(crate) use modal::{TaskCreationModal, TaskFormField};
 pub(crate) use types::{
     Action, DetailMode, Effect, InvestigateAction, Msg, PrOwnership, PrPrevScreen, RefreshState,
     ReviewSkill, Screen,
@@ -27,6 +29,8 @@ pub(crate) struct UiState {
     /// True while the task status submenu is showing (s was pressed on a task in split view).
     /// The next keypress either transitions to a new status or cancels.
     pub(crate) pending_task_status: bool,
+    /// Some while the task creation modal overlay is open.
+    pub(crate) modal: Option<TaskCreationModal>,
 }
 
 #[derive(Debug, Default)]

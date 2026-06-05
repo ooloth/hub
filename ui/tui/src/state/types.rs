@@ -192,6 +192,14 @@ pub(crate) enum Action {
     TaskStatusSubmenu,
     CancelTaskStatusSubmenu,
     TransitionTaskStatus(TaskStatus),
+    // Task creation modal
+    OpenTaskCreationForm,
+    CancelTaskCreation,
+    FocusNextField,
+    FocusPrevField,
+    CycleTaskKind,
+    ModalTextInput(crossterm::event::KeyEvent),
+    CommitTaskCreation,
     ScrollDetailDown,
     ScrollDetailUp,
     // Filter actions — only take effect from UnifiedList in normal mode.
@@ -281,6 +289,12 @@ pub(crate) enum Effect {
     UpdateTaskStatus {
         id: TaskId,
         status: TaskStatus,
+    },
+    CreateTask {
+        title: String,
+        description: Option<String>,
+        kind: domain::TaskKind,
+        issue_links: Vec<String>,
     },
 }
 
