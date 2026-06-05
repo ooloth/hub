@@ -1,5 +1,6 @@
 mod pr_detail_columns;
 
+pub(crate) mod detail;
 pub(crate) mod issue;
 pub(crate) mod log;
 pub(crate) mod pr;
@@ -76,7 +77,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
                 );
                 frame.render_widget(Clear, detail_area);
                 let selected_row = flat_rows.get(*selected);
-                unified::render_split_detail_pane(
+                detail::render_split_detail_pane(
                     frame,
                     detail_area,
                     items,

@@ -1,8 +1,5 @@
 use super::{dim, list_highlight, FOCUS_COLOR};
-use crate::display::{
-    flat_row_line, flat_row_urgency, log_detail_view_from_group, log_detail_view_from_item,
-    DisplayItem, Filter, FlatRow, LineParts, RowSeparator,
-};
+use crate::display::{flat_row_line, flat_row_urgency, Filter, FlatRow, LineParts, RowSeparator};
 use crate::render::shared::{
     bullet_span, push_segments, segment_chars, urgency_color, urgency_style,
 };
@@ -10,7 +7,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{Block, BorderType, Borders, List, ListItem, ListState},
 };
 
 pub(crate) fn build_unified_list_item(
@@ -235,68 +232,6 @@ pub(crate) fn render_unified(
         buf.set_string(area.x, screen_y, "├", chrome);
         buf.set_string(area.x + area.width - 1, screen_y, "┤", chrome);
     }
-}
-
-pub(crate) fn render_split_detail_pane(
-    frame: &mut ratatui::Frame,
-    area: Rect,
-    items: &[DisplayItem],
-    selected_row: Option<&FlatRow>,
-    detail_scroll: &mut u16,
-    stream_blocks: &[domain::StreamBlock],
-    border_style: Style,
-) {
-    match selected_row {
-        Some(FlatRow::Single(item)) | Some(FlatRow::GroupChild { item, .. }) => match item {
-            workflows::status::StatusItem::Pr(pr) => {
-                super::pr::render_pr_detail(frame, pr, detail_scroll, area, border_style);
-            }
-            workflows::status::StatusItem::Issue(issue) => {
-                super::issue::render_issue_detail(frame, issue, detail_scroll, area);
-            }
-            workflows::status::StatusItem::Gcp(_) | workflows::status::StatusItem::Loki(_) => {
-                if let Some(view) = log_detail_view_from_item(item) {
-                    super::log::render_log_detail(frame, &view, detail_scroll, area);
-                } else {
-                    render_detail_placeholder(frame, area);
-                }
-            }
-            workflows::status::StatusItem::AgentSession(task) => {
-                super::session::render_agent_session_detail(
-                    frame,
-                    task,
-                    stream_blocks,
-                    detail_scroll,
-                    area,
-                    border_style,
-                );
-            }
-            _ => render_detail_placeholder(frame, area),
-        },
-        Some(FlatRow::GroupHeader { key, .. }) => {
-            let group_items = items.iter().find_map(|di| match di {
-                DisplayItem::Group { label, items: gi } if label == key => Some(gi.as_slice()),
-                _ => None,
-            });
-            if let Some(view) = group_items.and_then(log_detail_view_from_group) {
-                super::log::render_log_detail(frame, &view, detail_scroll, area);
-            } else {
-                render_detail_placeholder(frame, area);
-            }
-        }
-        None => render_detail_placeholder(frame, area),
-    }
-}
-
-pub(crate) fn render_detail_placeholder(frame: &mut ratatui::Frame, area: Rect) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::DarkGray));
-    let paragraph = Paragraph::new("No detail view available.")
-        .block(block)
-        .style(Style::default().fg(Color::DarkGray));
-    frame.render_widget(paragraph, area);
 }
 
 const LIST_BORDER_LINES: u16 = 2;
