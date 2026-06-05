@@ -553,6 +553,7 @@ mod tests {
             status: domain::TaskStatus::InProgress,
             kind: TaskKind::Debug,
             session_id: None,
+            repo: None,
             links: vec![],
             created_at: String::new(),
             updated_at: String::new(),

@@ -212,6 +212,8 @@ pub struct Task {
     pub kind: TaskKind,
     pub session_id: Option<String>,
     #[serde(default)]
+    pub repo: Option<crate::pr::RepoSlug>,
+    #[serde(default)]
     pub links: Vec<String>,
     #[serde(default)]
     pub created_at: String,

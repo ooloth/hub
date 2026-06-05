@@ -548,7 +548,13 @@ async fn run_loop(
                     description,
                     kind,
                     links,
-                } => match workflows::tasks::create(&title, kind, description.as_deref(), &links) {
+                } => match workflows::tasks::create(
+                    &title,
+                    kind,
+                    description.as_deref(),
+                    &links,
+                    None,
+                ) {
                     Ok(id) => {
                         app.ui.flash = Some(format!("{id} created"));
                         request_refresh(app, config, tx, false, None);
