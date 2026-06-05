@@ -11,7 +11,7 @@ Hub is a personal command center that aggregates signals from multiple sources �
 Its two binaries serve two distinct audiences:
 
 - **`hub-tui`** (Ratatui dashboard) — the **human-facing surface**. Read signals, create tasks, monitor agent sessions, approve results.
-- **`hub`** (CLI) — the **agent's toolkit**. Agents call it *during a session* to read their task context, write captain's log entries, and report status back to hub. It is **not** how agents receive tasks — task assignment happens via the prompt injected at dispatch time. It does not expose human-owned operations — dispatch, create, promote, approve, and cancel all belong in the TUI.
+- **`hub`** (CLI) — the **agent's toolkit**. Agents call it _during a session_ to read their task context, write captain's log entries, and report status back to hub. It is **not** how agents receive tasks — task assignment happens via the prompt injected at dispatch time. It does not expose human-owned operations — dispatch, create, promote, approve, and cancel all belong in the TUI.
 
 The dispatch system is the bridge: the TUI creates and promotes tasks; dispatch spawns a Claude Code session in an isolated worktree with the task context injected as the opening prompt; the CLI is how the agent reports back.
 
@@ -93,20 +93,31 @@ just cli     # run the CLI
 just tui     # run the TUI
 ```
 
+### Validation strategy
+
+**TUI-wired changes** (key bindings, effects, rendered output): run `just tui` in a tmux window and
+exercise the feature directly. The TUI is the correct runtime for anything the human interacts
+with. See [ui/tui/README.md](/ui/tui/README.md) for detailed instructions.
+
+**`hub` CLI is not a function runner.** It only exposes the toolkit agents should reach for during
+their sessions — `hub task report`, `hub task comment`, etc. TUI workflow-layer functions (dispatch,
+worktree management, fetch) are never exposed through it and are managed by the TUI instead.
+Validate those via the TUI; do not expect the CLI to be able to use the CLI for that.
+
 ## Docs by Area
 
 ### Conventions and architecture
 
-| Doc                                      | Covers                                                |
-| ---------------------------------------- | ----------------------------------------------------- |
+| Doc                                      | Covers                                                                                                            |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `docs/architecture/task-dispatch.md`     | Task dispatch: state machine, session file signals, component diagram — **read this first** for any dispatch work |
-| `docs/architecture/worktrees.md`         | Two worktree systems (PR investigations vs task dispatch) — read before touching `fetch.rs` or `dispatch.rs` |
-| `docs/architecture/secrets.md`           | 1Password → op read → Secret<String> model            |
-| `docs/architecture/private-workflows.md` | Two-repo model for private workflows                  |
-| `clients/README.md`                      | reqwest pattern for HTTP clients                      |
-| `store/README.md`                        | rusqlite pattern, db path, Connection threading notes |
-| `ui/cli/README.md`                       | clap derive API for CLI commands                      |
-| `ui/tui/README.md`                       | TUI architecture, cache/schema version, keybindings   |
+| `docs/architecture/worktrees.md`         | Two worktree systems (PR investigations vs task dispatch) — read before touching `fetch.rs` or `dispatch.rs`      |
+| `docs/architecture/secrets.md`           | 1Password → op read → Secret<String> model                                                                        |
+| `docs/architecture/private-workflows.md` | Two-repo model for private workflows                                                                              |
+| `clients/README.md`                      | reqwest pattern for HTTP clients                                                                                  |
+| `store/README.md`                        | rusqlite pattern, db path, Connection threading notes                                                             |
+| `ui/cli/README.md`                       | clap derive API for CLI commands                                                                                  |
+| `ui/tui/README.md`                       | TUI architecture, cache/schema version, keybindings                                                               |
 
 ### Playbooks
 
