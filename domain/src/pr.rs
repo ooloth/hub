@@ -52,6 +52,30 @@ pub enum MergeBlocker {
     Blocked,
 }
 
+impl std::str::FromStr for RepoSlug {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.split_once('/') {
+            Some((owner, repo)) if !owner.is_empty() && !repo.is_empty() && !repo.contains('/') => {
+                Ok(Self(s.to_string()))
+            }
+            _ => Err(format!(
+                "invalid repo slug {s:?}: expected \"owner/repo\" with non-empty parts and no extra slashes"
+            )),
+        }
+    }
+}
+
+impl RepoSlug {
+    pub fn repo_name(&self) -> &str {
+        self.0
+            .split_once('/')
+            .map(|(_, repo)| repo)
+            .unwrap_or(&self.0)
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChangedFile {
     pub path: String,
@@ -107,4 +131,37 @@ pub struct PullRequest {
     pub pr_comments: Vec<ReviewComment>,
     #[serde(default)]
     pub merge_blocker: Option<MergeBlocker>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[rstest::rstest]
+    #[case("ooloth/hub", "hub")]
+    #[case("org/my-app", "my-app")]
+    #[case("a/b", "b")]
+    fn repo_name_returns_last_segment(#[case] slug: &str, #[case] expected: &str) {
+        let s: RepoSlug = slug.parse().unwrap();
+        assert_eq!(s.repo_name(), expected);
+    }
+
+    #[test]
+    fn from_str_roundtrips_valid_slug() {
+        let s: RepoSlug = "ooloth/hub".parse().unwrap();
+        assert_eq!(s.to_string(), "ooloth/hub");
+    }
+
+    #[rstest::rstest]
+    #[case("hub", "no slash")]
+    #[case("/hub", "empty owner")]
+    #[case("ooloth/", "empty repo")]
+    #[case("", "empty string")]
+    #[case("a/b/c", "extra slash")]
+    fn from_str_rejects_invalid_slugs(#[case] input: &str, #[case] _reason: &str) {
+        assert!(
+            input.parse::<RepoSlug>().is_err(),
+            "expected error for {input:?}"
+        );
+    }
 }

@@ -17,6 +17,7 @@
 //! removed after 72 hours in a terminal state with no unpushed commits.
 
 use anyhow::{Context, Result};
+use domain::RepoSlug;
 use std::{path::Path, path::PathBuf};
 use tokio::process::Command;
 
@@ -57,8 +58,14 @@ pub async fn run(projects: &[(String, String)]) -> Result<()> {
     Ok(())
 }
 
+fn bare_clone_path(repos_dir: &Path, repo: &str) -> Result<PathBuf> {
+    let slug: RepoSlug = repo.parse().map_err(|e: String| anyhow::anyhow!("{e}"))?;
+    Ok(repos_dir.join(slug.repo_name()))
+}
+
 async fn fetch_project(name: &str, repo: &str, repos_dir: &Path) -> Result<()> {
-    let dir = repos_dir.join(name);
+    let dir = bare_clone_path(repos_dir, repo)
+        .with_context(|| format!("invalid repo for project {name:?}"))?;
     let dir_str = dir.to_string_lossy().into_owned();
 
     if dir.exists() {
@@ -409,6 +416,25 @@ fn parse_worktree_list(output: &str) -> Vec<(String, Option<String>)> {
 mod tests {
     use super::*;
     use crate::git::test_helpers::{git_rev_parse, push_commit, run_git, setup_origin_and_bare};
+
+    #[test]
+    fn bare_clone_path_uses_repo_name_not_project_nickname() {
+        let repos = PathBuf::from("/tmp/repos");
+        assert_eq!(
+            bare_clone_path(&repos, "ooloth/hub").unwrap(),
+            repos.join("hub")
+        );
+        assert_eq!(
+            bare_clone_path(&repos, "org/legacy-name").unwrap(),
+            repos.join("legacy-name")
+        );
+    }
+
+    #[test]
+    fn bare_clone_path_rejects_invalid_slug() {
+        let repos = PathBuf::from("/tmp/repos");
+        assert!(bare_clone_path(&repos, "not-a-slug").is_err());
+    }
 
     #[tokio::test]
     async fn ensure_pr_worktree_reentry_fetches_remote_tracking_refs() {
