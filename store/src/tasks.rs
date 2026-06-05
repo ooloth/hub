@@ -48,7 +48,7 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
 }
 
 /// Drops and recreates the tasks tables when the old multi-column link schema
-/// (issue_links / pr_links / doc_links) or the old 'implement' kind is detected.
+/// (issue_links / pr_links / doc_links) or the old 'general' kind variant is detected.
 /// All data is test data — drop and regenerate is safe.
 /// Idempotent: no-op when the new schema is already in place.
 fn migrate_consolidate_links_and_kind(conn: &Connection) -> Result<()> {
@@ -63,7 +63,7 @@ fn migrate_consolidate_links_and_kind(conn: &Connection) -> Result<()> {
 
     let needs_migration = match &schema {
         None => false,
-        Some(s) => s.contains("issue_links") || s.contains("'implement'"),
+        Some(s) => s.contains("issue_links") || s.contains("'general'"),
     };
 
     if !needs_migration {
@@ -445,6 +445,20 @@ mod tests {
             .collect();
         assert!(column_names.contains(&"links".to_string()));
         assert!(!column_names.contains(&"issue_links".to_string()));
+    }
+
+    #[test]
+    fn ensure_table_is_idempotent_and_does_not_drop_existing_tasks() {
+        let conn = Connection::open_in_memory().unwrap();
+        ensure_table(&conn).unwrap();
+        create(&conn, "Persistent task", TaskKind::Implement, None, &[]).unwrap();
+        ensure_table(&conn).unwrap();
+        let tasks = list_visible(&conn).unwrap();
+        assert_eq!(
+            tasks.len(),
+            1,
+            "ensure_table must not drop tasks on second call"
+        );
     }
 
     #[test]
