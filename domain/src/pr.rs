@@ -63,7 +63,7 @@ pub struct ChangedFile {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ReviewComment {
     pub author: String,
-    #[serde(with = "crate::duration_secs")]
+    #[serde(with = "crate::serde_helpers::duration_secs")]
     pub age: Duration,
     pub body: String,
 }
@@ -81,9 +81,9 @@ pub struct PullRequest {
     pub title: String,
     pub repo: RepoSlug,
     pub url: String,
-    #[serde(with = "crate::duration_secs")]
+    #[serde(with = "crate::serde_helpers::duration_secs")]
     pub age: Duration,
-    pub urgency: crate::signal::Urgency,
+    pub urgency: crate::urgency::Urgency,
     pub kind: PrKind,
     pub author: String,
     pub review_decision: Option<ReviewDecision>,

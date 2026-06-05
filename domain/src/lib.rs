@@ -1,34 +1,26 @@
-pub mod duration_secs {
-    use chrono::Duration;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    pub fn serialize<S>(d: &Duration, s: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        d.num_seconds().serialize(s)
-    }
-
-    pub fn deserialize<'de, D>(d: D) -> Result<Duration, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let secs = i64::deserialize(d)?;
-        Ok(Duration::seconds(secs))
-    }
-}
-
+pub mod ci;
+pub mod gcp;
 pub mod issue;
+pub mod loki;
 pub mod pr;
+pub mod serde_helpers;
 pub mod session;
-pub mod signal;
 pub mod task;
+pub mod urgency;
 
+// Re-export duration_secs at the crate root so existing
+// #[serde(with = "crate::duration_secs")] attributes in non-domain
+// crates continue to resolve (e.g. in any future cross-crate users).
+pub use serde_helpers::duration_secs;
+
+pub use ci::*;
+pub use gcp::*;
 pub use issue::*;
+pub use loki::*;
 pub use pr::*;
 pub use session::*;
-pub use signal::*;
 pub use task::*;
+pub use urgency::*;
 
 #[cfg(test)]
 mod tests {

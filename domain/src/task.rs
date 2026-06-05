@@ -1,7 +1,7 @@
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
 
-use crate::signal::Urgency;
+use crate::urgency::Urgency;
 
 /// A task managed by hub's agent dispatch system, e.g. "TASK-0001".
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -200,7 +200,7 @@ pub struct Task {
     pub created_at: String,
     #[serde(default)]
     pub updated_at: String,
-    #[serde(with = "crate::duration_secs")]
+    #[serde(with = "crate::serde_helpers::duration_secs")]
     pub age: Duration,
     pub urgency: Urgency,
     #[serde(default)]

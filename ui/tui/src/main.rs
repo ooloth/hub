@@ -81,11 +81,11 @@ impl Drop for TerminalSession {
 #[tokio::main]
 async fn main() -> Result<()> {
     let config = config::Config::load().await?;
-    let conn = store::status::connect()?;
-    store::status::ensure_table(&conn)?;
+    let conn = store::status_cache::connect()?;
+    store::status_cache::ensure_table(&conn)?;
 
     let (initial_items, initial_updated, start_refresh) =
-        match store::status::read(&conn).context("failed to read status cache")? {
+        match store::status_cache::read(&conn).context("failed to read status cache")? {
             Some(cached)
                 if cached.schema_version == SCHEMA_VERSION
                     && (Utc::now() - cached.refreshed_at) < refresh_interval_chrono() =>
@@ -263,7 +263,7 @@ async fn run_loop(
                 }
             }
             _ = refresh_interval.tick() => {
-                let cached = store::status::read_if_fresh(conn, refresh_interval_chrono())
+                let cached = store::status_cache::read_if_fresh(conn, refresh_interval_chrono())
                     .context("failed to read status cache on tick")?;
                 match cached {
                     Some(cached) if cached.schema_version == SCHEMA_VERSION => {
@@ -561,7 +561,7 @@ async fn run_loop(
                     request_refresh(app, config, tx, true, None);
                 }
                 Effect::WriteCache(json) => {
-                    store::status::upsert(conn, &json, SCHEMA_VERSION)
+                    store::status_cache::upsert(conn, &json, SCHEMA_VERSION)
                         .context("failed to upsert status cache")?;
                 }
             }

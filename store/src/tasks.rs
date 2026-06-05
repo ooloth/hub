@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
-use domain::{CommentAuthor, Task, TaskComment, TaskId, TaskKind, TaskStatus};
+use domain::{Task, TaskId, TaskKind, TaskStatus};
 use rusqlite::{params, Connection, OptionalExtension};
 
 pub fn ensure_table(conn: &Connection) -> Result<()> {
@@ -18,16 +18,10 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
             links       TEXT,
             created_at  TEXT NOT NULL,
             updated_at  TEXT
-        );
-        CREATE TABLE IF NOT EXISTS task_comments (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            task_id    INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-            author     TEXT    NOT NULL CHECK(author IN ('human', 'agent')),
-            content    TEXT    NOT NULL,
-            created_at TEXT    NOT NULL
         );",
     )
     .context("failed to ensure tasks schema")?;
+    crate::task_comments::ensure_table(conn)?;
     for (col, def) in &[
         ("description", "TEXT"),
         ("updated_at", "TEXT"),
@@ -201,7 +195,7 @@ pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
                     .with_context(|| format!("invalid created_at for task {id}: {created_at_str}"))?
                     .with_timezone(&Utc);
                 let age = now - created_at;
-                let comments = get_comments(conn, id)?;
+                let comments = crate::task_comments::for_task(conn, id)?;
                 Ok(Task {
                     id: task_id,
                     title,
@@ -269,7 +263,7 @@ pub fn get(conn: &Connection, id: &TaskId) -> Result<Task> {
         .with_timezone(&Utc);
     let age = Utc::now() - created_at_dt;
 
-    let comments = get_comments(conn, row_id)?;
+    let comments = crate::task_comments::for_task(conn, row_id)?;
 
     Ok(Task {
         id: id.clone(),
@@ -303,77 +297,6 @@ pub fn update_status(conn: &Connection, id: &TaskId, status: TaskStatus) -> Resu
     Ok(())
 }
 
-/// Appends a comment to a task and refreshes the task's `updated_at`.
-pub fn add_comment(
-    conn: &Connection,
-    id: &TaskId,
-    author: CommentAuthor,
-    content: &str,
-) -> Result<()> {
-    let row_id = task_row_id(id)?;
-    let exists: bool = conn
-        .query_row(
-            "SELECT COUNT(*) FROM tasks WHERE id = ?1",
-            params![row_id],
-            |r| r.get::<_, i64>(0),
-        )
-        .context("failed to check task exists")?
-        > 0;
-    if !exists {
-        anyhow::bail!("task {id} not found");
-    }
-    let now = Utc::now().to_rfc3339();
-    conn.execute(
-        "INSERT INTO task_comments (task_id, author, content, created_at)
-         VALUES (?1, ?2, ?3, ?4)",
-        params![row_id, author.to_string(), content, now],
-    )
-    .context("failed to insert task comment")?;
-    conn.execute(
-        "UPDATE tasks SET updated_at = ?1 WHERE id = ?2",
-        params![now, row_id],
-    )
-    .context("failed to refresh task updated_at")?;
-    Ok(())
-}
-
-fn get_comments(conn: &Connection, task_row_id: i64) -> Result<Vec<TaskComment>> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, author, content, created_at
-             FROM task_comments
-             WHERE task_id = ?1
-             ORDER BY created_at ASC",
-        )
-        .context("failed to prepare comments query")?;
-    let rows: Vec<(i64, String, String, String)> = stmt
-        .query_map(params![task_row_id], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-            ))
-        })
-        .context("failed to query comments")?
-        .map(|r| r.context("failed to read comment row"))
-        .collect::<Result<_>>()?;
-    rows.into_iter()
-        .map(|(id, author_str, content, created_at)| {
-            let author: CommentAuthor = author_str
-                .parse()
-                .map_err(|e: String| anyhow::anyhow!(e))
-                .with_context(|| format!("invalid author in comment {id}"))?;
-            Ok(TaskComment {
-                id,
-                author,
-                content,
-                created_at,
-            })
-        })
-        .collect()
-}
-
 fn links_to_db(links: &[String]) -> Option<String> {
     if links.is_empty() {
         None
@@ -390,7 +313,7 @@ fn links_from_db(val: Option<String>) -> Vec<String> {
     }
 }
 
-fn task_row_id(id: &TaskId) -> Result<i64> {
+pub(crate) fn task_row_id(id: &TaskId) -> Result<i64> {
     let s = id.to_string();
     s[5..]
         .parse::<i64>()
@@ -601,7 +524,8 @@ mod tests {
     fn list_visible_populates_comments_from_db() {
         let conn = in_memory();
         let id = create(&conn, "Fix auth bug", TaskKind::Implement, None, &[]).unwrap();
-        add_comment(&conn, &id, domain::CommentAuthor::Agent, "Found the issue").unwrap();
+        crate::task_comments::add(&conn, &id, domain::CommentAuthor::Agent, "Found the issue")
+            .unwrap();
         let tasks = list_visible(&conn).unwrap();
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].comments.len(), 1);
@@ -701,14 +625,15 @@ mod tests {
     fn add_comment_appends_in_chronological_order() {
         let conn = in_memory();
         let id = create(&conn, "Task", TaskKind::Implement, None, &[]).unwrap();
-        add_comment(
+        crate::task_comments::add(
             &conn,
             &id,
             domain::CommentAuthor::Agent,
             "Starting investigation",
         )
         .unwrap();
-        add_comment(&conn, &id, domain::CommentAuthor::Agent, "Found the issue").unwrap();
+        crate::task_comments::add(&conn, &id, domain::CommentAuthor::Agent, "Found the issue")
+            .unwrap();
         let task = get(&conn, &id).unwrap();
         assert_eq!(task.comments.len(), 2);
         assert_eq!(task.comments[0].content, "Starting investigation");
@@ -720,7 +645,8 @@ mod tests {
         let conn = in_memory();
         let id = create(&conn, "Task", TaskKind::Implement, None, &[]).unwrap();
         let before = get(&conn, &id).unwrap();
-        add_comment(&conn, &id, domain::CommentAuthor::Agent, "Progress note").unwrap();
+        crate::task_comments::add(&conn, &id, domain::CommentAuthor::Agent, "Progress note")
+            .unwrap();
         let after = get(&conn, &id).unwrap();
         assert!(after.updated_at >= before.updated_at);
     }
@@ -729,6 +655,8 @@ mod tests {
     fn add_comment_errors_on_nonexistent_task() {
         let conn = in_memory();
         let id: TaskId = "TASK-9999".parse().unwrap();
-        assert!(add_comment(&conn, &id, domain::CommentAuthor::Agent, "note").is_err());
+        assert!(
+            crate::task_comments::add(&conn, &id, domain::CommentAuthor::Agent, "note").is_err()
+        );
     }
 }

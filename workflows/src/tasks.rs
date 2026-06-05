@@ -8,42 +8,42 @@ pub fn create(
     description: Option<&str>,
     links: &[String],
 ) -> Result<TaskId> {
-    let conn = store::status::connect()?;
+    let conn = store::status_cache::connect()?;
     store::tasks::ensure_table(&conn)?;
     store::tasks::create(&conn, title, kind, description, links)
 }
 
 /// Returns the full task including all fields and its comment thread.
 pub fn get(id: &TaskId) -> Result<Task> {
-    let conn = store::status::connect()?;
+    let conn = store::status_cache::connect()?;
     store::tasks::ensure_table(&conn)?;
     store::tasks::get(&conn, id)
 }
 
 /// Updates the status of a task and refreshes `updated_at`.
 pub fn update_status(id: &TaskId, status: TaskStatus) -> Result<()> {
-    let conn = store::status::connect()?;
+    let conn = store::status_cache::connect()?;
     store::tasks::ensure_table(&conn)?;
     store::tasks::update_status(&conn, id, status)
 }
 
 /// Appends a comment to a task and refreshes the task's `updated_at`.
 pub fn add_comment(id: &TaskId, author: CommentAuthor, content: &str) -> Result<()> {
-    let conn = store::status::connect()?;
+    let conn = store::status_cache::connect()?;
     store::tasks::ensure_table(&conn)?;
-    store::tasks::add_comment(&conn, id, author, content)
+    store::task_comments::add(&conn, id, author, content)
 }
 
 /// Transitions a task from `backlog` to `ready`.
 pub fn set_ready(id: &TaskId) -> Result<()> {
-    let conn = store::status::connect()?;
+    let conn = store::status_cache::connect()?;
     store::tasks::ensure_table(&conn)?;
     store::tasks::set_ready(&conn, id)
 }
 
 /// Returns all tasks that appear in the TUI unified list (in-progress, blocked, review).
 pub fn list_visible() -> Result<Vec<Task>> {
-    let conn = store::status::connect()?;
+    let conn = store::status_cache::connect()?;
     store::tasks::ensure_table(&conn)?;
     store::tasks::list_visible(&conn)
 }

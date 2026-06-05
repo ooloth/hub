@@ -2,7 +2,7 @@ use chrono::Duration;
 use serde::{Deserialize, Serialize};
 
 use crate::pr::RepoSlug;
-use crate::signal::Urgency;
+use crate::urgency::Urgency;
 
 pub const NEEDS_HUMAN_REVIEW_LABEL: &str = "status:needs-human-review";
 pub const READY_FOR_AGENT_LABEL: &str = "status:ready-for-agent";
@@ -45,7 +45,7 @@ pub struct Issue {
     pub repo: RepoSlug,
     pub url: String,
     pub author: String,
-    #[serde(with = "crate::duration_secs")]
+    #[serde(with = "crate::serde_helpers::duration_secs")]
     pub age: Duration,
     pub urgency: Urgency,
     pub labels: Vec<String>,
@@ -59,7 +59,7 @@ pub struct LinearIssue {
     pub title: String,
     pub url: String,
     pub state: String,
-    #[serde(with = "crate::duration_secs")]
+    #[serde(with = "crate::serde_helpers::duration_secs")]
     pub age: Duration,
     pub urgency: Urgency,
 }
