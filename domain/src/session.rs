@@ -18,9 +18,13 @@ pub enum StreamBlock {
 }
 
 /// Encodes an absolute path into the Claude project path segment used in session file paths.
-/// Replaces every `/` with `-`, including the leading one.
+///
+/// Claude Code replaces both `/` and `.` with `-`, so `/Users/me/.hub/x` becomes
+/// `-Users-me--hub-x`. Matching this exactly matters for dispatched tasks, whose
+/// worktrees live under `~/.hub/workspaces/` (a dotted path); without the dot
+/// replacement the session JSONL is never found. Hyphens are preserved.
 pub fn encode_project_path(cwd: &str) -> String {
-    cwd.replace('/', "-")
+    cwd.replace(['/', '.'], "-")
 }
 
 /// Parses a Claude Code session JSONL file into a sequence of stream blocks.
@@ -127,6 +131,30 @@ fn format_tool_input(name: &str, input: &serde_json::Value) -> String {
                 s
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::encode_project_path;
+
+    #[test]
+    fn encode_project_path_replaces_slashes_and_dots() {
+        // Must match the directory Claude Code creates for a task worktree under
+        // ~/.hub, e.g. ~/.claude/projects/-Users-michael--hub-workspaces-TASK-0010-hub/
+        // The dot in ".hub" is replaced, so it becomes "--hub".
+        assert_eq!(
+            encode_project_path("/Users/michael/.hub/workspaces/TASK-0010/hub"),
+            "-Users-michael--hub-workspaces-TASK-0010-hub"
+        );
+    }
+
+    #[test]
+    fn encode_project_path_preserves_hyphens() {
+        assert_eq!(
+            encode_project_path("/Users/michael/Repos/ooloth/hub-private"),
+            "-Users-michael-Repos-ooloth-hub-private"
+        );
     }
 }
 

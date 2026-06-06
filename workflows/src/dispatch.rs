@@ -117,6 +117,25 @@ pub fn workspaces_dir() -> PathBuf {
     PathBuf::from(home).join(".hub").join("workspaces")
 }
 
+/// Returns the directory a dispatched task's agent session runs in — the `cwd`
+/// passed to `claude`, and therefore the directory under which Claude writes its
+/// session JSONL (`~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`).
+///
+/// For a task with a repo this is the project worktree
+/// `~/.hub/workspaces/<task_id>/<repo_name>/`; for a repo-less task it is the
+/// task workspace root `~/.hub/workspaces/<task_id>/`.
+///
+/// Pure: derives the path without touching the filesystem. Both dispatch (which
+/// creates the directory) and the TUI session poll (which reads the stream from
+/// it) call this so they agree on where the session lives.
+pub fn task_workspace_path(task: &Task) -> PathBuf {
+    let base = workspaces_dir().join(task.id.to_string());
+    match &task.repo {
+        Some(slug) => base.join(slug.repo_name()),
+        None => base,
+    }
+}
+
 /// Creates or reuses the persistent workspace for a task.
 ///
 /// On first call: creates `~/.hub/workspaces/<task_id>/<project>/` as a linked
@@ -344,7 +363,7 @@ async fn dispatch_inner(conn: &Connection, repos_dir: &Path, claude_json: &Path)
         let bare = repos_dir.join(slug.repo_name());
         ensure_task_worktree(&bare, &task.id, slug.repo_name()).await?
     } else {
-        let dir = workspaces_dir().join(task.id.to_string());
+        let dir = task_workspace_path(&task);
         tokio::fs::create_dir_all(&dir)
             .await
             .with_context(|| format!("failed to create workspace dir for {}", task.id))?;
@@ -579,6 +598,29 @@ mod tests {
         let result = cleanup_candidates(&tasks, now);
         let ids: Vec<String> = result.iter().map(|id| id.to_string()).collect();
         assert_eq!(ids, vec!["TASK-0001", "TASK-0004"]);
+    }
+
+    // ── task_workspace_path (pure unit tests) ────────────────────────────────
+
+    #[test]
+    fn task_workspace_path_uses_project_subdir_for_repo_task() {
+        let mut task = make_task("TASK-0001", TaskStatus::InProgress, Utc::now());
+        task.repo = Some(domain::RepoSlug::new("ooloth", "hub"));
+        assert_eq!(
+            task_workspace_path(&task),
+            workspaces_dir().join("TASK-0001").join("hub"),
+            "repo task runs in the project subdir of its workspace"
+        );
+    }
+
+    #[test]
+    fn task_workspace_path_uses_task_root_for_repoless_task() {
+        let task = make_task("TASK-0002", TaskStatus::InProgress, Utc::now());
+        assert_eq!(
+            task_workspace_path(&task),
+            workspaces_dir().join("TASK-0002"),
+            "repo-less task runs in its workspace root"
+        );
     }
 
     // ── ensure_task_worktree (integration) ───────────────────────────────────

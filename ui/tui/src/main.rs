@@ -301,9 +301,11 @@ async fn run_loop(
                                 app.data.stream_blocks.clear();
                                 app.data.stream_session_id = Some(session_id.clone());
                             }
-                            let cwd = std::env::current_dir()
-                                .map(|p| p.to_string_lossy().to_string())
-                                .unwrap_or_default();
+                            // The session JSONL lives under the task's worktree, the
+                            // cwd Claude was launched in — not the TUI's cwd.
+                            let cwd = workflows::dispatch::task_workspace_path(task)
+                                .to_string_lossy()
+                                .to_string();
                             let sid = session_id.clone();
                             let stx = stream_tx.clone();
                             tokio::spawn(async move {
