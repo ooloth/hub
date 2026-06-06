@@ -20,7 +20,10 @@
   crossterm = { version = "0.28", features = ["event-stream"] }
   domain = { path = "../../domain" }
   futures = "0.3"
-  itertools = "0.14"
+  # Pinned to 0.13 to unify with ratatui 0.29, which also depends on itertools 0.13.
+  # cargo-deny's bans check rejects duplicate versions; only with_position()/Position
+  # are used here, an API present in both 0.13 and 0.14. Bump in lockstep with ratatui.
+  itertools = "0.13"
   open = "5"
   pulldown-cmark = { version = "0.13", default-features = false }
   # Pinned to 0.29 to unify with tui-textarea 0.7, which also depends on 0.29.

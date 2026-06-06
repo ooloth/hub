@@ -4,13 +4,13 @@
   # These are cross-major-version splits not controllable without upstream changes.
   skip = [
     { name = "core-foundation" },
-    { name = "crossterm" },
     { name = "getrandom" },
     { name = "hashbrown" },
     { name = "linux-raw-sys" },
     { name = "rustix" },
     { name = "thiserror" },
     { name = "thiserror-impl" },
+    { name = "unicode-width" },
     { name = "windows-sys" },
     { name = "windows-targets" },
     { name = "windows_aarch64_gnullvm" },
