@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use domain::{PrKind, PullRequest, ReviewDecision, TaskId, TaskStatus};
+use domain::{PrKind, PullRequest, RepoSlug, ReviewDecision, TaskId, TaskStatus};
 use workflows::status::{StatusItem, StatusReport};
 
 use crate::display::{Category, DisplayItem, Filter, FlatRow, GroupKey, ListSnapshot};
@@ -313,6 +313,7 @@ pub(crate) enum Effect {
         description: Option<String>,
         kind: domain::TaskKind,
         links: Vec<String>,
+        repo: Option<RepoSlug>,
     },
 }
 

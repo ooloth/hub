@@ -11,12 +11,13 @@ pub(crate) fn render_task_creation_modal(
     frame: &mut ratatui::Frame,
     modal: &mut TaskCreationModal,
 ) {
-    let popup = popup_area(frame.area(), 15, 62);
+    let popup = popup_area(frame.area(), 18, 62);
     frame.render_widget(Clear, popup);
 
-    let [title_area, desc_area, kind_area, link_area, submit_area] = Layout::vertical([
+    let [title_area, desc_area, kind_area, repo_area, link_area, submit_area] = Layout::vertical([
         Constraint::Length(3),
         Constraint::Length(5),
+        Constraint::Length(3),
         Constraint::Length(3),
         Constraint::Length(3),
         Constraint::Length(3),
@@ -78,6 +79,27 @@ pub(crate) fn render_task_creation_modal(
                 .border_style(border_style(TaskFormField::Kind)),
         ),
         kind_area,
+    );
+
+    let repo_display = modal
+        .repo
+        .selected_value()
+        .map(|r| r.to_string())
+        .unwrap_or_else(|| "(none)".to_string());
+    let repo_title = if focused == TaskFormField::Repo && !modal.repo.input().is_empty() {
+        format!(" Repo  {} ↑↓ ", modal.repo.input())
+    } else {
+        " Repo  [↑↓] type to filter ".to_string()
+    };
+    frame.render_widget(
+        Paragraph::new(repo_display).block(
+            Block::new()
+                .title(repo_title)
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(border_style(TaskFormField::Repo)),
+        ),
+        repo_area,
     );
 
     apply_cursor(&mut modal.link, TaskFormField::Link);

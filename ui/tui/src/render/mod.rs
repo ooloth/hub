@@ -1284,9 +1284,10 @@ mod tests {
         use crate::state::{task_creation, TaskCreationModal};
         App {
             ui: UiState {
-                modal: Some(TaskCreationModal::with_seed(task_creation::seed_from_item(
-                    &item,
-                ))),
+                modal: Some(TaskCreationModal::with_seed(
+                    task_creation::seed_from_item(&item),
+                    vec![],
+                )),
                 ..UiState::default()
             },
             ..App::default()

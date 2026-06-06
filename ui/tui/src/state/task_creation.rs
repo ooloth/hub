@@ -1,6 +1,95 @@
-use domain::TaskKind;
+use domain::{RepoSlug, TaskKind};
 use tui_textarea::TextArea;
 use workflows::status::StatusItem;
+
+/// Fuzzy repo picker: type to filter, Up/Down to select.
+#[derive(Debug)]
+pub(crate) struct RepoPicker {
+    input: String,
+    options: Vec<RepoSlug>,
+    filtered: Vec<usize>,
+    cursor: usize,
+}
+
+impl RepoPicker {
+    pub(crate) fn new(options: Vec<RepoSlug>, preselect: Option<&RepoSlug>) -> Self {
+        let input = preselect
+            .map(|r| r.repo_name().to_string())
+            .unwrap_or_default();
+        let mut picker = Self {
+            input,
+            options,
+            filtered: vec![],
+            cursor: 0,
+        };
+        picker.refilter();
+        if let Some(pre) = preselect {
+            let target = pre.to_string();
+            if let Some(pos) = picker
+                .filtered
+                .iter()
+                .position(|&i| picker.options[i].to_string() == target)
+            {
+                picker.cursor = pos;
+            }
+        }
+        picker
+    }
+
+    pub(crate) fn type_char(&mut self, c: char) {
+        self.input.push(c);
+        self.refilter();
+    }
+
+    pub(crate) fn backspace(&mut self) {
+        self.input.pop();
+        self.refilter();
+    }
+
+    fn refilter(&mut self) {
+        let q = self.input.to_lowercase();
+        self.filtered = self
+            .options
+            .iter()
+            .enumerate()
+            .filter(|(_, o)| q.is_empty() || o.to_string().to_lowercase().contains(&q))
+            .map(|(i, _)| i)
+            .collect();
+        if self.cursor >= self.filtered.len() {
+            self.cursor = self.filtered.len().saturating_sub(1);
+        }
+    }
+
+    pub(crate) fn move_down(&mut self) {
+        if !self.filtered.is_empty() {
+            self.cursor = (self.cursor + 1).min(self.filtered.len() - 1);
+        }
+    }
+
+    pub(crate) fn move_up(&mut self) {
+        self.cursor = self.cursor.saturating_sub(1);
+    }
+
+    pub(crate) fn selected_value(&self) -> Option<&RepoSlug> {
+        self.filtered
+            .get(self.cursor)
+            .and_then(|&i| self.options.get(i))
+    }
+
+    pub(crate) fn input(&self) -> &str {
+        &self.input
+    }
+
+    #[cfg(test)]
+    pub(crate) fn filtered_slugs(&self) -> impl Iterator<Item = &RepoSlug> {
+        self.filtered.iter().filter_map(|&i| self.options.get(i))
+    }
+
+    #[cfg(test)]
+    pub(crate) fn cursor(&self) -> usize {
+        self.cursor
+    }
+}
 
 /// Proof that a task title is non-empty and trimmed.
 /// Only constructable via `TaskTitle::parse()`.
@@ -28,6 +117,7 @@ pub(crate) struct TaskCreationRequest {
     pub(crate) description: Option<String>,
     pub(crate) kind: TaskKind,
     pub(crate) links: Vec<String>,
+    pub(crate) repo: Option<RepoSlug>,
 }
 
 /// Pre-population seed for the creation form.
@@ -36,6 +126,7 @@ pub(crate) struct TaskCreationSeed {
     pub(crate) description: Option<String>,
     pub(crate) kind: Option<TaskKind>,
     pub(crate) link: Option<String>,
+    pub(crate) repo: Option<RepoSlug>,
 }
 
 /// Which field currently has focus in the creation modal.
@@ -44,6 +135,7 @@ pub(crate) enum TaskFormField {
     Title,
     Description,
     Kind,
+    Repo,
     Link,
     Submit,
 }
@@ -53,7 +145,8 @@ impl TaskFormField {
         match self {
             Self::Title => Self::Description,
             Self::Description => Self::Kind,
-            Self::Kind => Self::Link,
+            Self::Kind => Self::Repo,
+            Self::Repo => Self::Link,
             Self::Link => Self::Submit,
             Self::Submit => Self::Title,
         }
@@ -64,7 +157,8 @@ impl TaskFormField {
             Self::Title => Self::Submit,
             Self::Description => Self::Title,
             Self::Kind => Self::Description,
-            Self::Link => Self::Kind,
+            Self::Repo => Self::Kind,
+            Self::Link => Self::Repo,
             Self::Submit => Self::Link,
         }
     }
@@ -77,20 +171,25 @@ pub(crate) struct TaskCreationModal {
     pub(crate) title: TextArea<'static>,
     pub(crate) description: TextArea<'static>,
     pub(crate) kind: TaskKind,
+    pub(crate) repo: RepoPicker,
     pub(crate) link: TextArea<'static>,
 }
 
 impl TaskCreationModal {
     #[cfg(test)]
     pub(crate) fn blank() -> Self {
-        Self::with_seed(None)
+        Self::with_seed(None, vec![])
     }
 
-    pub(crate) fn with_seed(seed: Option<TaskCreationSeed>) -> Self {
+    pub(crate) fn with_seed(
+        seed: Option<TaskCreationSeed>,
+        available_repos: Vec<RepoSlug>,
+    ) -> Self {
         let mut title_ta = TextArea::default();
         let mut desc_ta = TextArea::default();
         let mut link_ta = TextArea::default();
         let mut kind = TaskKind::Implement;
+        let mut seed_repo: Option<RepoSlug> = None;
         if let Some(s) = seed {
             if let Some(t) = s.title {
                 title_ta = TextArea::new(vec![t]);
@@ -104,12 +203,14 @@ impl TaskCreationModal {
             if let Some(l) = s.link {
                 link_ta = TextArea::new(vec![l]);
             }
+            seed_repo = s.repo;
         }
         Self {
             focused_field: TaskFormField::Title,
             title: title_ta,
             description: desc_ta,
             kind,
+            repo: RepoPicker::new(available_repos, seed_repo.as_ref()),
             link: link_ta,
         }
     }
@@ -141,6 +242,7 @@ impl TaskCreationModal {
             description,
             kind: self.kind,
             links,
+            repo: self.repo.selected_value().cloned(),
         })
     }
 }
@@ -166,6 +268,7 @@ pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
                 )),
                 kind: Some(TaskKind::Review),
                 link: Some(pr.url.clone()),
+                repo: Some(pr.repo.clone()),
             })
         }
         StatusItem::Issue(issue) => Some(TaskCreationSeed {
@@ -176,12 +279,14 @@ pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
             )),
             kind: Some(TaskKind::Implement),
             link: Some(issue.url.clone()),
+            repo: Some(issue.repo.clone()),
         }),
         StatusItem::Linear(l) => Some(TaskCreationSeed {
             title: Some(l.title.clone()),
             description: Some(format!("Linear {} · {}", l.identifier, l.state)),
             kind: Some(TaskKind::Implement),
             link: Some(l.url.clone()),
+            repo: None,
         }),
         StatusItem::Ci(ci) => {
             let title = match (&ci.job_name, &ci.step_name) {
@@ -203,6 +308,7 @@ pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
                 description: Some(desc),
                 kind: Some(TaskKind::Debug),
                 link: Some(ci.url.clone()),
+                repo: Some(ci.repo.clone()),
             })
         }
         StatusItem::Loki(l) => Some(TaskCreationSeed {
@@ -213,6 +319,7 @@ pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
             )),
             kind: Some(TaskKind::Debug),
             link: (!l.url.is_empty()).then(|| l.url.clone()),
+            repo: None,
         }),
         StatusItem::Gcp(g) => Some(TaskCreationSeed {
             title: Some(format!("{}:{} — {}", g.project, g.env, g.title)),
@@ -222,6 +329,7 @@ pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
             )),
             kind: Some(TaskKind::Debug),
             link: (!g.url.is_empty()).then(|| g.url.clone()),
+            repo: None,
         }),
         // Task rows open a blank form (no pre-population).
         StatusItem::AgentSession(_) => None,
@@ -231,6 +339,7 @@ pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
             description: Some(format!("Import blocked · {}\nerror: {}", b.source, b.error)),
             kind: Some(TaskKind::Debug),
             link: Some(b.url.clone()),
+            repo: None,
         }),
         #[cfg(feature = "private")]
         StatusItem::MediaMissing(m) => Some(TaskCreationSeed {
@@ -238,6 +347,7 @@ pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
             description: Some(format!("Missing · {}\naired: {}", m.source, m.air_date)),
             kind: Some(TaskKind::Debug),
             link: Some(m.url.clone()),
+            repo: None,
         }),
         #[cfg(feature = "private")]
         StatusItem::MediaHealth(h) => Some(TaskCreationSeed {
@@ -245,6 +355,7 @@ pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
             description: Some(format!("Health · {}", h.source)),
             kind: Some(TaskKind::Debug),
             link: (!h.url.is_empty()).then(|| h.url.clone()),
+            repo: None,
         }),
         // Backlog rows carry no actionable identity — blank form.
         #[cfg(feature = "private")]
@@ -291,10 +402,11 @@ mod tests {
     // ── TaskFormField cycling ────────────────────────────────────────────────
 
     #[test]
-    fn tab_advances_through_all_five_fields_and_wraps() {
+    fn tab_advances_through_all_six_fields_and_wraps() {
         let sequence = [
             TaskFormField::Description,
             TaskFormField::Kind,
+            TaskFormField::Repo,
             TaskFormField::Link,
             TaskFormField::Submit,
             TaskFormField::Title,
@@ -307,10 +419,11 @@ mod tests {
     }
 
     #[test]
-    fn shift_tab_retreats_through_all_five_fields_and_wraps() {
+    fn shift_tab_retreats_through_all_six_fields_and_wraps() {
         let sequence = [
             TaskFormField::Submit,
             TaskFormField::Link,
+            TaskFormField::Repo,
             TaskFormField::Kind,
             TaskFormField::Description,
             TaskFormField::Title,
@@ -320,6 +433,75 @@ mod tests {
             field = field.prev();
             assert_eq!(field, expected);
         }
+    }
+
+    // ── RepoPicker ───────────────────────────────────────────────────────────
+
+    fn slugs(ss: &[&str]) -> Vec<RepoSlug> {
+        ss.iter().map(|s| s.parse().unwrap()).collect()
+    }
+
+    #[test]
+    fn repo_picker_shows_all_when_input_empty() {
+        let picker = RepoPicker::new(slugs(&["ooloth/hub", "org/other"]), None);
+        assert_eq!(picker.filtered_slugs().count(), 2);
+    }
+
+    #[test]
+    fn repo_picker_filters_by_substring() {
+        let picker = RepoPicker::new(slugs(&["ooloth/hub", "org/other"]), None);
+        let mut p = picker;
+        p.type_char('h');
+        p.type_char('u');
+        p.type_char('b');
+        assert_eq!(p.filtered_slugs().count(), 1);
+        assert_eq!(p.selected_value().unwrap().to_string(), "ooloth/hub");
+    }
+
+    #[test]
+    fn repo_picker_backspace_restores_filter() {
+        let mut p = RepoPicker::new(slugs(&["ooloth/hub", "org/other"]), None);
+        p.type_char('u'); // 'u' only appears in "hub"
+        assert_eq!(p.filtered_slugs().count(), 1);
+        p.backspace();
+        assert_eq!(p.filtered_slugs().count(), 2);
+    }
+
+    #[test]
+    fn repo_picker_move_down_clamps_at_last() {
+        let mut p = RepoPicker::new(slugs(&["ooloth/hub", "org/other"]), None);
+        p.move_down();
+        p.move_down();
+        p.move_down();
+        assert_eq!(p.cursor(), 1);
+    }
+
+    #[test]
+    fn repo_picker_move_up_clamps_at_zero() {
+        let mut p = RepoPicker::new(slugs(&["ooloth/hub", "org/other"]), None);
+        p.move_up();
+        assert_eq!(p.cursor(), 0);
+    }
+
+    #[test]
+    fn repo_picker_preselect_positions_cursor() {
+        let pre: RepoSlug = "org/other".parse().unwrap();
+        let p = RepoPicker::new(slugs(&["ooloth/hub", "org/other"]), Some(&pre));
+        assert_eq!(p.selected_value().unwrap().to_string(), "org/other");
+    }
+
+    #[test]
+    fn repo_picker_selected_value_none_when_no_options() {
+        let p = RepoPicker::new(vec![], None);
+        assert!(p.selected_value().is_none());
+    }
+
+    #[test]
+    fn repo_picker_cursor_resets_when_filter_shrinks_results() {
+        let mut p = RepoPicker::new(slugs(&["ooloth/hub", "org/other"]), None);
+        p.move_down(); // cursor=1
+        p.type_char('u'); // 'u' only in "ooloth/hub" → filtered.len()=1, cursor clamped to 0
+        assert_eq!(p.cursor(), 0);
     }
 
     // ── TaskCreationModal::try_into_request ──────────────────────────────────
@@ -542,6 +724,30 @@ mod tests {
     fn seed_from_loki_with_empty_url_gives_no_link() {
         let seed = seed_from_item(&make_loki("")).unwrap();
         assert!(seed.link.is_none());
+    }
+
+    #[test]
+    fn seed_from_pr_populates_repo() {
+        let seed = seed_from_item(&make_pr(domain::PrKind::ToReview)).unwrap();
+        assert_eq!(seed.repo.unwrap().to_string(), "org/hub");
+    }
+
+    #[test]
+    fn seed_from_issue_populates_repo() {
+        let seed = seed_from_item(&make_issue()).unwrap();
+        assert_eq!(seed.repo.unwrap().to_string(), "org/hub");
+    }
+
+    #[test]
+    fn seed_from_ci_populates_repo() {
+        let seed = seed_from_item(&make_ci(None, None, None)).unwrap();
+        assert_eq!(seed.repo.unwrap().to_string(), "org/hub");
+    }
+
+    #[test]
+    fn seed_from_loki_has_no_repo() {
+        let seed = seed_from_item(&make_loki("https://example.com")).unwrap();
+        assert!(seed.repo.is_none());
     }
 
     #[test]

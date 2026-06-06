@@ -121,6 +121,11 @@ async fn main() -> Result<()> {
                 expanded_groups: HashSet::new(),
                 detail_mode: DetailMode::Hidden,
             },
+            available_repos: config
+                .projects
+                .iter()
+                .filter_map(|p| p.repo.parse().ok())
+                .collect(),
             ..UiState::default()
         },
     };
@@ -548,12 +553,13 @@ async fn run_loop(
                     description,
                     kind,
                     links,
+                    repo,
                 } => match workflows::tasks::create(
                     &title,
                     kind,
                     description.as_deref(),
                     &links,
-                    None,
+                    repo.as_ref().map(|r| r.to_string()).as_deref(),
                 ) {
                     Ok(id) => {
                         app.ui.flash = Some(format!("{id} created"));

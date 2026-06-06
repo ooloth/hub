@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use domain::StreamBlock;
+use domain::{RepoSlug, StreamBlock};
 use workflows::status::StatusItem;
 
 use crate::state::task_creation::TaskCreationModal;
@@ -23,6 +23,9 @@ pub(crate) struct UiState {
     pub(crate) pending_task_status: bool,
     /// Some while the task creation modal overlay is open.
     pub(crate) modal: Option<TaskCreationModal>,
+    /// Repos available for selection in the task creation picker.
+    /// Populated from config at startup; empty in tests.
+    pub(crate) available_repos: Vec<RepoSlug>,
 }
 
 #[derive(Debug, Default)]

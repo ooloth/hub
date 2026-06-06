@@ -194,11 +194,13 @@ impl App {
                     .screen
                     .selected_item_for_seeding()
                     .and_then(|item| seed_from_item(&item));
-                self.ui.modal = Some(TaskCreationModal::with_seed(seed));
+                let repos = self.ui.available_repos.clone();
+                self.ui.modal = Some(TaskCreationModal::with_seed(seed, repos));
                 vec![]
             }
             Action::OpenBlankTaskCreationForm => {
-                self.ui.modal = Some(TaskCreationModal::with_seed(None));
+                let repos = self.ui.available_repos.clone();
+                self.ui.modal = Some(TaskCreationModal::with_seed(None, repos));
                 vec![]
             }
             Action::CancelTaskCreation => {
@@ -235,6 +237,16 @@ impl App {
                         TaskFormField::Link => {
                             modal.link.input(key);
                         }
+                        TaskFormField::Repo => {
+                            use crossterm::event::KeyCode;
+                            match key.code {
+                                KeyCode::Char(c) => modal.repo.type_char(c),
+                                KeyCode::Backspace => modal.repo.backspace(),
+                                KeyCode::Up => modal.repo.move_up(),
+                                KeyCode::Down => modal.repo.move_down(),
+                                _ => {}
+                            }
+                        }
                         TaskFormField::Kind | TaskFormField::Submit => {}
                     }
                 }
@@ -256,6 +268,7 @@ impl App {
                             description: req.description,
                             kind: req.kind,
                             links: req.links,
+                            repo: req.repo,
                         }]
                     }
                 }
@@ -1470,6 +1483,7 @@ mod tests {
             description,
             kind,
             links,
+            ..
         } = effects.into_iter().next().unwrap()
         else {
             panic!("expected CreateTask");
@@ -1502,6 +1516,7 @@ mod tests {
             description,
             kind,
             links,
+            ..
         } = effects.into_iter().next().unwrap()
         else {
             panic!("expected CreateTask");
