@@ -40,7 +40,73 @@ use store::Connection;
 use tokio::process::Command;
 
 use crate::git::{create_branch_worktree_or_recover, read_default_branch};
-use domain::{Task, TaskId};
+use domain::{Task, TaskId, TaskKind};
+
+/// Returns the system prompt for the given task kind, embedded at compile time.
+fn system_prompt_for_kind(kind: TaskKind) -> &'static str {
+    match kind {
+        TaskKind::Implement => include_str!("../../prompts/tasks/implement.md"),
+        TaskKind::Review => include_str!("../../prompts/tasks/review.md"),
+        TaskKind::Debug => include_str!("../../prompts/tasks/debug.md"),
+    }
+}
+
+/// Builds the task-specific user message from the full task record.
+///
+/// Includes the task ID, title, kind, description, links, and comment thread,
+/// followed by the exact completion commands and escalation path the agent
+/// must follow. The task ID in the completion steps is the real TASK-XXXX
+/// value so the agent never has to guess it.
+pub(crate) fn build_task_prompt(task: &Task) -> String {
+    let mut lines: Vec<String> = vec![
+        format!("Task {}: {}", task.id, task.title),
+        format!("Kind: {}", task.kind),
+    ];
+
+    if let Some(ref desc) = task.description {
+        lines.push(String::new());
+        lines.push(desc.clone());
+    }
+
+    if !task.links.is_empty() {
+        lines.push(String::new());
+        lines.push("Links:".into());
+        for link in &task.links {
+            lines.push(format!("- {link}"));
+        }
+    }
+
+    if !task.comments.is_empty() {
+        lines.push(String::new());
+        lines.push("Comments:".into());
+        for c in &task.comments {
+            lines.push(format!("{} ({}): {}", c.author, c.created_at, c.content));
+        }
+    }
+
+    let id = &task.id;
+    lines.push(String::new());
+    lines.push("---".into());
+    lines.push(String::new());
+    lines.push("Completion steps:".into());
+    lines.push(format!(
+        "1. Write a session log to ~/.hub/agent-session-logs/{id}-<slug>.md\n   \
+         Sections: Summary, Changes Made, PRs Created, Gotchas, Next Steps\n   \
+         (<slug> is a short kebab-case summary of the task title)"
+    ));
+    lines.push(format!(
+        "2. hub task link {id} ~/.hub/agent-session-logs/{id}-<slug>.md"
+    ));
+    lines.push(format!("3. hub task report {id} --status in-review"));
+    lines.push(String::new());
+    lines.push("If blocked at any point:".into());
+    lines.push(format!(
+        "1. hub task comment {id} --content \"<your explanation>\""
+    ));
+    lines.push(format!("2. hub task report {id} --status blocked"));
+
+    lines.join("\n")
+}
 
 /// Returns the root directory for all agent task workspaces: `~/.hub/workspaces/`.
 ///
@@ -259,15 +325,20 @@ async fn dispatch_inner(conn: &Connection, repos_dir: &Path, claude_json: &Path)
         return Ok(());
     }
 
-    let Some(task) = store::tasks::oldest_ready(conn)? else {
+    let Some(ready) = store::tasks::oldest_ready(conn)? else {
         return Ok(());
     };
 
-    let session_id = task.id.session_id();
-    let claimed = store::tasks::claim_for_dispatch(conn, &task.id, &session_id.to_string())?;
+    let session_id = ready.id.session_id();
+    let claimed = store::tasks::claim_for_dispatch(conn, &ready.id, &session_id.to_string())?;
     if !claimed {
         return Ok(());
     }
+
+    // Fetch the full task after claiming so we can build the system and task
+    // prompts. The ReadyTask returned by oldest_ready only carries id/repo/kind.
+    let task = store::tasks::get(conn, &ready.id)
+        .with_context(|| format!("failed to read task {} after claim", ready.id))?;
 
     let workspace = if let Some(ref slug) = task.repo {
         let bare = repos_dir.join(slug.repo_name());
@@ -290,10 +361,13 @@ async fn dispatch_inner(conn: &Connection, repos_dir: &Path, claude_json: &Path)
         );
     }
 
+    let system_prompt = system_prompt_for_kind(task.kind);
+    let task_prompt = build_task_prompt(&task);
     let window_name = task.id.to_string();
     let workspace_str = workspace.to_string_lossy().into_owned();
     let claude_cmd = format!(
-        "claude --session-id {session_id} --dangerously-skip-permissions --model {}",
+        "claude --session-id {session_id} --dangerously-skip-permissions --model {} \
+         --append-system-prompt \"$HUB_SYSTEM_PROMPT\" \"$HUB_TASK_PROMPT\"",
         task.kind.model()
     );
 
@@ -305,6 +379,10 @@ async fn dispatch_inner(conn: &Connection, repos_dir: &Path, claude_json: &Path)
             &window_name,
             "-c",
             &workspace_str,
+            "-e",
+            &format!("HUB_SYSTEM_PROMPT={system_prompt}"),
+            "-e",
+            &format!("HUB_TASK_PROMPT={task_prompt}"),
             &claude_cmd,
         ])
         .output()
@@ -754,6 +832,108 @@ mod tests {
         assert!(
             workspaces.join("TASK-0004").is_dir(),
             "workspace must be preserved when task is back to active status"
+        );
+    }
+
+    // ── system_prompt_for_kind ────────────────────────────────────────────────
+
+    #[test]
+    fn system_prompt_for_kind_implement_is_non_empty_with_autonomy_notice() {
+        let prompt = system_prompt_for_kind(TaskKind::Implement);
+        assert!(!prompt.is_empty());
+        assert!(prompt.contains("## Autonomy notice"));
+    }
+
+    #[test]
+    fn system_prompt_for_kind_review_is_non_empty_with_autonomy_notice() {
+        let prompt = system_prompt_for_kind(TaskKind::Review);
+        assert!(!prompt.is_empty());
+        assert!(prompt.contains("## Autonomy notice"));
+    }
+
+    #[test]
+    fn system_prompt_for_kind_debug_is_non_empty_with_autonomy_notice() {
+        let prompt = system_prompt_for_kind(TaskKind::Debug);
+        assert!(!prompt.is_empty());
+        assert!(prompt.contains("## Autonomy notice"));
+    }
+
+    // ── build_task_prompt ─────────────────────────────────────────────────────
+
+    fn make_minimal_task(id: &str, title: &str, kind: TaskKind) -> Task {
+        use chrono::Duration;
+        use domain::Urgency;
+        Task {
+            id: id.parse().unwrap(),
+            title: title.into(),
+            description: None,
+            status: domain::TaskStatus::InProgress,
+            kind,
+            session_id: None,
+            repo: None,
+            links: vec![],
+            created_at: "2026-01-01T00:00:00Z".into(),
+            updated_at: "2026-01-01T00:00:00Z".into(),
+            age: Duration::zero(),
+            urgency: Urgency::Low,
+            comments: vec![],
+        }
+    }
+
+    #[test]
+    fn build_task_prompt_includes_task_id_and_title() {
+        let task = make_minimal_task("TASK-0042", "Fix OAuth refresh", TaskKind::Implement);
+        let prompt = build_task_prompt(&task);
+        assert!(
+            prompt.contains("TASK-0042"),
+            "task ID must appear in prompt"
+        );
+        assert!(
+            prompt.contains("Fix OAuth refresh"),
+            "title must appear in prompt"
+        );
+    }
+
+    #[test]
+    fn build_task_prompt_includes_description_when_present() {
+        let mut task = make_minimal_task("TASK-0001", "Task", TaskKind::Debug);
+        task.description = Some("The token expires silently.".into());
+        let prompt = build_task_prompt(&task);
+        assert!(prompt.contains("The token expires silently."));
+    }
+
+    #[test]
+    fn build_task_prompt_omits_description_section_when_absent() {
+        let task = make_minimal_task("TASK-0001", "Task", TaskKind::Debug);
+        let prompt = build_task_prompt(&task);
+        assert!(
+            !prompt.contains("None"),
+            "no 'None' string should appear when description is absent"
+        );
+    }
+
+    #[test]
+    fn build_task_prompt_includes_links_when_present() {
+        let mut task = make_minimal_task("TASK-0001", "Task", TaskKind::Review);
+        task.links = vec!["https://github.com/ooloth/hub/pull/42".into()];
+        let prompt = build_task_prompt(&task);
+        assert!(prompt.contains("https://github.com/ooloth/hub/pull/42"));
+    }
+
+    #[test]
+    fn build_task_prompt_includes_task_id_in_completion_steps() {
+        let task = make_minimal_task("TASK-0099", "Task", TaskKind::Implement);
+        let prompt = build_task_prompt(&task);
+        // The completion steps must reference the real task ID so the agent
+        // never has to guess it.
+        let completion_section = prompt.split("---").nth(1).unwrap_or("");
+        assert!(
+            completion_section.contains("TASK-0099"),
+            "task ID must appear in completion steps"
+        );
+        assert!(
+            completion_section.contains("hub task report TASK-0099 --status in-review"),
+            "completion steps must include the full report command"
         );
     }
 }
