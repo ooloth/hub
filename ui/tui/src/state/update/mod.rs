@@ -359,6 +359,10 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
             app.data.stream_blocks = blocks;
             Ok(vec![])
         }
+        Msg::TasksPatched(tasks) => {
+            refresh::patch_tasks(app, tasks);
+            Ok(vec![])
+        }
     }
 }
 

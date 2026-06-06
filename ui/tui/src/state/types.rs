@@ -326,4 +326,7 @@ pub(crate) enum Msg {
         refreshed_at: DateTime<Utc>,
     },
     StreamUpdate(Vec<domain::StreamBlock>),
+    /// Fresh task list from the 10s poll, patched into the in-memory items so
+    /// status changes surface without waiting for the full external refresh.
+    TasksPatched(Vec<domain::Task>),
 }

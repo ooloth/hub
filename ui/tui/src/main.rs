@@ -253,6 +253,7 @@ async fn run_loop(
     let mut dispatch_interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
     dispatch_interval.tick().await;
     let (stream_tx, mut stream_rx) = mpsc::channel::<Vec<domain::StreamBlock>>(1);
+    let (tasks_tx, mut tasks_rx) = mpsc::channel::<Vec<domain::Task>>(1);
 
     'run: loop {
         terminal.draw(|f| render(f, app))?;
@@ -285,6 +286,17 @@ async fn run_loop(
             _ = display_interval.tick() => vec![], // redraw only; no state change
             Some(result) = rx.recv() => handle_msg(app, Msg::FetchResult(result))?,
             _ = stream_interval.tick() => {
+                // Re-read task statuses from SQLite so agent-reported transitions
+                // (e.g. `hub task report --status in-review`) surface within 10s
+                // instead of waiting for the 30-minute external refresh.
+                let ttx = tasks_tx.clone();
+                tokio::spawn(async move {
+                    if let Ok(tasks) = workflows::tasks::list_visible() {
+                        let _ = ttx.send(tasks).await;
+                    }
+                });
+
+                // Live-stream the selected agent session's JSONL while its detail is open.
                 if let Screen::UnifiedList {
                     flat_rows,
                     selected,
@@ -321,6 +333,7 @@ async fn run_loop(
                 vec![]
             }
             Some(blocks) = stream_rx.recv() => handle_msg(app, Msg::StreamUpdate(blocks))?,
+            Some(tasks) = tasks_rx.recv() => handle_msg(app, Msg::TasksPatched(tasks))?,
             _ = dispatch_interval.tick() => {
                 if let Err(e) = workflows::dispatch::dispatch().await {
                     eprintln!("dispatch error: {e}");
