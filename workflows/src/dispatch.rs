@@ -95,7 +95,7 @@ pub(crate) fn build_task_prompt(task: &Task) -> String {
          (<slug> is a short kebab-case summary of the task title)"
     ));
     lines.push(format!(
-        "2. hub task link {id} ~/.hub/agent-session-logs/{id}-<slug>.md"
+        "2. hub task link {id} --value ~/.hub/agent-session-logs/{id}-<slug>.md"
     ));
     lines.push(format!("3. hub task report {id} --status in-review"));
     lines.push(String::new());
@@ -934,6 +934,14 @@ mod tests {
         assert!(
             completion_section.contains("hub task report TASK-0099 --status in-review"),
             "completion steps must include the full report command"
+        );
+        // The link command requires the --value flag; without it the CLI
+        // rejects a bare path argument, so the injected instruction must match.
+        assert!(
+            completion_section.contains(
+                "hub task link TASK-0099 --value ~/.hub/agent-session-logs/TASK-0099-<slug>.md"
+            ),
+            "completion steps must use the --value flag for the link command"
         );
     }
 }
