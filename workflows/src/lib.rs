@@ -4,7 +4,6 @@ pub mod dispatch;
 pub mod fetch;
 pub mod gcp;
 pub(crate) mod git;
-pub mod implement;
 pub mod loki;
 pub mod status;
 pub mod tasks;

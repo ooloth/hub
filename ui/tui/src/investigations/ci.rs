@@ -1,6 +1,6 @@
 use super::LaunchConfig;
 
-const PROMPT: &str = include_str!("../../../../prompts/ci-investigate.md");
+const PROMPT: &str = include_str!("../../../../prompts/investigations/ci.md");
 
 pub(crate) fn config(repo: &str, run_url: &str) -> LaunchConfig {
     LaunchConfig {

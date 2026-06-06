@@ -1,0 +1,1 @@
+../../../hub-private/prompts/media-investigate.md

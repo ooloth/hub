@@ -1,6 +1,6 @@
 use super::LaunchConfig;
 
-const PROMPT: &str = include_str!("../../../../prompts/gcp-investigate.md");
+const PROMPT: &str = include_str!("../../../../prompts/investigations/gcp.md");
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn config(
