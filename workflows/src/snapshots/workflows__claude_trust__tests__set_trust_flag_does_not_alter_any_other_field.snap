@@ -1,0 +1,39 @@
+---
+source: workflows/src/claude_trust.rs
+expression: result
+---
+{
+  "githubRepoPaths": [
+    "/Users/michael/Repos"
+  ],
+  "hasCompletedOnboarding": true,
+  "installMethod": "manual",
+  "mcpServers": {},
+  "migrationVersion": 3,
+  "numStartups": 42,
+  "projects": {
+    "/Users/michael/.hub/workspaces/TASK-0001/hub": {
+      "allowedTools": [],
+      "hasTrustDialogAccepted": true,
+      "mcpServers": {
+        "linear-server": {
+          "type": "http",
+          "url": "https://mcp.linear.app/mcp"
+        }
+      }
+    },
+    "/Users/michael/Repos/ooloth/dotfiles": {
+      "allowedTools": [],
+      "exampleFiles": [
+        "aliases.zsh",
+        "Brewfile"
+      ],
+      "hasTrustDialogAccepted": true,
+      "lastCost": 1.23,
+      "mcpServers": {}
+    }
+  },
+  "showSpinnerTree": true,
+  "theme": "dark",
+  "tipLifetimeShownCounts": {}
+}

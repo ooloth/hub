@@ -249,10 +249,12 @@ const DISPATCH_CAP: u32 = 1;
 pub async fn dispatch() -> Result<()> {
     let conn = store::status_cache::connect()?;
     store::tasks::ensure_table(&conn)?;
-    dispatch_inner(&conn, &crate::fetch::repos_dir()).await
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
+    let claude_json = std::path::PathBuf::from(home).join(".claude.json");
+    dispatch_inner(&conn, &crate::fetch::repos_dir(), &claude_json).await
 }
 
-async fn dispatch_inner(conn: &Connection, repos_dir: &Path) -> Result<()> {
+async fn dispatch_inner(conn: &Connection, repos_dir: &Path, claude_json: &Path) -> Result<()> {
     if store::tasks::count_in_progress(conn)? >= DISPATCH_CAP {
         return Ok(());
     }
@@ -277,6 +279,16 @@ async fn dispatch_inner(conn: &Connection, repos_dir: &Path) -> Result<()> {
             .with_context(|| format!("failed to create workspace dir for {}", task.id))?;
         dir
     };
+
+    // Pre-trust the workspace so the session starts without the safety prompt.
+    // Soft failure: on error, warn and proceed — stall detection (#281) is the
+    // safety net if the trust dialog blocks the session.
+    if let Err(e) = crate::claude_trust::trust_workspace(claude_json, &workspace) {
+        eprintln!(
+            "warn: could not pre-trust workspace {}: {e}",
+            workspace.display()
+        );
+    }
 
     let window_name = task.id.to_string();
     let workspace_str = workspace.to_string_lossy().into_owned();
@@ -325,7 +337,8 @@ mod tests {
     async fn dispatch_inner_skips_when_no_ready_tasks() {
         let conn = in_memory();
         let repos_dir = tempfile::tempdir().unwrap();
-        let result = dispatch_inner(&conn, repos_dir.path()).await;
+        let claude_json = repos_dir.path().join(".claude.json");
+        let result = dispatch_inner(&conn, repos_dir.path(), &claude_json).await;
         assert!(
             result.is_ok(),
             "expected Ok when no ready tasks, got {result:?}"
@@ -350,7 +363,8 @@ mod tests {
         )
         .unwrap();
 
-        let result = dispatch_inner(&conn, repos_dir.path()).await;
+        let claude_json = repos_dir.path().join(".claude.json");
+        let result = dispatch_inner(&conn, repos_dir.path(), &claude_json).await;
         assert!(result.is_ok());
         // The waiting task must still be ready, not in-progress.
         let count: i64 = conn

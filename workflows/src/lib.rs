@@ -1,4 +1,5 @@
 pub mod agent_session;
+pub(crate) mod claude_trust;
 pub mod dispatch;
 pub mod fetch;
 pub mod gcp;
