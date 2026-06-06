@@ -29,7 +29,7 @@ tui:
     cargo run -p hub-tui {{_features}}
 
 db:
-    uvx visidata "~/Library/Application Support/hub/hub.db"
+    uvx visidata "~/.hub/hub.db"
 
 _require-nextest:
     @cargo nextest --version > /dev/null 2>&1 || (echo "error: cargo-nextest not installed — run: cargo install cargo-nextest --locked" && exit 1)
