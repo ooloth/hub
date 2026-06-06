@@ -35,6 +35,14 @@ pub fn add_comment(id: &TaskId, author: CommentAuthor, content: &str) -> Result<
     store::task_comments::add(&conn, id, author, content)
 }
 
+/// Appends `value` (a URL or file path) to the task's links list.
+/// Idempotent: duplicate values are silently ignored.
+pub fn add_link(id: &TaskId, value: &str) -> Result<()> {
+    let conn = store::status_cache::connect()?;
+    store::tasks::ensure_table(&conn)?;
+    store::tasks::add_link(&conn, id, value)
+}
+
 /// Transitions a task from `backlog` to `ready`.
 pub fn set_ready(id: &TaskId) -> Result<()> {
     let conn = store::status_cache::connect()?;

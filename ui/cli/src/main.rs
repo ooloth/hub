@@ -55,6 +55,19 @@ enum TaskCommands {
         id: String,
     },
 
+    /// Register an artifact link for this task
+    ///
+    /// Appends a URL or file path to the task's links list. Idempotent:
+    /// calling with a value that already exists is a no-op.
+    Link {
+        /// Task ID: TASK-0001 or plain integer
+        id: String,
+
+        /// URL or file path to register (e.g. https://github.com/... or ~/.hub/agent-session-logs/TASK-0001-slug.md)
+        #[arg(long)]
+        value: String,
+    },
+
     /// Report status back to hub
     ///
     /// Use `in-review` when the work is complete; use `blocked` when the
@@ -94,6 +107,11 @@ async fn main() -> Result<()> {
                 let task_id = parse_task_ref(&id)?;
                 let task = workflows::tasks::get(&task_id)?;
                 println!("{}", serde_json::to_string_pretty(&task)?);
+            }
+            TaskCommands::Link { id, value } => {
+                let task_id = parse_task_ref(&id)?;
+                workflows::tasks::add_link(&task_id, &value)?;
+                println!("TASK_UPDATED {task_id}");
             }
             TaskCommands::Report { id, status } => {
                 let task_id = parse_task_ref(&id)?;

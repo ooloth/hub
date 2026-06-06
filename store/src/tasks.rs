@@ -382,6 +382,41 @@ pub fn claim_for_dispatch(conn: &Connection, id: &TaskId, session_id: &str) -> R
     Ok(changed == 1)
 }
 
+/// Appends `value` to the task's `links` field. Idempotent: if `value` is
+/// already present, the field is left unchanged. Refreshes `updated_at`.
+///
+/// # Race window
+/// This is a read-modify-write on a TEXT CSV column. Concurrent callers could
+/// each read the same list, both find the value absent, and both append it.
+/// In practice the only caller is `hub task link` (a single-process CLI), so
+/// this race cannot occur. If `links` moves to a normalised table this concern
+/// disappears entirely.
+pub fn add_link(conn: &Connection, id: &TaskId, value: &str) -> Result<()> {
+    let row_id = task_row_id(id)?;
+    let links_str: Option<String> = conn
+        .query_row(
+            "SELECT links FROM tasks WHERE id = ?1",
+            params![row_id],
+            |row| row.get(0),
+        )
+        .with_context(|| format!("task {id} not found"))?;
+
+    let mut links = links_from_db(links_str);
+    if links.iter().any(|l| l == value) {
+        return Ok(());
+    }
+    links.push(value.to_string());
+
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE tasks SET links = ?1, updated_at = ?2 WHERE id = ?3",
+        params![links_to_db(&links), now, row_id],
+    )
+    .context("failed to update task links")?;
+
+    Ok(())
+}
+
 fn links_to_db(links: &[String]) -> Option<String> {
     if links.is_empty() {
         None
@@ -877,5 +912,65 @@ mod tests {
         let id: TaskId = "TASK-9999".parse().unwrap();
         let claimed = claim_for_dispatch(&conn, &id, "uuid").unwrap();
         assert!(!claimed);
+    }
+
+    // ── add_link ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn add_link_appends_new_link() {
+        let conn = in_memory();
+        let id = create(&conn, "Task", TaskKind::Implement, None, &[], None).unwrap();
+        add_link(&conn, &id, "https://github.com/owner/repo/pull/1").unwrap();
+        let task = get(&conn, &id).unwrap();
+        assert_eq!(task.links, vec!["https://github.com/owner/repo/pull/1"]);
+    }
+
+    #[test]
+    fn add_link_is_idempotent_for_duplicate() {
+        let conn = in_memory();
+        let id = create(&conn, "Task", TaskKind::Implement, None, &[], None).unwrap();
+        let url = "https://github.com/owner/repo/pull/1";
+        add_link(&conn, &id, url).unwrap();
+        add_link(&conn, &id, url).unwrap();
+        let task = get(&conn, &id).unwrap();
+        assert_eq!(task.links.len(), 1, "duplicate link must not be added");
+    }
+
+    #[test]
+    fn add_link_accumulates_distinct_links() {
+        let conn = in_memory();
+        let id = create(&conn, "Task", TaskKind::Implement, None, &[], None).unwrap();
+        add_link(&conn, &id, "https://example.com/a").unwrap();
+        add_link(&conn, &id, "https://example.com/b").unwrap();
+        add_link(&conn, &id, "~/.hub/agent-session-logs/TASK-0001-fix.md").unwrap();
+        let task = get(&conn, &id).unwrap();
+        assert_eq!(
+            task.links,
+            vec![
+                "https://example.com/a",
+                "https://example.com/b",
+                "~/.hub/agent-session-logs/TASK-0001-fix.md",
+            ]
+        );
+    }
+
+    #[test]
+    fn add_link_refreshes_updated_at() {
+        let conn = in_memory();
+        let id = create(&conn, "Task", TaskKind::Implement, None, &[], None).unwrap();
+        let before = get(&conn, &id).unwrap();
+        add_link(&conn, &id, "https://example.com").unwrap();
+        let after = get(&conn, &id).unwrap();
+        assert!(
+            after.updated_at >= before.updated_at,
+            "updated_at must be refreshed after add_link"
+        );
+    }
+
+    #[test]
+    fn add_link_errors_on_nonexistent_task() {
+        let conn = in_memory();
+        let id: TaskId = "TASK-9999".parse().unwrap();
+        assert!(add_link(&conn, &id, "https://example.com").is_err());
     }
 }
