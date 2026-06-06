@@ -162,8 +162,11 @@ reliable signals are:
 
 **Window reaping** (side-effect, not a DB state):
 
-- When task transitions to `in-review`, TUI waits 5 minutes then kills the tmux window
-- If task is manually moved away from `in-review` within the 5-minute window, reap is cancelled
+- Each 10s poll kills the tmux window of any task that has been `in-review` longer
+  than the 5-minute buffer (`reap_idle_windows`), if the window still exists
+- Stateless, keyed off `updated_at`: there is no scheduled timer. Moving a task
+  away from `in-review` within the buffer changes its status and `updated_at`, so
+  it is no longer a reap candidate — cancellation falls out for free
 - The session is always resumable via `claude --resume <session-id>` (stored in `tasks.session_id`)
 
 **`~/.claude/sessions/` is an undocumented internal API.** Anthropic could change

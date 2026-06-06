@@ -14,8 +14,9 @@
 //!   `~/.hub/workspaces/TASK-XXXX/<project>/` on branch `agent/TASK-XXXX`
 //! - `clean_task_worktrees()` — deferred cleanup; removes a workspace only when
 //!   all three guards pass (terminal, ≥72h stale, no unpushed commits)
-//! - Window reaping — schedules `tmux kill-window -t TASK-XXXX` after the
-//!   5-minute buffer once a task reaches `in-review`; cancels if status reverts
+//! - `reap_idle_windows()` — runs `tmux kill-window -t TASK-XXXX` for tasks that
+//!   have been `in-review` longer than the buffer. Stateless: keyed off
+//!   `updated_at` each poll, so a manual revert cancels the reap with no timer
 //!
 //! # What this module does NOT own
 //!
@@ -31,7 +32,8 @@
 //!
 //! # Implementation
 //!
-//! Worktree management (S0) and dispatch loop (S1) implemented.
+//! Worktree management (S0), dispatch loop (S1), and window reaping (S3)
+//! implemented.
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -40,7 +42,7 @@ use store::Connection;
 use tokio::process::Command;
 
 use crate::git::{create_branch_worktree_or_recover, read_default_branch};
-use domain::{Task, TaskId, TaskKind};
+use domain::{Task, TaskId, TaskKind, TaskStatus};
 
 /// Returns the system prompt for the given task kind, embedded at compile time.
 fn system_prompt_for_kind(kind: TaskKind) -> &'static str {
@@ -323,6 +325,97 @@ async fn worktree_commit_state(worktree: &Path) -> WorktreeCommitState {
     }
 }
 
+/// How long a task sits in `in-review` before its idle tmux window is reaped.
+/// The session stays resumable via `claude --resume`, so the window itself is
+/// disposable; the buffer just leaves time for a quick manual correction.
+const REAP_BUFFER_MINS: i64 = 5;
+
+/// Returns the `TaskId`s whose idle tmux window is eligible for reaping: status
+/// is `in-review` and `updated_at` is at least `buffer` before `now`.
+///
+/// Cancellation is implicit: moving a task out of `in-review` updates its status
+/// and `updated_at`, so it stops appearing here — no timer to cancel. Tasks with
+/// an unparseable `updated_at` are skipped with a warning, never reaped blindly.
+pub(crate) fn reap_candidates(
+    tasks: &[Task],
+    now: DateTime<Utc>,
+    buffer: chrono::Duration,
+) -> Vec<TaskId> {
+    tasks
+        .iter()
+        .filter(|t| t.status == TaskStatus::InReview)
+        .filter_map(|t| {
+            let updated_at = match chrono::DateTime::parse_from_rfc3339(&t.updated_at) {
+                Ok(dt) => dt.with_timezone(&Utc),
+                Err(e) => {
+                    eprintln!(
+                        "warn: skipping reap candidate {} — unparseable updated_at {:?}: {e}",
+                        t.id, t.updated_at
+                    );
+                    return None;
+                }
+            };
+            if now - updated_at >= buffer {
+                Some(t.id.clone())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+/// Kills the idle tmux window of every task that has been `in-review` longer than
+/// [`REAP_BUFFER_MINS`], if the window still exists. Best-effort: a kill that
+/// fails is logged, never propagated, so one bad window can't block the poll.
+///
+/// The existence check keeps this idempotent — once a window is gone, later polls
+/// skip it instead of erroring on every tick.
+pub async fn reap_idle_windows(tasks: &[Task], now: DateTime<Utc>) -> Result<()> {
+    let candidates = reap_candidates(tasks, now, chrono::Duration::minutes(REAP_BUFFER_MINS));
+    if candidates.is_empty() {
+        return Ok(());
+    }
+
+    let existing = existing_window_names().await?;
+    for id in candidates {
+        let name = id.to_string();
+        if !existing.contains(&name) {
+            continue;
+        }
+        match Command::new("tmux")
+            .args(["kill-window", "-t", &name])
+            .output()
+            .await
+        {
+            Ok(o) if o.status.success() => {}
+            Ok(o) => eprintln!(
+                "warn: tmux kill-window {name} failed: {}",
+                String::from_utf8_lossy(&o.stderr).trim()
+            ),
+            Err(e) => eprintln!("warn: tmux kill-window {name}: {e}"),
+        }
+    }
+    Ok(())
+}
+
+/// Returns the names of all tmux windows across every session. An absent or
+/// stopped tmux server yields an empty list rather than an error — there is
+/// simply nothing to reap.
+async fn existing_window_names() -> Result<Vec<String>> {
+    let out = Command::new("tmux")
+        .args(["list-windows", "-a", "-F", "#{window_name}"])
+        .output()
+        .await
+        .context("tmux list-windows failed")?;
+    if !out.status.success() {
+        return Ok(Vec::new());
+    }
+    Ok(String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(|s| s.to_string())
+        .collect())
+}
+
 /// Maximum number of concurrent in-progress agent sessions.
 const DISPATCH_CAP: u32 = 1;
 
@@ -598,6 +691,72 @@ mod tests {
         let result = cleanup_candidates(&tasks, now);
         let ids: Vec<String> = result.iter().map(|id| id.to_string()).collect();
         assert_eq!(ids, vec!["TASK-0001", "TASK-0004"]);
+    }
+
+    // ── reap_candidates (pure unit tests) ────────────────────────────────────
+
+    fn mins_ago(m: i64) -> DateTime<Utc> {
+        Utc::now() - chrono::Duration::minutes(m)
+    }
+
+    #[test]
+    fn reap_candidates_includes_in_review_past_buffer() {
+        let now = Utc::now();
+        let tasks = vec![make_task("TASK-0001", TaskStatus::InReview, mins_ago(6))];
+        let result = reap_candidates(&tasks, now, chrono::Duration::minutes(5));
+        let ids: Vec<String> = result.iter().map(|id| id.to_string()).collect();
+        assert_eq!(ids, vec!["TASK-0001"]);
+    }
+
+    #[test]
+    fn reap_candidates_excludes_in_review_under_buffer() {
+        let now = Utc::now();
+        let tasks = vec![make_task("TASK-0001", TaskStatus::InReview, mins_ago(4))];
+        assert!(reap_candidates(&tasks, now, chrono::Duration::minutes(5)).is_empty());
+    }
+
+    #[test]
+    fn reap_candidates_includes_in_review_at_exactly_buffer() {
+        let now = Utc::now();
+        let exactly = now - chrono::Duration::minutes(5);
+        let tasks = vec![make_task("TASK-0001", TaskStatus::InReview, exactly)];
+        let result = reap_candidates(&tasks, now, chrono::Duration::minutes(5));
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn reap_candidates_excludes_non_in_review_statuses() {
+        let now = Utc::now();
+        let old = mins_ago(60);
+        let tasks = vec![
+            make_task("TASK-0001", TaskStatus::InProgress, old),
+            make_task("TASK-0002", TaskStatus::Blocked, old),
+            make_task("TASK-0003", TaskStatus::Done, old),
+            make_task("TASK-0004", TaskStatus::Backlog, old),
+        ];
+        assert!(reap_candidates(&tasks, now, chrono::Duration::minutes(5)).is_empty());
+    }
+
+    #[test]
+    fn reap_candidates_skips_task_with_unparseable_updated_at() {
+        use chrono::Duration;
+        use domain::Urgency;
+        let bad = Task {
+            id: "TASK-0001".parse().unwrap(),
+            title: "bad".into(),
+            description: None,
+            status: TaskStatus::InReview,
+            kind: TaskKind::Implement,
+            session_id: None,
+            repo: None,
+            links: vec![],
+            created_at: mins_ago(60).to_rfc3339(),
+            updated_at: "not-a-date".into(),
+            age: Duration::zero(),
+            urgency: Urgency::Low,
+            comments: vec![],
+        };
+        assert!(reap_candidates(&[bad], Utc::now(), chrono::Duration::minutes(5)).is_empty());
     }
 
     // ── task_workspace_path (pure unit tests) ────────────────────────────────

@@ -294,6 +294,11 @@ async fn run_loop(
                 let now = chrono::Utc::now();
                 tokio::spawn(async move {
                     if let Ok(tasks) = workflows::agent_session::poll_sessions(now) {
+                        // Reap idle tmux windows of tasks parked in-review past the
+                        // buffer; the session stays resumable via `claude --resume`.
+                        if let Err(e) = workflows::dispatch::reap_idle_windows(&tasks, now).await {
+                            eprintln!("reap error: {e}");
+                        }
                         let _ = ttx.send(tasks).await;
                     }
                 });
