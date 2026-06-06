@@ -286,12 +286,14 @@ async fn run_loop(
             _ = display_interval.tick() => vec![], // redraw only; no state change
             Some(result) = rx.recv() => handle_msg(app, Msg::FetchResult(result))?,
             _ = stream_interval.tick() => {
-                // Re-read task statuses from SQLite so agent-reported transitions
-                // (e.g. `hub task report --status in-review`) surface within 10s
-                // instead of waiting for the 30-minute external refresh.
+                // Drive automatic task transitions from session-file signals
+                // (completion, crash, stall, self-heal) and re-read task state so
+                // both those and agent-reported changes (`hub task report`) surface
+                // within 10s instead of waiting for the 30-minute external refresh.
                 let ttx = tasks_tx.clone();
+                let now = chrono::Utc::now();
                 tokio::spawn(async move {
-                    if let Ok(tasks) = workflows::tasks::list_visible() {
+                    if let Ok(tasks) = workflows::agent_session::poll_sessions(now) {
                         let _ = ttx.send(tasks).await;
                     }
                 });
