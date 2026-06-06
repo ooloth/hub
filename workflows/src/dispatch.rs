@@ -31,11 +31,12 @@
 //!
 //! # Implementation
 //!
-//! Worktree management (S0) implemented. Dispatch loop (S1) tracked in issue #279.
+//! Worktree management (S0) and dispatch loop (S1) implemented.
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use std::path::{Path, PathBuf};
+use store::Connection;
 use tokio::process::Command;
 
 use crate::git::{create_branch_worktree_or_recover, read_default_branch};
@@ -237,11 +238,133 @@ async fn worktree_commit_state(worktree: &Path) -> WorktreeCommitState {
     }
 }
 
+/// Maximum number of concurrent in-progress agent sessions.
+const DISPATCH_CAP: u32 = 1;
+
+/// Claims the oldest `ready` task and spawns a detached Claude Code session in a
+/// named tmux window. Called by the TUI's 30-second dispatch tick.
+///
+/// Returns `Ok(())` without spawning if the in-progress count is at the cap, if
+/// no tasks are ready, or if a concurrent tick claimed the task first.
+pub async fn dispatch() -> Result<()> {
+    let conn = store::status_cache::connect()?;
+    store::tasks::ensure_table(&conn)?;
+    dispatch_inner(&conn, &crate::fetch::repos_dir()).await
+}
+
+async fn dispatch_inner(conn: &Connection, repos_dir: &Path) -> Result<()> {
+    if store::tasks::count_in_progress(conn)? >= DISPATCH_CAP {
+        return Ok(());
+    }
+
+    let Some(task) = store::tasks::oldest_ready(conn)? else {
+        return Ok(());
+    };
+
+    let session_id = task.id.session_id();
+    let claimed = store::tasks::claim_for_dispatch(conn, &task.id, &session_id.to_string())?;
+    if !claimed {
+        return Ok(());
+    }
+
+    let workspace = if let Some(ref slug) = task.repo {
+        let bare = repos_dir.join(slug.repo_name());
+        ensure_task_worktree(&bare, &task.id, slug.repo_name()).await?
+    } else {
+        let dir = workspaces_dir().join(task.id.to_string());
+        tokio::fs::create_dir_all(&dir)
+            .await
+            .with_context(|| format!("failed to create workspace dir for {}", task.id))?;
+        dir
+    };
+
+    let window_name = task.id.to_string();
+    let workspace_str = workspace.to_string_lossy().into_owned();
+    let claude_cmd = format!(
+        "claude --session-id {session_id} --dangerously-skip-permissions --model {}",
+        task.kind.model()
+    );
+
+    let out = Command::new("tmux")
+        .args([
+            "new-window",
+            "-d",
+            "-n",
+            &window_name,
+            "-c",
+            &workspace_str,
+            &claude_cmd,
+        ])
+        .output()
+        .await
+        .with_context(|| format!("failed to spawn tmux window for {}", task.id))?;
+
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        anyhow::bail!("tmux new-window failed for {}: {stderr}", task.id);
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::git::test_helpers::{run_git, setup_origin_and_bare};
     use domain::{TaskKind, TaskStatus};
+
+    fn in_memory() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        store::tasks::ensure_table(&conn).unwrap();
+        conn
+    }
+
+    // ── dispatch_inner ────────────────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn dispatch_inner_skips_when_no_ready_tasks() {
+        let conn = in_memory();
+        let repos_dir = tempfile::tempdir().unwrap();
+        let result = dispatch_inner(&conn, repos_dir.path()).await;
+        assert!(
+            result.is_ok(),
+            "expected Ok when no ready tasks, got {result:?}"
+        );
+        assert_eq!(store::tasks::count_in_progress(&conn).unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn dispatch_inner_skips_when_in_progress_at_cap() {
+        let conn = in_memory();
+        let repos_dir = tempfile::tempdir().unwrap();
+        // Manually insert an in-progress task to hit the cap.
+        conn.execute(
+            "INSERT INTO tasks (title, status, kind, created_at) VALUES ('running', 'in-progress', 'implement', '2024-01-01T00:00:00Z')",
+            [],
+        ).unwrap();
+        // Add a ready task that should NOT be claimed.
+        store::tasks::create(&conn, "waiting", TaskKind::Implement, None, &[], None).unwrap();
+        conn.execute(
+            "UPDATE tasks SET status = 'ready' WHERE title = 'waiting'",
+            [],
+        )
+        .unwrap();
+
+        let result = dispatch_inner(&conn, repos_dir.path()).await;
+        assert!(result.is_ok());
+        // The waiting task must still be ready, not in-progress.
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM tasks WHERE status = 'ready'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            count, 1,
+            "ready task must remain unclaimed when cap is reached"
+        );
+    }
 
     // ── helpers ───────────────────────────────────────────────────────────────
 

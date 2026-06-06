@@ -249,6 +249,9 @@ async fn run_loop(
     // Live-polls the JSONL stream for the selected AgentSession while detail is open.
     let mut stream_interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
     stream_interval.tick().await;
+    // Claims the oldest ready task and spawns its agent session.
+    let mut dispatch_interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
+    dispatch_interval.tick().await;
     let (stream_tx, mut stream_rx) = mpsc::channel::<Vec<domain::StreamBlock>>(1);
 
     'run: loop {
@@ -316,6 +319,12 @@ async fn run_loop(
                 vec![]
             }
             Some(blocks) = stream_rx.recv() => handle_msg(app, Msg::StreamUpdate(blocks))?,
+            _ = dispatch_interval.tick() => {
+                if let Err(e) = workflows::dispatch::dispatch().await {
+                    eprintln!("dispatch error: {e}");
+                }
+                vec![]
+            }
         };
 
         for effect in effects {
