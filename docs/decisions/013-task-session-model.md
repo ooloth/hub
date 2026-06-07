@@ -1,5 +1,10 @@
 # 013 — One task, one session; comments as agent log; JSONL-driven status
 
+> For the system as built see [architecture/tasks.md](../architecture/tasks.md)
+> (model) and [architecture/task-dispatch.md](../architecture/task-dispatch.md)
+> (mechanics); for the why see [vision.md](../vision.md). This ADR records the
+> original decision and rationale.
+
 ## Context
 
 [Decision 012](012-task-model.md) established the single `AgentTask` type and the

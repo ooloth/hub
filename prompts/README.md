@@ -21,3 +21,11 @@ is present — and run with full permissions
 Each file covers one task kind: `implement.md`, `review.md`, `debug.md`.
 The task-specific context (title, description, links, comments, completion
 steps) is built at dispatch time and passed separately as `HUB_TASK_PROMPT`.
+
+## These prompts are the tuning surface
+
+Improving these prompts is how agent quality compounds — they are the lever the
+flywheel turns (see [../docs/vision.md](../docs/vision.md)). The planned mining
+loop ([Decision 018](../docs/decisions/018-meta-loop-output-as-labeled-issues.md))
+reads agent session logs and the delta between agent output and what shipped,
+then proposes edits to these files.

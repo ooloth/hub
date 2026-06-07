@@ -1,5 +1,8 @@
 # TUI Multi-Section Layouts
 
+> **Raw research — superseded by [vision.md](../vision.md).** Kept for
+> provenance; not current truth.
+
 Aspirational layouts for hub's TUI at fullscreen on a 13" laptop (~195 columns).
 These are designed to answer: _can a TUI compete with a web dashboard for
 hub's purposes?_

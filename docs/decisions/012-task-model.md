@@ -1,5 +1,10 @@
 # 012 — Task model: one type, outcome-oriented, status-driven lifecycle
 
+> For the system as built see [architecture/tasks.md](../architecture/tasks.md)
+> (model) and [architecture/task-dispatch.md](../architecture/task-dispatch.md)
+> (mechanics); for the why see [vision.md](../vision.md). This ADR records the
+> original decision and rationale.
+
 ## Addendum (2026-06-04)
 
 > **⚠ Partially superseded by [Decision 013](013-task-session-model.md).** The

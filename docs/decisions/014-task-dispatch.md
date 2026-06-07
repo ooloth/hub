@@ -1,5 +1,10 @@
 # 014 — Task dispatch: workspaces, prompt injection, completion detection, data home
 
+> For the system as built see [architecture/task-dispatch.md](../architecture/task-dispatch.md)
+> (mechanics) and [architecture/tasks.md](../architecture/tasks.md) (model); for
+> the why see [vision.md](../vision.md). This ADR records the original decision
+> and rationale.
+
 ## Context
 
 [Decision 013](013-task-session-model.md) established the one-task-one-session model,

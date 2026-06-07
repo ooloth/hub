@@ -6,8 +6,7 @@
 > cadence rather than promoted manually by a human. The billing concern that
 > motivated this decision remains valid; recurring tasks are human-configured,
 > not self-spawning. The Tier 1/2/3 framing below is replaced by the delegation
-> loop (Surface → Create task → Delegate → Monitor → Approve/Reject) described
-> in Decision 012.
+> flywheel described in [vision.md](../vision.md).
 
 ## Context
 

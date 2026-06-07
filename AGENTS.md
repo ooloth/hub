@@ -160,12 +160,18 @@ what is actually available. Never assume a prerequisite is missing.
 
 ### Conventions and architecture
 
+The organizing rule: **`architecture/` describes what is built; `vision.md`
+and the `decisions/` ADRs describe where we are going.** One concept, one home.
+
 | Doc                                      | Covers                                                                                                            |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `docs/architecture/task-dispatch.md`     | Task dispatch: state machine, session file signals, component diagram — **read this first** for any dispatch work |
+| `docs/vision.md`                         | **Read this first** — the why; the trust-building flywheel; what we are and are not building                      |
+| `docs/architecture/tasks.md`             | Task **model**: lifecycle, schema, kinds, TUI/CLI surfaces                                                        |
+| `docs/architecture/task-dispatch.md`     | Task dispatch **mechanics**: state machine, session file signals, component diagram — read for any dispatch work  |
 | `docs/architecture/worktrees.md`         | Two worktree systems (PR investigations vs task dispatch) — read before touching `fetch.rs` or `dispatch.rs`      |
 | `docs/architecture/secrets.md`           | 1Password → op read → Secret<String> model                                                                        |
 | `docs/architecture/private-workflows.md` | Two-repo model for private workflows                                                                              |
+| `docs/decisions/`                        | ADRs (rationale). 016–018 record the agent-flywheel direction (typed links, verdict signal, mining) — not yet built |
 | `clients/README.md`                      | reqwest pattern for HTTP clients                                                                                  |
 | `store/README.md`                        | rusqlite pattern, db path, Connection threading notes                                                             |
 | `ui/cli/README.md`                       | clap derive API for CLI commands                                                                                  |

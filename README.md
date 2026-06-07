@@ -19,6 +19,9 @@ prioritized view with agentic capabilities built in:
 - **Keypress execution** — for issues labelled `status:ready-for-agent`, a keypress in the
   TUI launches an agent in a git worktree; hub handles setup so the focus is on reviewing
   the result, not orchestrating the run
+- **Trust-building flywheel** — every agent run is visible, reviewable, and mined to
+  improve the next one's context and instructions; the goal is agents you can delegate to
+  at scale, not steer one at a time; see [Vision](docs/vision.md)
 - **Single config source of truth** — `hub.toml` is git-ignored and per-device; onboarding
   a new project to existing workflows is one file edit, no code changes; work and personal
   contexts stay naturally separate
@@ -35,7 +38,7 @@ prioritized view with agentic capabilities built in:
 
 - [Vision](docs/vision.md) — what this is, why, and where it's going
 - [Decisions](docs/decisions/) — architectural decisions and their rationale
-- [Conventions](docs/conventions/) — Rust patterns used throughout
+- [Conventions](CLAUDE.md#rust-conventions) — Rust patterns used throughout
 - [Playbooks](docs/playbooks/) — step-by-step guides for common tasks
 - [Contributing](CONTRIBUTING.md) — setup and development instructions
 - [Private Workflows](docs/architecture/private-workflows.md) — `hub-private` wiring, symlinks, and Cargo features

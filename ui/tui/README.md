@@ -147,8 +147,7 @@ function that returns a `LaunchConfig` with a system prompt (loaded via
 `include_str!` from `prompts/`), a context-specific prompt string,
 and tool/model settings.
 
-See the [add-an-investigation playbook](../../docs/playbooks/add-an-investigation.md)
-for the full step-by-step.
+Use the existing types in `investigations/` as templates when adding a new one.
 
 ### Worktree routing
 

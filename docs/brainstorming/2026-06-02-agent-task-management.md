@@ -1,5 +1,8 @@
 # Agent Task Management
 
+> **Raw research — superseded by [vision.md](../vision.md).** Kept for
+> provenance; not current truth.
+
 Research notes on patterns for dispatching Claude Code agents on tasks, tracking their work,
 and surfacing results in the TUI. Informed by studying a mature agent task loop in a work project.
 
