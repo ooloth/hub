@@ -67,7 +67,8 @@ not because I typed faster, but because I trusted more.
 
 A Task is the unit that makes one piece of delegated agent work
 **visible** (it shows in the list, streaming live activity),
-**resumable** (`o` reopens the session for a course-correction),
+**resumable** (reopening the session to course-correct — the `o` key is
+planned, [issue 289](https://github.com/ooloth/hub/issues/289)),
 **reviewable** (its report and links lead me straight to the artifact and
 the agent's reasoning), and **mineable** (its session, report, and verdict
 are raw material for improving future agents).
@@ -227,7 +228,7 @@ And, specifically, what the flywheel does **not** build:
 - **A kanban / todo board** — hub isn't a todo app; tasks fold into
   signals, they don't live in swim lanes.
 - **A bidirectional comment thread** — comments are an agent→human
-  captain's log. Dialogue happens by resuming the session (`o`), not by
+  captain's log. Dialogue happens by resuming the session (planned: `o`), not by
   typing back. See [Decision 013](decisions/013-task-session-model.md).
 - **A quality gate** — `done` means "I acknowledged and closed this," not
   "I certify this is correct." GitHub PR review and merge is the real

@@ -4,9 +4,11 @@ This document describes how hub's TUI background loop detects ready tasks, claim
 them atomically, and spawns Claude Code agents to work on them. It covers the state
 machine, the component interactions, and the completion/stall detection mechanisms.
 
-See [Decision 013](../decisions/013-task-session-model.md) and
-[Decision 014](../decisions/014-task-dispatch.md) for the reasoning behind these
-choices. See [tasks.md](tasks.md) for the task lifecycle and schema.
+This is the dispatch **mechanics**; for the task **model** (lifecycle,
+schema, surfaces) see [tasks.md](tasks.md), and for why the system exists see
+[vision.md](../vision.md). See [Decision 013](../decisions/013-task-session-model.md)
+and [Decision 014](../decisions/014-task-dispatch.md) for the reasoning behind
+these choices.
 
 ---
 
@@ -70,12 +72,12 @@ HUMAN              TUI DISPATCH TICK (30s)   AGENT (claude)    ~/.claude/session
  ┌───────────────────────────────────────────────────────────────────────┐
  │  TUI main loop (tokio::select!)                                       │
  │                                                                       │
- │  30s dispatch_interval ──► workflows::tasks::dispatch()               │
+ │  30s dispatch_interval ──► workflows::dispatch::dispatch()            │
  │      └─ count in-progress tasks in SQLite (cap = 1)                   │
  │      └─ if under cap: fetch oldest ready task                         │
  │          └─ generate uuid5(TASK_NS, task_key)                         │
  │          └─ atomic SQL: claim task (status + session_id, one tx)      │
- │          └─ build prompt: read prompts/<kind>-task.md                 │
+ │          └─ build prompt: read prompts/tasks/<kind>.md                 │
  │          └─ tmux new-window -d -n TASK-XXXX                           │
  │                 -e HUB_SYSTEM_PROMPT=<kind-prompt>                    │
  │                 -e HUB_TASK_PROMPT=<title+desc+links+comments>        │
@@ -125,7 +127,7 @@ The dispatch command shares the `-e` env-var injection pattern from
 vs `split-window -h`). See "Two session launch patterns" below.
 
 - `--append-system-prompt "$HUB_SYSTEM_PROMPT"` — the content of
-  `prompts/<kind>-task.md`, injected as a system prompt addition. This carries the
+  `prompts/tasks/<kind>.md`, injected as a system prompt addition. This carries the
   kind-specific workflow instructions (how to approach an implement/debug/review task).
 
 - `"$HUB_TASK_PROMPT"` — the positional `prompt` argument to `claude`. This is the
@@ -264,18 +266,23 @@ opportunities.
 
 ## Prompt files
 
-Kind-specific workflow instructions live in `prompts/`:
+Kind-specific workflow instructions live in `prompts/tasks/`, embedded at
+compile time via `include_str!` and injected as a system-prompt addition:
 
-| File                        | Kind        | Purpose                                                          |
-| --------------------------- | ----------- | ---------------------------------------------------------------- |
-| `prompts/implement-task.md` | `implement` | Full implement workflow: read → plan → code → test → commit → PR |
-| `prompts/review-task.md`    | `review`    | Review workflow: load diff → assess → comment                    |
-| `prompts/debug-task.md`     | `debug`     | Debug workflow: reproduce → isolate → fix → verify               |
+| File                         | Kind        | Purpose                                                          |
+| ---------------------------- | ----------- | ---------------------------------------------------------------- |
+| `prompts/tasks/implement.md` | `implement` | Full implement workflow: read → plan → code → test → commit → PR |
+| `prompts/tasks/review.md`    | `review`    | Review workflow: load diff → assess → comment                    |
+| `prompts/tasks/debug.md`     | `debug`     | Debug workflow: reproduce → isolate → fix → verify               |
 
-These parallel the existing investigate prompts (`ci-investigate.md`,
-`issue-investigate.md`, `implement-issue.md`). The `implement-task.md` adapts
-`implement-issue.md`, replacing GitHub label transitions with `hub task report` calls
-and removing worktree setup (the dispatch workflow handles that).
+These are the autonomous-session counterparts to the interactive
+investigation prompts in `prompts/investigations/` (`ci.md`, `gcp.md`,
+`issue.md`, `loki.md`, `media.md`), which are launched by the `i` key rather
+than the dispatch loop.
+
+**Model selection** is per kind: `debug` runs on the most capable model
+(opus), `implement` and `review` on the cost/quality balance (sonnet). The
+diagrams above show a single `--model` value for brevity.
 
 ---
 
@@ -305,7 +312,7 @@ pattern — the tmux commands, window lifetime, and completion signals differ fu
 | Worktree          | Ephemeral or PR-specific              | Persistent `agent/TASK-XXXX` branch                           |
 | Completion signal | Human closes the pane                 | `hub task report` (primary) + session file polling (fallback) |
 | Session ID        | Not stored                            | Stored in `tasks.session_id` (uuid5, injected at dispatch)    |
-| Code lives in     | `ui/tui/src/investigations/`          | `workflows/src/tasks.rs` + `ui/tui/src/main.rs` dispatch tick |
+| Code lives in     | `ui/tui/src/investigations/`          | `workflows/src/dispatch.rs` + `ui/tui/src/main.rs` dispatch tick |
 
 ---
 
