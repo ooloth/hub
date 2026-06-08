@@ -128,6 +128,9 @@ pub(crate) struct TaskCreationSeed {
     pub(crate) kind: Option<TaskKind>,
     pub(crate) link: Option<String>,
     pub(crate) repo: Option<RepoSlug>,
+    /// Provenance of the signal row this seed was derived from. Carried
+    /// verbatim through the modal into the created task; not user-editable.
+    pub(crate) origin: TaskOrigin,
 }
 
 /// Which field currently has focus in the creation modal.
@@ -174,6 +177,9 @@ pub(crate) struct TaskCreationModal {
     pub(crate) kind: TaskKind,
     pub(crate) repo: RepoPicker,
     pub(crate) link: TextArea<'static>,
+    /// Provenance carried from the seed. `Idea` for a blank form. Not editable
+    /// through any field — it rides alongside the form into the created task.
+    pub(crate) origin: TaskOrigin,
 }
 
 impl TaskCreationModal {
@@ -191,6 +197,7 @@ impl TaskCreationModal {
         let mut link_ta = TextArea::default();
         let mut kind = TaskKind::Implement;
         let mut seed_repo: Option<RepoSlug> = None;
+        let mut origin = TaskOrigin::Idea;
         if let Some(s) = seed {
             if let Some(t) = s.title {
                 title_ta = TextArea::new(vec![t]);
@@ -205,6 +212,7 @@ impl TaskCreationModal {
                 link_ta = TextArea::new(vec![l]);
             }
             seed_repo = s.repo;
+            origin = s.origin;
         }
         Self {
             focused_field: TaskFormField::Title,
@@ -213,6 +221,7 @@ impl TaskCreationModal {
             kind,
             repo: RepoPicker::new(available_repos, seed_repo.as_ref()),
             link: link_ta,
+            origin,
         }
     }
 
@@ -244,9 +253,7 @@ impl TaskCreationModal {
             kind: self.kind,
             links,
             repo: self.repo.selected_value().cloned(),
-            // Slice 1: origin is always `Idea`. Slice 2 sources it from the
-            // signal seed carried through the modal.
-            origin: TaskOrigin::Idea,
+            origin: self.origin.clone(),
         })
     }
 }
@@ -273,6 +280,7 @@ pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
                 kind: Some(TaskKind::Review),
                 link: Some(pr.url.clone()),
                 repo: Some(pr.repo.clone()),
+                origin: TaskOrigin::from_pr(pr),
             })
         }
         StatusItem::Issue(issue) => Some(TaskCreationSeed {
@@ -284,6 +292,7 @@ pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
             kind: Some(TaskKind::Implement),
             link: Some(issue.url.clone()),
             repo: Some(issue.repo.clone()),
+            origin: TaskOrigin::from_issue(issue),
         }),
         StatusItem::Linear(l) => Some(TaskCreationSeed {
             title: Some(l.title.clone()),
@@ -291,6 +300,7 @@ pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
             kind: Some(TaskKind::Implement),
             link: Some(l.url.clone()),
             repo: None,
+            origin: TaskOrigin::from_linear(l),
         }),
         StatusItem::Ci(ci) => {
             let title = match (&ci.job_name, &ci.step_name) {
@@ -313,6 +323,7 @@ pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
                 kind: Some(TaskKind::Debug),
                 link: Some(ci.url.clone()),
                 repo: Some(ci.repo.clone()),
+                origin: TaskOrigin::from_ci(ci),
             })
         }
         StatusItem::Loki(l) => Some(TaskCreationSeed {
@@ -324,6 +335,7 @@ pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
             kind: Some(TaskKind::Debug),
             link: (!l.url.is_empty()).then(|| l.url.clone()),
             repo: None,
+            origin: TaskOrigin::from_loki(l),
         }),
         StatusItem::Gcp(g) => Some(TaskCreationSeed {
             title: Some(format!("{}:{} — {}", g.project, g.env, g.title)),
@@ -334,6 +346,7 @@ pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
             kind: Some(TaskKind::Debug),
             link: (!g.url.is_empty()).then(|| g.url.clone()),
             repo: None,
+            origin: TaskOrigin::from_gcp(g),
         }),
         // Task rows open a blank form (no pre-population).
         StatusItem::AgentSession(_) => None,
@@ -344,6 +357,14 @@ pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
             kind: Some(TaskKind::Debug),
             link: Some(b.url.clone()),
             repo: None,
+            // Media origins are constructed here (private-gated) but the
+            // `TaskOrigin::Alert` type itself is feature-independent. `source`
+            // is baked into the key so apps (sonarr/radarr/…) never collide.
+            origin: TaskOrigin::Alert {
+                source: domain::AlertSource::Media,
+                key: format!("media/blocked/{}/{}", b.source, b.title),
+                label: b.title.clone(),
+            },
         }),
         #[cfg(feature = "private")]
         StatusItem::MediaMissing(m) => Some(TaskCreationSeed {
@@ -352,6 +373,11 @@ pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
             kind: Some(TaskKind::Debug),
             link: Some(m.url.clone()),
             repo: None,
+            origin: TaskOrigin::Alert {
+                source: domain::AlertSource::Media,
+                key: format!("media/missing/{}/{}/{}", m.source, m.title, m.air_date),
+                label: m.title.clone(),
+            },
         }),
         #[cfg(feature = "private")]
         StatusItem::MediaHealth(h) => Some(TaskCreationSeed {
@@ -360,6 +386,11 @@ pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
             kind: Some(TaskKind::Debug),
             link: (!h.url.is_empty()).then(|| h.url.clone()),
             repo: None,
+            origin: TaskOrigin::Alert {
+                source: domain::AlertSource::Media,
+                key: format!("media/health/{}/{}", h.source, h.message),
+                label: h.message.clone(),
+            },
         }),
         // Backlog rows carry no actionable identity — blank form.
         #[cfg(feature = "private")]
@@ -754,6 +785,131 @@ mod tests {
         assert!(seed.repo.is_none());
     }
 
+    fn make_linear() -> StatusItem {
+        StatusItem::Linear(domain::LinearIssue {
+            identifier: "ENG-1".to_string(),
+            title: "Investigate".to_string(),
+            url: "https://linear.app/x".to_string(),
+            state: "Todo".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+        })
+    }
+
+    fn make_gcp() -> StatusItem {
+        StatusItem::Gcp(domain::GcpEntry {
+            title: "High error rate".to_string(),
+            project: "myapp".to_string(),
+            env: "prod".to_string(),
+            message: "oom killed".to_string(),
+            line: "{}".to_string(),
+            lookback: "15m".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Low,
+            url: "https://console.cloud.google.com/x".to_string(),
+            gcp_project: "rp006-prod-49a893d8".to_string(),
+        })
+    }
+
+    // ── seed_from_item: origin ────────────────────────────────────────────────
+
+    #[test]
+    fn seed_from_pr_sets_pr_origin() {
+        let seed = seed_from_item(&make_pr(domain::PrKind::ToReview)).unwrap();
+        assert_eq!(
+            seed.origin,
+            domain::TaskOrigin::Pr {
+                repo: domain::RepoSlug::new("org", "hub"),
+                number: 42,
+            }
+        );
+    }
+
+    #[test]
+    fn seed_from_issue_sets_github_issue_origin() {
+        let seed = seed_from_item(&make_issue()).unwrap();
+        assert_eq!(
+            seed.origin,
+            domain::TaskOrigin::Issue {
+                system: domain::IssueSystem::GitHub,
+                repo: Some(domain::RepoSlug::new("org", "hub")),
+                id: "7".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn seed_from_linear_sets_linear_issue_origin() {
+        let seed = seed_from_item(&make_linear()).unwrap();
+        assert_eq!(
+            seed.origin,
+            domain::TaskOrigin::Issue {
+                system: domain::IssueSystem::Linear,
+                repo: None,
+                id: "ENG-1".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn seed_from_ci_sets_ci_origin_with_identity_fields() {
+        let seed = seed_from_item(&make_ci(Some("build"), Some("test"), None)).unwrap();
+        assert_eq!(
+            seed.origin,
+            domain::TaskOrigin::Ci {
+                repo: domain::RepoSlug::new("org", "hub"),
+                workflow: "CI".into(),
+                job: Some("build".into()),
+                step: Some("test".into()),
+                url: "https://github.com/org/hub/actions/runs/99".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn seed_from_loki_sets_loki_alert_origin() {
+        let seed = seed_from_item(&make_loki("https://grafana/x")).unwrap();
+        assert_eq!(
+            seed.origin,
+            domain::TaskOrigin::Alert {
+                source: domain::AlertSource::Loki,
+                key: "myapp/prod/connection refused".into(),
+                label: "myapp:prod — High error rate".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn seed_from_gcp_sets_gcp_alert_origin() {
+        let seed = seed_from_item(&make_gcp()).unwrap();
+        assert_eq!(
+            seed.origin,
+            domain::TaskOrigin::Alert {
+                source: domain::AlertSource::Gcp,
+                key: "myapp/prod/oom killed".into(),
+                label: "myapp:prod — High error rate".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn blank_form_produces_idea_origin() {
+        let mut modal = TaskCreationModal::blank();
+        modal.title = TextArea::new(vec!["a title".to_string()]);
+        assert_eq!(
+            modal.try_into_request().unwrap().origin,
+            domain::TaskOrigin::Idea
+        );
+    }
+
+    #[test]
+    fn seeded_origin_survives_the_form_boundary() {
+        let seed = seed_from_item(&make_pr(domain::PrKind::ToReview)).unwrap();
+        let expected = seed.origin.clone();
+        let modal = TaskCreationModal::with_seed(Some(seed), vec![]);
+        assert_eq!(modal.try_into_request().unwrap().origin, expected);
+    }
+
     #[test]
     fn seed_from_agent_session_returns_none() {
         let task = StatusItem::AgentSession(domain::Task {
@@ -773,5 +929,27 @@ mod tests {
             comments: vec![],
         });
         assert!(seed_from_item(&task).is_none());
+    }
+
+    #[cfg(feature = "private")]
+    #[test]
+    fn seed_from_media_blocked_sets_media_alert_origin_with_source_in_key() {
+        let item = StatusItem::MediaBlocked(workflows::private::status::BlockedItem {
+            source: "Sonarr".to_string(),
+            urgency: domain::Urgency::Low,
+            age: chrono::Duration::zero(),
+            title: "Show — S01E01".to_string(),
+            error: "unsupported extension".to_string(),
+            url: "https://sonarr/x".to_string(),
+        });
+        let seed = seed_from_item(&item).unwrap();
+        assert_eq!(
+            seed.origin,
+            domain::TaskOrigin::Alert {
+                source: domain::AlertSource::Media,
+                key: "media/blocked/Sonarr/Show — S01E01".into(),
+                label: "Show — S01E01".into(),
+            }
+        );
     }
 }

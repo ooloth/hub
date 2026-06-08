@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-use crate::pr::RepoSlug;
+use crate::ci::CiFailure;
+use crate::gcp::GcpEntry;
+use crate::issue::{Issue, LinearIssue};
+use crate::loki::LokiEntry;
+use crate::pr::{PullRequest, RepoSlug};
 
 /// The originating signal a task was created from — its provenance.
 ///
@@ -59,6 +63,71 @@ pub enum TaskOrigin {
     /// A blank task with no originating signal.
     #[default]
     Idea,
+}
+
+impl TaskOrigin {
+    /// A pull request row. Identity is the repo and PR number.
+    pub fn from_pr(pr: &PullRequest) -> Self {
+        Self::Pr {
+            repo: pr.repo.clone(),
+            number: pr.number,
+        }
+    }
+
+    /// A GitHub issue row. `id` is the issue number as a string; `repo` is
+    /// always present for GitHub.
+    pub fn from_issue(issue: &Issue) -> Self {
+        Self::Issue {
+            system: IssueSystem::GitHub,
+            repo: Some(issue.repo.clone()),
+            id: issue.number.to_string(),
+        }
+    }
+
+    /// A Linear issue row. `id` is the globally unique identifier (e.g.
+    /// `ENG-123`); Linear has no repo.
+    pub fn from_linear(issue: &LinearIssue) -> Self {
+        Self::Issue {
+            system: IssueSystem::Linear,
+            repo: None,
+            id: issue.identifier.clone(),
+        }
+    }
+
+    /// A CI failure row. Identity is `(repo, workflow, job, step)` — all
+    /// invariant for the same failing check; `url` is kept for navigation only.
+    pub fn from_ci(ci: &CiFailure) -> Self {
+        Self::Ci {
+            repo: ci.repo.clone(),
+            workflow: ci.workflow_name.clone(),
+            job: ci.job_name.clone(),
+            step: ci.step_name.clone(),
+            url: ci.url.clone(),
+        }
+    }
+
+    /// A Loki alert row. `key` is `project/env/message` — `message` is the
+    /// stable error category Loki groups by; it is the contract caller's
+    /// responsibility that the query resolves `message` to a real stream label
+    /// rather than the raw-line fallback. `label` is display only.
+    pub fn from_loki(entry: &LokiEntry) -> Self {
+        Self::Alert {
+            source: AlertSource::Loki,
+            key: format!("{}/{}/{}", entry.project, entry.env, entry.message),
+            label: format!("{}:{} — {}", entry.project, entry.env, entry.title),
+        }
+    }
+
+    /// A GCP alert row. `key` is `project/env/message` using the hub project
+    /// name (not the cloud project id), symmetric with Loki. `label` is display
+    /// only.
+    pub fn from_gcp(entry: &GcpEntry) -> Self {
+        Self::Alert {
+            source: AlertSource::Gcp,
+            key: format!("{}/{}/{}", entry.project, entry.env, entry.message),
+            label: format!("{}:{} — {}", entry.project, entry.env, entry.title),
+        }
+    }
 }
 
 /// The ticket system an [`TaskOrigin::Issue`] came from. Extensible to
@@ -161,6 +230,196 @@ mod tests {
                 key: "media/blocked/sonarr/x".into(),
                 label: "x".into(),
             }
+        );
+    }
+
+    // ── constructors ─────────────────────────────────────────────────────────────
+
+    fn issue() -> Issue {
+        Issue {
+            number: 7,
+            title: "Button misaligned".into(),
+            repo: slug(),
+            url: "https://github.com/ooloth/hub/issues/7".into(),
+            author: "bob".into(),
+            age: chrono::Duration::zero(),
+            urgency: crate::urgency::Urgency::Low,
+            labels: vec![],
+            body: None,
+        }
+    }
+
+    fn linear() -> LinearIssue {
+        LinearIssue {
+            identifier: "ENG-1".into(),
+            title: "Investigate".into(),
+            url: "https://linear.app/x".into(),
+            state: "Todo".into(),
+            age: chrono::Duration::zero(),
+            urgency: crate::urgency::Urgency::Low,
+        }
+    }
+
+    fn ci(job: Option<&str>, step: Option<&str>) -> CiFailure {
+        CiFailure {
+            repo: slug(),
+            workflow_name: "CI".into(),
+            job_name: job.map(str::to_string),
+            step_name: step.map(str::to_string),
+            error: Some("boom".into()),
+            age: chrono::Duration::zero(),
+            urgency: crate::urgency::Urgency::High,
+            url: "https://github.com/ooloth/hub/actions/runs/9".into(),
+        }
+    }
+
+    fn loki(project: &str, env: &str, message: &str) -> LokiEntry {
+        LokiEntry {
+            title: "High error rate".into(),
+            project: project.into(),
+            env: env.into(),
+            message: message.into(),
+            line: r#"{"level":"error"}"#.into(),
+            lookback: "15m".into(),
+            age: chrono::Duration::zero(),
+            urgency: crate::urgency::Urgency::Critical,
+            url: "https://grafana/d/1".into(),
+        }
+    }
+
+    fn gcp(project: &str, env: &str, message: &str) -> GcpEntry {
+        GcpEntry {
+            title: "High error rate".into(),
+            project: project.into(),
+            env: env.into(),
+            message: message.into(),
+            line: r#"{"level":"error"}"#.into(),
+            lookback: "15m".into(),
+            age: chrono::Duration::zero(),
+            urgency: crate::urgency::Urgency::Critical,
+            url: "https://console.cloud.google.com/x".into(),
+            gcp_project: "rp006-prod-49a893d8".into(),
+        }
+    }
+
+    #[test]
+    fn from_issue_tags_github_with_repo_and_numeric_id() {
+        assert_eq!(
+            TaskOrigin::from_issue(&issue()),
+            TaskOrigin::Issue {
+                system: IssueSystem::GitHub,
+                repo: Some(slug()),
+                id: "7".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn from_linear_tags_linear_with_no_repo_and_identifier_id() {
+        assert_eq!(
+            TaskOrigin::from_linear(&linear()),
+            TaskOrigin::Issue {
+                system: IssueSystem::Linear,
+                repo: None,
+                id: "ENG-1".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn from_ci_carries_identity_fields_and_keeps_url_separate() {
+        assert_eq!(
+            TaskOrigin::from_ci(&ci(Some("build"), Some("test"))),
+            TaskOrigin::Ci {
+                repo: slug(),
+                workflow: "CI".into(),
+                job: Some("build".into()),
+                step: Some("test".into()),
+                url: "https://github.com/ooloth/hub/actions/runs/9".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn from_ci_collapses_to_workflow_when_job_and_step_absent() {
+        let TaskOrigin::Ci {
+            workflow,
+            job,
+            step,
+            ..
+        } = TaskOrigin::from_ci(&ci(None, None))
+        else {
+            panic!("expected Ci");
+        };
+        assert_eq!(workflow, "CI");
+        assert!(job.is_none() && step.is_none());
+    }
+
+    #[test]
+    fn from_loki_derives_key_and_label() {
+        assert_eq!(
+            TaskOrigin::from_loki(&loki("myapp", "prod", "connection refused")),
+            TaskOrigin::Alert {
+                source: AlertSource::Loki,
+                key: "myapp/prod/connection refused".into(),
+                label: "myapp:prod — High error rate".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn from_gcp_keys_on_hub_project_not_cloud_project() {
+        let TaskOrigin::Alert { source, key, label } =
+            TaskOrigin::from_gcp(&gcp("myapp", "prod", "oom killed"))
+        else {
+            panic!("expected Alert");
+        };
+        assert_eq!(source, AlertSource::Gcp);
+        assert_eq!(key, "myapp/prod/oom killed");
+        assert_eq!(label, "myapp:prod — High error rate");
+        assert!(
+            !key.contains("rp006"),
+            "key must not use the cloud project id"
+        );
+    }
+
+    // ── Alert `key` contract: stable + discriminating ────────────────────────────
+
+    fn loki_key(entry: &LokiEntry) -> String {
+        match TaskOrigin::from_loki(entry) {
+            TaskOrigin::Alert { key, .. } => key,
+            other => panic!("expected Alert, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn loki_key_is_stable_across_volatile_fields() {
+        // The same problem re-observed on a later scan: age, urgency, the
+        // sampled log line, lookback, and url all differ — the key must not.
+        let a = loki("myapp", "prod", "db timeout");
+        let mut b = loki("myapp", "prod", "db timeout");
+        b.age = chrono::Duration::hours(3);
+        b.urgency = crate::urgency::Urgency::Low;
+        b.line = r#"{"ts":"later"}"#.into();
+        b.lookback = "1h".into();
+        b.url = "https://grafana/d/changed".into();
+        assert_eq!(loki_key(&a), loki_key(&b));
+    }
+
+    #[test]
+    fn loki_key_discriminates_distinct_problems() {
+        let base = loki("myapp", "prod", "db timeout");
+        assert_ne!(
+            loki_key(&base),
+            loki_key(&loki("myapp", "prod", "oom killed"))
+        );
+        assert_ne!(
+            loki_key(&base),
+            loki_key(&loki("myapp", "staging", "db timeout"))
+        );
+        assert_ne!(
+            loki_key(&base),
+            loki_key(&loki("other", "prod", "db timeout"))
         );
     }
 

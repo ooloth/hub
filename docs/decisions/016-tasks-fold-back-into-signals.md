@@ -45,7 +45,7 @@ as a string in `links`. Final shape, decided at build ([issue 290](https://githu
 enum TaskOrigin {
     Pr    { repo: RepoSlug, number: u64 },
     Issue { system: IssueSystem, repo: Option<RepoSlug>, id: String },
-    Ci    { repo: RepoSlug, url: String },
+    Ci    { repo: RepoSlug, workflow: String, job: Option<String>, step: Option<String>, url: String },
     Alert { source: AlertSource, key: String, label: String },
     Idea,                                     // no signal (blank task)
 }
@@ -66,8 +66,10 @@ them was wrong on each:
   system" as a single match. The `id` is the system-native key (`#42` for
   GitHub, `ENG-123` for Linear) — a join key re-parsed on refetch, not typed
   per system. `repo` is `None` for trackers without one (Linear). The
-  illustrative `run_id`/`fingerprint` fields don't exist on the source signals;
-  `Ci` keys on its run `url`, and `Alert` keys on a derived grouping string.
+  illustrative `run_id`/`fingerprint` fields don't exist on the source signals.
+  `Ci` keys on `(repo, workflow, job, step)` — all already on `CiFailure` and
+  invariant for the same failing check — keeping `url` only for navigation (it
+  changes every run); `Alert` keys on a derived grouping string.
 - **One `Alert` variant for every scan source** (Loki, GCP, media), not one per
   source. PR/Issue/CI earn dedicated variants because they have an external
   tracker with a refetchable join key; Loki/GCP/media are the same class —
