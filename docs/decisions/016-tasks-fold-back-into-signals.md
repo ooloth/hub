@@ -39,21 +39,50 @@ redirection. The status submenu remains as that escape hatch.
 ### Typed origin
 
 A task records the signal it came from as a typed value in `domain/`, not
-as a string in `links`. Shape (illustrative, final form decided at build):
+as a string in `links`. Final shape, decided at build ([issue 290](https://github.com/ooloth/hub/issues/290)):
 
 ```
 enum TaskOrigin {
     Pr    { repo: RepoSlug, number: u64 },
-    Issue { repo: RepoSlug, number: u64 },   // or Linear id
-    Ci    { repo: RepoSlug, run_id: u64 },
-    Alert { fingerprint: String },
-    Idea,                                     // no signal
+    Issue { system: IssueSystem, repo: Option<RepoSlug>, id: String },
+    Ci    { repo: RepoSlug, url: String },
+    Alert { source: AlertSource, key: String, label: String },
+    Idea,                                     // no signal (blank task)
 }
+
+enum IssueSystem { GitHub, Linear }           // extensible: Jira, Monday, Trekker
+enum AlertSource { Loki, Gcp, Media }         // extensible: any future scanner
 ```
 
 This is a newtype-style domain concept (per CLAUDE.md), distinct from the
 freeform `links` field, which stays for arbitrary supplementary references.
-`repo` becomes derivable from the origin for signal-backed tasks.
+`repo` becomes derivable from the origin for the variants that carry it.
+
+Three shape decisions worth recording, because the illustrative sketch above
+them was wrong on each:
+
+- **One `Issue` variant for every ticket system**, tagged by `system`, rather
+  than a variant per system. Lets the TUI filter "all tickets regardless of
+  system" as a single match. The `id` is the system-native key (`#42` for
+  GitHub, `ENG-123` for Linear) — a join key re-parsed on refetch, not typed
+  per system. `repo` is `None` for trackers without one (Linear). The
+  illustrative `run_id`/`fingerprint` fields don't exist on the source signals;
+  `Ci` keys on its run `url`, and `Alert` keys on a derived grouping string.
+- **One `Alert` variant for every scan source** (Loki, GCP, media), not one per
+  source. PR/Issue/CI earn dedicated variants because they have an external
+  tracker with a refetchable join key; Loki/GCP/media are the same class —
+  internally-detected operational problems with no external ticket identity, so
+  they share a variant. `key` is a stable grouping/fingerprint each source
+  derives its own way; `label` is the display string.
+- **`TaskOrigin` is `private`-feature-independent.** It lives in `domain` (which
+  has no `private` feature and must never gain one), and no variant — including
+  `AlertSource::Media` — is `#[cfg(feature = "private")]`-gated. Persisted task
+  data outlives any single build config: a non-`private` build (a device with no
+  media signals) must deserialize and render every origin a `private` build
+  wrote, including `Alert { source: Media }`. Only the *construction* of a
+  media-sourced alert at seed time is `private`-gated; the type is total on every
+  build. A gated variant would reproduce the existing `StatusItem` hazard, where
+  a non-`private` build cannot deserialize a payload a `private` build serialized.
 
 ### Fold-back inference
 
