@@ -359,7 +359,7 @@ pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
             repo: None,
             // Media origins are constructed here (private-gated) but the
             // `TaskOrigin::Alert` type itself is feature-independent. `source`
-            // is baked into the key so apps (sonarr/radarr/…) never collide.
+            // is baked into the key so different media apps never collide.
             origin: TaskOrigin::Alert {
                 source: domain::AlertSource::Media,
                 key: format!("media/blocked/{}/{}", b.source, b.title),
@@ -935,19 +935,19 @@ mod tests {
     #[test]
     fn seed_from_media_blocked_sets_media_alert_origin_with_source_in_key() {
         let item = StatusItem::MediaBlocked(workflows::private::status::BlockedItem {
-            source: "Sonarr".to_string(),
+            source: "tv".to_string(),
             urgency: domain::Urgency::Low,
             age: chrono::Duration::zero(),
             title: "Show — S01E01".to_string(),
             error: "unsupported extension".to_string(),
-            url: "https://sonarr/x".to_string(),
+            url: "https://media/x".to_string(),
         });
         let seed = seed_from_item(&item).unwrap();
         assert_eq!(
             seed.origin,
             domain::TaskOrigin::Alert {
                 source: domain::AlertSource::Media,
-                key: "media/blocked/Sonarr/Show — S01E01".into(),
+                key: "media/blocked/tv/Show — S01E01".into(),
                 label: "Show — S01E01".into(),
             }
         );

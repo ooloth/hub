@@ -5,7 +5,12 @@ set -euo pipefail
 # The term list lives in hub-private so the terms themselves stay private.
 # Silently passes if hub-private is not present.
 
-BLOCKLIST="../hub-private/scripts/blocked-terms.txt"
+# Anchor the blocklist path to the repo root, not the caller's CWD. Git hook
+# runners (e.g. prek's `hook-impl`) may invoke this script from a directory
+# where the relative `../hub-private` path does not resolve; without anchoring,
+# the `-f` guard below would silently pass and let banned terms through.
+ROOT="$(git rev-parse --show-toplevel)"
+BLOCKLIST="$ROOT/../hub-private/scripts/blocked-terms.txt"
 [[ -f "$BLOCKLIST" ]] || exit 0
 
 staged=$(git diff --cached --name-only --diff-filter=d)

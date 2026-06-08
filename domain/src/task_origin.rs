@@ -220,14 +220,14 @@ mod tests {
         // persisted by a `private` build — the cross-build hazard this design
         // exists to avoid.
         let origin: TaskOrigin = serde_json::from_str(
-            r#"{"type":"alert","source":"media","key":"media/blocked/sonarr/x","label":"x"}"#,
+            r#"{"type":"alert","source":"media","key":"media/blocked/tv/x","label":"x"}"#,
         )
         .unwrap();
         assert_eq!(
             origin,
             TaskOrigin::Alert {
                 source: AlertSource::Media,
-                key: "media/blocked/sonarr/x".into(),
+                key: "media/blocked/tv/x".into(),
                 label: "x".into(),
             }
         );
