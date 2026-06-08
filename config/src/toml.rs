@@ -135,26 +135,29 @@ mod tests {
             github_username = "user"
             linear_token = "lin"
             loki_token = "loki"
-            sonarr_url = "http://sonarr.local"
-            sonarr_api_key = "key"
+            service_url = "http://service.local"
+            service_api_key = "key"
         "#,
         )
         .unwrap();
         assert_eq!(result.credentials.linear_token.as_deref(), Some("lin"));
         assert_eq!(result.credentials.loki_token.as_deref(), Some("loki"));
+        // Unrecognized credential keys land in the `extra` catch-all map, so
+        // private integrations resolve their own keys by name without a typed
+        // field per service.
         assert_eq!(
             result
                 .credentials
                 .extra
-                .get("sonarr_url")
+                .get("service_url")
                 .map(String::as_str),
-            Some("http://sonarr.local")
+            Some("http://service.local")
         );
         assert_eq!(
             result
                 .credentials
                 .extra
-                .get("sonarr_api_key")
+                .get("service_api_key")
                 .map(String::as_str),
             Some("key")
         );
