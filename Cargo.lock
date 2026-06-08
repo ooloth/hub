@@ -490,6 +490,7 @@ name = "domain"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "proptest",
  "rstest 0.25.0",
  "secrecy",
  "serde",
@@ -2243,6 +2244,7 @@ dependencies = [
  "domain",
  "rstest 0.25.0",
  "rusqlite",
+ "serde_json",
  "tempfile",
 ]
 

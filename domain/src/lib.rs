@@ -6,6 +6,7 @@ pub mod pr;
 pub mod serde_helpers;
 pub mod session;
 pub mod task;
+pub mod task_origin;
 pub mod urgency;
 
 // Re-export duration_secs at the crate root so existing
@@ -20,6 +21,7 @@ pub use loki::*;
 pub use pr::*;
 pub use session::*;
 pub use task::*;
+pub use task_origin::*;
 pub use urgency::*;
 
 #[cfg(test)]

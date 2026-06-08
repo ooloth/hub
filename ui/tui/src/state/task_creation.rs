@@ -1,4 +1,4 @@
-use domain::{RepoSlug, TaskKind};
+use domain::{RepoSlug, TaskKind, TaskOrigin};
 use tui_textarea::TextArea;
 use workflows::status::StatusItem;
 
@@ -118,6 +118,7 @@ pub(crate) struct TaskCreationRequest {
     pub(crate) kind: TaskKind,
     pub(crate) links: Vec<String>,
     pub(crate) repo: Option<RepoSlug>,
+    pub(crate) origin: TaskOrigin,
 }
 
 /// Pre-population seed for the creation form.
@@ -243,6 +244,9 @@ impl TaskCreationModal {
             kind: self.kind,
             links,
             repo: self.repo.selected_value().cloned(),
+            // Slice 1: origin is always `Idea`. Slice 2 sources it from the
+            // signal seed carried through the modal.
+            origin: TaskOrigin::Idea,
         })
     }
 }
@@ -760,6 +764,7 @@ mod tests {
             kind: TaskKind::Debug,
             session_id: None,
             repo: None,
+            origin: domain::TaskOrigin::Idea,
             links: vec![],
             created_at: String::new(),
             updated_at: String::new(),

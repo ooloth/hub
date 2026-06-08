@@ -269,6 +269,7 @@ impl App {
                             kind: req.kind,
                             links: req.links,
                             repo: req.repo,
+                            origin: req.origin,
                         }]
                     }
                 }

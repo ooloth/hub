@@ -546,7 +546,16 @@ mod tests {
             [],
         ).unwrap();
         // Add a ready task that should NOT be claimed.
-        store::tasks::create(&conn, "waiting", TaskKind::Implement, None, &[], None).unwrap();
+        store::tasks::create(
+            &conn,
+            "waiting",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &domain::TaskOrigin::Idea,
+        )
+        .unwrap();
         conn.execute(
             "UPDATE tasks SET status = 'ready' WHERE title = 'waiting'",
             [],
@@ -583,6 +592,7 @@ mod tests {
             kind: TaskKind::Implement,
             session_id: None,
             repo: None,
+            origin: domain::TaskOrigin::Idea,
             links: vec![],
             created_at: updated_at.to_rfc3339(),
             updated_at: updated_at.to_rfc3339(),
@@ -665,6 +675,7 @@ mod tests {
             kind: TaskKind::Implement,
             session_id: None,
             repo: None,
+            origin: domain::TaskOrigin::Idea,
             links: vec![],
             created_at: hours_ago(100).to_rfc3339(),
             updated_at: "not-a-date".into(),
@@ -749,6 +760,7 @@ mod tests {
             kind: TaskKind::Implement,
             session_id: None,
             repo: None,
+            origin: domain::TaskOrigin::Idea,
             links: vec![],
             created_at: mins_ago(60).to_rfc3339(),
             updated_at: "not-a-date".into(),
@@ -1072,6 +1084,7 @@ mod tests {
             kind,
             session_id: None,
             repo: None,
+            origin: domain::TaskOrigin::Idea,
             links: vec![],
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),

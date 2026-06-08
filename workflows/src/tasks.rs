@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use domain::{CommentAuthor, StreamBlock, Task, TaskId, TaskKind, TaskStatus};
+use domain::{CommentAuthor, StreamBlock, Task, TaskId, TaskKind, TaskOrigin, TaskStatus};
 
 /// Creates a new task in `backlog` status and returns its generated `TaskId`.
 pub fn create(
@@ -8,10 +8,11 @@ pub fn create(
     description: Option<&str>,
     links: &[String],
     repo: Option<&str>,
+    origin: &TaskOrigin,
 ) -> Result<TaskId> {
     let conn = store::status_cache::connect()?;
     store::tasks::ensure_table(&conn)?;
-    store::tasks::create(&conn, title, kind, description, links, repo)
+    store::tasks::create(&conn, title, kind, description, links, repo, origin)
 }
 
 /// Returns the full task including all fields and its comment thread.

@@ -213,6 +213,10 @@ pub struct Task {
     pub session_id: Option<String>,
     #[serde(default)]
     pub repo: Option<crate::pr::RepoSlug>,
+    /// The signal this task was created from (provenance). Defaults to `Idea`
+    /// for blank tasks and for historical rows with no persisted origin.
+    #[serde(default)]
+    pub origin: crate::task_origin::TaskOrigin,
     #[serde(default)]
     pub links: Vec<String>,
     #[serde(default)]

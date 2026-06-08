@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
-use domain::{ReadyTask, RepoSlug, Task, TaskId, TaskKind, TaskStatus};
+use domain::{ReadyTask, RepoSlug, Task, TaskId, TaskKind, TaskOrigin, TaskStatus};
 use rusqlite::{params, Connection, OptionalExtension};
 
 pub fn ensure_table(conn: &Connection) -> Result<()> {
@@ -27,6 +27,7 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
         ("updated_at", "TEXT"),
         ("links", "TEXT"),
         ("repo", "TEXT"),
+        ("origin", "TEXT"),
     ] {
         add_column_if_missing(conn, "tasks", col, def)?;
     }
@@ -98,13 +99,23 @@ pub fn create(
     description: Option<&str>,
     links: &[String],
     repo: Option<&str>,
+    origin: &TaskOrigin,
 ) -> Result<TaskId> {
     let now = Utc::now().to_rfc3339();
     let links_str = links_to_db(links);
+    let origin_str = origin_to_db(origin)?;
     conn.execute(
-        "INSERT INTO tasks (title, kind, description, links, repo, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)",
-        params![title, kind.to_string(), description, links_str, repo, now],
+        "INSERT INTO tasks (title, kind, description, links, repo, origin, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
+        params![
+            title,
+            kind.to_string(),
+            description,
+            links_str,
+            repo,
+            origin_str,
+            now
+        ],
     )
     .context("failed to insert task")?;
     let row_id = conn.last_insert_rowid();
@@ -143,7 +154,7 @@ pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
         .prepare(
             "SELECT id, title, status, kind, session_id,
                     description, links, created_at,
-                    COALESCE(updated_at, created_at), repo
+                    COALESCE(updated_at, created_at), repo, origin
              FROM tasks
              WHERE status IN ('backlog', 'ready', 'in-progress', 'blocked', 'in-review')
                 OR (status IN ('done', 'failed', 'cancelled') AND COALESCE(updated_at, created_at) >= ?1)
@@ -164,6 +175,7 @@ pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
                 row.get::<_, String>(7)?,
                 row.get::<_, String>(8)?,
                 row.get::<_, Option<String>>(9)?,
+                row.get::<_, Option<String>>(10)?,
             ))
         })
         .context("failed to query tasks")?
@@ -184,6 +196,7 @@ pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
                 created_at_str,
                 updated_at_str,
                 repo_str,
+                origin_str,
             )| {
                 let task_id = TaskId::from_db(format!("TASK-{id:04}"));
                 let status: TaskStatus = status_str
@@ -201,6 +214,8 @@ pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
                             .with_context(|| format!("invalid repo slug for task {id}"))
                     })
                     .transpose()?;
+                let origin = origin_from_db(origin_str)
+                    .with_context(|| format!("invalid origin for task {id}"))?;
                 let urgency = status.urgency();
                 let created_at = chrono::DateTime::parse_from_rfc3339(&created_at_str)
                     .with_context(|| format!("invalid created_at for task {id}: {created_at_str}"))?
@@ -215,6 +230,7 @@ pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
                     kind,
                     session_id,
                     repo,
+                    origin,
                     links: links_from_db(links_str),
                     updated_at: updated_at_str,
                     created_at: created_at_str,
@@ -240,11 +256,12 @@ pub fn get(conn: &Connection, id: &TaskId) -> Result<Task> {
         created_at_str,
         updated_at_opt,
         repo_str,
+        origin_str,
     ) = conn
         .query_row(
             "SELECT title, description, status, kind, session_id,
                     links, created_at,
-                    COALESCE(updated_at, created_at), repo
+                    COALESCE(updated_at, created_at), repo, origin
              FROM tasks WHERE id = ?1",
             params![row_id],
             |row| {
@@ -258,6 +275,7 @@ pub fn get(conn: &Connection, id: &TaskId) -> Result<Task> {
                     row.get::<_, String>(6)?,
                     row.get::<_, String>(7)?,
                     row.get::<_, Option<String>>(8)?,
+                    row.get::<_, Option<String>>(9)?,
                 ))
             },
         )
@@ -278,6 +296,8 @@ pub fn get(conn: &Connection, id: &TaskId) -> Result<Task> {
                 .with_context(|| format!("invalid repo slug for task {id}"))
         })
         .transpose()?;
+    let origin =
+        origin_from_db(origin_str).with_context(|| format!("invalid origin for task {id}"))?;
     let urgency = status.urgency();
     let created_at_dt = chrono::DateTime::parse_from_rfc3339(&created_at_str)
         .with_context(|| format!("invalid created_at for task {id}"))?
@@ -294,6 +314,7 @@ pub fn get(conn: &Connection, id: &TaskId) -> Result<Task> {
         kind,
         session_id,
         repo,
+        origin,
         links: links_from_db(links_str),
         created_at: created_at_str,
         updated_at: updated_at_opt,
@@ -433,6 +454,23 @@ fn links_from_db(val: Option<String>) -> Vec<String> {
     }
 }
 
+/// Serializes an origin to its JSON column value. New rows always store the
+/// JSON (including `{"type":"idea"}`); a NULL column means strictly "historical
+/// row created before origins existed".
+fn origin_to_db(origin: &TaskOrigin) -> Result<String> {
+    serde_json::to_string(origin).context("failed to serialize task origin")
+}
+
+/// Parses an origin from its JSON column value. A NULL or empty column (a
+/// historical row) reads as `Idea`.
+fn origin_from_db(val: Option<String>) -> Result<TaskOrigin> {
+    match val {
+        None => Ok(TaskOrigin::default()),
+        Some(s) if s.is_empty() => Ok(TaskOrigin::default()),
+        Some(s) => serde_json::from_str(&s).context("failed to deserialize task origin"),
+    }
+}
+
 pub(crate) fn task_row_id(id: &TaskId) -> Result<i64> {
     let s = id.to_string();
     s[5..]
@@ -517,6 +555,7 @@ mod tests {
             None,
             &[],
             None,
+            &TaskOrigin::Idea,
         )
         .unwrap();
         ensure_table(&conn).unwrap();
@@ -541,7 +580,16 @@ mod tests {
     #[test]
     fn create_task_returns_key_with_task_prefix_format() {
         let conn = in_memory();
-        let id = create(&conn, "Fix auth bug", TaskKind::Implement, None, &[], None).unwrap();
+        let id = create(
+            &conn,
+            "Fix auth bug",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &TaskOrigin::Idea,
+        )
+        .unwrap();
         let s = id.to_string();
         assert!(s.starts_with("TASK-"), "expected TASK- prefix, got {s}");
         assert!(
@@ -553,8 +601,26 @@ mod tests {
     #[test]
     fn create_multiple_tasks_produces_sequential_keys() {
         let conn = in_memory();
-        let id1 = create(&conn, "First task", TaskKind::Implement, None, &[], None).unwrap();
-        let id2 = create(&conn, "Second task", TaskKind::Debug, None, &[], None).unwrap();
+        let id1 = create(
+            &conn,
+            "First task",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &TaskOrigin::Idea,
+        )
+        .unwrap();
+        let id2 = create(
+            &conn,
+            "Second task",
+            TaskKind::Debug,
+            None,
+            &[],
+            None,
+            &TaskOrigin::Idea,
+        )
+        .unwrap();
         assert_eq!(id1.to_string(), "TASK-0001");
         assert_eq!(id2.to_string(), "TASK-0002");
     }
@@ -562,7 +628,16 @@ mod tests {
     #[test]
     fn set_ready_transitions_status_from_backlog() {
         let conn = in_memory();
-        let id = create(&conn, "Fix auth bug", TaskKind::Implement, None, &[], None).unwrap();
+        let id = create(
+            &conn,
+            "Fix auth bug",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &TaskOrigin::Idea,
+        )
+        .unwrap();
         set_ready(&conn, &id).unwrap();
         let count: i64 = conn
             .query_row(
@@ -577,7 +652,16 @@ mod tests {
     #[test]
     fn set_ready_fails_when_status_is_not_backlog() {
         let conn = in_memory();
-        let id = create(&conn, "Fix auth bug", TaskKind::Implement, None, &[], None).unwrap();
+        let id = create(
+            &conn,
+            "Fix auth bug",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &TaskOrigin::Idea,
+        )
+        .unwrap();
         set_ready(&conn, &id).unwrap();
         let result = set_ready(&conn, &id);
         assert!(result.is_err(), "expected error when task is already ready");
@@ -651,7 +735,16 @@ mod tests {
     #[test]
     fn list_visible_populates_comments_from_db() {
         let conn = in_memory();
-        let id = create(&conn, "Fix auth bug", TaskKind::Implement, None, &[], None).unwrap();
+        let id = create(
+            &conn,
+            "Fix auth bug",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &TaskOrigin::Idea,
+        )
+        .unwrap();
         crate::task_comments::add(&conn, &id, domain::CommentAuthor::Agent, "Found the issue")
             .unwrap();
         let tasks = list_visible(&conn).unwrap();
@@ -667,7 +760,16 @@ mod tests {
     #[test]
     fn list_visible_returns_empty_comments_when_none_added() {
         let conn = in_memory();
-        create(&conn, "No comments task", TaskKind::Debug, None, &[], None).unwrap();
+        create(
+            &conn,
+            "No comments task",
+            TaskKind::Debug,
+            None,
+            &[],
+            None,
+            &TaskOrigin::Idea,
+        )
+        .unwrap();
         let tasks = list_visible(&conn).unwrap();
         assert_eq!(tasks.len(), 1);
         assert!(tasks[0].comments.is_empty());
@@ -685,6 +787,7 @@ mod tests {
             Some("The OAuth token is not being refreshed"),
             &[],
             None,
+            &TaskOrigin::Idea,
         )
         .unwrap();
         let task = get(&conn, &id).unwrap();
@@ -704,6 +807,7 @@ mod tests {
             None,
             &["https://github.com/owner/repo/issues/1".to_string()],
             None,
+            &TaskOrigin::Idea,
         )
         .unwrap();
         let task = get(&conn, &id).unwrap();
@@ -713,7 +817,16 @@ mod tests {
     #[test]
     fn create_without_optional_fields_returns_empty_defaults() {
         let conn = in_memory();
-        let id = create(&conn, "Task", TaskKind::Implement, None, &[], None).unwrap();
+        let id = create(
+            &conn,
+            "Task",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &TaskOrigin::Idea,
+        )
+        .unwrap();
         let task = get(&conn, &id).unwrap();
         assert!(task.description.is_none());
         assert!(task.links.is_empty());
@@ -734,7 +847,16 @@ mod tests {
     #[test]
     fn update_status_changes_status_and_refreshes_updated_at() {
         let conn = in_memory();
-        let id = create(&conn, "Task", TaskKind::Implement, None, &[], None).unwrap();
+        let id = create(
+            &conn,
+            "Task",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &TaskOrigin::Idea,
+        )
+        .unwrap();
         let before = get(&conn, &id).unwrap();
         update_status(&conn, &id, TaskStatus::InReview).unwrap();
         let after = get(&conn, &id).unwrap();
@@ -754,7 +876,16 @@ mod tests {
     #[test]
     fn add_comment_appends_in_chronological_order() {
         let conn = in_memory();
-        let id = create(&conn, "Task", TaskKind::Implement, None, &[], None).unwrap();
+        let id = create(
+            &conn,
+            "Task",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &TaskOrigin::Idea,
+        )
+        .unwrap();
         crate::task_comments::add(
             &conn,
             &id,
@@ -773,7 +904,16 @@ mod tests {
     #[test]
     fn add_comment_updates_task_updated_at() {
         let conn = in_memory();
-        let id = create(&conn, "Task", TaskKind::Implement, None, &[], None).unwrap();
+        let id = create(
+            &conn,
+            "Task",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &TaskOrigin::Idea,
+        )
+        .unwrap();
         let before = get(&conn, &id).unwrap();
         crate::task_comments::add(&conn, &id, domain::CommentAuthor::Agent, "Progress note")
             .unwrap();
@@ -802,6 +942,7 @@ mod tests {
             None,
             &[],
             Some("ooloth/hub"),
+            &TaskOrigin::Idea,
         )
         .unwrap();
         let task = get(&conn, &id).unwrap();
@@ -814,9 +955,107 @@ mod tests {
     #[test]
     fn create_without_repo_retrieves_none() {
         let conn = in_memory();
-        let id = create(&conn, "Task", TaskKind::Implement, None, &[], None).unwrap();
+        let id = create(
+            &conn,
+            "Task",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &TaskOrigin::Idea,
+        )
+        .unwrap();
         let task = get(&conn, &id).unwrap();
         assert!(task.repo.is_none());
+    }
+
+    // ── origin field ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn ensure_table_creates_origin_column() {
+        let conn = Connection::open_in_memory().unwrap();
+        ensure_table(&conn).unwrap();
+        let column_names: Vec<String> = conn
+            .prepare("PRAGMA table_info(tasks)")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert!(
+            column_names.contains(&"origin".to_string()),
+            "missing column: origin"
+        );
+    }
+
+    #[test]
+    fn create_round_trips_typed_origin_via_get() {
+        let conn = in_memory();
+        let origin = TaskOrigin::Pr {
+            repo: RepoSlug::new("ooloth", "hub"),
+            number: 42,
+        };
+        let id = create(
+            &conn,
+            "Review PR",
+            TaskKind::Review,
+            None,
+            &[],
+            None,
+            &origin,
+        )
+        .unwrap();
+        assert_eq!(get(&conn, &id).unwrap().origin, origin);
+    }
+
+    #[test]
+    fn list_visible_round_trips_typed_origin() {
+        let conn = in_memory();
+        let origin = TaskOrigin::Alert {
+            source: domain::AlertSource::Loki,
+            key: "proj/prod/db error".into(),
+            label: "proj:prod — errors".into(),
+        };
+        create(
+            &conn,
+            "Investigate alert",
+            TaskKind::Debug,
+            None,
+            &[],
+            None,
+            &origin,
+        )
+        .unwrap();
+        let tasks = list_visible(&conn).unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].origin, origin);
+    }
+
+    #[test]
+    fn get_reads_null_origin_as_idea() {
+        // Rows created before the origin column existed have a NULL origin and
+        // must read back as `Idea`, not error.
+        let conn = in_memory();
+        conn.execute(
+            "INSERT INTO tasks (title, status, kind, created_at) VALUES ('old', 'backlog', 'implement', ?1)",
+            params![Utc::now().to_rfc3339()],
+        )
+        .unwrap();
+        let id = TaskId::from_db(format!("TASK-{:04}", conn.last_insert_rowid()));
+        assert_eq!(get(&conn, &id).unwrap().origin, TaskOrigin::Idea);
+    }
+
+    #[test]
+    fn list_visible_reads_null_origin_as_idea() {
+        let conn = in_memory();
+        conn.execute(
+            "INSERT INTO tasks (title, status, kind, created_at) VALUES ('old', 'backlog', 'implement', ?1)",
+            params![Utc::now().to_rfc3339()],
+        )
+        .unwrap();
+        let tasks = list_visible(&conn).unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].origin, TaskOrigin::Idea);
     }
 
     // ── count_in_progress ─────────────────────────────────────────────────────
@@ -872,6 +1111,7 @@ mod tests {
             None,
             &[],
             Some("ooloth/hub"),
+            &TaskOrigin::Idea,
         )
         .unwrap();
         set_ready(&conn, &id).unwrap();
@@ -887,7 +1127,16 @@ mod tests {
     #[test]
     fn claim_for_dispatch_transitions_to_in_progress_and_sets_session_id() {
         let conn = in_memory();
-        let id = create(&conn, "Task", TaskKind::Implement, None, &[], None).unwrap();
+        let id = create(
+            &conn,
+            "Task",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &TaskOrigin::Idea,
+        )
+        .unwrap();
         set_ready(&conn, &id).unwrap();
         let claimed = claim_for_dispatch(&conn, &id, "test-session-uuid").unwrap();
         assert!(claimed);
@@ -899,7 +1148,16 @@ mod tests {
     #[test]
     fn claim_for_dispatch_returns_false_when_already_in_progress() {
         let conn = in_memory();
-        let id = create(&conn, "Task", TaskKind::Implement, None, &[], None).unwrap();
+        let id = create(
+            &conn,
+            "Task",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &TaskOrigin::Idea,
+        )
+        .unwrap();
         set_ready(&conn, &id).unwrap();
         claim_for_dispatch(&conn, &id, "first").unwrap();
         let second = claim_for_dispatch(&conn, &id, "second").unwrap();
@@ -919,7 +1177,16 @@ mod tests {
     #[test]
     fn add_link_appends_new_link() {
         let conn = in_memory();
-        let id = create(&conn, "Task", TaskKind::Implement, None, &[], None).unwrap();
+        let id = create(
+            &conn,
+            "Task",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &TaskOrigin::Idea,
+        )
+        .unwrap();
         add_link(&conn, &id, "https://github.com/owner/repo/pull/1").unwrap();
         let task = get(&conn, &id).unwrap();
         assert_eq!(task.links, vec!["https://github.com/owner/repo/pull/1"]);
@@ -928,7 +1195,16 @@ mod tests {
     #[test]
     fn add_link_is_idempotent_for_duplicate() {
         let conn = in_memory();
-        let id = create(&conn, "Task", TaskKind::Implement, None, &[], None).unwrap();
+        let id = create(
+            &conn,
+            "Task",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &TaskOrigin::Idea,
+        )
+        .unwrap();
         let url = "https://github.com/owner/repo/pull/1";
         add_link(&conn, &id, url).unwrap();
         add_link(&conn, &id, url).unwrap();
@@ -939,7 +1215,16 @@ mod tests {
     #[test]
     fn add_link_accumulates_distinct_links() {
         let conn = in_memory();
-        let id = create(&conn, "Task", TaskKind::Implement, None, &[], None).unwrap();
+        let id = create(
+            &conn,
+            "Task",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &TaskOrigin::Idea,
+        )
+        .unwrap();
         add_link(&conn, &id, "https://example.com/a").unwrap();
         add_link(&conn, &id, "https://example.com/b").unwrap();
         add_link(&conn, &id, "~/.hub/agent-session-logs/TASK-0001-fix.md").unwrap();
@@ -957,7 +1242,16 @@ mod tests {
     #[test]
     fn add_link_refreshes_updated_at() {
         let conn = in_memory();
-        let id = create(&conn, "Task", TaskKind::Implement, None, &[], None).unwrap();
+        let id = create(
+            &conn,
+            "Task",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &TaskOrigin::Idea,
+        )
+        .unwrap();
         let before = get(&conn, &id).unwrap();
         add_link(&conn, &id, "https://example.com").unwrap();
         let after = get(&conn, &id).unwrap();

@@ -606,7 +606,16 @@ mod tests {
 
     /// Creates an in-progress task with a session id and returns (id, session_id).
     fn dispatched_task(conn: &Connection) -> (domain::TaskId, String) {
-        let id = store::tasks::create(conn, "t", TaskKind::Implement, None, &[], None).unwrap();
+        let id = store::tasks::create(
+            conn,
+            "t",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &domain::TaskOrigin::Idea,
+        )
+        .unwrap();
         store::tasks::set_ready(conn, &id).unwrap();
         let session_id = id.session_id().to_string();
         assert!(store::tasks::claim_for_dispatch(conn, &id, &session_id).unwrap());

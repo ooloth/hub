@@ -314,6 +314,7 @@ pub(crate) enum Effect {
         kind: domain::TaskKind,
         links: Vec<String>,
         repo: Option<RepoSlug>,
+        origin: domain::TaskOrigin,
     },
 }
 

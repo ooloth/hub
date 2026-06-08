@@ -585,12 +585,14 @@ async fn run_loop(
                     kind,
                     links,
                     repo,
+                    origin,
                 } => match workflows::tasks::create(
                     &title,
                     kind,
                     description.as_deref(),
                     &links,
                     repo.as_ref().map(|r| r.to_string()).as_deref(),
+                    &origin,
                 ) {
                     Ok(id) => {
                         app.ui.flash = Some(format!("{id} created"));
