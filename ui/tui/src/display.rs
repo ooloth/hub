@@ -1,6 +1,6 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use domain::MergeBlocker;
+use domain::{AlertSource, IssueSystem, MergeBlocker, SignalIdentity, Task};
 use workflows::status::StatusItem;
 
 pub(crate) fn merge_blocker_word(b: MergeBlocker) -> &'static str {
@@ -42,6 +42,20 @@ pub(crate) enum FlatRow {
         item: StatusItem,
         is_last: bool,
     },
+    /// A signal row with an attached in-progress task badge.
+    BadgedSignal {
+        item: StatusItem,
+        task: Task,
+    },
+}
+
+impl FlatRow {
+    pub(crate) fn attached_task(&self) -> Option<&Task> {
+        match self {
+            FlatRow::BadgedSignal { task, .. } => Some(task),
+            _ => None,
+        }
+    }
 }
 
 pub(crate) fn flatten(items: &[DisplayItem], expanded: &HashSet<GroupKey>) -> Vec<FlatRow> {
@@ -49,6 +63,12 @@ pub(crate) fn flatten(items: &[DisplayItem], expanded: &HashSet<GroupKey>) -> Ve
     for item in items {
         match item {
             DisplayItem::Single(s) => rows.push(FlatRow::Single(s.clone())),
+            DisplayItem::BadgedSignal { signal, task } => {
+                rows.push(FlatRow::BadgedSignal {
+                    item: signal.clone(),
+                    task: task.clone(),
+                });
+            }
             DisplayItem::Group {
                 label,
                 items: group_items,
@@ -214,6 +234,12 @@ pub(crate) enum DisplayItem {
     Group {
         label: GroupKey,
         items: Vec<StatusItem>,
+    },
+    /// A signal row with an attached in-progress task. The task row is
+    /// suppressed and replaced by this badge on the signal row.
+    BadgedSignal {
+        signal: StatusItem,
+        task: Task,
     },
 }
 
@@ -593,6 +619,7 @@ pub(crate) fn flat_row_urgency(row: &FlatRow) -> domain::Urgency {
         FlatRow::Single(item) => item_urgency(item),
         FlatRow::GroupHeader { urgency, .. } => *urgency,
         FlatRow::GroupChild { item, .. } => item_urgency(item),
+        FlatRow::BadgedSignal { item, .. } => item_urgency(item),
     }
 }
 
@@ -615,6 +642,13 @@ pub(crate) fn flat_row_line(row: &FlatRow) -> LineParts {
         FlatRow::GroupChild { item, is_last, .. } => {
             let mut parts = item_line(item);
             parts.separator = RowSeparator::TreeChild(*is_last);
+            parts
+        }
+        FlatRow::BadgedSignal { item, task } => {
+            let mut parts = item_line(item);
+            parts
+                .dim_inline
+                .push(format!("[{} · {}]", task.id, task.status));
             parts
         }
     }
@@ -732,7 +766,104 @@ impl QueryTerms {
     }
 }
 
+/// Maps a signal `StatusItem` to its `SignalIdentity` for task-matching.
+/// Returns `None` for item types that cannot have tasks attached.
+fn signal_identity_for_item(item: &StatusItem) -> Option<SignalIdentity> {
+    match item {
+        StatusItem::Pr(pr) => Some(SignalIdentity::Pr {
+            repo: pr.repo.clone(),
+            number: pr.number,
+        }),
+        StatusItem::Issue(issue) => Some(SignalIdentity::Issue {
+            system: IssueSystem::GitHub,
+            repo: Some(issue.repo.clone()),
+            id: issue.number.to_string(),
+        }),
+        StatusItem::Linear(linear) => Some(SignalIdentity::Issue {
+            system: IssueSystem::Linear,
+            repo: None,
+            id: linear.identifier.clone(),
+        }),
+        StatusItem::Ci(ci) => Some(SignalIdentity::Ci {
+            repo: ci.repo.clone(),
+            workflow: ci.workflow_name.clone(),
+            job: ci.job_name.clone(),
+            step: ci.step_name.clone(),
+        }),
+        StatusItem::Loki(loki) => Some(SignalIdentity::Alert {
+            source: AlertSource::Loki,
+            key: format!("{}/{}/{}", loki.project, loki.env, loki.message),
+        }),
+        StatusItem::Gcp(gcp) => Some(SignalIdentity::Alert {
+            source: AlertSource::Gcp,
+            key: format!("{}/{}/{}", gcp.project, gcp.env, gcp.message),
+        }),
+        StatusItem::AgentSession(_) => None,
+        #[cfg(feature = "private")]
+        StatusItem::MediaBlocked(_)
+        | StatusItem::MediaMissing(_)
+        | StatusItem::MediaHealth(_)
+        | StatusItem::MediaBacklog { .. } => None,
+    }
+}
+
+/// Post-aggregate pass: badge signal rows that have an active attached task
+/// and suppress the corresponding `AgentSession` row.
+///
+/// `task_index` is built from the **full** unfiltered item list so that badge
+/// matching works even when the active filter hides `AgentSession` rows (e.g.
+/// a "PRs" filter — the PR should still carry its badge).
+fn badge_and_dedup(
+    items: Vec<DisplayItem>,
+    task_index: &HashMap<SignalIdentity, Task>,
+) -> Vec<DisplayItem> {
+    if task_index.is_empty() {
+        return items;
+    }
+    let mut consumed: HashSet<SignalIdentity> = HashSet::new();
+    let mut result = Vec::with_capacity(items.len());
+    for item in items {
+        match &item {
+            DisplayItem::Single(signal) if !matches!(signal, StatusItem::AgentSession(_)) => {
+                if let Some(identity) = signal_identity_for_item(signal) {
+                    if let Some(task) = task_index.get(&identity) {
+                        consumed.insert(identity);
+                        result.push(DisplayItem::BadgedSignal {
+                            signal: signal.clone(),
+                            task: task.clone(),
+                        });
+                        continue;
+                    }
+                }
+            }
+            DisplayItem::Single(StatusItem::AgentSession(task))
+                if !matches!(task.origin, domain::TaskOrigin::Idea)
+                    && consumed.contains(&SignalIdentity::from(&task.origin)) =>
+            {
+                continue; // suppressed — its signal row already carries the badge
+            }
+            _ => {}
+        }
+        result.push(item);
+    }
+    result
+}
+
 pub(crate) fn build_unified(items: Vec<StatusItem>, filter: &Filter) -> Vec<DisplayItem> {
+    // Build task index from the full list before filtering, so badge matching
+    // works even when the active filter hides AgentSession rows.
+    let task_index: HashMap<SignalIdentity, Task> = items
+        .iter()
+        .filter_map(|item| {
+            if let StatusItem::AgentSession(task) = item {
+                if !matches!(task.origin, domain::TaskOrigin::Idea) && !task.status.is_terminal() {
+                    return Some((SignalIdentity::from(&task.origin), task.clone()));
+                }
+            }
+            None
+        })
+        .collect();
+
     let filtered: Vec<StatusItem> = items
         .into_iter()
         .filter(|item| {
@@ -753,7 +884,7 @@ pub(crate) fn build_unified(items: Vec<StatusItem>, filter: &Filter) -> Vec<Disp
         .collect();
     let mut sorted = filtered;
     sorted.sort_by_key(item_urgency);
-    aggregate(sorted)
+    badge_and_dedup(aggregate(sorted), &task_index)
 }
 
 #[cfg(test)]
@@ -1611,6 +1742,7 @@ mod tests {
                     .first()
                     .map(item_urgency)
                     .unwrap_or(domain::Urgency::Low),
+                DisplayItem::BadgedSignal { signal, .. } => item_urgency(signal),
             })
             .collect();
         assert_eq!(
@@ -1621,5 +1753,231 @@ mod tests {
                 domain::Urgency::Low
             ]
         );
+    }
+
+    // --- badge_and_dedup ---
+
+    fn task_for_pr(number: u64, status: domain::TaskStatus) -> domain::Task {
+        domain::Task {
+            id: "TASK-0099".parse().unwrap(),
+            title: "Fix PR".to_string(),
+            description: None,
+            status,
+            kind: domain::TaskKind::Implement,
+            session_id: None,
+            repo: Some(domain::RepoSlug::new("owner", "repo")),
+            origin: domain::TaskOrigin::Pr {
+                repo: domain::RepoSlug::new("owner", "repo"),
+                number,
+            },
+            links: vec![],
+            created_at: String::new(),
+            updated_at: String::new(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Medium,
+            comments: vec![],
+        }
+    }
+
+    fn agent_session_for_pr(number: u64, status: domain::TaskStatus) -> StatusItem {
+        StatusItem::AgentSession(task_for_pr(number, status))
+    }
+
+    // BD1: A signal with a matching non-terminal task becomes BadgedSignal;
+    //      the AgentSession row is suppressed.
+    #[test]
+    fn badge_and_dedup_badges_signal_and_suppresses_task_row() {
+        let task = task_for_pr(42, domain::TaskStatus::InProgress);
+        let task_index = HashMap::from([(SignalIdentity::from(&task.origin), task.clone())]);
+        let items = vec![
+            DisplayItem::Single(pr()),
+            DisplayItem::Single(StatusItem::AgentSession(task.clone())),
+        ];
+        let result = badge_and_dedup(items, &task_index);
+        assert_eq!(result.len(), 1, "task row should be suppressed");
+        assert!(
+            matches!(result[0], DisplayItem::BadgedSignal { .. }),
+            "signal row should become BadgedSignal"
+        );
+    }
+
+    // BD1b: A terminal task does not badge its signal row.
+    #[test]
+    fn badge_and_dedup_does_not_badge_terminal_task() {
+        let items = vec![pr(), agent_session_for_pr(42, domain::TaskStatus::Done)];
+        let result = build_unified(items, &Filter::default());
+        // Both rows visible; PR is not badged (task row comes after in stable sort).
+        assert_eq!(result.len(), 2);
+        assert!(matches!(result[0], DisplayItem::Single(StatusItem::Pr(_))));
+        assert!(matches!(
+            result[1],
+            DisplayItem::Single(StatusItem::AgentSession(_))
+        ));
+    }
+
+    // BD2: A signal with no matching task stays as Single.
+    #[test]
+    fn badge_and_dedup_leaves_unmatched_signal_as_single() {
+        let task = task_for_pr(99, domain::TaskStatus::InProgress);
+        let task_index = HashMap::from([(SignalIdentity::from(&task.origin), task)]);
+        let items = vec![DisplayItem::Single(pr())]; // pr() uses number 42, not 99
+        let result = badge_and_dedup(items, &task_index);
+        assert_eq!(result.len(), 1);
+        assert!(matches!(result[0], DisplayItem::Single(_)));
+    }
+
+    // BD3: An AgentSession row with Idea origin is never suppressed.
+    #[test]
+    fn badge_and_dedup_keeps_idea_task_row() {
+        let task_index = HashMap::new();
+        let items = vec![DisplayItem::Single(agent_session())]; // origin = Idea
+        let result = badge_and_dedup(items, &task_index);
+        assert_eq!(result.len(), 1);
+        assert!(matches!(
+            result[0],
+            DisplayItem::Single(StatusItem::AgentSession(_))
+        ));
+    }
+
+    // BD4: An AgentSession row with no matching signal stays as Single.
+    #[test]
+    fn badge_and_dedup_keeps_unmatched_task_row() {
+        let task = task_for_pr(42, domain::TaskStatus::InProgress);
+        // No matching PR in the item list — task row should survive.
+        let task_index = HashMap::from([(SignalIdentity::from(&task.origin), task.clone())]);
+        let items = vec![DisplayItem::Single(StatusItem::AgentSession(task))];
+        let result = badge_and_dedup(items, &task_index);
+        assert_eq!(result.len(), 1);
+        assert!(matches!(
+            result[0],
+            DisplayItem::Single(StatusItem::AgentSession(_))
+        ));
+    }
+
+    // BD5: build_unified with a PR filter still badges the PR even though
+    //      the AgentSession row is filtered out.
+    #[test]
+    fn build_unified_badges_pr_under_pr_filter() {
+        let items = vec![
+            pr(),
+            agent_session_for_pr(42, domain::TaskStatus::InProgress),
+        ];
+        let filter = Filter {
+            category: Some(Category::Prs),
+            query: None,
+        };
+        let result = build_unified(items, &filter);
+        assert_eq!(result.len(), 1, "task row should be absent under PR filter");
+        assert!(
+            matches!(result[0], DisplayItem::BadgedSignal { .. }),
+            "PR should be badged even when task row is filtered out"
+        );
+    }
+
+    // --- signal_identity_for_item ---
+
+    // SI1: PR maps to Pr identity.
+    #[test]
+    fn signal_identity_for_pr() {
+        assert_eq!(
+            signal_identity_for_item(&pr()),
+            Some(SignalIdentity::Pr {
+                repo: domain::RepoSlug::new("owner", "repo"),
+                number: 42,
+            })
+        );
+    }
+
+    // SI2: GitHub issue maps to Issue identity with GitHub system.
+    #[test]
+    fn signal_identity_for_github_issue() {
+        assert_eq!(
+            signal_identity_for_item(&issue()),
+            Some(SignalIdentity::Issue {
+                system: IssueSystem::GitHub,
+                repo: Some(domain::RepoSlug::new("owner", "repo")),
+                id: "7".to_string(),
+            })
+        );
+    }
+
+    // SI3: Linear issue maps to Issue identity with Linear system.
+    #[test]
+    fn signal_identity_for_linear_issue() {
+        assert_eq!(
+            signal_identity_for_item(&linear()),
+            Some(SignalIdentity::Issue {
+                system: IssueSystem::Linear,
+                repo: None,
+                id: "ENG-99".to_string(),
+            })
+        );
+    }
+
+    // SI4: CI failure maps to Ci identity (url excluded).
+    #[test]
+    fn signal_identity_for_ci() {
+        assert_eq!(
+            signal_identity_for_item(&ci()),
+            Some(SignalIdentity::Ci {
+                repo: domain::RepoSlug::new("owner", "repo"),
+                workflow: "CI".to_string(),
+                job: None,
+                step: None,
+            })
+        );
+    }
+
+    // SI5: Loki alert maps to Alert identity with project/env/message key.
+    #[test]
+    fn signal_identity_for_loki() {
+        assert_eq!(
+            signal_identity_for_item(&loki()),
+            Some(SignalIdentity::Alert {
+                source: AlertSource::Loki,
+                key: "project-x/prod/OOM killed".to_string(),
+            })
+        );
+    }
+
+    // SI6: AgentSession returns None (not a signal).
+    #[test]
+    fn signal_identity_for_agent_session_is_none() {
+        assert_eq!(signal_identity_for_item(&agent_session()), None);
+    }
+
+    // --- flat_row_line badge ---
+
+    // FL1: BadgedSignal row includes task id and status in dim_inline.
+    #[test]
+    fn flat_row_line_badged_signal_appends_badge() {
+        let task = task_for_pr(42, domain::TaskStatus::InProgress);
+        let row = FlatRow::BadgedSignal {
+            item: pr(),
+            task: task.clone(),
+        };
+        let parts = flat_row_line(&row);
+        let badge = format!("[{} · {}]", task.id, task.status);
+        assert!(
+            parts.dim_inline.iter().any(|s| s == &badge),
+            "badge should appear in dim_inline"
+        );
+    }
+
+    // FL2: attached_task returns Some for BadgedSignal, None for Single.
+    #[test]
+    fn attached_task_returns_task_for_badged_signal() {
+        let task = task_for_pr(42, domain::TaskStatus::InProgress);
+        let row = FlatRow::BadgedSignal {
+            item: pr(),
+            task: task.clone(),
+        };
+        assert!(row.attached_task().is_some());
+        assert_eq!(
+            row.attached_task().unwrap().id.to_string(),
+            task.id.to_string()
+        );
+        let single = FlatRow::Single(pr());
+        assert!(single.attached_task().is_none());
     }
 }

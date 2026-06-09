@@ -47,16 +47,20 @@ pub(crate) enum RefreshState {
     Failed(String),
 }
 
-/// Whether the UnifiedList is showing a split detail pane below the list.
-/// `detail_scroll` only exists inside `Visible` — a hidden pane cannot have
-/// a stale scroll offset.
+/// Whether the UnifiedList is showing a split detail pane below the list, and
+/// which content is shown. `detail_scroll` only exists inside the visible
+/// variants — a hidden pane cannot have a stale scroll offset.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) enum DetailMode {
     #[default]
     Hidden,
-    Visible {
-        detail_scroll: u16,
-    },
+    /// Split view is open showing the selected signal's own detail (PR body,
+    /// issue body, CI log, session transcript for task rows, etc.).
+    Visible { detail_scroll: u16 },
+    /// Split view is open and toggled to show the agent session detail for the
+    /// attached task of a `BadgedSignal` row. Only reachable when the selected
+    /// row is a `DisplayItem::BadgedSignal`.
+    VisibleSession { detail_scroll: u16 },
 }
 
 #[derive(Debug)]
@@ -106,6 +110,7 @@ impl Screen {
                 FlatRow::Single(item) => Some(item.clone()),
                 FlatRow::GroupChild { item, .. } => Some(item.clone()),
                 FlatRow::GroupHeader { .. } => None,
+                FlatRow::BadgedSignal { item, .. } => Some(item.clone()),
             },
             Screen::MergingPr { pr, .. } => Some(StatusItem::Pr(pr.clone())),
         }
@@ -123,6 +128,7 @@ impl Screen {
                 FlatRow::Single(item) => Some(item.clone()),
                 FlatRow::GroupChild { item, .. } => Some(item.clone()),
                 FlatRow::GroupHeader { first_item, .. } => Some(first_item.clone()),
+                FlatRow::BadgedSignal { item, .. } => Some(item.clone()),
             },
             Screen::MergingPr { pr, .. } => Some(StatusItem::Pr(pr.clone())),
         }
@@ -220,6 +226,7 @@ pub(crate) enum Action {
     CommitTaskCreation,
     ScrollDetailDown,
     ScrollDetailUp,
+    ToggleSessionDetail,
     // Filter actions — only take effect from UnifiedList in normal mode.
     FilterCategory(Category),
     ClearFilter,

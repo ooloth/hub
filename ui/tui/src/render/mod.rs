@@ -49,45 +49,53 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
             items,
             detail_mode,
             ..
-        } => match detail_mode {
-            DetailMode::Hidden => {
-                unified::render_unified(
-                    frame,
-                    flat_rows,
-                    *selected,
-                    filter,
-                    app.ui.query_input.as_deref(),
-                    content_area,
-                );
+        } => {
+            let show_session = matches!(detail_mode, DetailMode::VisibleSession { .. });
+            match detail_mode {
+                DetailMode::Hidden => {
+                    unified::render_unified(
+                        frame,
+                        flat_rows,
+                        *selected,
+                        filter,
+                        app.ui.query_input.as_deref(),
+                        content_area,
+                    );
+                }
+                DetailMode::Visible { detail_scroll }
+                | DetailMode::VisibleSession { detail_scroll } => {
+                    let max_list_height = content_area.height * 30 / 100;
+                    let [list_area, detail_area] = Layout::vertical([
+                        Constraint::Length(unified::unified_list_height(
+                            flat_rows,
+                            max_list_height,
+                        )),
+                        Constraint::Min(0),
+                    ])
+                    .areas(content_area);
+                    unified::render_unified(
+                        frame,
+                        flat_rows,
+                        *selected,
+                        filter,
+                        app.ui.query_input.as_deref(),
+                        list_area,
+                    );
+                    frame.render_widget(Clear, detail_area);
+                    let selected_row = flat_rows.get(*selected);
+                    detail::render_split_detail_pane(
+                        frame,
+                        detail_area,
+                        items,
+                        selected_row,
+                        detail_scroll,
+                        &app.data.stream_blocks,
+                        unified::filter_chrome_style(filter, app.ui.query_input.as_deref()),
+                        show_session,
+                    );
+                }
             }
-            DetailMode::Visible { detail_scroll } => {
-                let max_list_height = content_area.height * 30 / 100;
-                let [list_area, detail_area] = Layout::vertical([
-                    Constraint::Length(unified::unified_list_height(flat_rows, max_list_height)),
-                    Constraint::Min(0),
-                ])
-                .areas(content_area);
-                unified::render_unified(
-                    frame,
-                    flat_rows,
-                    *selected,
-                    filter,
-                    app.ui.query_input.as_deref(),
-                    list_area,
-                );
-                frame.render_widget(Clear, detail_area);
-                let selected_row = flat_rows.get(*selected);
-                detail::render_split_detail_pane(
-                    frame,
-                    detail_area,
-                    items,
-                    selected_row,
-                    detail_scroll,
-                    &app.data.stream_blocks,
-                    unified::filter_chrome_style(filter, app.ui.query_input.as_deref()),
-                );
-            }
-        },
+        }
         Screen::MergingPr { pr, .. } => {
             pr::render_pr_detail(frame, pr, &mut 0, content_area, dim());
         }

@@ -12,6 +12,7 @@ use ratatui::{
 
 use crate::display::{log_detail_view_from_group, log_detail_view_from_item, DisplayItem, FlatRow};
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn render_split_detail_pane(
     frame: &mut ratatui::Frame,
     area: Rect,
@@ -20,9 +21,30 @@ pub(crate) fn render_split_detail_pane(
     detail_scroll: &mut u16,
     stream_blocks: &[domain::StreamBlock],
     border_style: Style,
+    show_session: bool,
 ) {
+    // When the session toggle is active, render the agent session detail for
+    // the attached task of the selected BadgedSignal row.
+    if show_session {
+        if let Some(task) = selected_row.and_then(FlatRow::attached_task) {
+            super::session::render_agent_session_detail(
+                frame,
+                task,
+                stream_blocks,
+                detail_scroll,
+                area,
+                border_style,
+            );
+            return;
+        }
+        // No attached task available (shouldn't happen when the guard is
+        // correct, but fall through to signal detail rather than panic).
+    }
+
     match selected_row {
-        Some(FlatRow::Single(item)) | Some(FlatRow::GroupChild { item, .. }) => match item {
+        Some(FlatRow::Single(item))
+        | Some(FlatRow::GroupChild { item, .. })
+        | Some(FlatRow::BadgedSignal { item, .. }) => match item {
             workflows::status::StatusItem::Pr(pr) => {
                 super::pr::render_pr_detail(frame, pr, detail_scroll, area, border_style);
             }

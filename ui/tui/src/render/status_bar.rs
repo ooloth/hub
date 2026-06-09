@@ -125,6 +125,9 @@ pub(crate) fn status_bar_left(app: &App) -> String {
                     }
                 }
             }
+            DetailMode::VisibleSession { .. } => {
+                format!("{pos} · [Tab] signal detail · [Esc] back")
+            }
         }
     } else {
         String::new()

@@ -51,6 +51,9 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
         Screen::UnifiedList {
             detail_mode: crate::state::DetailMode::Visible { .. },
             ..
+        } | Screen::UnifiedList {
+            detail_mode: crate::state::DetailMode::VisibleSession { .. },
+            ..
         }
     );
     let has_filter = match &app.ui.screen {
@@ -158,12 +161,16 @@ fn unified_list_keys(
     detail_mode: &crate::state::DetailMode,
     item_kind: SelectedItemKind,
 ) -> Option<Action> {
-    let split_active = matches!(detail_mode, crate::state::DetailMode::Visible { .. });
+    let split_active = matches!(
+        detail_mode,
+        crate::state::DetailMode::Visible { .. } | crate::state::DetailMode::VisibleSession { .. }
+    );
     match (key.code, key.modifiers) {
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) => Some(Action::MoveUp),
         (KeyCode::Down, _) | (KeyCode::Char('j'), _) => Some(Action::MoveDown),
         (KeyCode::Char('J'), _) if split_active => Some(Action::ScrollDetailDown),
         (KeyCode::Char('K'), _) if split_active => Some(Action::ScrollDetailUp),
+        (KeyCode::Tab, _) if split_active => Some(Action::ToggleSessionDetail),
         // PR-specific actions available when split view is showing a PR.
         (KeyCode::Char('v'), _) if split_active && item_kind == SelectedItemKind::Pr => {
             Some(Action::OpenReviewPicker)
@@ -933,6 +940,21 @@ mod tests {
             key_to_action(&modal_open_app(), key),
             Some(Action::ModalTextInput(key))
         );
+    }
+
+    // K33b: Tab while split view is active produces ToggleSessionDetail.
+    #[test]
+    fn tab_while_split_active_produces_toggle_session_detail() {
+        assert_eq!(
+            key_to_action(&split_view_app_with_pr(), k(KeyCode::Tab)),
+            Some(Action::ToggleSessionDetail)
+        );
+    }
+
+    // K33c: Tab while split is hidden is a no-op.
+    #[test]
+    fn tab_while_hidden_is_noop() {
+        assert_eq!(key_to_action(&App::default(), k(KeyCode::Tab)), None);
     }
 
     // K34: modal intercept fires even when query or task-status would normally intercept

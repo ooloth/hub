@@ -155,7 +155,7 @@ impl App {
                 self.ui.pending_g = true;
                 vec![]
             }
-            Action::ScrollDetailDown | Action::ScrollDetailUp => {
+            Action::ScrollDetailDown | Action::ScrollDetailUp | Action::ToggleSessionDetail => {
                 // Handled in handle_unified_list when detail_mode is Visible.
                 match &self.ui.screen {
                     Screen::UnifiedList { .. } => self.handle_unified_list(action),
@@ -1868,5 +1868,97 @@ mod tests {
         let mut app = app_with_items(vec![]);
         let effects = app.update(Action::OpenUrl);
         assert!(effects.is_empty());
+    }
+
+    // --- ToggleSessionDetail ---
+
+    // TS1: ToggleSessionDetail from Visible transitions to VisibleSession.
+    #[test]
+    fn toggle_session_detail_visible_to_visible_session() {
+        let mut app = app_in_split_view_with_scroll(0);
+        app.update(Action::ToggleSessionDetail);
+        match app.current_screen() {
+            Screen::UnifiedList { detail_mode, .. } => {
+                assert_eq!(
+                    detail_mode,
+                    &DetailMode::VisibleSession { detail_scroll: 0 }
+                );
+            }
+            _ => panic!("expected UnifiedList"),
+        }
+    }
+
+    // TS2: ToggleSessionDetail from VisibleSession transitions back to Visible.
+    #[test]
+    fn toggle_session_detail_visible_session_to_visible() {
+        let item = DisplayItem::Single(ci_failure());
+        let expanded = HashSet::new();
+        let flat_rows = flatten(&[item.clone()], &expanded);
+        let mut app = App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    items: vec![item],
+                    flat_rows,
+                    selected: 0,
+                    filter: Filter::default(),
+                    expanded_groups: expanded,
+                    detail_mode: DetailMode::VisibleSession { detail_scroll: 5 },
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        };
+        app.update(Action::ToggleSessionDetail);
+        match app.current_screen() {
+            Screen::UnifiedList { detail_mode, .. } => {
+                assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 0 });
+            }
+            _ => panic!("expected UnifiedList"),
+        }
+    }
+
+    // TS3: ToggleSessionDetail from Hidden is a no-op.
+    #[test]
+    fn toggle_session_detail_from_hidden_is_noop() {
+        let mut app = app_with_items(vec![DisplayItem::Single(ci_failure())]);
+        app.update(Action::ToggleSessionDetail);
+        match app.current_screen() {
+            Screen::UnifiedList { detail_mode, .. } => {
+                assert_eq!(detail_mode, &DetailMode::Hidden);
+            }
+            _ => panic!("expected UnifiedList"),
+        }
+    }
+
+    // TS4: Navigation (MoveDown) while VisibleSession resets to Visible.
+    #[test]
+    fn move_down_while_visible_session_resets_to_visible() {
+        let items = vec![
+            DisplayItem::Single(ci_failure()),
+            DisplayItem::Single(ci_failure()),
+        ];
+        let expanded = HashSet::new();
+        let flat_rows = flatten(&items, &expanded);
+        let mut app = App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    items,
+                    flat_rows,
+                    selected: 0,
+                    filter: Filter::default(),
+                    expanded_groups: expanded,
+                    detail_mode: DetailMode::VisibleSession { detail_scroll: 3 },
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        };
+        app.update(Action::MoveDown);
+        match app.current_screen() {
+            Screen::UnifiedList { detail_mode, .. } => {
+                assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 0 });
+            }
+            _ => panic!("expected UnifiedList"),
+        }
     }
 }
