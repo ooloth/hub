@@ -106,6 +106,23 @@ in-progress`) rather than as a second, competing row. The same unit of
 work appears once, enriched — never as both a PR row and a task row the
 human must mentally correlate.
 
+**One active task per signal.** The badge assumes at most one non-terminal
+task exists for a given signal. Two active agents working the same signal
+is not a meaningful use case — it's either a mistake or a prior task that
+wasn't closed. This invariant is enforced at dispatch time: before creating
+a task, the dispatch workflow checks whether a non-terminal task already
+exists for the same origin. If one does, dispatch is blocked and the human
+is prompted to close the existing task first. Enforcing it at dispatch
+(rather than at the DB or render layer) keeps the render logic simple:
+a signal row always has zero or one task to badge, never a set to choose
+from.
+
+**Detail-pane access.** Suppressing the task row is only safe if the
+session transcript and task metadata remain reachable. Selecting a badged
+signal row and pressing a second key opens the task session detail view.
+This toggle is in scope for the badge+dedup build ([issue 294](https://github.com/ooloth/hub/issues/294)),
+not a follow-on.
+
 ## Consequences
 
 - Schema migration: add origin columns to the `tasks` table; backfill is

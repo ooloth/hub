@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
-use domain::{ReadyTask, RepoSlug, Task, TaskId, TaskKind, TaskOrigin, TaskStatus};
+use domain::{ReadyTask, RepoSlug, SignalIdentity, Task, TaskId, TaskKind, TaskOrigin, TaskStatus};
 use rusqlite::{params, Connection, OptionalExtension};
 
 pub fn ensure_table(conn: &Connection) -> Result<()> {
@@ -338,6 +338,22 @@ pub fn update_status(conn: &Connection, id: &TaskId, status: TaskStatus) -> Resu
         anyhow::bail!("task {id} not found");
     }
     Ok(())
+}
+
+/// Returns the non-terminal task whose origin matches `origin`, or `None` if no
+/// such task exists. Always returns `None` for `TaskOrigin::Idea` — Idea tasks
+/// have no signal to match against.
+///
+/// Used by the task creation pre-flight check to enforce one-active-task-per-signal.
+pub fn active_for_origin(conn: &Connection, origin: &TaskOrigin) -> Result<Option<Task>> {
+    if matches!(origin, TaskOrigin::Idea) {
+        return Ok(None);
+    }
+    let target = SignalIdentity::from(origin);
+    let tasks = list_visible(conn)?;
+    Ok(tasks
+        .into_iter()
+        .find(|t| !t.status.is_terminal() && SignalIdentity::from(&t.origin) == target))
 }
 
 /// Returns the count of tasks currently in `in-progress` status.
@@ -1266,5 +1282,118 @@ mod tests {
         let conn = in_memory();
         let id: TaskId = "TASK-9999".parse().unwrap();
         assert!(add_link(&conn, &id, "https://example.com").is_err());
+    }
+
+    // ── active_for_origin ─────────────────────────────────────────────────────
+
+    fn pr_origin() -> TaskOrigin {
+        TaskOrigin::Pr {
+            repo: domain::RepoSlug::new("ooloth", "hub"),
+            number: 42,
+        }
+    }
+
+    #[test]
+    fn active_for_origin_returns_non_terminal_task_with_matching_origin() {
+        let conn = in_memory();
+        create(
+            &conn,
+            "Fix it",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &pr_origin(),
+        )
+        .unwrap();
+        let result = active_for_origin(&conn, &pr_origin()).unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().origin, pr_origin());
+    }
+
+    #[test]
+    fn active_for_origin_returns_none_when_matching_task_is_terminal() {
+        let conn = in_memory();
+        let id = create(
+            &conn,
+            "Done",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &pr_origin(),
+        )
+        .unwrap();
+        update_status(&conn, &id, domain::TaskStatus::Done).unwrap();
+        assert!(active_for_origin(&conn, &pr_origin()).unwrap().is_none());
+    }
+
+    #[test]
+    fn active_for_origin_returns_none_for_idea_origin() {
+        let conn = in_memory();
+        create(
+            &conn,
+            "Idea task",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &TaskOrigin::Idea,
+        )
+        .unwrap();
+        assert!(active_for_origin(&conn, &TaskOrigin::Idea)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn active_for_origin_ignores_tasks_with_different_origin() {
+        let conn = in_memory();
+        let other = TaskOrigin::Pr {
+            repo: domain::RepoSlug::new("ooloth", "hub"),
+            number: 99,
+        };
+        create(
+            &conn,
+            "Other task",
+            TaskKind::Implement,
+            None,
+            &[],
+            None,
+            &other,
+        )
+        .unwrap();
+        assert!(active_for_origin(&conn, &pr_origin()).unwrap().is_none());
+    }
+
+    #[test]
+    fn active_for_origin_matches_ci_origins_ignoring_url() {
+        let conn = in_memory();
+        let origin_at_creation = TaskOrigin::Ci {
+            repo: domain::RepoSlug::new("ooloth", "hub"),
+            workflow: "ci".into(),
+            job: Some("test".into()),
+            step: None,
+            url: "https://github.com/actions/runs/1".into(),
+        };
+        let origin_at_lookup = TaskOrigin::Ci {
+            repo: domain::RepoSlug::new("ooloth", "hub"),
+            workflow: "ci".into(),
+            job: Some("test".into()),
+            step: None,
+            url: "https://github.com/actions/runs/9999".into(), // different run
+        };
+        create(
+            &conn,
+            "Fix CI",
+            TaskKind::Debug,
+            None,
+            &[],
+            None,
+            &origin_at_creation,
+        )
+        .unwrap();
+        let result = active_for_origin(&conn, &origin_at_lookup).unwrap();
+        assert!(result.is_some(), "should match despite different url");
     }
 }

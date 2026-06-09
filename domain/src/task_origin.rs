@@ -132,7 +132,7 @@ impl TaskOrigin {
 
 /// The ticket system an [`TaskOrigin::Issue`] came from. Extensible to
 /// Jira/Monday/Trekker; only GitHub and Linear are populated today.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum IssueSystem {
     GitHub,
@@ -141,7 +141,7 @@ pub enum IssueSystem {
 
 /// The scan source an [`TaskOrigin::Alert`] came from. `Media` is always
 /// present regardless of the `private` feature (see [`TaskOrigin`]).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AlertSource {
     Loki,
