@@ -1,8 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::display::{Category, SelectedItemKind};
-use workflows::status::StatusItem;
-
 use crate::state::{Action, App, ReviewSkill, Screen, TaskFormField};
 
 pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
@@ -23,16 +21,7 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
 
     // Task status submenu intercepts all keys while pending.
     if app.ui.pending_task_status {
-        let current_status = app
-            .current_screen()
-            .selected_status_item()
-            .and_then(|item| {
-                if let StatusItem::AgentSession(task) = item {
-                    Some(task.status)
-                } else {
-                    None
-                }
-            });
+        let current_status = app.current_screen().selected_task().map(|t| t.status);
         return task_status_submenu_key(key, current_status);
     }
 
@@ -84,11 +73,7 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
 
     match app.current_screen() {
         Screen::UnifiedList { detail_mode, .. } => {
-            let item_kind = app
-                .current_screen()
-                .selected_status_item()
-                .map(|item| SelectedItemKind::from_item(&item))
-                .unwrap_or(SelectedItemKind::Other);
+            let item_kind = app.current_screen().selected_item_kind();
             unified_list_keys(key, detail_mode, item_kind)
         }
         Screen::MergingPr { .. } => unreachable!("handled above"),
@@ -186,8 +171,13 @@ fn unified_list_keys(
         (KeyCode::Char('a'), _) if split_active && item_kind == SelectedItemKind::Issue => {
             Some(Action::ApproveForAgent)
         }
-        // Task status submenu — available whenever a task row is selected.
-        (KeyCode::Char('s'), _) if item_kind == SelectedItemKind::Task => {
+        // Task status submenu — available on task rows and on badged signal rows.
+        (KeyCode::Char('s'), _)
+            if matches!(
+                item_kind,
+                SelectedItemKind::Task | SelectedItemKind::BadgedSignal
+            ) =>
+        {
             Some(Action::TaskStatusSubmenu)
         }
         (KeyCode::Char('h'), _) => Some(Action::CollapseGroup),

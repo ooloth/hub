@@ -586,21 +586,32 @@ async fn run_loop(
                     links,
                     repo,
                     origin,
-                } => match workflows::tasks::create(
-                    &title,
-                    kind,
-                    description.as_deref(),
-                    &links,
-                    repo.as_ref().map(|r| r.to_string()).as_deref(),
-                    &origin,
-                ) {
-                    Ok(id) => {
-                        app.ui.flash = Some(format!("{id} created"));
-                        request_refresh(app, config, tx, false, None);
-                    }
+                } => match store::tasks::active_for_origin(conn, &origin) {
                     Err(e) => {
-                        app.ui.flash = Some(format!("Could not create task: {e}"));
+                        app.ui.flash = Some(format!("Could not check active tasks: {e}"));
                     }
+                    Ok(Some(existing)) => {
+                        app.ui.flash = Some(format!(
+                            "{} already active for this signal — close it first",
+                            existing.id
+                        ));
+                    }
+                    Ok(None) => match workflows::tasks::create(
+                        &title,
+                        kind,
+                        description.as_deref(),
+                        &links,
+                        repo.as_ref().map(|r| r.to_string()).as_deref(),
+                        &origin,
+                    ) {
+                        Ok(id) => {
+                            app.ui.flash = Some(format!("{id} created"));
+                            request_refresh(app, config, tx, false, None);
+                        }
+                        Err(e) => {
+                            app.ui.flash = Some(format!("Could not create task: {e}"));
+                        }
+                    },
                 },
                 Effect::StartRefresh => {
                     request_refresh(app, config, tx, true, None);

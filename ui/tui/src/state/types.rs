@@ -5,7 +5,9 @@ use chrono::{DateTime, Utc};
 use domain::{PrKind, PullRequest, RepoSlug, ReviewDecision, TaskId, TaskStatus};
 use workflows::status::{StatusItem, StatusReport};
 
-use crate::display::{Category, DisplayItem, Filter, FlatRow, GroupKey, ListSnapshot};
+use crate::display::{
+    Category, DisplayItem, Filter, FlatRow, GroupKey, ListSnapshot, SelectedItemKind,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ReviewSkill {
@@ -113,6 +115,43 @@ impl Screen {
                 FlatRow::BadgedSignal { item, .. } => Some(item.clone()),
             },
             Screen::MergingPr { pr, .. } => Some(StatusItem::Pr(pr.clone())),
+        }
+    }
+
+    /// Returns the task for the selected row — either an `AgentSession` item or the
+    /// attached task on a `BadgedSignal` row. Used for the status submenu.
+    pub(crate) fn selected_task(&self) -> Option<domain::Task> {
+        match self {
+            Screen::UnifiedList {
+                flat_rows,
+                selected,
+                ..
+            } => match flat_rows.get(*selected)? {
+                FlatRow::Single(StatusItem::AgentSession(task)) => Some(task.clone()),
+                FlatRow::GroupChild {
+                    item: StatusItem::AgentSession(task),
+                    ..
+                } => Some(task.clone()),
+                FlatRow::BadgedSignal { task, .. } => Some(task.clone()),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// Returns the `SelectedItemKind` for the currently selected row, correctly
+    /// detecting `BadgedSignal` rows (which `from_item` alone cannot see).
+    pub(crate) fn selected_item_kind(&self) -> SelectedItemKind {
+        match self {
+            Screen::UnifiedList {
+                flat_rows,
+                selected,
+                ..
+            } => flat_rows
+                .get(*selected)
+                .map(SelectedItemKind::from_row)
+                .unwrap_or(SelectedItemKind::Other),
+            _ => SelectedItemKind::Other,
         }
     }
 

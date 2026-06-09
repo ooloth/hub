@@ -128,14 +128,10 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     } else if app.ui.pending_task_status {
         let (task_label, hints_str) = app
             .current_screen()
-            .selected_status_item()
-            .and_then(|item| {
-                if let workflows::status::StatusItem::AgentSession(task) = item {
-                    let hints = status_bar::task_status_hints(task.status);
-                    Some((format!(" {} · status", task.id), hints))
-                } else {
-                    None
-                }
+            .selected_task()
+            .map(|task| {
+                let hints = status_bar::task_status_hints(task.status);
+                (format!(" {} · status", task.id), hints)
             })
             .unwrap_or_else(|| (" status".to_string(), "  [Esc] cancel".to_string()));
         let line = Line::from(vec![

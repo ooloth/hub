@@ -82,12 +82,11 @@ pub(crate) fn status_bar_left(app: &App) -> String {
         let inv = compute_investigate_action(app);
         match detail_mode {
             DetailMode::Hidden => {
-                let item_kind = app
-                    .current_screen()
-                    .selected_status_item()
-                    .map(|i| SelectedItemKind::from_item(&i))
-                    .unwrap_or(SelectedItemKind::Other);
-                let task_hint = if item_kind == SelectedItemKind::Task {
+                let item_kind = app.current_screen().selected_item_kind();
+                let task_hint = if matches!(
+                    item_kind,
+                    SelectedItemKind::Task | SelectedItemKind::BadgedSignal
+                ) {
                     " · [s] status"
                 } else {
                     ""
@@ -106,11 +105,7 @@ pub(crate) fn status_bar_left(app: &App) -> String {
                 )
             }
             DetailMode::Visible { .. } => {
-                let item_kind = app
-                    .current_screen()
-                    .selected_status_item()
-                    .map(|i| SelectedItemKind::from_item(&i))
-                    .unwrap_or(SelectedItemKind::Other);
+                let item_kind = app.current_screen().selected_item_kind();
                 match item_kind {
                     SelectedItemKind::Pr => format!(
                         "{pos} · [o] open · [d] diff · [v] review · [m] merge · [i] ask · [Esc] back"
@@ -119,6 +114,9 @@ pub(crate) fn status_bar_left(app: &App) -> String {
                         "{pos} · [o] open · [a] approve · [i] investigate · [Esc] back"
                     ),
                     SelectedItemKind::Task => format!("{pos} · [s] status · [Esc] back"),
+                    SelectedItemKind::BadgedSignal => {
+                        format!("{pos} · [s] status · [Tab] session · [Esc] back")
+                    }
                     SelectedItemKind::Other => {
                         let inv_hint = investigate_hint(&inv);
                         format!("{pos} · [o] open{inv_hint} · [Esc] back")

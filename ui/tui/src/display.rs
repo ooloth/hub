@@ -293,6 +293,9 @@ pub(crate) enum SelectedItemKind {
     Pr,
     Issue,
     Task,
+    /// A signal row (PR, Issue, CI, etc.) that has an attached active task.
+    /// The `s` key opens the task status submenu on these rows.
+    BadgedSignal,
     Other,
 }
 
@@ -303,6 +306,14 @@ impl SelectedItemKind {
             StatusItem::Issue(_) => SelectedItemKind::Issue,
             StatusItem::AgentSession(_) => SelectedItemKind::Task,
             _ => SelectedItemKind::Other,
+        }
+    }
+
+    pub(crate) fn from_row(row: &FlatRow) -> Self {
+        match row {
+            FlatRow::BadgedSignal { .. } => SelectedItemKind::BadgedSignal,
+            FlatRow::Single(item) | FlatRow::GroupChild { item, .. } => Self::from_item(item),
+            FlatRow::GroupHeader { .. } => SelectedItemKind::Other,
         }
     }
 }
@@ -1979,5 +1990,36 @@ mod tests {
         );
         let single = FlatRow::Single(pr());
         assert!(single.attached_task().is_none());
+    }
+
+    // SK1: from_row returns BadgedSignal for a BadgedSignal row.
+    #[test]
+    fn from_row_badged_signal_returns_badged_signal_kind() {
+        let task = task_for_pr(42, domain::TaskStatus::InProgress);
+        let row = FlatRow::BadgedSignal { item: pr(), task };
+        assert_eq!(
+            SelectedItemKind::from_row(&row),
+            SelectedItemKind::BadgedSignal
+        );
+    }
+
+    // SK2: from_row delegates to from_item for Single rows.
+    #[test]
+    fn from_row_single_pr_returns_pr_kind() {
+        let row = FlatRow::Single(pr());
+        assert_eq!(SelectedItemKind::from_row(&row), SelectedItemKind::Pr);
+    }
+
+    // SK3: from_row returns Other for GroupHeader.
+    #[test]
+    fn from_row_group_header_returns_other() {
+        let row = FlatRow::GroupHeader {
+            key: GroupKey("g".to_string()),
+            count: 1,
+            urgency: domain::Urgency::Low,
+            expanded: true,
+            first_item: pr(),
+        };
+        assert_eq!(SelectedItemKind::from_row(&row), SelectedItemKind::Other);
     }
 }

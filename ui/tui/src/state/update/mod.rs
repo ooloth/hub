@@ -170,7 +170,7 @@ impl App {
             // pending_pr_action is already cleared by the prologue for any non-submenu action.
             Action::CancelPrSubmenu => vec![],
             Action::TaskStatusSubmenu => {
-                if let Some(StatusItem::AgentSession(_)) = self.ui.screen.selected_status_item() {
+                if self.ui.screen.selected_task().is_some() {
                     self.ui.pending_task_status = true;
                 }
                 vec![]
@@ -178,8 +178,7 @@ impl App {
             // CancelTaskStatusSubmenu dismisses the submenu; flag already cleared by prologue.
             Action::CancelTaskStatusSubmenu => vec![],
             Action::TransitionTaskStatus(status) => {
-                if let Some(StatusItem::AgentSession(task)) = self.ui.screen.selected_status_item()
-                {
+                if let Some(task) = self.ui.screen.selected_task() {
                     vec![Effect::UpdateTaskStatus {
                         id: task.id,
                         status,
@@ -1960,5 +1959,112 @@ mod tests {
             }
             _ => panic!("expected UnifiedList"),
         }
+    }
+
+    // --- BadgedSignal: selected_task / selected_item_kind / TaskStatusSubmenu ---
+
+    fn badged_signal_task() -> domain::Task {
+        domain::Task {
+            id: "TASK-0042".parse().unwrap(),
+            title: "Fix PR".to_string(),
+            description: None,
+            status: domain::TaskStatus::InProgress,
+            kind: domain::TaskKind::Implement,
+            session_id: None,
+            repo: None,
+            origin: domain::TaskOrigin::Pr {
+                repo: domain::RepoSlug::new("owner", "repo"),
+                number: 42,
+            },
+            links: vec![],
+            created_at: String::new(),
+            updated_at: String::new(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Medium,
+            comments: vec![],
+        }
+    }
+
+    fn app_with_badged_signal() -> App {
+        use crate::display::{DisplayItem, FlatRow};
+        let task = badged_signal_task();
+        let pr = StatusItem::Pr(domain::PullRequest {
+            number: 42,
+            title: "Add feature".to_string(),
+            repo: domain::RepoSlug::new("owner", "repo"),
+            url: "https://github.com/owner/repo/pull/42".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::Medium,
+            kind: domain::PrKind::ToReview,
+            author: "alice".to_string(),
+            review_decision: None,
+            approval_count: 0,
+            comment_count: 0,
+            head_branch: "feat".to_string(),
+            base_branch: "main".to_string(),
+            body: None,
+            ci_status: None,
+            changed_files: vec![],
+            total_changed_files: 0,
+            review_threads: vec![],
+            pr_comments: vec![],
+            merge_blocker: None,
+        });
+        let item = DisplayItem::BadgedSignal {
+            signal: pr.clone(),
+            task: task.clone(),
+        };
+        let flat_rows = vec![FlatRow::BadgedSignal { item: pr, task }];
+        App {
+            ui: UiState {
+                screen: Screen::UnifiedList {
+                    items: vec![item],
+                    flat_rows,
+                    selected: 0,
+                    filter: Filter::default(),
+                    expanded_groups: HashSet::new(),
+                    detail_mode: DetailMode::Hidden,
+                },
+                ..UiState::default()
+            },
+            ..App::default()
+        }
+    }
+
+    // BS1: selected_task returns the attached task for a BadgedSignal row.
+    #[test]
+    fn selected_task_returns_task_for_badged_signal_row() {
+        let app = app_with_badged_signal();
+        let task = app.current_screen().selected_task();
+        assert!(task.is_some());
+        assert_eq!(task.unwrap().id.to_string(), "TASK-0042");
+    }
+
+    // BS2: selected_item_kind returns BadgedSignal for a BadgedSignal row.
+    #[test]
+    fn selected_item_kind_returns_badged_signal_for_badged_row() {
+        use crate::display::SelectedItemKind;
+        let app = app_with_badged_signal();
+        assert_eq!(
+            app.current_screen().selected_item_kind(),
+            SelectedItemKind::BadgedSignal
+        );
+    }
+
+    // BS3: TaskStatusSubmenu sets pending_task_status for a BadgedSignal row.
+    #[test]
+    fn task_status_submenu_sets_pending_for_badged_signal() {
+        let mut app = app_with_badged_signal();
+        app.update(Action::TaskStatusSubmenu);
+        assert!(app.ui.pending_task_status);
+    }
+
+    // BS4: TransitionTaskStatus emits UpdateTaskStatus from a BadgedSignal row.
+    #[test]
+    fn transition_task_status_emits_update_for_badged_signal() {
+        let mut app = app_with_badged_signal();
+        let effects = app.update(Action::TransitionTaskStatus(domain::TaskStatus::Done));
+        assert_eq!(effects.len(), 1);
+        assert!(matches!(&effects[0], Effect::UpdateTaskStatus { .. }));
     }
 }
