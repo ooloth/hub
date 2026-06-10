@@ -21,4 +21,5 @@
 
 [dev-dependencies]
   insta = { version = "1", features = ["json"] }
+  rstest = "0.25"
   tempfile = "3"

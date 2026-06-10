@@ -198,6 +198,13 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
     #[cfg(not(feature = "private"))]
     let _ = params.private_workflow_names;
 
+    // Fold back PR-origin tasks whose PR has merged or closed. Runs before
+    // list_visible() so the updated statuses appear in this same report.
+    // Errors are non-fatal: append to the error list and continue.
+    if let Err(e) = crate::task_fold_back::fold_back_pr_tasks(github_token).await {
+        errors.push(format!("fold-back: {e:#}"));
+    }
+
     // Agent tasks — synchronous local SQLite read; degrades gracefully on error.
     match crate::tasks::list_visible() {
         Ok(tasks) => items.extend(tasks.into_iter().map(StatusItem::AgentSession)),

@@ -6,6 +6,7 @@ pub mod gcp;
 pub(crate) mod git;
 pub mod loki;
 pub mod status;
+pub mod task_fold_back;
 pub mod tasks;
 
 #[cfg(feature = "private")]
