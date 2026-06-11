@@ -34,7 +34,7 @@ is mutated:
 1. `key_to_action(app, key) -> Option<Action>` (`input.rs`) — maps a raw
    key event to an `Action` variant. Universal keys (quit, help, back) are
    handled first; the remainder delegates to a per-view function
-   (`home_keys` or `list_keys`). Returns `None` for unmapped keys.
+   (`unified_list_keys` or `merge_confirm_key`). Returns `None` for unmapped keys.
 2. `App::update(action) -> Vec<Effect>` (`state.rs`) — applies the action
    to app state and returns zero or more `Effect` values describing required
    side effects (`OpenUrl`, `LaunchCi`, `Quit`).
@@ -46,7 +46,7 @@ is mutated:
 
 1. Add a variant to `Action` in `state.rs`
 2. Map one or more keys to it in the appropriate per-view function in
-   `input.rs` (`home_keys`, `list_keys`, or a new function for a new view)
+   `input.rs` (`unified_list_keys`, `merge_confirm_key`, or a new function for a new view)
 3. Handle it in `App::update()` in `state.rs` — mutate state and/or return
    one or more `Effect` values
 4. If a new `Effect` variant is needed, add it to the enum in `state.rs`,
@@ -211,49 +211,48 @@ Rules of thumb:
 
 ## Navigation
 
-Three levels. `Enter` drills in; `Esc` backs out one level.
+Two screens. `Enter` opens a split detail pane; `Esc` closes it.
 
-**Home** — category preview tiles
+**UnifiedList** — urgency-ranked flat list of all signals
 
-| Key        | Action               |
-| ---------- | -------------------- |
-| h          | left tile (or prev)  |
-| j          | down tile (or next)  |
-| k          | up tile (or prev)    |
-| l          | right tile (or next) |
-| Tab        | next tile            |
-| Shift-Tab  | prev tile            |
-| Enter      | drill into category  |
-| ?          | toggle help          |
-| q / Ctrl-C | quit                 |
+| Key        | Action                                          |
+| ---------- | ----------------------------------------------- |
+| j / ↓      | next item                                       |
+| k / ↑      | prev item                                       |
+| l          | expand group                                    |
+| h          | collapse group                                  |
+| g g        | move to top                                     |
+| G          | move to bottom                                  |
+| Ctrl-d     | page down                                       |
+| Ctrl-u     | page up                                         |
+| Enter      | open split detail pane (or no-op if already open) |
+| i          | investigate (auto-routes by item type)          |
+| o          | open URL in browser                             |
+| n          | open task creation form (seeded from selection) |
+| N          | open blank task creation form                   |
+| p          | filter to PRs                                   |
+| O          | filter to issues                                |
+| e          | filter to errors                                |
+| t          | filter to tasks                                 |
+| a          | clear filter                                    |
+| /          | start query filter                              |
+| r          | refresh                                         |
+| ?          | toggle help                                     |
+| q / Ctrl-C | quit                                            |
 
-**Category** — full-screen item list
+**Split detail pane** — signal detail shown below the list
 
-| Key        | Action                          |
-| ---------- | ------------------------------- |
-| h          | up                              |
-| j          | down                            |
-| k          | up                              |
-| l          | down                            |
-| Enter      | open / drill into group         |
-| i          | investigate (auto-routes by item type) |
-| Esc        | back to home                    |
-| ?          | toggle help                     |
-| q / Ctrl-C | quit                            |
-
-**Detail** — items within a group
-
-| Key        | Action                          |
-| ---------- | ------------------------------- |
-| h          | up                              |
-| j          | down                            |
-| k          | up                              |
-| l          | down                            |
-| Enter      | open URL                        |
-| i          | investigate (auto-routes by item type) |
-| Esc        | back to category                |
-| ?          | toggle help                     |
-| q / Ctrl-C | quit                            |
+| Key        | Action                                          |
+| ---------- | ----------------------------------------------- |
+| J          | scroll detail down                              |
+| K          | scroll detail up                                |
+| Tab        | toggle between signal detail and session detail |
+| Esc        | close split detail pane                         |
+| v          | open review picker (PR only)                    |
+| m          | merge PR (PR only)                              |
+| d          | open PR diff submenu (PR only)                  |
+| a          | approve for agent (issue only)                  |
+| s          | open task status submenu (task or badged signal) |
 
 ## Terminal cleanup
 
