@@ -64,6 +64,17 @@ pub struct LinearIssue {
     pub urgency: Urgency,
 }
 
+/// The resolved state of an issue, normalised across platforms.
+///
+/// Raw API values (GitHub `stateReason`, Linear state `type`) are mapped to
+/// this enum in the client layer before reaching domain or workflow logic.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IssueState {
+    Open,
+    Completed,
+    Cancelled,
+}
+
 /// A GitHub repository configured for the github-prs workflow, with the PR authors to exclude.
 #[derive(Clone, Debug)]
 pub struct GithubPrsRepo {

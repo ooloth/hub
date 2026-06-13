@@ -202,7 +202,16 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
     // list_visible() so the updated statuses appear in this same report.
     // Errors are non-fatal: append to the error list and continue.
     if let Err(e) = crate::task_fold_back::fold_back_pr_tasks(github_token).await {
-        errors.push(format!("fold-back: {e:#}"));
+        errors.push(format!("fold-back (prs): {e:#}"));
+    }
+
+    // Fold back issue-origin tasks whose ticket has closed or resolved.
+    let linear_token: Option<&str> = params
+        .linear_token
+        .as_ref()
+        .map(|t| t.expose_secret().as_str());
+    if let Err(e) = crate::task_fold_back::fold_back_issue_tasks(github_token, linear_token).await {
+        errors.push(format!("fold-back (issues): {e:#}"));
     }
 
     // Agent tasks — synchronous local SQLite read; degrades gracefully on error.
