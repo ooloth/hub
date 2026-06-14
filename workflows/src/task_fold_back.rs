@@ -1,5 +1,10 @@
 use anyhow::{Context, Result};
-use domain::{IssueState, IssueSystem, PrState, RepoSlug, TaskOrigin, TaskStatus};
+use domain::{
+    AlertSource, IssueState, IssueSystem, PrState, RepoSlug, SignalIdentity, TaskOrigin, TaskStatus,
+};
+use std::collections::HashSet;
+
+use crate::status::{StatusItem, StatusReport};
 
 /// Transitions non-terminal PR-origin tasks whose linked PR has left the open
 /// state: merged → `Done`, closed-unmerged → `Failed`.
@@ -139,6 +144,118 @@ pub async fn fold_back_issue_tasks(github_token: &str, linear_token: Option<&str
     Ok(())
 }
 
+/// Maps a `StatusItem` to its `SignalIdentity` for CI/alert fold-back.
+///
+/// Returns `Some` only for `Ci`, `Loki`, and `Gcp` items — the three that
+/// produce tasks with matchable origins. All other variants (PR, issue, agent
+/// session, media) return `None` and are excluded from the present-set.
+fn fold_identity(item: &StatusItem) -> Option<SignalIdentity> {
+    match item {
+        StatusItem::Ci(ci) => Some(SignalIdentity::Ci {
+            repo: ci.repo.clone(),
+            workflow: ci.workflow_name.clone(),
+            job: ci.job_name.clone(),
+            step: ci.step_name.clone(),
+        }),
+        StatusItem::Loki(l) => Some(SignalIdentity::Alert {
+            source: AlertSource::Loki,
+            key: format!("{}/{}/{}", l.project, l.env, l.message),
+        }),
+        StatusItem::Gcp(g) => Some(SignalIdentity::Alert {
+            source: AlertSource::Gcp,
+            key: format!("{}/{}/{}", g.project, g.env, g.message),
+        }),
+        _ => None,
+    }
+}
+
+/// Transitions non-terminal CI/alert-origin tasks whose signal has been absent
+/// from two consecutive fetches to `Done`.
+///
+/// Uses the prior cached `StatusReport` as the second observation point: if the
+/// signal was absent from both this refresh's `items` *and* the prior report,
+/// the absence is treated as sustained rather than a transient blip. If the
+/// prior report is absent or unreadable, the entire pass is skipped so tasks
+/// are never folded on insufficient evidence.
+///
+/// `AlertSource::Media` origins are excluded — tracked separately in #324.
+/// Errors are non-fatal from the caller's perspective.
+pub fn fold_back_signal_tasks(items: &[StatusItem]) -> Result<()> {
+    let conn = store::status_cache::connect().context("opening status-cache DB")?;
+    store::tasks::ensure_table(&conn).context("ensuring tasks table")?;
+
+    let present: HashSet<SignalIdentity> = items.iter().filter_map(fold_identity).collect();
+
+    // Read prior report. Absent or unreadable → skip entire pass (conservative).
+    let prior_present: HashSet<SignalIdentity> =
+        match store::status_cache::read(&conn).context("reading prior status cache")? {
+            None => return Ok(()),
+            Some(cached) => match serde_json::from_str::<StatusReport>(&cached.payload) {
+                Ok(report) => report.items.iter().filter_map(fold_identity).collect(),
+                Err(_) => return Ok(()),
+            },
+        };
+
+    let tasks = store::tasks::list_visible(&conn).context("loading visible tasks")?;
+
+    for task in tasks.iter().filter(|t| !t.status.is_terminal()) {
+        let identity = SignalIdentity::from(&task.origin);
+        if !matches!(
+            &identity,
+            SignalIdentity::Ci { .. }
+                | SignalIdentity::Alert {
+                    source: AlertSource::Loki | AlertSource::Gcp,
+                    ..
+                }
+        ) {
+            continue;
+        }
+        if let Some(target) = decide_signal_fold(
+            task.status,
+            task.session_id.as_deref(),
+            present.contains(&identity),
+            prior_present.contains(&identity),
+        ) {
+            store::tasks::update_status(&conn, &task.id, target)
+                .with_context(|| format!("folding {} to {target:?}", task.id))?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Pure decision: given a task's status, session, and whether its signal
+/// appears in the current and prior scan, return `Some(Done)` if the task
+/// should fold, or `None` if it should stay as-is.
+///
+/// Guards (all return `None`):
+/// - Terminal tasks — never overwritten by fold-back.
+/// - Active session (`InProgress`/`Blocked`/`InReview` with `session_id`) — an
+///   agent may be the reason the signal cleared; don't fold prematurely.
+/// - Signal present in either set — debounce not satisfied.
+pub fn decide_signal_fold(
+    status: TaskStatus,
+    session_id: Option<&str>,
+    in_present: bool,
+    in_prior: bool,
+) -> Option<TaskStatus> {
+    if status.is_terminal() {
+        return None;
+    }
+    if session_id.is_some()
+        && matches!(
+            status,
+            TaskStatus::InProgress | TaskStatus::Blocked | TaskStatus::InReview
+        )
+    {
+        return None;
+    }
+    if in_present || in_prior {
+        return None;
+    }
+    Some(TaskStatus::Done)
+}
+
 /// Pure decision: given a task's current status and its PR's observed state,
 /// return the target `TaskStatus` if a transition should occur, or `None` if
 /// the task should stay as-is.
@@ -180,6 +297,140 @@ pub fn decide_issue_fold(status: TaskStatus, issue_state: IssueState) -> Option<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use domain::{CiFailure, GcpEntry, LokiEntry, RepoSlug, Urgency};
+
+    fn slug() -> RepoSlug {
+        RepoSlug::new("ooloth", "hub")
+    }
+
+    fn ci_item(job: Option<&str>, step: Option<&str>, url: &str) -> StatusItem {
+        StatusItem::Ci(CiFailure {
+            repo: slug(),
+            workflow_name: "CI".into(),
+            job_name: job.map(str::to_string),
+            step_name: step.map(str::to_string),
+            error: None,
+            age: chrono::Duration::zero(),
+            urgency: Urgency::High,
+            url: url.into(),
+        })
+    }
+
+    fn loki_item(project: &str, env: &str, message: &str) -> StatusItem {
+        StatusItem::Loki(LokiEntry {
+            title: "err".into(),
+            project: project.into(),
+            env: env.into(),
+            message: message.into(),
+            line: "{}".into(),
+            lookback: "15m".into(),
+            age: chrono::Duration::zero(),
+            urgency: Urgency::Critical,
+            url: "https://grafana/x".into(),
+        })
+    }
+
+    fn gcp_item(project: &str, env: &str, message: &str) -> StatusItem {
+        StatusItem::Gcp(GcpEntry {
+            title: "err".into(),
+            project: project.into(),
+            env: env.into(),
+            message: message.into(),
+            line: "{}".into(),
+            lookback: "15m".into(),
+            age: chrono::Duration::zero(),
+            urgency: Urgency::Critical,
+            url: "https://console.cloud.google.com/x".into(),
+            gcp_project: "proj-id".into(),
+        })
+    }
+
+    // ── fold_identity ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn ci_items_with_different_urls_produce_the_same_identity() {
+        let a = ci_item(Some("build"), Some("test"), "https://github.com/runs/1");
+        let b = ci_item(Some("build"), Some("test"), "https://github.com/runs/999");
+        assert_eq!(fold_identity(&a), fold_identity(&b));
+    }
+
+    #[test]
+    fn ci_identity_matches_task_origin_key() {
+        let item = ci_item(Some("build"), Some("test"), "https://github.com/runs/1");
+        let origin = TaskOrigin::from_ci(match &item {
+            StatusItem::Ci(ci) => ci,
+            _ => unreachable!(),
+        });
+        assert_eq!(fold_identity(&item), Some(SignalIdentity::from(&origin)));
+    }
+
+    #[test]
+    fn loki_identity_matches_task_origin_key() {
+        let item = loki_item("myapp", "prod", "db timeout");
+        let origin = TaskOrigin::from_loki(match &item {
+            StatusItem::Loki(l) => l,
+            _ => unreachable!(),
+        });
+        assert_eq!(fold_identity(&item), Some(SignalIdentity::from(&origin)));
+    }
+
+    #[test]
+    fn gcp_identity_matches_task_origin_key() {
+        let item = gcp_item("myapp", "prod", "oom killed");
+        let origin = TaskOrigin::from_gcp(match &item {
+            StatusItem::Gcp(g) => g,
+            _ => unreachable!(),
+        });
+        assert_eq!(fold_identity(&item), Some(SignalIdentity::from(&origin)));
+    }
+
+    #[test]
+    fn loki_items_differing_only_in_title_produce_the_same_identity() {
+        let a = loki_item("myapp", "prod", "db timeout");
+        let b = loki_item("myapp", "prod", "db timeout");
+        assert_eq!(fold_identity(&a), fold_identity(&b));
+    }
+
+    #[test]
+    fn loki_items_with_different_messages_produce_different_identities() {
+        let a = loki_item("myapp", "prod", "db timeout");
+        let b = loki_item("myapp", "prod", "oom killed");
+        assert_ne!(fold_identity(&a), fold_identity(&b));
+    }
+
+    #[rstest::rstest]
+    // Terminal tasks are never overwritten
+    #[case(TaskStatus::Done, None, false, false, None)]
+    #[case(TaskStatus::Failed, None, false, false, None)]
+    #[case(TaskStatus::Cancelled, None, false, false, None)]
+    // Active session blocks fold for InProgress / Blocked / InReview (D3)
+    #[case(TaskStatus::InProgress, Some("s"), false, false, None)]
+    #[case(TaskStatus::Blocked, Some("s"), false, false, None)]
+    #[case(TaskStatus::InReview, Some("s"), false, false, None)]
+    // No session_id → session guard does not apply
+    #[case(TaskStatus::InProgress, None, false, false, Some(TaskStatus::Done))]
+    #[case(TaskStatus::Blocked, None, false, false, Some(TaskStatus::Done))]
+    #[case(TaskStatus::InReview, None, false, false, Some(TaskStatus::Done))]
+    // Signal present in fresh scan → debounce not satisfied
+    #[case(TaskStatus::Backlog, None, true, false, None)]
+    #[case(TaskStatus::Backlog, None, true, true, None)]
+    // Signal present in prior only → debounce not satisfied (one-refresh blip)
+    #[case(TaskStatus::Backlog, None, false, true, None)]
+    // Signal absent from both → fold to Done
+    #[case(TaskStatus::Backlog, None, false, false, Some(TaskStatus::Done))]
+    #[case(TaskStatus::Ready, None, false, false, Some(TaskStatus::Done))]
+    fn decide_signal_fold_cases(
+        #[case] status: TaskStatus,
+        #[case] session_id: Option<&str>,
+        #[case] in_present: bool,
+        #[case] in_prior: bool,
+        #[case] expected: Option<TaskStatus>,
+    ) {
+        assert_eq!(
+            decide_signal_fold(status, session_id, in_present, in_prior),
+            expected
+        );
+    }
 
     #[rstest::rstest]
     // Non-terminal + merged → Done

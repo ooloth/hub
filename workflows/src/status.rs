@@ -214,6 +214,12 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
         errors.push(format!("fold-back (issues): {e:#}"));
     }
 
+    // Fold back CI/alert-origin tasks whose signal has cleared for two
+    // consecutive fetches. Uses the prior cached report for debounce.
+    if let Err(e) = crate::task_fold_back::fold_back_signal_tasks(&items) {
+        errors.push(format!("fold-back (signals): {e:#}"));
+    }
+
     // Agent tasks — synchronous local SQLite read; degrades gracefully on error.
     match crate::tasks::list_visible() {
         Ok(tasks) => items.extend(tasks.into_iter().map(StatusItem::AgentSession)),
