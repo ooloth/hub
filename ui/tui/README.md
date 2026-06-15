@@ -226,9 +226,9 @@ One screen (`UnifiedList`) with an optional split detail pane. `Enter` opens the
 | Ctrl-d     | page down                                       |
 | Ctrl-u     | page up                                         |
 | Enter      | open split detail pane (or no-op if already open) |
+| Esc        | close split detail pane (if open), otherwise clear filter |
 | i          | investigate (auto-routes by item type)          |
 | o          | open URL in browser                             |
-| n          | open task creation form (seeded from selection) |
 | N          | open blank task creation form                   |
 | p          | filter to PRs                                   |
 | O          | filter to issues                                |
