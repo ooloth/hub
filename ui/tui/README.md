@@ -211,7 +211,7 @@ Rules of thumb:
 
 ## Navigation
 
-Two screens. `Enter` opens a split detail pane; `Esc` closes it.
+One screen (`UnifiedList`) with an optional split detail pane. `Enter` opens the pane; `Esc` closes it.
 
 **UnifiedList** — urgency-ranked flat list of all signals
 
