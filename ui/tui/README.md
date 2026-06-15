@@ -241,7 +241,7 @@ One screen (`UnifiedList`) with an optional split detail pane. `Enter` opens the
 | ?          | toggle help                                     |
 | q / Ctrl-C | quit                                            |
 
-**Split detail pane** — signal detail shown below the list
+**Split detail pane** — additional keys while the detail pane is open
 
 | Key        | Action                                          |
 | ---------- | ----------------------------------------------- |
