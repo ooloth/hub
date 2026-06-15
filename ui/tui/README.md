@@ -252,7 +252,7 @@ One screen (`UnifiedList`) with an optional split detail pane. `Enter` opens the
 | v          | open review picker (PR only)                    |
 | m          | merge PR (PR only)                              |
 | d          | open PR diff submenu (PR only)                  |
-| a          | approve for agent (issue only)                  |
+| a          | approve for agent (issue only; otherwise clears filter)         |
 | s          | open task status submenu (task or badged signal) |
 
 ## Terminal cleanup
