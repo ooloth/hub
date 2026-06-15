@@ -230,6 +230,7 @@ One screen (`UnifiedList`) with an optional split detail pane. `Enter` opens the
 | i          | investigate (auto-routes by item type)          |
 | o          | open URL in browser                             |
 | N          | open blank task creation form                   |
+| s          | open task status submenu (task or badged signal) |
 | p          | filter to PRs                                   |
 | O          | filter to issues                                |
 | e          | filter to errors                                |
