@@ -168,6 +168,62 @@ fn spawn_fetch(config: &config::Config, tx: mpsc::Sender<Result<StatusReport>>) 
     });
 }
 
+/// Spawns a background task that drives automatic task-state transitions
+/// (completion, crash, stall, self-heal) and reaps idle tmux windows.
+/// Results arrive via `tasks_tx`.
+fn spawn_session_state_poll(tasks_tx: mpsc::Sender<Vec<domain::Task>>) {
+    let now = chrono::Utc::now();
+    tokio::spawn(async move {
+        if let Ok(tasks) = workflows::agent_session::poll_sessions(now) {
+            if let Err(e) = workflows::dispatch::reap_idle_windows(&tasks, now).await {
+                eprintln!("reap error: {e}");
+            }
+            let _ = tasks_tx.send(tasks).await;
+        }
+    });
+}
+
+/// Spawns a background task to read the selected agent session's JSONL stream,
+/// if the detail pane is open on an AgentSession row. Updates stream state on
+/// session change and sends new blocks via `stream_tx`.
+fn try_stream_selected_session(app: &mut App, stream_tx: mpsc::Sender<Vec<domain::StreamBlock>>) {
+    let (cwd, session_id) = {
+        let Screen::UnifiedList {
+            flat_rows,
+            selected,
+            detail_mode: DetailMode::Visible { .. },
+            ..
+        } = &app.ui.screen
+        else {
+            return;
+        };
+        let Some(crate::display::FlatRow::Single(workflows::status::StatusItem::AgentSession(
+            task,
+        ))) = flat_rows.get(*selected)
+        else {
+            return;
+        };
+        let Some(session_id) = &task.session_id else {
+            return;
+        };
+        // The session JSONL lives under the task's worktree, not the TUI's cwd.
+        let cwd = workflows::dispatch::task_workspace_path(task)
+            .to_string_lossy()
+            .to_string();
+        (cwd, session_id.clone())
+    };
+    if app.data.stream_session_id.as_deref() != Some(session_id.as_str()) {
+        app.data.stream_blocks.clear();
+        app.data.stream_session_id = Some(session_id.clone());
+    }
+    let stx = stream_tx.clone();
+    tokio::spawn(async move {
+        if let Ok(blocks) = workflows::tasks::read_session_stream(&cwd, &session_id).await {
+            let _ = stx.send(blocks).await;
+        }
+    });
+}
+
 fn spawn_git_fetch(config: &config::Config) {
     let projects: Vec<(String, String)> = config
         .projects
@@ -286,57 +342,8 @@ async fn run_loop(
             _ = display_interval.tick() => vec![], // redraw only; no state change
             Some(result) = rx.recv() => handle_msg(app, Msg::FetchResult(result))?,
             _ = stream_interval.tick() => {
-                // Drive automatic task transitions from session-file signals
-                // (completion, crash, stall, self-heal) and re-read task state so
-                // both those and agent-reported changes (`hub task report`) surface
-                // within 10s instead of waiting for the 30-minute external refresh.
-                let ttx = tasks_tx.clone();
-                let now = chrono::Utc::now();
-                tokio::spawn(async move {
-                    if let Ok(tasks) = workflows::agent_session::poll_sessions(now) {
-                        // Reap idle tmux windows of tasks parked in-review past the
-                        // buffer; the session stays resumable via `claude --resume`.
-                        if let Err(e) = workflows::dispatch::reap_idle_windows(&tasks, now).await {
-                            eprintln!("reap error: {e}");
-                        }
-                        let _ = ttx.send(tasks).await;
-                    }
-                });
-
-                // Live-stream the selected agent session's JSONL while its detail is open.
-                if let Screen::UnifiedList {
-                    flat_rows,
-                    selected,
-                    detail_mode: DetailMode::Visible { .. },
-                    ..
-                } = &app.ui.screen
-                {
-                    if let Some(crate::display::FlatRow::Single(
-                        workflows::status::StatusItem::AgentSession(task),
-                    )) = flat_rows.get(*selected)
-                    {
-                        if let Some(session_id) = &task.session_id {
-                            if app.data.stream_session_id.as_deref() != Some(session_id.as_str()) {
-                                app.data.stream_blocks.clear();
-                                app.data.stream_session_id = Some(session_id.clone());
-                            }
-                            // The session JSONL lives under the task's worktree, the
-                            // cwd Claude was launched in — not the TUI's cwd.
-                            let cwd = workflows::dispatch::task_workspace_path(task)
-                                .to_string_lossy()
-                                .to_string();
-                            let sid = session_id.clone();
-                            let stx = stream_tx.clone();
-                            tokio::spawn(async move {
-                                if let Ok(blocks) =
-                                    workflows::tasks::read_session_stream(&cwd, &sid).await
-                                {
-                                    let _ = stx.send(blocks).await;
-                                }
-                            });
-                        }
-                    }
-                }
+                spawn_session_state_poll(tasks_tx.clone());
+                try_stream_selected_session(app, stream_tx.clone());
                 vec![]
             }
             Some(blocks) = stream_rx.recv() => handle_msg(app, Msg::StreamUpdate(blocks))?,
