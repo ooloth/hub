@@ -1,15 +1,13 @@
 use anyhow::Result;
 
-use super::{
-    task_creation::{cycle_task_kind, seed_from_item, TaskFormField},
-    Action, App, DetailMode, Effect, Msg, RefreshState, Screen, TaskCreationModal,
-};
+use super::{Action, App, DetailMode, Effect, Msg, RefreshState, Screen, SubmenuState};
 use crate::display::Filter;
 use workflows::status::StatusItem;
 
 mod pr;
 mod refresh;
 mod signals;
+mod task_modal;
 
 pub(crate) use signals::compute_investigate_action;
 
@@ -17,26 +15,31 @@ impl App {
     pub(crate) fn update(&mut self, action: Action) -> Vec<Effect> {
         self.ui.flash = None;
         self.ui.pending_g = false;
-        // Clear the PR-actions submenu on any action that isn't part of the submenu itself.
-        if !matches!(
-            action,
-            Action::PrActionSubmenu
-                | Action::OpenPrDiffInDelta
-                | Action::OpenInLazygit
-                | Action::OpenInOcto
-        ) {
-            self.ui.pending_pr_action = false;
-        }
-        // Clear the review picker submenu on any action that isn't part of it.
-        if !matches!(action, Action::OpenReviewPicker) {
-            self.ui.pending_review_action = false;
-        }
-        // Clear the task status submenu on any action that isn't part of it.
-        if !matches!(
-            action,
-            Action::TaskStatusSubmenu | Action::TransitionTaskStatus(_)
-        ) {
-            self.ui.pending_task_status = false;
+        // Clear the active submenu on any action that isn't part of that submenu.
+        match self.ui.submenu {
+            SubmenuState::PrActions
+                if !matches!(
+                    action,
+                    Action::PrActionSubmenu
+                        | Action::OpenPrDiffInDelta
+                        | Action::OpenInLazygit
+                        | Action::OpenInOcto
+                ) =>
+            {
+                self.ui.submenu = SubmenuState::None;
+            }
+            SubmenuState::ReviewPicker if !matches!(action, Action::OpenReviewPicker) => {
+                self.ui.submenu = SubmenuState::None;
+            }
+            SubmenuState::TaskStatus
+                if !matches!(
+                    action,
+                    Action::TaskStatusSubmenu | Action::TransitionTaskStatus(_)
+                ) =>
+            {
+                self.ui.submenu = SubmenuState::None;
+            }
+            _ => {}
         }
         match action {
             Action::Quit => vec![Effect::Quit],
@@ -163,15 +166,15 @@ impl App {
                 }
             }
             Action::PrActionSubmenu => {
-                self.ui.pending_pr_action = true;
+                self.ui.submenu = SubmenuState::PrActions;
                 vec![]
             }
             // CancelPrSubmenu dismisses the d-submenu without collapsing the split view.
-            // pending_pr_action is already cleared by the prologue for any non-submenu action.
+            // submenu is already cleared by the prologue for any non-submenu action.
             Action::CancelPrSubmenu => vec![],
             Action::TaskStatusSubmenu => {
                 if self.ui.screen.selected_task().is_some() {
-                    self.ui.pending_task_status = true;
+                    self.ui.submenu = SubmenuState::TaskStatus;
                 }
                 vec![]
             }
@@ -187,94 +190,16 @@ impl App {
                     vec![]
                 }
             }
-            Action::OpenTaskCreationForm => {
-                let seed = self
-                    .ui
-                    .screen
-                    .selected_item_for_seeding()
-                    .and_then(|item| seed_from_item(&item));
-                let repos = self.ui.available_repos.clone();
-                self.ui.modal = Some(TaskCreationModal::with_seed(seed, repos));
-                vec![]
-            }
-            Action::OpenBlankTaskCreationForm => {
-                let repos = self.ui.available_repos.clone();
-                self.ui.modal = Some(TaskCreationModal::with_seed(None, repos));
-                vec![]
-            }
-            Action::CancelTaskCreation => {
-                self.ui.modal = None;
-                vec![]
-            }
-            Action::FocusNextField => {
-                if let Some(modal) = &mut self.ui.modal {
-                    modal.focused_field = modal.focused_field.next();
-                }
-                vec![]
-            }
-            Action::FocusPrevField => {
-                if let Some(modal) = &mut self.ui.modal {
-                    modal.focused_field = modal.focused_field.prev();
-                }
-                vec![]
-            }
-            Action::CycleTaskKind => {
-                if let Some(modal) = &mut self.ui.modal {
-                    modal.kind = cycle_task_kind(modal.kind);
-                }
-                vec![]
-            }
-            Action::ModalTextInput(key) => {
-                if let Some(modal) = &mut self.ui.modal {
-                    match modal.focused_field {
-                        TaskFormField::Title => {
-                            modal.title.input(key);
-                        }
-                        TaskFormField::Description => {
-                            modal.description.input(key);
-                        }
-                        TaskFormField::Link => {
-                            modal.link.input(key);
-                        }
-                        TaskFormField::Repo => {
-                            use crossterm::event::KeyCode;
-                            match key.code {
-                                KeyCode::Char(c) => modal.repo.type_char(c),
-                                KeyCode::Backspace => modal.repo.backspace(),
-                                KeyCode::Up => modal.repo.move_up(),
-                                KeyCode::Down => modal.repo.move_down(),
-                                _ => {}
-                            }
-                        }
-                        TaskFormField::Kind | TaskFormField::Submit => {}
-                    }
-                }
-                vec![]
-            }
-            Action::CommitTaskCreation => {
-                let result = self.ui.modal.as_ref().and_then(|m| m.try_into_request());
-                match result {
-                    None => {
-                        if self.ui.modal.is_some() {
-                            self.ui.flash = Some("Title required".to_string());
-                        }
-                        vec![]
-                    }
-                    Some(req) => {
-                        self.ui.modal = None;
-                        vec![Effect::CreateTask {
-                            title: req.title.as_str().to_owned(),
-                            description: req.description,
-                            kind: req.kind,
-                            links: req.links,
-                            repo: req.repo,
-                            origin: req.origin,
-                        }]
-                    }
-                }
-            }
+            Action::OpenTaskCreationForm
+            | Action::OpenBlankTaskCreationForm
+            | Action::CancelTaskCreation
+            | Action::FocusNextField
+            | Action::FocusPrevField
+            | Action::CycleTaskKind
+            | Action::ModalTextInput(_)
+            | Action::CommitTaskCreation => task_modal::update(self, action),
             Action::OpenPrDiffInDelta => {
-                self.ui.pending_pr_action = false;
+                self.ui.submenu = SubmenuState::None;
                 if let Some(StatusItem::Pr(pr)) = self.ui.screen.selected_status_item() {
                     vec![Effect::OpenPrDiffInDelta {
                         repo: pr.repo.to_string(),
@@ -285,7 +210,7 @@ impl App {
                 }
             }
             Action::OpenInOcto => {
-                self.ui.pending_pr_action = false;
+                self.ui.submenu = SubmenuState::None;
                 if let Some(StatusItem::Pr(pr)) = self.ui.screen.selected_status_item() {
                     vec![Effect::OpenInOcto {
                         repo: pr.repo.to_string(),
@@ -297,7 +222,7 @@ impl App {
                 }
             }
             Action::OpenInLazygit => {
-                self.ui.pending_pr_action = false;
+                self.ui.submenu = SubmenuState::None;
                 if let Some(StatusItem::Pr(pr)) = self.ui.screen.selected_status_item() {
                     vec![Effect::OpenInLazygit {
                         repo: pr.repo.to_string(),
@@ -374,7 +299,7 @@ mod tests {
     use crate::display::{flatten, Category, DisplayItem, Filter, GroupKey};
     use crate::state::{
         Action, App, DataState, DetailMode, Effect, InvestigateAction, Msg, RefreshState, Screen,
-        UiState,
+        SubmenuState, UiState,
     };
     use workflows::status::{StatusItem, StatusReport};
 
@@ -1536,7 +1461,7 @@ mod tests {
     #[test]
     fn open_in_octo_from_split_view_emits_effect_with_pr_identity() {
         let mut app = split_view_app_with_pr_for_merge();
-        app.ui.pending_pr_action = true;
+        app.ui.submenu = SubmenuState::PrActions;
         let effects = app.update(Action::OpenInOcto);
         assert_eq!(effects.len(), 1);
         let Effect::OpenInOcto {
@@ -1555,7 +1480,7 @@ mod tests {
     #[test]
     fn open_in_lazygit_from_split_view_emits_effect_with_pr_identity() {
         let mut app = split_view_app_with_pr_for_merge();
-        app.ui.pending_pr_action = true;
+        app.ui.submenu = SubmenuState::PrActions;
         let effects = app.update(Action::OpenInLazygit);
         assert_eq!(effects.len(), 1);
         let Effect::OpenInLazygit {
@@ -1596,19 +1521,19 @@ mod tests {
     }
 
     #[test]
-    fn open_review_picker_from_split_view_sets_pending_flag_and_stays_on_screen() {
+    fn open_review_picker_from_split_view_sets_submenu_and_stays_on_screen() {
         let mut app = split_view_app_with_pr_item();
         app.update(Action::OpenReviewPicker);
-        assert!(app.ui.pending_review_action);
+        assert_eq!(app.ui.submenu, SubmenuState::ReviewPicker);
         assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
     }
 
     #[test]
     fn commit_review_converge_from_split_view_emits_review_pr_effect() {
         let mut app = split_view_app_with_pr_item();
-        app.ui.pending_review_action = true;
+        app.ui.submenu = SubmenuState::ReviewPicker;
         let effects = app.update(Action::CommitReview(crate::state::ReviewSkill::Converge));
-        assert!(!app.ui.pending_review_action);
+        assert_eq!(app.ui.submenu, SubmenuState::None);
         assert_eq!(effects.len(), 1);
         let Effect::ReviewPr {
             skill, ownership, ..
@@ -1623,11 +1548,11 @@ mod tests {
     #[test]
     fn commit_review_pr_comments_from_split_view_emits_review_pr_effect() {
         let mut app = split_view_app_with_pr_item();
-        app.ui.pending_review_action = true;
+        app.ui.submenu = SubmenuState::ReviewPicker;
         let effects = app.update(Action::CommitReview(
             crate::state::ReviewSkill::PrCommentsConverge,
         ));
-        assert!(!app.ui.pending_review_action);
+        assert_eq!(app.ui.submenu, SubmenuState::None);
         assert_eq!(effects.len(), 1);
         let Effect::ReviewPr { skill, .. } = effects.into_iter().next().unwrap() else {
             panic!("expected ReviewPr");
@@ -1636,11 +1561,11 @@ mod tests {
     }
 
     #[test]
-    fn cancel_review_from_split_view_clears_flag_stays_on_screen() {
+    fn cancel_review_from_split_view_clears_submenu_stays_on_screen() {
         let mut app = split_view_app_with_pr_item();
-        app.ui.pending_review_action = true;
+        app.ui.submenu = SubmenuState::ReviewPicker;
         let effects = app.update(Action::CancelReview);
-        assert!(!app.ui.pending_review_action);
+        assert_eq!(app.ui.submenu, SubmenuState::None);
         assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
         assert!(effects.is_empty());
     }
@@ -2051,12 +1976,12 @@ mod tests {
         );
     }
 
-    // BS3: TaskStatusSubmenu sets pending_task_status for a BadgedSignal row.
+    // BS3: TaskStatusSubmenu sets TaskStatus submenu for a BadgedSignal row.
     #[test]
     fn task_status_submenu_sets_pending_for_badged_signal() {
         let mut app = app_with_badged_signal();
         app.update(Action::TaskStatusSubmenu);
-        assert!(app.ui.pending_task_status);
+        assert_eq!(app.ui.submenu, SubmenuState::TaskStatus);
     }
 
     // BS4: TransitionTaskStatus emits UpdateTaskStatus from a BadgedSignal row.

@@ -1,5 +1,6 @@
 ---
-source: ui/tui/src/display.rs
+source: ui/tui/src/display/tests.rs
+assertion_line: 289
 expression: lines
 ---
 media_blocked:  Import blocked · Invalid video file

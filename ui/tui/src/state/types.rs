@@ -9,6 +9,17 @@ use crate::display::{
     Category, DisplayItem, Filter, FlatRow, GroupKey, ListSnapshot, SelectedItemKind,
 };
 
+/// Which two-key submenu is currently intercepting keypresses. At most one can
+/// be active at a time — mutually exclusive states represented as an enum.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum SubmenuState {
+    #[default]
+    None,
+    PrActions,
+    ReviewPicker,
+    TaskStatus,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ReviewSkill {
     Converge,

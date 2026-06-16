@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::display::{Category, SelectedItemKind};
-use crate::state::{Action, App, ReviewSkill, Screen, TaskFormField};
+use crate::state::{Action, App, ReviewSkill, Screen, SubmenuState, TaskFormField};
 
 pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
     // Modal intercepts all keys while open.
@@ -9,20 +9,14 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
         return modal_key(key, modal.focused_field);
     }
 
-    // Review picker submenu intercepts all keys while pending.
-    if app.ui.pending_review_action {
-        return review_picker_submenu_key(key);
-    }
-
-    // PR actions submenu intercepts all keys while pending.
-    if app.ui.pending_pr_action {
-        return pr_action_submenu_key(key);
-    }
-
-    // Task status submenu intercepts all keys while pending.
-    if app.ui.pending_task_status {
-        let current_status = app.current_screen().selected_task().map(|t| t.status);
-        return task_status_submenu_key(key, current_status);
+    match app.ui.submenu {
+        SubmenuState::ReviewPicker => return review_picker_submenu_key(key),
+        SubmenuState::PrActions => return pr_action_submenu_key(key),
+        SubmenuState::TaskStatus => {
+            let current_status = app.current_screen().selected_task().map(|t| t.status);
+            return task_status_submenu_key(key, current_status);
+        }
+        SubmenuState::None => {}
     }
 
     // Query mode intercepts all keys (Ctrl-C still quits).
@@ -256,7 +250,9 @@ fn merge_confirm_key(key: KeyEvent) -> Option<Action> {
 mod tests {
     use super::key_to_action;
     use crate::display::{Category, Filter, ListSnapshot};
-    use crate::state::{Action, App, DetailMode, PrPrevScreen, ReviewSkill, Screen, UiState};
+    use crate::state::{
+        Action, App, DetailMode, PrPrevScreen, ReviewSkill, Screen, SubmenuState, UiState,
+    };
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use rstest::rstest;
 
@@ -474,7 +470,7 @@ mod tests {
 
     fn pending_review_action_app_with_pr() -> App {
         let mut app = split_view_app_with_pr();
-        app.ui.pending_review_action = true;
+        app.ui.submenu = SubmenuState::ReviewPicker;
         app
     }
 
@@ -582,7 +578,7 @@ mod tests {
 
     fn pending_pr_action_app_with_pr() -> App {
         let mut app = split_view_app_with_pr();
-        app.ui.pending_pr_action = true;
+        app.ui.submenu = SubmenuState::PrActions;
         app
     }
 
@@ -713,7 +709,7 @@ mod tests {
 
     fn pending_task_status_app(status: domain::TaskStatus) -> App {
         let mut app = split_view_app_with_task(status);
-        app.ui.pending_task_status = true;
+        app.ui.submenu = SubmenuState::TaskStatus;
         app
     }
 

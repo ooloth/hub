@@ -3,7 +3,7 @@ use domain::{RepoSlug, StreamBlock};
 use workflows::status::StatusItem;
 
 use crate::state::task_creation::TaskCreationModal;
-use crate::state::types::Screen;
+use crate::state::types::{Screen, SubmenuState};
 
 #[derive(Debug, Default)]
 pub(crate) struct UiState {
@@ -12,15 +12,8 @@ pub(crate) struct UiState {
     pub(crate) flash: Option<String>,
     pub(crate) query_input: Option<String>,
     pub(crate) pending_g: bool,
-    /// True while the PR actions submenu is showing (d was pressed on a PR in split view).
-    /// The next keypress either executes a sub-action or cancels.
-    pub(crate) pending_pr_action: bool,
-    /// True while the review picker submenu is showing (v was pressed on a PR in split view).
-    /// The next keypress either commits a review skill or cancels.
-    pub(crate) pending_review_action: bool,
-    /// True while the task status submenu is showing (s was pressed on a task in split view).
-    /// The next keypress either transitions to a new status or cancels.
-    pub(crate) pending_task_status: bool,
+    /// Which two-key submenu is currently intercepting keypresses, if any.
+    pub(crate) submenu: SubmenuState,
     /// Some while the task creation modal overlay is open.
     pub(crate) modal: Option<TaskCreationModal>,
     /// Repos available for selection in the task creation picker.

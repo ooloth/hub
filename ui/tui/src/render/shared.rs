@@ -110,6 +110,10 @@ pub(crate) fn format_keybinds(keybinds: &[(&str, &str)]) -> String {
         .join("\n")
 }
 
+pub(crate) fn clamp_scroll(total: usize, viewport_height: usize, scroll: &mut u16) {
+    *scroll = (*scroll).min(total.saturating_sub(viewport_height) as u16);
+}
+
 pub(crate) fn popup_area(area: Rect, content_lines: u16, content_width: u16) -> Rect {
     let width = (content_width + 4).min(area.width);
     let height = (content_lines + 2).min(area.height);

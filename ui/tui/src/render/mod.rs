@@ -1,4 +1,5 @@
 mod pr_detail_columns;
+mod theme;
 
 pub(crate) mod detail;
 pub(crate) mod issue;
@@ -10,32 +11,19 @@ pub(crate) mod status_bar;
 pub(crate) mod task;
 pub(crate) mod unified;
 
+pub(crate) use theme::{dim, list_highlight, FOCUS_COLOR, LAVENDER, YELLOW};
+
 use crate::render::shared::{KEYBINDS_LIST, KEYBINDS_PR_READER};
 
 use chrono::Utc;
 use ratatui::{
     layout::{Constraint, Layout},
-    style::{Color, Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph},
 };
 
-use crate::state::{App, DetailMode, Screen};
-
-pub(super) const FOCUS_COLOR: Color = Color::Rgb(203, 166, 247); // Catppuccin Mocha Mauve
-pub(super) const LAVENDER: Color = Color::Rgb(180, 190, 254); // Catppuccin Mocha Lavender
-pub(super) const YELLOW: Color = Color::Rgb(249, 226, 175); // Catppuccin Mocha Yellow
-pub(super) const SELECTION_BG: Color = Color::Rgb(41, 45, 62);
-
-pub(super) fn dim() -> Style {
-    Style::default().add_modifier(Modifier::DIM)
-}
-
-pub(super) fn list_highlight() -> Style {
-    Style::default()
-        .bg(SELECTION_BG)
-        .add_modifier(Modifier::BOLD)
-}
+use crate::state::{App, DetailMode, Screen, SubmenuState};
 
 pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let [content_area, bar_area] =
@@ -108,7 +96,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let [bar_left, bar_right] =
         Layout::horizontal([Constraint::Min(0), Constraint::Length(right_width)]).areas(bar_area);
 
-    if app.ui.pending_pr_action {
+    if app.ui.submenu == SubmenuState::PrActions {
         let pr_label = app
             .current_screen()
             .selected_status_item()
@@ -125,7 +113,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
             Span::styled("  [d] delta · [l] lazygit · [o] octo · [Esc] cancel", dim()),
         ]);
         frame.render_widget(Paragraph::new(line), bar_left);
-    } else if app.ui.pending_task_status {
+    } else if app.ui.submenu == SubmenuState::TaskStatus {
         let (task_label, hints_str) = app
             .current_screen()
             .selected_task()
@@ -139,7 +127,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
             Span::styled(hints_str, dim()),
         ]);
         frame.render_widget(Paragraph::new(line), bar_left);
-    } else if app.ui.pending_review_action {
+    } else if app.ui.submenu == SubmenuState::ReviewPicker {
         let pr_label = app
             .current_screen()
             .selected_status_item()
@@ -203,7 +191,7 @@ mod tests {
     };
     use crate::display::{flatten, Category, DisplayItem, Filter, FlatRow, GroupKey, ListSnapshot};
     use crate::state::{
-        App, DataState, DetailMode, InvestigateAction, RefreshState, Screen, UiState,
+        App, DataState, DetailMode, InvestigateAction, RefreshState, Screen, SubmenuState, UiState,
     };
     use chrono::Utc;
     use proptest::proptest;
@@ -1089,11 +1077,11 @@ mod tests {
         insta::assert_snapshot!(screen_text(&buf));
     }
 
-    // SL5: pending_pr_action shows submenu in status bar.
+    // SL5: PrActions submenu shows in status bar.
     #[test]
     fn status_bar_pending_pr_action_shows_submenu() {
         let mut app = split_view_app(vec![DisplayItem::Single(pr())], 0, 0);
-        app.ui.pending_pr_action = true;
+        app.ui.submenu = SubmenuState::PrActions;
         let buf = draw(&mut app, 120, 5);
         insta::assert_snapshot!(status_row(&buf));
     }
@@ -1192,7 +1180,7 @@ mod tests {
         {
             *detail_mode = DetailMode::Visible { detail_scroll: 0 };
         }
-        app.ui.pending_task_status = true;
+        app.ui.submenu = SubmenuState::TaskStatus;
         app
     }
 

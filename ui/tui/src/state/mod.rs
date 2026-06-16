@@ -7,6 +7,6 @@ pub(crate) use app::{App, DataState, UiState};
 pub(crate) use task_creation::{TaskCreationModal, TaskFormField};
 pub(crate) use types::{
     Action, DetailMode, Effect, InvestigateAction, Msg, PrOwnership, PrPrevScreen, RefreshState,
-    ReviewSkill, Screen,
+    ReviewSkill, Screen, SubmenuState,
 };
 pub(crate) use update::{compute_investigate_action, handle_msg};

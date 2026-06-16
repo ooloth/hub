@@ -6,6 +6,7 @@ use crate::display::{
 };
 use crate::state::{
     Action, App, DetailMode, Effect, InvestigateAction, PrOwnership, PrPrevScreen, Screen,
+    SubmenuState,
 };
 use workflows::status::StatusItem;
 
@@ -253,7 +254,7 @@ impl App {
                 }
             }
             Action::OpenReviewPicker => {
-                self.ui.pending_review_action = true;
+                self.ui.submenu = SubmenuState::ReviewPicker;
                 vec![]
             }
             Action::CommitReview(skill) => {

@@ -1,5 +1,6 @@
 ---
-source: ui/tui/src/display.rs
+source: ui/tui/src/display/tests.rs
+assertion_line: 277
 expression: lines
 ---
 pr_no_reviews:         Add feature #42 · ooloth · no reviews

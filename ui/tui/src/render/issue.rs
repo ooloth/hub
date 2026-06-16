@@ -21,12 +21,9 @@ pub(crate) fn render_issue_detail(
         .filter(|s| !s.is_empty())
         .unwrap_or("(no description)");
 
-    // Clamp scroll to actual content height.
     let total_lines =
         super::status_bar::issue_body_line_count(issue.body.as_deref(), inner_width) + 2;
-    let viewport_height = area.height.saturating_sub(2) as usize; // subtract block borders
-    let max_scroll = total_lines.saturating_sub(viewport_height) as u16;
-    *scroll = (*scroll).min(max_scroll);
+    super::shared::clamp_scroll(total_lines, area.height.saturating_sub(2) as usize, scroll);
 
     let bold = Style::default().add_modifier(Modifier::BOLD);
 

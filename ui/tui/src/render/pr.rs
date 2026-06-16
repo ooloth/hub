@@ -202,10 +202,7 @@ pub(crate) fn render_pr_detail(
     let mut diff = pr_diff_lines(pr, body_width);
     content.lines.append(&mut diff);
 
-    let total_lines = content.lines.len();
-    let viewport_height = body_area.height as usize;
-    let max_scroll = total_lines.saturating_sub(viewport_height) as u16;
-    *scroll = (*scroll).min(max_scroll);
+    super::shared::clamp_scroll(content.lines.len(), body_area.height as usize, scroll);
 
     frame.render_widget(
         Paragraph::new(content)

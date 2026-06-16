@@ -13,7 +13,7 @@ pub(crate) fn render_log_detail(
     scroll: &mut u16,
     area: Rect,
 ) {
-    let (title, subtitle, lines) = match view {
+    let (title, source, project, env, message, lines) = match view {
         LogDetailView::Gcp {
             title,
             project,
@@ -21,11 +21,7 @@ pub(crate) fn render_log_detail(
             message,
             lines,
             ..
-        } => (
-            format!(" {} ", title),
-            format!(" GCP · {}:{} · {} ", project, env, message),
-            lines,
-        ),
+        } => (title, "GCP", project, env, message, lines),
         LogDetailView::Loki {
             title,
             project,
@@ -33,12 +29,10 @@ pub(crate) fn render_log_detail(
             message,
             lines,
             ..
-        } => (
-            format!(" {} ", title),
-            format!(" Loki · {}:{} · {} ", project, env, message),
-            lines,
-        ),
+        } => (title, "Loki", project, env, message, lines),
     };
+    let title = format!(" {} ", title);
+    let subtitle = format!(" {} · {}:{} · {} ", source, project, env, message);
 
     let bold = Style::default().add_modifier(Modifier::BOLD);
     let inner_width = area.width.saturating_sub(2) as usize;
@@ -64,10 +58,11 @@ pub(crate) fn render_log_detail(
         }
     }
 
-    let total_lines = all_lines.len();
-    let viewport_height = area.height.saturating_sub(2) as usize;
-    let max_scroll = total_lines.saturating_sub(viewport_height) as u16;
-    *scroll = (*scroll).min(max_scroll);
+    super::shared::clamp_scroll(
+        all_lines.len(),
+        area.height.saturating_sub(2) as usize,
+        scroll,
+    );
 
     let block = Block::default()
         .title(Line::from(title).style(bold))

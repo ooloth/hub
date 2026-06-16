@@ -121,8 +121,7 @@ pub(crate) fn render_agent_session_detail(
     let lines = blocks_to_lines(blocks);
     let pane_h = stream_area.height as usize;
     let total = lines.len();
-    let max_scroll = total.saturating_sub(pane_h) as u16;
-    *scroll = (*scroll).min(max_scroll);
+    super::shared::clamp_scroll(total, pane_h, scroll);
     let visible: Vec<Line<'static>> = lines
         .into_iter()
         .skip(*scroll as usize)
