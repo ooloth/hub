@@ -188,6 +188,7 @@ pub async fn prs_awaiting_review(token: &str, repos: &[GithubPrsRepo]) -> Result
     if repos.is_empty() {
         return Ok(vec![]);
     }
+
     let mut prs = nodes_to_prs(
         graphql_prs(token, "is:open is:pr review-requested:@me", repos).await?,
         Urgency::High,
@@ -195,6 +196,7 @@ pub async fn prs_awaiting_review(token: &str, repos: &[GithubPrsRepo]) -> Result
         None,
         repos,
     )?;
+
     enrich_with_file_patches(token, &mut prs).await;
     Ok(prs)
 }
@@ -208,6 +210,7 @@ pub async fn external_prs(token: &str, repos: &[GithubPrsRepo]) -> Result<Vec<Pu
     if repos.is_empty() {
         return Ok(vec![]);
     }
+
     let mut prs = nodes_to_prs(
         graphql_prs(
             token,
@@ -220,7 +223,9 @@ pub async fn external_prs(token: &str, repos: &[GithubPrsRepo]) -> Result<Vec<Pu
         None,
         repos,
     )?;
+
     enrich_with_file_patches(token, &mut prs).await;
+
     Ok(prs)
 }
 
@@ -237,6 +242,7 @@ pub async fn my_open_prs(
     if repos.is_empty() {
         return Ok(vec![]);
     }
+
     let mut prs = nodes_to_prs(
         graphql_prs(token, "is:open is:pr -is:draft author:@me", repos).await?,
         Urgency::High,
@@ -244,7 +250,9 @@ pub async fn my_open_prs(
         Some(github_username),
         repos,
     )?;
+
     enrich_with_file_patches(token, &mut prs).await;
+
     Ok(prs)
 }
 
@@ -261,6 +269,7 @@ pub async fn my_draft_prs(
     if repos.is_empty() {
         return Ok(vec![]);
     }
+
     let mut prs = nodes_to_prs(
         graphql_prs(token, "is:open is:pr is:draft author:@me", repos).await?,
         Urgency::Medium,
@@ -268,7 +277,9 @@ pub async fn my_draft_prs(
         Some(github_username),
         repos,
     )?;
+
     enrich_with_file_patches(token, &mut prs).await;
+
     Ok(prs)
 }
 
@@ -296,6 +307,7 @@ fn nodes_to_prs(
                 .find(|r| r.repo == node.repository.name_with_owner)
                 .map(|r| r.exclude_authors.iter().any(|a| a == &node.author.login))
                 .unwrap_or(false);
+
             !excluded
         })
         .map(|node| {
@@ -309,19 +321,23 @@ fn nodes_to_prs(
                             node.repository.name_with_owner
                         )
                     })?;
+
             let approval_count = node
                 .reviews
                 .nodes
                 .iter()
                 .filter(|r| r.state == "APPROVED")
                 .count() as u32;
+
             let thread_comment_count: usize = node
                 .review_threads
                 .nodes
                 .iter()
                 .map(|t| t.comments.nodes.len())
                 .sum();
+
             let comment_count = (thread_comment_count + node.comments.nodes.len()) as u32;
+
             Ok(PullRequest {
                 number: node.number,
                 title: node.title,
@@ -413,9 +429,11 @@ async fn fetch_file_patches(
             .json()
             .await
             .context("failed to parse PR files response")?;
+
         Ok(entries)
     }
     .await;
+
     result
         .unwrap_or_default()
         .into_iter()
@@ -433,7 +451,9 @@ async fn enrich_with_file_patches(token: &str, prs: &mut [PullRequest]) {
             async move { fetch_file_patches(&token, &repo, number).await }
         })
         .collect();
+
     let all_patches = futures::future::join_all(futures).await;
+
     for (pr, patches) in prs.iter_mut().zip(all_patches) {
         for file in pr.changed_files.iter_mut() {
             if let Some(patch) = patches.get(&file.path) {
@@ -480,7 +500,9 @@ async fn graphql_prs(token: &str, base: &str, repos: &[GithubPrsRepo]) -> Result
         .map(|r| format!("repo:{}", r.repo))
         .collect::<Vec<_>>()
         .join(" ");
+
     let q = format!("{base} {repo_filters}");
+
     let query = format!(
         r#"{{ search(query: "{q}", type: ISSUE, first: 100) {{ nodes {{ ... on PullRequest {{
             number title url body
@@ -498,6 +520,7 @@ async fn graphql_prs(token: &str, base: &str, repos: &[GithubPrsRepo]) -> Result
             comments(first: 50) {{ nodes {{ author {{ login }} createdAt body }} }}
         }} }} }} }}"#
     );
+
     let response: GraphQlResponse = reqwest::Client::new()
         .post("https://api.github.com/graphql")
         .bearer_auth(token)
@@ -511,6 +534,7 @@ async fn graphql_prs(token: &str, base: &str, repos: &[GithubPrsRepo]) -> Result
         .json()
         .await
         .context("failed to parse GitHub GraphQL response")?;
+
     Ok(response.data.search.nodes)
 }
 
