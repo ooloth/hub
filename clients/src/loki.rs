@@ -45,6 +45,7 @@ pub async fn entries(
     let now_ns = Utc::now()
         .timestamp_nanos_opt()
         .context("system clock out of range")?;
+
     let lookback_ns = i64::try_from(duration.as_nanos()).unwrap_or(i64::MAX);
     let start_ns = now_ns.saturating_sub(lookback_ns);
 
@@ -83,10 +84,12 @@ fn entries_from_response(response: QueryRangeResponse) -> anyhow::Result<Vec<Log
         .into_iter()
         .flat_map(|stream| {
             let labels = stream.stream;
+
             stream.values.into_iter().map(move |(ts, line)| {
                 let timestamp_ns = ts
                     .parse()
                     .with_context(|| format!("unparseable Loki timestamp: {ts}"))?;
+
                 Ok(LogEntry {
                     timestamp_ns,
                     line,
