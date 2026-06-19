@@ -39,6 +39,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
             ..
         } => {
             let show_session = matches!(detail_mode, DetailMode::VisibleSession { .. });
+
             match detail_mode {
                 DetailMode::Hidden => {
                     unified::render_unified(
@@ -53,6 +54,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
                 DetailMode::Visible { detail_scroll }
                 | DetailMode::VisibleSession { detail_scroll } => {
                     let max_list_height = content_area.height * 30 / 100;
+
                     let [list_area, detail_area] = Layout::vertical([
                         Constraint::Length(unified::unified_list_height(
                             flat_rows,
@@ -61,6 +63,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
                         Constraint::Min(0),
                     ])
                     .areas(content_area);
+
                     unified::render_unified(
                         frame,
                         flat_rows,
@@ -69,8 +72,11 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
                         app.ui.query_input.as_deref(),
                         list_area,
                     );
+
                     frame.render_widget(Clear, detail_area);
+
                     let selected_row = flat_rows.get(*selected);
+
                     detail::render_split_detail_pane(
                         frame,
                         detail_area,
@@ -93,6 +99,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         status_bar::right_status_text(&app.data.refresh_state, app.data.last_updated, Utc::now());
 
     let right_width = Span::raw(right_status.as_str()).width() as u16 + 1;
+
     let [bar_left, bar_right] =
         Layout::horizontal([Constraint::Min(0), Constraint::Length(right_width)]).areas(bar_area);
 
@@ -108,10 +115,12 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
                 }
             })
             .unwrap_or_else(|| " diff".to_string());
+
         let line = Line::from(vec![
             Span::styled(pr_label, Style::default().fg(YELLOW)),
             Span::styled("  [d] delta · [l] lazygit · [o] octo · [Esc] cancel", dim()),
         ]);
+
         frame.render_widget(Paragraph::new(line), bar_left);
     } else if app.ui.submenu == SubmenuState::TaskStatus {
         let (task_label, hints_str) = app
@@ -122,10 +131,12 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
                 (format!(" {} · status", task.id), hints)
             })
             .unwrap_or_else(|| (" status".to_string(), "  [Esc] cancel".to_string()));
+
         let line = Line::from(vec![
             Span::styled(task_label, Style::default().fg(YELLOW)),
             Span::styled(hints_str, dim()),
         ]);
+
         frame.render_widget(Paragraph::new(line), bar_left);
     } else if app.ui.submenu == SubmenuState::ReviewPicker {
         let pr_label = app
@@ -139,17 +150,21 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
                 }
             })
             .unwrap_or_else(|| " Review".to_string());
+
         let line = Line::from(vec![
             Span::styled(pr_label, Style::default().fg(YELLOW)),
             Span::styled("  [c] code · [m] comments · [Esc] cancel", dim()),
         ]);
+
         frame.render_widget(Paragraph::new(line), bar_left);
     } else if let Screen::MergingPr { pr, .. } = &app.ui.screen {
         let question = format!(" Squash and merge #{} into {}?", pr.number, pr.base_branch);
+
         let line = Line::from(vec![
             Span::styled(question, Style::default().fg(YELLOW)),
             Span::styled("  [↩] confirm · [Esc] cancel", dim()),
         ]);
+
         frame.render_widget(Paragraph::new(line), bar_left);
     } else {
         let left = status_bar::status_bar_left(app);
@@ -174,6 +189,7 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         let lines = keybinds.len() as u16;
         let width = text.lines().map(|l| l.chars().count()).max().unwrap_or(0) as u16;
         let popup = crate::render::shared::popup_area(frame.area(), lines, width);
+
         frame.render_widget(Clear, popup);
         frame.render_widget(
             Paragraph::new(text).block(Block::new().title(" Keybinds ").borders(Borders::ALL)),

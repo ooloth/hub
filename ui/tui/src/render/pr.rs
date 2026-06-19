@@ -18,14 +18,18 @@ pub(crate) fn comment_lines(comment: &domain::ReviewComment) -> Vec<Line<'static
     let author_style = Style::default().fg(YELLOW).add_modifier(Modifier::ITALIC);
     let body_style = Style::default().fg(YELLOW);
     let age_str = crate::display::format_age_short(comment.age);
+
     let mut out = vec![Line::styled(
         format!(" @{} · {}", comment.author, age_str),
         author_style,
     )];
+
     for body_line in comment.body.lines() {
         out.push(Line::styled(format!(" {body_line}"), body_style));
     }
+
     out.push(Line::from(""));
+
     out
 }
 
@@ -46,6 +50,7 @@ pub(crate) fn pr_diff_lines(pr: &domain::PullRequest, sep_width: usize) -> Vec<L
     let sep = Style::default().add_modifier(Modifier::DIM);
     let bold = Style::default().add_modifier(Modifier::BOLD);
     let lav = Style::default().fg(LAVENDER);
+
     let mut out: Vec<Line<'static>> = vec![];
 
     for file in &pr.changed_files {
@@ -54,12 +59,15 @@ pub(crate) fn pr_diff_lines(pr: &domain::PullRequest, sep_width: usize) -> Vec<L
         let path = file.path.clone();
 
         let left = format!(" {path} ");
+
         let fill_len = sep_width
             .saturating_sub(
                 left.chars().count() + format!(" +{additions} -{deletions} ").chars().count(),
             )
             .saturating_sub(4);
+
         let fill = "─".repeat(fill_len);
+
         let header = Line::from(vec![
             Span::styled(format!("──{left}"), lav),
             Span::styled(fill, lav),
@@ -68,6 +76,7 @@ pub(crate) fn pr_diff_lines(pr: &domain::PullRequest, sep_width: usize) -> Vec<L
             Span::styled(format!(" -{deletions} "), Style::default().fg(Color::Red)),
         ])
         .style(bold);
+
         out.push(header);
 
         let file_threads: Vec<&domain::ReviewThread> = pr

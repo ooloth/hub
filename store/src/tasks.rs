@@ -5,6 +5,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 pub fn ensure_table(conn: &Connection) -> Result<()> {
     migrate_consolidate_links_and_kind(conn)?;
+
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS tasks (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -21,7 +22,9 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
         );",
     )
     .context("failed to ensure tasks schema")?;
+
     crate::task_comments::ensure_table(conn)?;
+
     for (col, def) in &[
         ("description", "TEXT"),
         ("updated_at", "TEXT"),
@@ -31,6 +34,7 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
     ] {
         add_column_if_missing(conn, "tasks", col, def)?;
     }
+
     // Rename old status values. PRAGMA ignore_check_constraints lets us write the new
     // values even though the existing table's CHECK still lists the old names.
     conn.execute_batch(
@@ -40,6 +44,7 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
          PRAGMA ignore_check_constraints = OFF;",
     )
     .context("failed to migrate status renames (archived→cancelled, review→in-review)")?;
+
     Ok(())
 }
 
@@ -79,15 +84,18 @@ fn add_column_if_missing(conn: &Connection, table: &str, column: &str, def: &str
     let mut stmt = conn
         .prepare(&format!("PRAGMA table_info({table})"))
         .with_context(|| format!("PRAGMA table_info({table})"))?;
+
     let exists = stmt
         .query_map([], |row| row.get::<_, String>(1))
         .context("failed to read table_info")?
         .filter_map(|r| r.ok())
         .any(|name| name == column);
+
     if !exists {
         conn.execute_batch(&format!("ALTER TABLE {table} ADD COLUMN {column} {def};"))
             .with_context(|| format!("ALTER TABLE {table} ADD COLUMN {column}"))?;
     }
+
     Ok(())
 }
 
@@ -104,6 +112,7 @@ pub fn create(
     let now = Utc::now().to_rfc3339();
     let links_str = links_to_db(links);
     let origin_str = origin_to_db(origin)?;
+
     conn.execute(
         "INSERT INTO tasks (title, kind, description, links, repo, origin, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
@@ -118,7 +127,9 @@ pub fn create(
         ],
     )
     .context("failed to insert task")?;
+
     let row_id = conn.last_insert_rowid();
+
     Ok(TaskId::from_db(format!("TASK-{row_id:04}")))
 }
 
@@ -126,18 +137,21 @@ pub fn create(
 /// does not exist or is not currently in `backlog` status.
 pub fn set_ready(conn: &Connection, id: &TaskId) -> Result<()> {
     let row_id = task_row_id(id)?;
+
     let changed = conn
         .execute(
             "UPDATE tasks SET status = 'ready' WHERE id = ?1 AND status = 'backlog'",
             params![row_id],
         )
         .context("failed to update task status")?;
+
     if changed == 0 {
         anyhow::bail!(
             "task {} is not in 'backlog' status (may not exist or already transitioned)",
             id
         );
     }
+
     Ok(())
 }
 
@@ -150,6 +164,7 @@ const TERMINAL_VISIBLE_DAYS: i64 = 7;
 /// [`TERMINAL_VISIBLE_DAYS`] days.
 pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
     let done_cutoff = (Utc::now() - chrono::Duration::days(TERMINAL_VISIBLE_DAYS)).to_rfc3339();
+
     let mut stmt = conn
         .prepare(
             "SELECT id, title, status, kind, session_id,
@@ -183,6 +198,7 @@ pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
         .collect::<Result<Vec<_>>>()?;
 
     let now = Utc::now();
+
     rows.into_iter()
         .map(
             |(
@@ -199,14 +215,17 @@ pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
                 origin_str,
             )| {
                 let task_id = TaskId::from_db(format!("TASK-{id:04}"));
+
                 let status: TaskStatus = status_str
                     .parse()
                     .map_err(|e: String| anyhow::anyhow!(e))
                     .with_context(|| format!("invalid status for task {id}"))?;
+
                 let kind: TaskKind = kind_str
                     .parse()
                     .map_err(|e: String| anyhow::anyhow!(e))
                     .with_context(|| format!("invalid kind for task {id}"))?;
+
                 let repo = repo_str
                     .map(|s| {
                         s.parse::<RepoSlug>()
@@ -214,14 +233,20 @@ pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
                             .with_context(|| format!("invalid repo slug for task {id}"))
                     })
                     .transpose()?;
+
                 let origin = origin_from_db(origin_str)
                     .with_context(|| format!("invalid origin for task {id}"))?;
+
                 let urgency = status.urgency();
+
                 let created_at = chrono::DateTime::parse_from_rfc3339(&created_at_str)
                     .with_context(|| format!("invalid created_at for task {id}: {created_at_str}"))?
                     .with_timezone(&Utc);
+
                 let age = now - created_at;
+
                 let comments = crate::task_comments::for_task(conn, id)?;
+
                 Ok(Task {
                     id: task_id,
                     title,
@@ -285,10 +310,12 @@ pub fn get(conn: &Connection, id: &TaskId) -> Result<Task> {
         .parse()
         .map_err(|e: String| anyhow::anyhow!(e))
         .with_context(|| format!("invalid status for task {id}"))?;
+
     let kind: TaskKind = kind_str
         .parse()
         .map_err(|e: String| anyhow::anyhow!(e))
         .with_context(|| format!("invalid kind for task {id}"))?;
+
     let repo = repo_str
         .map(|s| {
             s.parse::<RepoSlug>()
@@ -296,12 +323,16 @@ pub fn get(conn: &Connection, id: &TaskId) -> Result<Task> {
                 .with_context(|| format!("invalid repo slug for task {id}"))
         })
         .transpose()?;
+
     let origin =
         origin_from_db(origin_str).with_context(|| format!("invalid origin for task {id}"))?;
+
     let urgency = status.urgency();
+
     let created_at_dt = chrono::DateTime::parse_from_rfc3339(&created_at_str)
         .with_context(|| format!("invalid created_at for task {id}"))?
         .with_timezone(&Utc);
+
     let age = Utc::now() - created_at_dt;
 
     let comments = crate::task_comments::for_task(conn, row_id)?;
@@ -327,16 +358,20 @@ pub fn get(conn: &Connection, id: &TaskId) -> Result<Task> {
 /// Updates the status of a task and refreshes `updated_at`.
 pub fn update_status(conn: &Connection, id: &TaskId, status: TaskStatus) -> Result<()> {
     let row_id = task_row_id(id)?;
+
     let now = Utc::now().to_rfc3339();
+
     let changed = conn
         .execute(
             "UPDATE tasks SET status = ?1, updated_at = ?2 WHERE id = ?3",
             params![status.to_string(), now, row_id],
         )
         .context("failed to update task status")?;
+
     if changed == 0 {
         anyhow::bail!("task {id} not found");
     }
+
     Ok(())
 }
 
@@ -383,10 +418,12 @@ pub fn oldest_ready(conn: &Connection) -> Result<Option<ReadyTask>> {
     .context("failed to query oldest ready task")?
     .map(|(id, repo_str, kind_str)| {
         let task_id = TaskId::from_db(format!("TASK-{id:04}"));
+
         let kind: TaskKind = kind_str
             .parse()
             .map_err(|e: String| anyhow::anyhow!(e))
             .with_context(|| format!("invalid kind for task {id}"))?;
+
         let repo = repo_str
             .map(|s| {
                 s.parse::<RepoSlug>()
@@ -394,6 +431,7 @@ pub fn oldest_ready(conn: &Connection) -> Result<Option<ReadyTask>> {
                     .with_context(|| format!("invalid repo slug for task {id}"))
             })
             .transpose()?;
+
         Ok(ReadyTask {
             id: task_id,
             repo,
@@ -408,7 +446,9 @@ pub fn oldest_ready(conn: &Connection) -> Result<Option<ReadyTask>> {
 /// already claimed by a concurrent dispatch tick (rowcount == 0).
 pub fn claim_for_dispatch(conn: &Connection, id: &TaskId, session_id: &str) -> Result<bool> {
     let row_id = task_row_id(id)?;
+
     let now = Utc::now().to_rfc3339();
+
     let changed = conn
         .execute(
             "UPDATE tasks SET status = 'in-progress', session_id = ?1, updated_at = ?2
@@ -416,6 +456,7 @@ pub fn claim_for_dispatch(conn: &Connection, id: &TaskId, session_id: &str) -> R
             params![session_id, now, row_id],
         )
         .context("failed to claim task for dispatch")?;
+
     Ok(changed == 1)
 }
 
@@ -439,12 +480,15 @@ pub fn add_link(conn: &Connection, id: &TaskId, value: &str) -> Result<()> {
         .with_context(|| format!("task {id} not found"))?;
 
     let mut links = links_from_db(links_str);
+
     if links.iter().any(|l| l == value) {
         return Ok(());
     }
+
     links.push(value.to_string());
 
     let now = Utc::now().to_rfc3339();
+
     conn.execute(
         "UPDATE tasks SET links = ?1, updated_at = ?2 WHERE id = ?3",
         params![links_to_db(&links), now, row_id],
