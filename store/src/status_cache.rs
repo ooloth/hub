@@ -3,10 +3,14 @@ use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
 use std::path::{Path, PathBuf};
 
+/// A row from the `status_cache` table.
 #[derive(Debug)]
 pub struct CachedStatus {
+    /// When the cache row was last written.
     pub refreshed_at: DateTime<Utc>,
+    /// The schema version in effect when the payload was written.
     pub schema_version: i32,
+    /// The serialized TUI status payload (JSON).
     pub payload: String,
 }
 
@@ -93,15 +97,16 @@ pub fn upsert(conn: &Connection, payload: &str, schema_version: i32) -> Result<(
     Ok(())
 }
 
-/// Returns the cached status only when its `refreshed_at` is within `max_age`
-/// of now. `None` means either no row exists or it is older than `max_age` —
-/// the caller treats both the same: fetch instead of reusing.
+/// Returns the cached status if its `refreshed_at` is within `max_age` of now.
+///
+/// Returns `None` when no row exists or the row is older than `max_age` —
+/// the caller treats both cases the same: fetch fresh data instead of reusing.
 ///
 /// # Errors
 /// Returns an error if the underlying SQL query fails.
 pub fn read_if_fresh(conn: &Connection, max_age: chrono::Duration) -> Result<Option<CachedStatus>> {
     match read(conn)? {
-        Some(cached) if (Utc::now() - cached.refreshed_at) < max_age => Ok(Some(cached)),
+        Some(cached) if Utc::now() - cached.refreshed_at < max_age => Ok(Some(cached)),
         _ => Ok(None),
     }
 }

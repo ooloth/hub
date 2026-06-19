@@ -208,7 +208,8 @@ fn parse_cutoff(lookback: &str) -> Result<chrono::DateTime<Utc>> {
         .with_context(|| format!("failed to parse duration: {lookback}"))?;
     let secs = duration.as_secs();
     let delta = chrono::Duration::seconds(secs.try_into().unwrap_or(i64::MAX));
-    Ok(Utc::now() - delta)
+    let cutoff = Utc::now() - delta;
+    Ok(cutoff)
 }
 
 /// Keeps only workflows whose latest completed run on the default branch (within the

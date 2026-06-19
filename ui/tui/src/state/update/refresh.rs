@@ -34,7 +34,7 @@ pub(super) fn refresh_screen_in_place(screen: &mut Screen, raw: &[workflows::sta
 /// in-memory list so an agent's `hub task report` is reflected within seconds,
 /// without waiting for the full 30-minute external refresh. Tasks are appended
 /// at the end; `build_unified` re-sorts by urgency, so position here is moot.
-pub(crate) fn patch_task_items(
+pub(super) fn patch_task_items(
     raw: Vec<workflows::status::StatusItem>,
     fresh_tasks: Vec<domain::Task>,
 ) -> Vec<workflows::status::StatusItem> {

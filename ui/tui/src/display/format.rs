@@ -5,7 +5,7 @@ use super::types::{
     Category, FlatRow, GroupKey, InvestigationKind, LineParts, LogDetailView, LogLine, RowSeparator,
 };
 
-pub(crate) fn merge_blocker_word(b: MergeBlocker) -> &'static str {
+pub(crate) const fn merge_blocker_word(b: MergeBlocker) -> &'static str {
     match b {
         MergeBlocker::Conflict => "conflict",
         MergeBlocker::Behind => "behind",
@@ -63,7 +63,12 @@ pub(crate) fn truncate_to_width(s: &str, w: usize) -> String {
     if w == 0 {
         return String::new();
     }
-    chars[..w.saturating_sub(1)].iter().collect::<String>() + "…"
+    chars
+        .get(..w.saturating_sub(1))
+        .unwrap_or_default()
+        .iter()
+        .collect::<String>()
+        + "…"
 }
 
 /// Serialise log lines to a compact JSON array string for investigation agents.
@@ -325,7 +330,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
     }
 }
 
-pub(crate) fn item_urgency(item: &StatusItem) -> domain::Urgency {
+pub(crate) const fn item_urgency(item: &StatusItem) -> domain::Urgency {
     match item {
         StatusItem::Pr(pr) => pr.urgency,
         StatusItem::Issue(i) => i.urgency,
@@ -345,7 +350,7 @@ pub(crate) fn item_urgency(item: &StatusItem) -> domain::Urgency {
     }
 }
 
-pub(crate) fn flat_row_urgency(row: &FlatRow) -> domain::Urgency {
+pub(crate) const fn flat_row_urgency(row: &FlatRow) -> domain::Urgency {
     match row {
         FlatRow::GroupHeader { urgency, .. } => *urgency,
         FlatRow::Single(item)
@@ -385,7 +390,7 @@ pub(crate) fn flat_row_line(row: &FlatRow) -> LineParts {
     }
 }
 
-pub(crate) fn item_category(item: &StatusItem) -> Category {
+pub(crate) const fn item_category(item: &StatusItem) -> Category {
     match item {
         StatusItem::Ci(_) | StatusItem::Loki(_) | StatusItem::Gcp(_) => Category::Errors,
         StatusItem::Pr(_) => Category::Prs,

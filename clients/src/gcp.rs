@@ -2,14 +2,22 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 
+/// A single structured log entry returned by `gcloud logging read`.
 #[derive(Debug)]
 pub struct LogEntry {
+    /// RFC 3339 timestamp of the log entry.
     pub timestamp: DateTime<Utc>,
+    /// Severity level (e.g. `"ERROR"`, `"WARNING"`).
     pub severity: Option<String>,
+    /// Free-text payload, if present.
     pub text_payload: Option<String>,
+    /// Structured JSON payload, if present.
     pub json_payload: Option<serde_json::Value>,
+    /// HTTP request metadata, if present.
     pub http_request: Option<serde_json::Value>,
+    /// Key-value labels from the log entry's `resource.labels` field.
     pub resource_labels: HashMap<String, String>,
+    /// Raw JSON representation of the full log entry.
     pub raw: String,
 }
 

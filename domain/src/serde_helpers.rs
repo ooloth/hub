@@ -1,5 +1,6 @@
 //! Serde helpers shared across all domain types.
 
+/// Serde module for serializing [`chrono::Duration`] as an integer number of seconds.
 pub mod duration_secs {
     use chrono::Duration;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};

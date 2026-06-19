@@ -5,32 +5,47 @@ use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::HashMap;
 
+/// Bump when the serialized `StatusReport` format changes incompatibly.
 pub const SCHEMA_VERSION: i32 = 17;
 
+/// A single signal from any source, as stored in the unified status list.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum StatusItem {
+    /// A GitHub pull request.
     Pr(PullRequest),
+    /// A GitHub or Linear issue.
     Issue(Issue),
+    /// A failed CI run.
     Ci(CiFailure),
+    /// A Linear issue.
     Linear(LinearIssue),
+    /// A Loki log alert entry.
     Loki(domain::LokiEntry),
+    /// A GCP log alert entry.
     Gcp(domain::GcpEntry),
+    /// An active or terminal agent task session.
     AgentSession(Task),
+    /// A blocked media download (private).
     #[cfg(feature = "private")]
     MediaBlocked(crate::private::status::BlockedItem),
+    /// A missing media episode (private).
     #[cfg(feature = "private")]
     MediaMissing(crate::private::status::MissingItem),
+    /// A media server health issue (private).
     #[cfg(feature = "private")]
     MediaHealth(crate::private::status::HealthItem),
+    /// Backlog count for a media source (private).
     #[cfg(feature = "private")]
     MediaBacklog {
+        /// The name of the media source.
         source: String,
+        /// Number of items in the backlog.
         count: u32,
     },
 }
 
 impl StatusItem {
-    fn urgency(&self) -> Urgency {
+    const fn urgency(&self) -> Urgency {
         match self {
             Self::Pr(pr) => pr.urgency,
             Self::Issue(i) => i.urgency,
@@ -50,7 +65,7 @@ impl StatusItem {
         }
     }
 
-    fn age(&self) -> chrono::Duration {
+    const fn age(&self) -> chrono::Duration {
         match self {
             Self::Pr(pr) => pr.age,
             Self::Issue(i) => i.age,
@@ -71,8 +86,10 @@ impl StatusItem {
     }
 }
 
+/// The complete status payload returned by a full refresh.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StatusReport {
+    /// All signal items across every configured source.
     pub items: Vec<StatusItem>,
     /// Names of API sources that failed during the refresh (e.g., "github ci").
     #[serde(default)]
@@ -83,21 +100,34 @@ pub struct StatusReport {
 #[cfg(feature = "private")]
 #[derive(Debug)]
 pub struct PrivateStatusResult {
+    /// Items collected from private sources.
     pub items: Vec<StatusItem>,
+    /// Names of private sources that failed.
     pub failed_sources: Vec<String>,
 }
 
+/// All credentials and configuration needed for a full status refresh.
 #[derive(Debug)]
 pub struct StatusParams {
+    /// GitHub API token.
     pub github_token: Secret<String>,
+    /// GitHub username for PR ownership filtering.
     pub github_username: String,
+    /// GitHub repositories to fetch PRs from.
     pub pr_repos: Vec<domain::GithubPrsRepo>,
+    /// GitHub repositories to fetch issues from.
     pub issue_repos: Vec<String>,
+    /// `(owner/repo, workflow_name)` pairs for CI failure fetching.
     pub ci_repos: Vec<(String, String)>,
+    /// Linear API token, if Linear is configured.
     pub linear_token: Option<Secret<String>>,
+    /// Names of private workflows to run.
     pub private_workflow_names: Vec<String>,
+    /// Loki environments to query.
     pub loki_envs: Vec<domain::LokiEnv>,
+    /// GCP environments to query.
     pub gcp_envs: Vec<domain::GcpEnv>,
+    /// Extra named credentials passed to private workflows.
     pub extra_credentials: HashMap<String, Secret<String>>,
 }
 

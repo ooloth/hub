@@ -40,7 +40,7 @@ impl App {
         }
     }
 
-    pub(super) fn reset_detail_scroll(&mut self) {
+    pub(super) const fn reset_detail_scroll(&mut self) {
         match &mut self.ui.screen {
             Screen::UnifiedList {
                 detail_mode: DetailMode::Visible { detail_scroll },
@@ -261,13 +261,9 @@ impl App {
 
     fn handle_list_action(&mut self, action: Action) -> Vec<Effect> {
         match action {
-            Action::OpenUrl => {
-                if let Some(url) = self.selected_url() {
-                    vec![Effect::OpenUrl(url.to_string())]
-                } else {
-                    vec![]
-                }
-            }
+            Action::OpenUrl => self
+                .selected_url()
+                .map_or_else(Vec::new, |url| vec![Effect::OpenUrl(url.to_string())]),
             Action::OpenReviewPicker => {
                 self.ui.submenu = SubmenuState::ReviewPicker;
                 vec![]
@@ -282,7 +278,7 @@ impl App {
                     number: pr.number,
                     ownership,
                     skill,
-                    head_branch: pr.head_branch.clone(),
+                    head_branch: pr.head_branch,
                 }]
             }
             Action::CancelReview => vec![],

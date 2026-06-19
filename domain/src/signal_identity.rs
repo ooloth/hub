@@ -1,50 +1,65 @@
 use crate::pr::RepoSlug;
 use crate::task_origin::{AlertSource, IssueSystem, TaskOrigin};
 
-/// The stable identity of a signal — the fields that uniquely identify "the same
-/// underlying event" across multiple fetches. Differs from [`TaskOrigin`] in that
-/// volatile display-only fields (`Ci::url`, `Alert::label`) are excluded, so
-/// two instances can be compared by [`Eq`] without spurious mismatches caused by
-/// per-run or per-scan values changing.
+/// The stable identity of a signal across multiple fetches.
+///
+/// Differs from [`TaskOrigin`] in that volatile display-only fields
+/// (`Ci::url`, `Alert::label`) are excluded, so two instances can be
+/// compared by [`Eq`] without spurious mismatches caused by per-run or
+/// per-scan values changing.
 ///
 /// Used as the lookup key for task↔signal matching in `build_unified` and as
 /// the comparison target in `store::tasks::active_for_origin`.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum SignalIdentity {
+    /// A pull request identified by repository and number.
     Pr {
+        /// Repository the pull request belongs to.
         repo: RepoSlug,
+        /// Pull request number within the repository.
         number: u64,
     },
+    /// A ticket in a supported issue tracker.
     Issue {
+        /// Issue tracker the ticket comes from.
         system: IssueSystem,
+        /// Repository scope for GitHub issues; `None` for Linear.
         repo: Option<RepoSlug>,
+        /// Tracker-unique issue identifier.
         id: String,
     },
     /// Identity = `(repo, workflow, job, step)`. `url` is excluded — it changes
     /// on every CI run and must never influence whether a task matches.
     Ci {
+        /// Repository the workflow belongs to.
         repo: RepoSlug,
+        /// Workflow name (e.g. "CI").
         workflow: String,
+        /// Job name within the workflow, if applicable.
         job: Option<String>,
+        /// Step name within the job, if applicable.
         step: Option<String>,
     },
     /// Identity = `(source, key)`. `label` is excluded — it is a display string
     /// that may change between scans without the underlying problem changing.
     Alert {
+        /// Scan source that produced this alert.
         source: AlertSource,
+        /// Stable correlation key (e.g. `project/env/message`).
         key: String,
     },
+    /// A blank task with no originating signal.
     Idea,
 }
 
 impl From<&TaskOrigin> for SignalIdentity {
     fn from(origin: &TaskOrigin) -> Self {
         match origin {
-            TaskOrigin::Pr { repo, number } => SignalIdentity::Pr {
+            TaskOrigin::Pr { repo, number } => Self::Pr {
                 repo: repo.clone(),
                 number: *number,
             },
-            TaskOrigin::Issue { system, repo, id } => SignalIdentity::Issue {
+            TaskOrigin::Issue { system, repo, id } => Self::Issue {
                 system: *system,
                 repo: repo.clone(),
                 id: id.clone(),
@@ -55,17 +70,17 @@ impl From<&TaskOrigin> for SignalIdentity {
                 job,
                 step,
                 ..
-            } => SignalIdentity::Ci {
+            } => Self::Ci {
                 repo: repo.clone(),
                 workflow: workflow.clone(),
                 job: job.clone(),
                 step: step.clone(),
             },
-            TaskOrigin::Alert { source, key, .. } => SignalIdentity::Alert {
+            TaskOrigin::Alert { source, key, .. } => Self::Alert {
                 source: *source,
                 key: key.clone(),
             },
-            TaskOrigin::Idea => SignalIdentity::Idea,
+            TaskOrigin::Idea => Self::Idea,
         }
     }
 }

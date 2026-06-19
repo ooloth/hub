@@ -294,12 +294,11 @@ fn nodes_to_prs(
 ) -> Result<Vec<PullRequest>> {
     nodes
         .into_iter()
-        .filter(|node| match owned_by {
-            Some(username) => {
+        .filter(|node| {
+            owned_by.is_none_or(|username| {
                 node.assignees.nodes.iter().all(|a| a.login == username)
                     || node.assignees.nodes.is_empty()
-            }
-            None => true,
+            })
         })
         .filter(|node| {
             let excluded = repos
@@ -341,8 +340,8 @@ fn node_to_pr(node: PrNode, urgency: Urgency, kind: PrKind) -> Result<PullReques
         .map(|t| t.comments.nodes.len())
         .sum();
 
-    let comment_count = u32::try_from(thread_comment_count + node.comments.nodes.len())
-        .context("comment count overflow")?;
+    let total_comments = thread_comment_count + node.comments.nodes.len();
+    let comment_count = u32::try_from(total_comments).context("comment count overflow")?;
 
     Ok(PullRequest {
         number: node.number,

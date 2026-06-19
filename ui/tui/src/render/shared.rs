@@ -4,7 +4,7 @@ use ratatui::{
     text::Span,
 };
 
-pub(crate) fn urgency_color(u: domain::Urgency) -> Color {
+pub(crate) const fn urgency_color(u: domain::Urgency) -> Color {
     match u {
         domain::Urgency::Critical => Color::Red,
         domain::Urgency::High => Color::Yellow,
@@ -25,6 +25,7 @@ pub(crate) fn segment_chars(segments: &[String]) -> usize {
     segments.iter().map(|s| s.chars().count()).sum::<usize>() + segments.len().saturating_sub(1) * 3
 }
 
+#[allow(clippy::indexing_slicing)] // bounds maintained: pos < chars.len() at each use site
 pub(crate) fn push_segments(
     spans: &mut Vec<Span<'static>>,
     segments: &[String],

@@ -7,7 +7,7 @@ pub(crate) struct Options<S: StyleSheet = CatppuccinStyleSheet> {
 }
 
 impl<S: StyleSheet> Options<S> {
-    pub(crate) fn new(styles: S) -> Self {
+    pub(crate) const fn new(styles: S) -> Self {
         Self { styles }
     }
 }

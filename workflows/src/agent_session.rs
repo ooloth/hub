@@ -68,15 +68,18 @@ const STALL_SECS: i64 = 15 * 60;
 /// value (not hardcoded) so tests can exercise the boundaries with small spans.
 #[derive(Clone, Copy, Debug)]
 pub struct PollThresholds {
+    /// How long a session must stay idle before completion is inferred.
     pub idle_grace: Duration,
+    /// How long a dispatched task's session file can be absent before a crash is inferred.
     pub crash_grace: Duration,
+    /// How long a busy session's `updatedAt` can be stale before stall is inferred.
     pub stall: Duration,
 }
 
 impl PollThresholds {
     /// The thresholds used in production (see the module constants).
     #[must_use]
-    pub fn production() -> Self {
+    pub const fn production() -> Self {
         Self {
             idle_grace: Duration::seconds(IDLE_GRACE_SECS),
             crash_grace: Duration::seconds(CRASH_GRACE_SECS),
@@ -103,7 +106,9 @@ pub enum SessionStatus {
 /// activity last changed. Absence of a file is modeled by `Option<SessionSnapshot>`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SessionSnapshot {
+    /// The activity state reported by the session file.
     pub status: SessionStatus,
+    /// When the session last transitioned status.
     pub updated_at: DateTime<Utc>,
 }
 
@@ -125,7 +130,7 @@ pub enum Transition {
 impl Transition {
     /// The status this transition moves the task to.
     #[must_use]
-    pub fn target(self) -> TaskStatus {
+    pub const fn target(self) -> TaskStatus {
         match self {
             Self::Completed | Self::CrashRecovered => TaskStatus::InReview,
             Self::Stalled => TaskStatus::Blocked,
@@ -167,8 +172,9 @@ fn sessions_dir() -> PathBuf {
     PathBuf::from(home).join(".claude").join("sessions")
 }
 
-/// Scans `sessions_dir` for the session whose `sessionId` matches and returns its
-/// snapshot. `Ok(None)` means no live file matches (absent — a crash candidate);
+/// Scans `sessions_dir` for the session whose `sessionId` matches and returns its snapshot.
+///
+/// `Ok(None)` means no live file matches (absent — a crash candidate);
 /// `Err` means the directory itself could not be read (don't infer anything).
 ///
 /// The PID is unknown at dispatch time, so the file name can't be guessed — the

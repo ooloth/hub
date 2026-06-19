@@ -42,11 +42,12 @@ struct PullRequestMarker {}
 
 // ── Public fetch function ─────────────────────────────────────────────────────
 
-/// Returns all open issues across the given repos. Issues assigned to `username`
-/// or labelled `status:needs-human-review` receive `Urgency::Medium`; all others
-/// receive `Urgency::Low`. Pull requests returned by the API are filtered out.
+/// Returns all open issues across the given repos.
 ///
-/// Fetches all pages per repo (up to 100 per page) in parallel across repos.
+/// Issues assigned to `username` or labelled `status:needs-human-review` receive
+/// `Urgency::Medium`; all others receive `Urgency::Low`. Pull requests returned by
+/// the API are filtered out. Fetches all pages per repo (up to 100 per page) in
+/// parallel across repos.
 ///
 /// # Errors
 /// Returns an error if any GitHub API call fails.
@@ -151,7 +152,7 @@ fn classify_urgency(assignees: &[String], labels: &[String], username: &str) -> 
     }
 }
 
-fn has_next_page(returned: usize, per_page: usize) -> bool {
+const fn has_next_page(returned: usize, per_page: usize) -> bool {
     returned == per_page
 }
 

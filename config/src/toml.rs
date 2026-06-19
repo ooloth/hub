@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::collections::HashMap;
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 pub(crate) struct HubToml {
     pub credentials: CredentialsToml,
     #[serde(default)]
@@ -10,73 +10,114 @@ pub(crate) struct HubToml {
     pub monitor: Option<Monitor>,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+/// Raw credential values from the `[credentials]` section of `hub.toml`.
+/// `op://` references are resolved later during [`Config::load`].
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct CredentialsToml {
+    /// GitHub personal access token (plain value or `op://` reference).
     pub github_token: String,
+    /// GitHub username associated with the token.
     pub github_username: String,
+    /// Optional Linear API token.
     pub linear_token: Option<String>,
+    /// Optional Loki API token.
     pub loki_token: Option<String>,
+    /// Additional named credentials for private integrations.
     #[serde(flatten)]
     pub extra: HashMap<String, String>,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+/// A project tracked by hub, from a `[[project]]` entry in `hub.toml`.
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct Project {
+    /// Human-readable project name shown in the TUI.
     pub name: String,
+    /// GitHub repo slug in `owner/repo` form.
     pub repo: String,
+    /// Workflows enabled at the repo level (e.g. PRs, CI).
     #[serde(default)]
     pub workflow: Vec<WorkflowConfig>,
+    /// Per-environment configurations (e.g. prod, staging).
     #[serde(default)]
     pub environment: Vec<Environment>,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+/// A deployment environment within a project, from `[[project.environment]]`.
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct Environment {
+    /// Environment name (e.g. `prod`, `staging`).
     pub env: String,
+    /// GCP project ID for Cloud Logging queries.
     pub gcp_project: Option<String>,
+    /// GCP region used to scope log queries.
     pub gcp_region: Option<String>,
+    /// Loki push/query endpoint URL.
     pub loki_endpoint: Option<String>,
+    /// Grafana base URL used to generate deep-link URLs in alerts.
     pub grafana_url: Option<String>,
+    /// Workflows enabled for this environment (e.g. log queries).
     #[serde(default)]
     pub workflow: Vec<WorkflowConfig>,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+/// A workflow configuration entry, discriminated by the `name` field in TOML.
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 #[serde(tag = "name")]
 pub enum WorkflowConfig {
+    /// Poll GitHub Actions runs for a repo (`name = "github-ci"`).
     #[serde(rename = "github-ci")]
-    GithubCi { lookback: Option<String> },
+    GithubCi {
+        /// How far back to look for runs (e.g. `"24h"`). Defaults to `"24h"`.
+        lookback: Option<String>,
+    },
+    /// Poll open pull requests for a repo (`name = "github-prs"`).
     #[serde(rename = "github-prs")]
     GithubPrs {
+        /// PR authors to hide from the results (e.g. bots).
         #[serde(default)]
         exclude_authors: Vec<String>,
     },
+    /// Poll open GitHub issues for a repo (`name = "github-issues"`).
     #[serde(rename = "github-issues")]
     GithubIssues {},
+    /// Query Google Cloud Logging (`name = "gcp-logs"`).
     #[serde(rename = "gcp-logs")]
     GcpLogs {
+        /// Display title shown in the TUI for this query.
         title: String,
+        /// Log filter query string.
         query: String,
+        /// How far back to query (e.g. `"1h"`). Defaults to `"1h"`.
         lookback: Option<String>,
+        /// JSON field name containing the log message. Defaults to `"message"`.
         message_field: Option<String>,
     },
+    /// Query a Loki instance (`name = "loki-logs"`).
     #[serde(rename = "loki-logs")]
     LokiLogs {
+        /// Display title shown in the TUI for this query.
         title: String,
+        /// `LogQL` query string.
         query: String,
+        /// How far back to query (e.g. `"1h"`). Defaults to `"1h"`.
         lookback: Option<String>,
+        /// JSON field name containing the log message. Defaults to `"message"`.
         message_field: Option<String>,
     },
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+/// Monitor configuration from the `[monitor]` section of `hub.toml`.
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct Monitor {
+    /// Workflows the monitor daemon should run on its polling cycle.
     #[serde(default)]
     pub workflow: Vec<MonitorWorkflowConfig>,
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+/// A single workflow entry under `[[monitor.workflow]]`.
+#[derive(Debug, Deserialize, PartialEq, Eq)]
 pub struct MonitorWorkflowConfig {
+    /// Workflow name, matched against registered monitor handlers.
     pub name: String,
 }
 

@@ -93,7 +93,7 @@ impl App {
     }
 
     /// Clears the active submenu when the incoming action is not part of that submenu.
-    fn clear_submenu_if_stale(&mut self, action: Action) {
+    const fn clear_submenu_if_stale(&mut self, action: Action) {
         match self.ui.submenu {
             SubmenuState::PrActions
                 if !matches!(
@@ -124,7 +124,7 @@ impl App {
         }
     }
 
-    fn handle_back(&mut self) -> Vec<Effect> {
+    const fn handle_back(&mut self) -> Vec<Effect> {
         // Collapse the detail pane before any deeper back navigation.
         let is_split_visible = matches!(
             &self.ui.screen,
@@ -250,7 +250,7 @@ impl App {
                     vec![Effect::OpenInOcto {
                         repo: pr.repo.to_string(),
                         number: pr.number,
-                        head_branch: pr.head_branch.clone(),
+                        head_branch: pr.head_branch,
                     }]
                 } else {
                     vec![]
@@ -262,7 +262,7 @@ impl App {
                     vec![Effect::OpenInLazygit {
                         repo: pr.repo.to_string(),
                         number: pr.number,
-                        head_branch: pr.head_branch.clone(),
+                        head_branch: pr.head_branch,
                     }]
                 } else {
                     vec![]

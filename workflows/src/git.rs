@@ -4,6 +4,9 @@
 //! domain concepts (tasks, investigations, projects). Feature-specific worktree
 //! logic — where to put worktrees, when to clean them up, branch naming conventions —
 //! belongs in the feature's own module (`fetch.rs`, `dispatch.rs`), not here.
+// pub(crate) fns in a pub(crate) mod are effectively the same visibility; both lints
+// fire depending on which keyword is used — suppress the noisier nursery one.
+#![allow(clippy::redundant_pub_crate)]
 
 use anyhow::{Context, Result};
 use std::path::Path;

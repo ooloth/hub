@@ -1,13 +1,26 @@
+//! Domain types and pure logic for hub.
+
+/// CI failure signals from GitHub Actions.
 pub mod ci;
+/// GCP Cloud Logging query configuration and log entry types.
 pub mod gcp;
+/// GitHub and Linear issue types and label helpers.
 pub mod issue;
+/// Loki query configuration and log entry types.
 pub mod loki;
+/// Pull request types and repository slug newtype.
 pub mod pr;
+/// Serde helpers for non-standard wire formats (e.g. duration as seconds).
 pub mod serde_helpers;
+/// Claude Code session transcript parsing.
 pub mod session;
+/// Stable signal identity for task↔signal matching and deduplication.
 pub mod signal_identity;
+/// Hub task model — lifecycle, status, kind, and comment types.
 pub mod task;
+/// Task origin provenance — the signal a task was created from.
 pub mod task_origin;
+/// Urgency ranking used across all signal and task types.
 pub mod urgency;
 
 // Re-export duration_secs at the crate root so existing

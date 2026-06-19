@@ -109,7 +109,7 @@ fn render_content(frame: &mut ratatui::Frame, app: &mut App, content_area: ratat
     }
 }
 
-fn render_status_bar(frame: &mut ratatui::Frame, app: &mut App, bar_area: ratatui::layout::Rect) {
+fn render_status_bar(frame: &mut ratatui::Frame, app: &App, bar_area: ratatui::layout::Rect) {
     let right_status =
         status_bar::right_status_text(&app.data.refresh_state, app.data.last_updated, Utc::now());
 

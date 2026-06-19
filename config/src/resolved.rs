@@ -3,14 +3,22 @@ use anyhow::{Context, Result};
 use secrecy::Secret;
 use std::collections::HashMap;
 
+/// Resolved runtime configuration, with all credential references expanded.
 #[derive(Debug)]
 pub struct Config {
+    /// GitHub personal access token used for API calls.
     pub github_token: Secret<String>,
+    /// GitHub username associated with the token.
     pub github_username: String,
+    /// Optional Linear API token for issue tracking.
     pub linear_token: Option<Secret<String>>,
+    /// Optional Loki API token for log querying.
     pub loki_token: Option<Secret<String>>,
+    /// Additional named credentials for private integrations.
     pub extra_credentials: HashMap<String, Secret<String>>,
+    /// Projects tracked in hub, sourced from `[[project]]` entries in `hub.toml`.
     pub projects: Vec<toml::Project>,
+    /// Optional monitor configuration for polling workflows.
     pub monitor: Option<toml::Monitor>,
 }
 
@@ -49,6 +57,7 @@ impl Config {
         })
     }
 
+    /// Returns repos that have the `github-prs` workflow configured.
     #[must_use]
     pub fn github_pr_repos(&self) -> Vec<domain::GithubPrsRepo> {
         self.projects
@@ -68,6 +77,7 @@ impl Config {
             .collect()
     }
 
+    /// Returns repo slugs that have the `github-issues` workflow configured.
     #[must_use]
     pub fn github_issue_repos(&self) -> Vec<String> {
         self.projects
@@ -81,6 +91,7 @@ impl Config {
             .collect()
     }
 
+    /// Returns `(repo_slug, lookback)` pairs for repos with the `github-ci` workflow.
     #[must_use]
     pub fn github_ci_repos(&self) -> Vec<(String, String)> {
         self.projects
@@ -98,6 +109,7 @@ impl Config {
             .collect()
     }
 
+    /// Returns the names of workflows listed under `[monitor]` in `hub.toml`.
     #[must_use]
     pub fn private_monitor_workflow_names(&self) -> Vec<String> {
         self.monitor
@@ -106,6 +118,7 @@ impl Config {
             .unwrap_or_default()
     }
 
+    /// Returns all Loki environments derived from project environment configurations.
     #[must_use]
     pub fn loki_envs(&self) -> Vec<domain::LokiEnv> {
         self.projects
@@ -153,6 +166,7 @@ impl Config {
             .collect()
     }
 
+    /// Returns all GCP environments derived from project environment configurations.
     #[must_use]
     pub fn gcp_envs(&self) -> Vec<domain::GcpEnv> {
         self.projects

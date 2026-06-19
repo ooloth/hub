@@ -27,14 +27,22 @@ use crate::pr::{PullRequest, RepoSlug};
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum TaskOrigin {
     /// A pull request. Identity = `(repo, number)`.
-    Pr { repo: RepoSlug, number: u64 },
+    Pr {
+        /// Repository the pull request belongs to.
+        repo: RepoSlug,
+        /// Pull request number within the repository.
+        number: u64,
+    },
     /// A ticket in any tracker, tagged by `system`. `repo` is `Some` for
     /// GitHub and `None` for Linear, whose `id` (e.g. `ENG-123`) is globally
     /// unique. Identity = `(system, id)`.
     Issue {
+        /// Issue tracker the ticket comes from.
         system: IssueSystem,
+        /// Repository scope for GitHub issues; `None` for Linear.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         repo: Option<RepoSlug>,
+        /// Tracker-unique issue identifier (number for GitHub, e.g. "ENG-123" for Linear).
         id: String,
     },
     /// A CI failure. Identity = `(repo, workflow, job, step)`; `url` is the
@@ -42,12 +50,17 @@ pub enum TaskOrigin {
     /// identity (it changes on every run). When `job`/`step` are both `None`,
     /// identity collapses to `(repo, workflow)` — "this workflow is failing".
     Ci {
+        /// Repository the workflow belongs to.
         repo: RepoSlug,
+        /// Workflow name (e.g. "CI").
         workflow: String,
+        /// Job name within the workflow, if applicable.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         job: Option<String>,
+        /// Step name within the job, if applicable.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         step: Option<String>,
+        /// Link to the GitHub Actions run — volatile, excluded from identity.
         url: String,
     },
     /// A problem surfaced by scanning a running system — log errors, GCP log
@@ -56,8 +69,11 @@ pub enum TaskOrigin {
     /// identity); `label` is the display string only and may change freely
     /// between scans.
     Alert {
+        /// Scan source that produced this alert.
         source: AlertSource,
+        /// Stable correlation key (e.g. `project/env/message`).
         key: String,
+        /// Human-readable display label — volatile, excluded from identity.
         label: String,
     },
     /// A blank task with no originating signal.
@@ -141,7 +157,9 @@ impl TaskOrigin {
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum IssueSystem {
+    /// GitHub Issues, scoped to a specific repository.
     GitHub,
+    /// Linear, where issues have globally unique identifiers.
     Linear,
 }
 
@@ -150,8 +168,11 @@ pub enum IssueSystem {
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AlertSource {
+    /// Grafana Loki log aggregation.
     Loki,
+    /// GCP Cloud Logging.
     Gcp,
+    /// Private media-server health monitoring (hub-private only).
     Media,
 }
 

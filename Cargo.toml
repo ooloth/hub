@@ -11,17 +11,17 @@
   resolver = "2"
 
   [workspace.lints.clippy]
-    cast_sign_loss = "warn"
-    cognitive_complexity = "warn"
-    missing_errors_doc = "warn"
-    missing_panics_doc = "warn"
+    expect_used = "warn"
+    indexing_slicing = "warn"
+    nursery = { level = "warn", priority = -1 }
     panic = "warn"
-    pedantic = "warn"
-    too_many_lines = "warn"
+    pedantic = { level = "warn", priority = -1 }
+    redundant_pub_crate = "allow"
     unwrap_used = "warn"
 
   [workspace.lints.rust]
     missing_debug_implementations = "deny"
+    missing_docs = "warn"
     unreachable_pub = "warn"
     unsafe_code = "forbid"
     unused_results = "deny"

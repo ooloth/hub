@@ -243,7 +243,7 @@ pub fn fold_back_signal_tasks(items: &[StatusItem]) -> Result<()> {
 ///   agent may be the reason the signal cleared; don't fold prematurely.
 /// - Signal present in either set — debounce not satisfied.
 #[must_use]
-pub fn decide_signal_fold(
+pub const fn decide_signal_fold(
     status: TaskStatus,
     session_id: Option<&str>,
     in_present: bool,
@@ -275,7 +275,7 @@ pub fn decide_signal_fold(
 ///   correction is never overwritten by signal inference.
 /// - `PrState::Open` always returns `None` — the signal hasn't resolved yet.
 #[must_use]
-pub fn decide_fold(status: TaskStatus, pr_state: PrState) -> Option<TaskStatus> {
+pub const fn decide_fold(status: TaskStatus, pr_state: PrState) -> Option<TaskStatus> {
     if status.is_terminal() {
         return None;
     }
@@ -295,7 +295,7 @@ pub fn decide_fold(status: TaskStatus, pr_state: PrState) -> Option<TaskStatus> 
 ///   correction is never overwritten by signal inference.
 /// - `IssueState::Open` always returns `None` — the signal hasn't resolved yet.
 #[must_use]
-pub fn decide_issue_fold(status: TaskStatus, issue_state: IssueState) -> Option<TaskStatus> {
+pub const fn decide_issue_fold(status: TaskStatus, issue_state: IssueState) -> Option<TaskStatus> {
     if status.is_terminal() {
         return None;
     }

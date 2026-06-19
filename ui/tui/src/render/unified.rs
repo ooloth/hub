@@ -10,6 +10,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, List, ListItem, ListState},
 };
 
+#[allow(clippy::indexing_slicing)] // bright_end/dim_inline_end are bounded by display_len == display_chars.len()
 pub(crate) fn build_unified_list_item(
     text_style: Style,
     bullet_color: Color,
@@ -84,6 +85,7 @@ pub(crate) fn build_unified_list_item(
     ListItem::new(Line::from(spans))
 }
 
+#[allow(clippy::indexing_slicing)] // bounds maintained by while-loop guards and min(total)
 pub(super) fn wrap_text(text: &str, width: usize) -> Vec<String> {
     let width = width.max(1);
     let chars: Vec<char> = text.chars().collect();
@@ -251,6 +253,7 @@ pub(crate) fn unified_list_height_from_counts(
 
 // Height of the list box in split view: content rows + urgency dividers + borders, capped at
 // max_height. Mirrors the divider injection logic in render_unified — keep in sync.
+#[allow(clippy::indexing_slicing)] // windows(2) guarantees exactly 2 elements
 pub(crate) fn unified_list_height(rows: &[FlatRow], max_height: u16) -> u16 {
     let divider_count = rows
         .windows(2)

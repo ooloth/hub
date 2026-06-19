@@ -1,3 +1,4 @@
+//! Hub CLI — the agent's in-session toolkit for reporting status back to hub.
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use domain::{CommentAuthor, TaskId, TaskStatus};
@@ -41,8 +42,8 @@ enum AgentStatus {
 impl From<AgentStatus> for TaskStatus {
     fn from(s: AgentStatus) -> Self {
         match s {
-            AgentStatus::InReview => TaskStatus::InReview,
-            AgentStatus::Blocked => TaskStatus::Blocked,
+            AgentStatus::InReview => Self::InReview,
+            AgentStatus::Blocked => Self::Blocked,
         }
     }
 }

@@ -4,8 +4,12 @@ use serde::{Deserialize, Serialize};
 /// Used across PRs, issues, CI failures, log alerts, and tasks.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub enum Urgency {
+    /// Requires immediate attention.
     Critical,
+    /// Should be addressed soon.
     High,
+    /// Normal priority.
     Medium,
+    /// Can wait; background item.
     Low,
 }

@@ -20,10 +20,13 @@ struct Stream {
 }
 
 /// A single log entry returned by the Loki API.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct LogEntry {
+    /// Unix timestamp in nanoseconds.
     pub timestamp_ns: i64,
+    /// Raw log line text.
     pub line: String,
+    /// Stream labels attached to this entry.
     pub labels: HashMap<String, String>,
 }
 

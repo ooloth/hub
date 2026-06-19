@@ -25,11 +25,12 @@ impl RepoPicker {
         picker.refilter();
         if let Some(pre) = preselect {
             let target = pre.to_string();
-            if let Some(pos) = picker
-                .filtered
-                .iter()
-                .position(|&i| picker.options[i].to_string() == target)
-            {
+            if let Some(pos) = picker.filtered.iter().position(|&i| {
+                picker
+                    .options
+                    .get(i)
+                    .is_some_and(|o| o.to_string() == target)
+            }) {
                 picker.cursor = pos;
             }
         }
@@ -66,7 +67,7 @@ impl RepoPicker {
         }
     }
 
-    pub(crate) fn move_up(&mut self) {
+    pub(crate) const fn move_up(&mut self) {
         self.cursor = self.cursor.saturating_sub(1);
     }
 
@@ -145,7 +146,7 @@ pub(crate) enum TaskFormField {
 }
 
 impl TaskFormField {
-    pub(crate) fn next(self) -> Self {
+    pub(crate) const fn next(self) -> Self {
         match self {
             Self::Title => Self::Description,
             Self::Description => Self::Kind,
@@ -156,7 +157,7 @@ impl TaskFormField {
         }
     }
 
-    pub(crate) fn prev(self) -> Self {
+    pub(crate) const fn prev(self) -> Self {
         match self {
             Self::Title => Self::Submit,
             Self::Description => Self::Title,
@@ -197,8 +198,7 @@ impl TaskCreationModal {
         let mut link_ta = TextArea::default();
         let mut kind = TaskKind::Implement;
         let mut seed_repo: Option<RepoSlug> = None;
-        let mut origin = TaskOrigin::Idea;
-        if let Some(s) = seed {
+        let origin = if let Some(s) = seed {
             if let Some(t) = s.title {
                 title_ta = TextArea::new(vec![t]);
             }
@@ -212,8 +212,10 @@ impl TaskCreationModal {
                 link_ta = TextArea::new(vec![l]);
             }
             seed_repo = s.repo;
-            origin = s.origin;
-        }
+            s.origin
+        } else {
+            TaskOrigin::Idea
+        };
         Self {
             focused_field: TaskFormField::Title,
             title: title_ta,
@@ -422,7 +424,7 @@ fn seed_from_media_health(h: &workflows::private::status::HealthItem) -> TaskCre
     }
 }
 
-pub(crate) fn cycle_task_kind(kind: TaskKind) -> TaskKind {
+pub(crate) const fn cycle_task_kind(kind: TaskKind) -> TaskKind {
     match kind {
         TaskKind::Review => TaskKind::Implement,
         TaskKind::Implement => TaskKind::Debug,

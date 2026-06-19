@@ -7,7 +7,7 @@ use workflows::status::StatusItem;
 pub(crate) struct GroupKey(String);
 
 impl GroupKey {
-    pub(crate) fn new(s: String) -> Self {
+    pub(crate) const fn new(s: String) -> Self {
         Self(s)
     }
 }
@@ -42,9 +42,9 @@ pub(crate) enum FlatRow {
 }
 
 impl FlatRow {
-    pub(crate) fn attached_task(&self) -> Option<&Task> {
+    pub(crate) const fn attached_task(&self) -> Option<&Task> {
         match self {
-            FlatRow::BadgedSignal { task, .. } => Some(task),
+            Self::BadgedSignal { task, .. } => Some(task),
             _ => None,
         }
     }
@@ -59,10 +59,7 @@ pub(crate) enum LogLine {
 
 impl LogLine {
     pub(crate) fn parse(s: &str) -> Self {
-        match serde_json::from_str(s) {
-            Ok(v) => LogLine::Json(v),
-            Err(_) => LogLine::Raw(s.to_string()),
-        }
+        serde_json::from_str(s).map_or_else(|_| Self::Raw(s.to_string()), Self::Json)
     }
 }
 
@@ -95,12 +92,12 @@ pub(crate) enum Category {
 }
 
 impl Category {
-    pub(crate) fn label(self) -> &'static str {
+    pub(crate) const fn label(self) -> &'static str {
         match self {
-            Category::Prs => "PRs",
-            Category::Issues => "Issues",
-            Category::Errors => "Errors",
-            Category::Tasks => "Tasks",
+            Self::Prs => "PRs",
+            Self::Issues => "Issues",
+            Self::Errors => "Errors",
+            Self::Tasks => "Tasks",
         }
     }
 }
@@ -177,20 +174,20 @@ pub(crate) enum SelectedItemKind {
 }
 
 impl SelectedItemKind {
-    pub(crate) fn from_item(item: &StatusItem) -> Self {
+    pub(crate) const fn from_item(item: &StatusItem) -> Self {
         match item {
-            StatusItem::Pr(_) => SelectedItemKind::Pr,
-            StatusItem::Issue(_) => SelectedItemKind::Issue,
-            StatusItem::AgentSession(_) => SelectedItemKind::Task,
-            _ => SelectedItemKind::Other,
+            StatusItem::Pr(_) => Self::Pr,
+            StatusItem::Issue(_) => Self::Issue,
+            StatusItem::AgentSession(_) => Self::Task,
+            _ => Self::Other,
         }
     }
 
-    pub(crate) fn from_row(row: &FlatRow) -> Self {
+    pub(crate) const fn from_row(row: &FlatRow) -> Self {
         match row {
-            FlatRow::BadgedSignal { .. } => SelectedItemKind::BadgedSignal,
+            FlatRow::BadgedSignal { .. } => Self::BadgedSignal,
             FlatRow::Single(item) | FlatRow::GroupChild { item, .. } => Self::from_item(item),
-            FlatRow::GroupHeader { .. } => SelectedItemKind::Other,
+            FlatRow::GroupHeader { .. } => Self::Other,
         }
     }
 }
@@ -246,7 +243,7 @@ pub(crate) struct Filter {
 }
 
 impl Filter {
-    pub(crate) fn is_empty(&self) -> bool {
+    pub(crate) const fn is_empty(&self) -> bool {
         self.category.is_none() && self.query.is_none()
     }
 }
@@ -267,7 +264,7 @@ impl QueryTerms {
                 None => positives.push(token.to_lowercase()),
             }
         }
-        QueryTerms {
+        Self {
             positives,
             negatives,
         }

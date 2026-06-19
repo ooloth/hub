@@ -5,6 +5,7 @@ use uuid::Uuid;
 use crate::urgency::Urgency;
 
 /// Namespace UUID for deriving deterministic Claude Code session IDs via uuid5.
+///
 /// Using this constant ensures the same task always maps to the same session ID,
 /// making session resume reliable across re-dispatches.
 pub const TASK_DISPATCH_NS: Uuid = Uuid::from_bytes([
@@ -61,30 +62,41 @@ impl TaskId {
     }
 }
 
+/// Lifecycle state of a hub task.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum TaskStatus {
+    /// Task exists but is not yet ready to dispatch.
     Backlog,
+    /// Task is ready to be picked up by an agent.
     Ready,
+    /// Agent session is running.
     InProgress,
+    /// Agent session is stalled and waiting for external input.
     Blocked,
+    /// Agent completed work and the result is awaiting human review.
     InReview,
+    /// Task completed successfully.
     Done,
+    /// Task ended in a non-recoverable error.
     Failed,
+    /// Task was cancelled before completion.
     Cancelled,
 }
 
 impl TaskStatus {
+    /// Returns the urgency level for this task status.
     #[must_use]
-    pub fn urgency(self) -> Urgency {
+    pub const fn urgency(self) -> Urgency {
         match self {
             Self::InReview | Self::Blocked => Urgency::High,
             _ => Urgency::Low,
         }
     }
 
+    /// Returns `true` if this status represents a terminal (non-resumable) state.
     #[must_use]
-    pub fn is_terminal(self) -> bool {
+    pub const fn is_terminal(self) -> bool {
         matches!(self, Self::Done | Self::Failed | Self::Cancelled)
     }
 }
@@ -123,11 +135,15 @@ impl std::str::FromStr for TaskStatus {
     }
 }
 
+/// The kind of work a task involves — determines agent model and prompt style.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TaskKind {
+    /// Code review of a pull request or changeset.
     Review,
+    /// Feature or bug-fix implementation.
     Implement,
+    /// Root-cause investigation of a failure or alert.
     Debug,
 }
 
@@ -141,7 +157,7 @@ impl TaskKind {
     /// `AgentConfig { runner, model }`. The call sites are identical; the rename is
     /// mechanical.
     #[must_use]
-    pub fn model(self) -> &'static str {
+    pub const fn model(self) -> &'static str {
         match self {
             Self::Debug => "claude-opus-4-8",
             Self::Review | Self::Implement => "claude-sonnet-4-6",
@@ -173,10 +189,13 @@ impl std::str::FromStr for TaskKind {
     }
 }
 
+/// Who wrote a task comment — used to distinguish human and agent notes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CommentAuthor {
+    /// Comment written by the human operator.
     Human,
+    /// Comment written by an agent session.
     Agent,
 }
 
@@ -201,38 +220,57 @@ impl std::str::FromStr for CommentAuthor {
     }
 }
 
+/// A comment on a hub task, from either a human or an agent.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TaskComment {
+    /// Database row ID for this comment.
     pub id: i64,
+    /// Who wrote this comment.
     pub author: CommentAuthor,
+    /// Comment text.
     pub content: String,
+    /// ISO 8601 timestamp when the comment was created.
     pub created_at: String,
 }
 
+/// A hub task managed by the agent dispatch system.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Task {
+    /// Unique task identifier (e.g. "TASK-0001").
     pub id: TaskId,
+    /// Short human-readable title.
     pub title: String,
+    /// Optional longer description with context and done-when criteria.
     #[serde(default)]
     pub description: Option<String>,
+    /// Current lifecycle state.
     pub status: TaskStatus,
+    /// Kind of work this task involves.
     pub kind: TaskKind,
+    /// Claude Code session ID for the active or most recent agent session.
     pub session_id: Option<String>,
+    /// Repository the task targets for dispatch (the worktree checkout source).
     #[serde(default)]
     pub repo: Option<crate::pr::RepoSlug>,
     /// The signal this task was created from (provenance). Defaults to `Idea`
     /// for blank tasks and for historical rows with no persisted origin.
     #[serde(default)]
     pub origin: crate::task_origin::TaskOrigin,
+    /// External URLs related to this task (e.g. PR link, issue link).
     #[serde(default)]
     pub links: Vec<String>,
+    /// ISO 8601 timestamp when the task was created.
     #[serde(default)]
     pub created_at: String,
+    /// ISO 8601 timestamp when the task was last updated.
     #[serde(default)]
     pub updated_at: String,
+    /// How long ago the task was created.
     #[serde(with = "crate::serde_helpers::duration_secs")]
     pub age: Duration,
+    /// Computed urgency for ranking this task against other signals.
     pub urgency: Urgency,
+    /// Comments on this task from humans and agents.
     #[serde(default)]
     pub comments: Vec<TaskComment>,
 }
@@ -241,8 +279,11 @@ pub struct Task {
 /// Returned by the store when querying for the next claimable task.
 #[derive(Clone, Debug)]
 pub struct ReadyTask {
+    /// Task identifier.
     pub id: TaskId,
+    /// Repository to check out for the agent worktree, if any.
     pub repo: Option<crate::pr::RepoSlug>,
+    /// Kind of work, used to select the agent model.
     pub kind: TaskKind,
 }
 

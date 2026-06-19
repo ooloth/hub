@@ -1,3 +1,5 @@
+//! GitHub REST and GraphQL API clients.
+
 mod ci;
 mod issues;
 mod prs;

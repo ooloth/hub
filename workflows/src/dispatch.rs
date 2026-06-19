@@ -45,7 +45,7 @@ use crate::git::{create_branch_worktree_or_recover, read_default_branch};
 use domain::{Task, TaskId, TaskKind, TaskStatus};
 
 /// Returns the system prompt for the given task kind, embedded at compile time.
-fn system_prompt_for_kind(kind: TaskKind) -> &'static str {
+const fn system_prompt_for_kind(kind: TaskKind) -> &'static str {
     match kind {
         TaskKind::Implement => include_str!("../../prompts/tasks/implement.md"),
         TaskKind::Review => include_str!("../../prompts/tasks/review.md"),
@@ -120,9 +120,10 @@ pub fn workspaces_dir() -> PathBuf {
     PathBuf::from(home).join(".hub").join("workspaces")
 }
 
-/// Returns the directory a dispatched task's agent session runs in — the `cwd`
-/// passed to `claude`, and therefore the directory under which Claude writes its
-/// session JSONL (`~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`).
+/// Returns the directory a dispatched task's agent session runs in.
+///
+/// This is the `cwd` passed to `claude`, and therefore the directory under which
+/// Claude writes its session JSONL (`~/.claude/projects/<encoded-cwd>/<session-id>.jsonl`).
 ///
 /// For a task with a repo this is the project worktree
 /// `~/.hub/workspaces/<task_id>/<repo_name>/`; for a repo-less task it is the
@@ -369,9 +370,10 @@ pub(crate) fn reap_candidates(
         .collect()
 }
 
-/// Kills the idle tmux window of every task that has been `in-review` longer than
-/// [`REAP_BUFFER_MINS`], if the window still exists. Best-effort: a kill that
-/// fails is logged, never propagated, so one bad window can't block the poll.
+/// Kills the idle tmux window of every task that has been `in-review` longer than [`REAP_BUFFER_MINS`].
+///
+/// Best-effort: a kill that fails is logged, never propagated, so one bad window
+/// can't block the poll. Only kills if the window still exists.
 ///
 /// The existence check keeps this idempotent — once a window is gone, later polls
 /// skip it instead of erroring on every tick.
@@ -435,6 +437,7 @@ const DISPATCH_CAP: u32 = 1;
 ///
 /// # Errors
 /// Returns an error if a git or filesystem operation fails.
+#[allow(clippy::future_not_send)] // rusqlite Connection is not Sync by design
 pub async fn dispatch() -> Result<()> {
     let conn = store::status_cache::connect()?;
     store::tasks::ensure_table(&conn)?;
@@ -443,6 +446,7 @@ pub async fn dispatch() -> Result<()> {
     dispatch_inner(&conn, &crate::fetch::repos_dir(), &claude_json).await
 }
 
+#[allow(clippy::future_not_send)] // rusqlite Connection is not Sync by design
 async fn dispatch_inner(conn: &Connection, repos_dir: &Path, claude_json: &Path) -> Result<()> {
     if store::tasks::count_in_progress(conn)? >= DISPATCH_CAP {
         return Ok(());

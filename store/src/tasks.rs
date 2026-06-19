@@ -66,10 +66,9 @@ fn migrate_consolidate_links_and_kind(conn: &Connection) -> Result<()> {
         .optional()
         .context("failed to read tasks schema from sqlite_master")?;
 
-    let needs_migration = match &schema {
-        None => false,
-        Some(s) => s.contains("issue_links") || s.contains("'general'"),
-    };
+    let needs_migration = schema
+        .as_ref()
+        .is_some_and(|s| s.contains("issue_links") || s.contains("'general'"));
 
     if !needs_migration {
         return Ok(());
@@ -469,9 +468,10 @@ pub fn oldest_ready(conn: &Connection) -> Result<Option<ReadyTask>> {
     .transpose()
 }
 
-/// Atomically transitions a task from `ready` to `in-progress` and writes the
-/// session ID. Returns `true` if the claim succeeded, `false` if the task was
-/// already claimed by a concurrent dispatch tick (rowcount == 0).
+/// Atomically transitions a task from `ready` to `in-progress` and writes the session ID.
+///
+/// Returns `true` if the claim succeeded, `false` if the task was already
+/// claimed by a concurrent dispatch tick (rowcount == 0).
 ///
 /// # Errors
 /// Returns an error if the SQL statement fails.

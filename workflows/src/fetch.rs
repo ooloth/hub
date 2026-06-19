@@ -23,6 +23,7 @@ use tokio::process::Command;
 
 use crate::git::{add_worktree_or_recover, read_default_branch};
 
+/// Returns the `~/.hub/repos` directory where bare git repositories are stored.
 #[must_use]
 pub fn repos_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
@@ -81,7 +82,6 @@ async fn fetch_project(name: &str, repo: &str, repos_dir: &Path) -> Result<()> {
             anyhow::bail!("git fetch failed for {name}: {stderr}");
         }
         clean_merged_worktrees(&dir_str).await?;
-        ensure_default_branch_worktree(&dir).await?;
     } else {
         let ssh_url = format!("git@github.com:{repo}.git");
         let out = Command::new("git")
@@ -121,8 +121,8 @@ async fn fetch_project(name: &str, repo: &str, repos_dir: &Path) -> Result<()> {
             let stderr = String::from_utf8_lossy(&fetch.stderr);
             anyhow::bail!("initial git fetch failed for {name}: {stderr}");
         }
-        ensure_default_branch_worktree(&dir).await?;
     }
+    ensure_default_branch_worktree(&dir).await?;
 
     Ok(())
 }
@@ -198,8 +198,9 @@ pub async fn ensure_pr_worktree(bare: &Path, number: u64, head_branch: &str) -> 
     Ok(worktree)
 }
 
-/// Fetches the latest remote refs, then creates a fresh detached-HEAD investigation
-/// worktree under `bare`. Returns the worktree path. The caller is responsible for
+/// Fetches the latest remote refs, then creates a fresh detached-HEAD investigation worktree.
+///
+/// Returns the worktree path under `bare`. The caller is responsible for
 /// removing it via `git worktree remove --force` when done.
 ///
 /// Use this at investigation launch time (CI, Issue) where the agent needs a
@@ -306,9 +307,10 @@ pub async fn ensure_default_branch_worktree(bare: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Creates a fresh detached-HEAD investigation worktree under `bare` at a
-/// timestamped path. Returns the worktree path. The caller is responsible
-/// for removing it via `git worktree remove --force` when done.
+/// Creates a fresh detached-HEAD investigation worktree under `bare` at a timestamped path.
+///
+/// Returns the worktree path. The caller is responsible for removing it
+/// via `git worktree remove --force` when done.
 ///
 /// # Errors
 /// Returns an error if a git operation fails.

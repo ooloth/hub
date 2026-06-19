@@ -1,3 +1,4 @@
+//! Hub TUI — the human-facing terminal dashboard for signal triage and task management.
 use anyhow::{Context, Result};
 use chrono::Utc;
 use crossterm::{
@@ -65,7 +66,7 @@ impl TerminalSession {
         Ok(Self { terminal })
     }
 
-    fn terminal_mut(&mut self) -> &mut Terminal<CrosstermBackend<io::Stdout>> {
+    const fn terminal_mut(&mut self) -> &mut Terminal<CrosstermBackend<io::Stdout>> {
         &mut self.terminal
     }
 }
@@ -286,6 +287,7 @@ fn request_refresh(
     }
 }
 
+#[allow(clippy::future_not_send)] // conn holds rusqlite internals that are not Sync
 async fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut App,
@@ -376,6 +378,7 @@ fn on_refresh_tick(app: &mut App, conn: &rusqlite::Connection) -> Result<Vec<Eff
 }
 
 /// Processes a single effect. Returns `true` if the loop should quit.
+#[allow(clippy::future_not_send)] // conn holds rusqlite internals that are not Sync
 async fn handle_effect(
     effect: Effect,
     app: &mut App,

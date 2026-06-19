@@ -37,24 +37,24 @@ pub(crate) struct App {
 }
 
 impl App {
-    pub(crate) fn current_screen(&self) -> &Screen {
+    pub(crate) const fn current_screen(&self) -> &Screen {
         &self.ui.screen
     }
 
-    pub(crate) fn active_list_len(&self) -> usize {
+    pub(crate) const fn active_list_len(&self) -> usize {
         match &self.ui.screen {
             Screen::UnifiedList { flat_rows, .. } => flat_rows.len(),
             Screen::MergingPr { .. } => 0,
         }
     }
 
-    pub(crate) fn move_up(&mut self) {
+    pub(crate) const fn move_up(&mut self) {
         if let Screen::UnifiedList { selected, .. } = &mut self.ui.screen {
             *selected = selected.saturating_sub(1);
         }
     }
 
-    pub(crate) fn move_down(&mut self) {
+    pub(crate) const fn move_down(&mut self) {
         let len = self.active_list_len();
         if let Screen::UnifiedList { selected, .. } = &mut self.ui.screen {
             if len > 0 && *selected < len - 1 {
@@ -63,13 +63,13 @@ impl App {
         }
     }
 
-    pub(crate) fn move_to_top(&mut self) {
+    pub(crate) const fn move_to_top(&mut self) {
         if let Screen::UnifiedList { selected, .. } = &mut self.ui.screen {
             *selected = 0;
         }
     }
 
-    pub(crate) fn move_to_bottom(&mut self) {
+    pub(crate) const fn move_to_bottom(&mut self) {
         let len = self.active_list_len();
         if len == 0 {
             return;
@@ -79,7 +79,7 @@ impl App {
         }
     }
 
-    pub(crate) fn move_page_up(&mut self) {
+    pub(crate) const fn move_page_up(&mut self) {
         const PAGE: usize = 10;
         if let Screen::UnifiedList { selected, .. } = &mut self.ui.screen {
             *selected = selected.saturating_sub(PAGE);

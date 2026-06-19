@@ -1,6 +1,7 @@
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
 
+/// A validated `owner/repo` identifier for a GitHub repository.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct RepoSlug(String);
@@ -22,25 +23,38 @@ impl std::fmt::Display for RepoSlug {
     }
 }
 
+/// How a pull request relates to the current user — used for filtering and urgency.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum PrKind {
+    /// Authored by the current user and ready for review.
     Mine,
+    /// Authored by the current user but still a draft.
     MyDraft,
+    /// Opened by someone else and awaiting the current user's review.
     ToReview,
+    /// Not directly involving the current user.
     External,
 }
 
+/// The aggregate review decision on a pull request from GitHub's GraphQL API.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ReviewDecision {
+    /// At least one reviewer approved and no pending change requests remain.
     Approved,
+    /// One or more reviewers requested changes.
     ChangesRequested,
 }
 
+/// The rolled-up CI status for a pull request's head commit.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum CiStatus {
+    /// All required checks passed.
     Success,
+    /// At least one required check failed.
     Failure,
+    /// Checks are still running.
     Pending,
+    /// No required checks are configured or all checks were skipped.
     Neutral,
 }
 
@@ -50,6 +64,7 @@ pub enum CiStatus {
 /// transition to `done` or `failed` when its linked PR leaves the open state.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum PrState {
+    /// Pull request is still open.
     Open,
     /// Merged into the base branch.
     Merged,
@@ -84,65 +99,100 @@ impl std::str::FromStr for RepoSlug {
 }
 
 impl RepoSlug {
+    /// Returns the repository name portion of the slug (everything after the `/`).
     #[must_use]
     pub fn repo_name(&self) -> &str {
         self.0.split_once('/').map_or(&self.0, |(_, repo)| repo)
     }
 }
 
+/// A file changed by a pull request, with diff statistics.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChangedFile {
+    /// File path relative to the repository root.
     pub path: String,
+    /// Number of lines added.
     pub additions: u32,
+    /// Number of lines deleted.
     pub deletions: u32,
+    /// Unified diff patch for this file, if fetched.
     pub patch: Option<String>,
 }
 
+/// A single review comment left on a pull request or review thread.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ReviewComment {
+    /// GitHub username of the comment author.
     pub author: String,
+    /// How long ago the comment was posted.
     #[serde(with = "crate::serde_helpers::duration_secs")]
     pub age: Duration,
+    /// Comment body text.
     pub body: String,
 }
 
+/// A review thread anchored to a specific location in a pull request diff.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ReviewThread {
+    /// File path the thread is anchored to.
     pub path: String,
+    /// Line number within the file, if the thread is on a specific line.
     pub line: Option<u32>,
+    /// Comments in this thread, oldest first.
     pub comments: Vec<ReviewComment>,
 }
 
+/// A GitHub pull request surfaced as a hub signal.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PullRequest {
+    /// Pull request number within the repository.
     pub number: u64,
+    /// Pull request title.
     pub title: String,
+    /// Repository the pull request belongs to.
     pub repo: RepoSlug,
+    /// Link to the pull request on GitHub.
     pub url: String,
+    /// How long ago the pull request was opened.
     #[serde(with = "crate::serde_helpers::duration_secs")]
     pub age: Duration,
+    /// Computed urgency for ranking this PR against other signals.
     pub urgency: crate::urgency::Urgency,
+    /// How this PR relates to the current user.
     pub kind: PrKind,
+    /// GitHub username of the PR author.
     pub author: String,
+    /// Aggregate review decision, if any reviewers have responded.
     pub review_decision: Option<ReviewDecision>,
+    /// Number of approvals the PR has received.
     #[serde(default)]
     pub approval_count: u32,
+    /// Number of review comments on the PR.
     #[serde(default)]
     pub comment_count: u32,
+    /// Name of the source branch being merged.
     pub head_branch: String,
+    /// Name of the target branch the PR merges into.
     pub base_branch: String,
+    /// PR body text, if fetched.
     #[serde(default)]
     pub body: Option<String>,
+    /// Rolled-up CI status for the head commit, if available.
     #[serde(default)]
     pub ci_status: Option<CiStatus>,
+    /// Subset of changed files fetched for context (may be partial).
     #[serde(default)]
     pub changed_files: Vec<ChangedFile>,
+    /// Total number of files changed, including any not in `changed_files`.
     #[serde(default)]
     pub total_changed_files: u32,
+    /// Inline review threads on the PR diff.
     #[serde(default)]
     pub review_threads: Vec<ReviewThread>,
+    /// Top-level (non-diff) comments on the PR.
     #[serde(default)]
     pub pr_comments: Vec<ReviewComment>,
+    /// Reason the PR cannot be merged right now, if any.
     #[serde(default)]
     pub merge_blocker: Option<MergeBlocker>,
 }

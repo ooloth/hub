@@ -41,7 +41,7 @@ pub(crate) fn task_status_hints(current: domain::TaskStatus) -> String {
     format!("  {}", parts.join(" · "))
 }
 
-pub(crate) fn investigate_hint(investigate: &InvestigateAction) -> &'static str {
+pub(crate) const fn investigate_hint(investigate: &InvestigateAction) -> &'static str {
     if matches!(investigate, InvestigateAction::None) {
         ""
     } else {

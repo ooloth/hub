@@ -74,7 +74,7 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
     }
 }
 
-fn pr_action_submenu_key(key: KeyEvent) -> Action {
+const fn pr_action_submenu_key(key: KeyEvent) -> Action {
     if matches!(
         (key.code, key.modifiers),
         (KeyCode::Char('c'), KeyModifiers::CONTROL)
@@ -116,7 +116,7 @@ fn task_status_submenu_key(key: KeyEvent, current_status: Option<domain::TaskSta
     }
 }
 
-fn query_mode_key(key: KeyEvent) -> Option<Action> {
+const fn query_mode_key(key: KeyEvent) -> Option<Action> {
     if matches!(
         (key.code, key.modifiers),
         (KeyCode::Char('c'), KeyModifiers::CONTROL)
@@ -213,7 +213,7 @@ fn modal_key(key: KeyEvent, focused: TaskFormField) -> Option<Action> {
     }
 }
 
-fn review_picker_submenu_key(key: KeyEvent) -> Action {
+const fn review_picker_submenu_key(key: KeyEvent) -> Action {
     if matches!(
         (key.code, key.modifiers),
         (KeyCode::Char('c'), KeyModifiers::CONTROL)
@@ -228,7 +228,7 @@ fn review_picker_submenu_key(key: KeyEvent) -> Action {
     }
 }
 
-fn merge_confirm_key(key: KeyEvent) -> Option<Action> {
+const fn merge_confirm_key(key: KeyEvent) -> Option<Action> {
     if matches!(
         (key.code, key.modifiers),
         (KeyCode::Char('c'), KeyModifiers::CONTROL)

@@ -171,7 +171,7 @@ fn truncate(s: &str, max: usize) -> String {
     } else if max <= 1 {
         s.chars().take(max).collect()
     } else {
-        let mut t: String = chars[..max - 1].iter().collect();
+        let mut t: String = chars.get(..max - 1).unwrap_or_default().iter().collect();
         t.push('…');
         t
     }

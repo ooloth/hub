@@ -1,4 +1,6 @@
 //! Pre-trust Claude Code workspace directories before dispatch.
+// pub(crate) fn in a pub(crate) mod triggers redundant_pub_crate (nursery); suppress it.
+#![allow(clippy::redundant_pub_crate)]
 //!
 //! # Safety rationale — why writing to `~/.claude.json` is safe
 //!
@@ -41,7 +43,7 @@ pub(crate) fn trust_workspace(claude_json: &Path, workspace: &Path) -> Result<()
 
     let updated = set_trust_flag(doc, workspace)?;
 
-    let parent = claude_json.parent().unwrap_or(Path::new("."));
+    let parent = claude_json.parent().unwrap_or_else(|| Path::new("."));
     let mut tmp = tempfile::NamedTempFile::new_in(parent)
         .context("failed to create tempfile for claude.json")?;
     serde_json::to_writer_pretty(&mut tmp, &updated)

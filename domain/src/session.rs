@@ -10,11 +10,26 @@
 /// One block of content from an agent session transcript.
 #[derive(Clone, Debug)]
 pub enum StreamBlock {
+    /// A message sent by the human (the opening prompt or a follow-up).
     HumanTurn(String),
+    /// A prose response from the assistant.
     AssistantText(String),
+    /// An extended-thinking block from the assistant.
     AssistantThinking(String),
-    ToolCall { name: String, summary: String },
-    ToolResult { is_error: bool, content: String },
+    /// A tool invocation by the assistant, with a short human-readable summary.
+    ToolCall {
+        /// Tool name (e.g. "Read", "Bash").
+        name: String,
+        /// Human-readable summary of the invocation (e.g. the command or file path).
+        summary: String,
+    },
+    /// The result returned to the assistant after a tool call.
+    ToolResult {
+        /// Whether the tool reported an error.
+        is_error: bool,
+        /// Content of the tool result.
+        content: String,
+    },
 }
 
 /// Encodes an absolute path into the Claude project path segment used in session file paths.

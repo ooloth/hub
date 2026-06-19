@@ -27,10 +27,10 @@ pub(crate) enum ReviewSkill {
 }
 
 impl ReviewSkill {
-    pub(crate) fn slash_command(self) -> &'static str {
+    pub(crate) const fn slash_command(self) -> &'static str {
         match self {
-            ReviewSkill::Converge => "/review-converge",
-            ReviewSkill::PrCommentsConverge => "/review-pr-comments-converge",
+            Self::Converge => "/review-converge",
+            Self::PrCommentsConverge => "/review-pr-comments-converge",
         }
     }
 }
@@ -42,10 +42,10 @@ pub(crate) enum PrOwnership {
 }
 
 impl PrOwnership {
-    pub(crate) fn from_kind(kind: PrKind) -> Self {
+    pub(crate) const fn from_kind(kind: PrKind) -> Self {
         match kind {
-            PrKind::Mine | PrKind::MyDraft => PrOwnership::Owned,
-            PrKind::ToReview | PrKind::External => PrOwnership::External,
+            PrKind::Mine | PrKind::MyDraft => Self::Owned,
+            PrKind::ToReview | PrKind::External => Self::External,
         }
     }
 }
@@ -63,7 +63,7 @@ pub(crate) enum RefreshState {
 /// Whether the `UnifiedList` is showing a split detail pane below the list, and
 /// which content is shown. `detail_scroll` only exists inside the visible
 /// variants — a hidden pane cannot have a stale scroll offset.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) enum DetailMode {
     #[default]
     Hidden,
@@ -101,7 +101,7 @@ pub(crate) enum PrPrevScreen {
 
 impl Default for Screen {
     fn default() -> Self {
-        Screen::UnifiedList {
+        Self::UnifiedList {
             items: vec![],
             flat_rows: vec![],
             selected: 0,
@@ -115,7 +115,7 @@ impl Default for Screen {
 impl Screen {
     pub(crate) fn selected_status_item(&self) -> Option<StatusItem> {
         match self {
-            Screen::UnifiedList {
+            Self::UnifiedList {
                 flat_rows,
                 selected,
                 ..
@@ -125,7 +125,7 @@ impl Screen {
                 | FlatRow::BadgedSignal { item, .. } => Some(item.clone()),
                 FlatRow::GroupHeader { .. } => None,
             },
-            Screen::MergingPr { pr, .. } => Some(StatusItem::Pr(pr.clone())),
+            Self::MergingPr { pr, .. } => Some(StatusItem::Pr(pr.clone())),
         }
     }
 
@@ -133,7 +133,7 @@ impl Screen {
     /// attached task on a `BadgedSignal` row. Used for the status submenu.
     pub(crate) fn selected_task(&self) -> Option<domain::Task> {
         match self {
-            Screen::UnifiedList {
+            Self::UnifiedList {
                 flat_rows,
                 selected,
                 ..
@@ -146,7 +146,7 @@ impl Screen {
                 | FlatRow::BadgedSignal { task, .. } => Some(task.clone()),
                 _ => None,
             },
-            Screen::MergingPr { .. } => None,
+            Self::MergingPr { .. } => None,
         }
     }
 
@@ -154,14 +154,14 @@ impl Screen {
     /// detecting `BadgedSignal` rows (which `from_item` alone cannot see).
     pub(crate) fn selected_item_kind(&self) -> SelectedItemKind {
         match self {
-            Screen::UnifiedList {
+            Self::UnifiedList {
                 flat_rows,
                 selected,
                 ..
             } => flat_rows
                 .get(*selected)
                 .map_or(SelectedItemKind::Other, SelectedItemKind::from_row),
-            Screen::MergingPr { .. } => SelectedItemKind::Other,
+            Self::MergingPr { .. } => SelectedItemKind::Other,
         }
     }
 
@@ -169,7 +169,7 @@ impl Screen {
     /// rather than `None` — used to seed the task creation form from grouped rows.
     pub(crate) fn selected_item_for_seeding(&self) -> Option<StatusItem> {
         match self {
-            Screen::UnifiedList {
+            Self::UnifiedList {
                 flat_rows,
                 selected,
                 ..
@@ -179,7 +179,7 @@ impl Screen {
                 | FlatRow::BadgedSignal { item, .. } => Some(item.clone()),
                 FlatRow::GroupHeader { first_item, .. } => Some(first_item.clone()),
             },
-            Screen::MergingPr { pr, .. } => Some(StatusItem::Pr(pr.clone())),
+            Self::MergingPr { pr, .. } => Some(StatusItem::Pr(pr.clone())),
         }
     }
 }

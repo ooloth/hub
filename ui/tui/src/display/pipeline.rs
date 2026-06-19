@@ -25,10 +25,9 @@ pub(crate) fn flatten(items: &[DisplayItem], expanded: &HashSet<GroupKey>) -> Ve
                 let urgency = group_items
                     .first()
                     .map_or(domain::Urgency::Low, item_urgency);
-                let first_item = group_items
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(|| group_items[0].clone());
+                let Some(first_item) = group_items.first().cloned() else {
+                    continue;
+                };
                 rows.push(FlatRow::GroupHeader {
                     key: label.clone(),
                     count: group_items.len(),
@@ -82,7 +81,7 @@ pub(crate) fn aggregate(items: Vec<StatusItem>) -> Vec<DisplayItem> {
                     items
                         .into_iter()
                         .next()
-                        .expect("items is non-empty by construction"),
+                        .unwrap_or_else(|| unreachable!("items is non-empty by construction")),
                 )
             }
             other => other,

@@ -15,7 +15,12 @@ pub(crate) fn config(
 ) -> LaunchConfig {
     let incident_at = serde_json::from_str::<serde_json::Value>(line)
         .ok()
-        .and_then(|v| v[0]["timestamp"].as_str().map(String::from))
+        .and_then(|v| {
+            v.get(0)
+                .and_then(|e| e.get("timestamp"))
+                .and_then(|t| t.as_str())
+                .map(String::from)
+        })
         .unwrap_or_default();
 
     LaunchConfig {
