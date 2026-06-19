@@ -258,13 +258,13 @@ mod tests {
     #[test]
     #[should_panic(expected = "owner must not be empty")]
     fn repo_slug_new_panics_on_empty_owner() {
-        RepoSlug::new("", "hub");
+        let _ = RepoSlug::new("", "hub");
     }
 
     #[test]
     #[should_panic(expected = "repo must not be empty")]
     fn repo_slug_new_panics_on_empty_repo() {
-        RepoSlug::new("ooloth", "");
+        let _ = RepoSlug::new("ooloth", "");
     }
 
     // ── merge_blocker serde default ───────────────────────────────────────────

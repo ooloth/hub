@@ -164,13 +164,13 @@ async fn issue_states_with_base(
         .join(", ");
 
     let query = format!(
-        r#"{{
+        r"{{
             issues(filter: {{
                 identifier: {{ in: [{id_list}] }}
             }}) {{
                 nodes {{ identifier state {{ type }} }}
             }}
-        }}"#
+        }}"
     );
 
     let resp = reqwest::Client::new()

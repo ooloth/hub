@@ -31,8 +31,8 @@ pub(crate) fn render_log_detail(
             ..
         } => (title, "Loki", project, env, message, lines),
     };
-    let title = format!(" {} ", title);
-    let subtitle = format!(" {} · {}:{} · {} ", source, project, env, message);
+    let title = format!(" {title} ");
+    let subtitle = format!(" {source} · {project}:{env} · {message} ");
 
     let bold = Style::default().add_modifier(Modifier::BOLD);
     let inner_width = area.width.saturating_sub(2) as usize;

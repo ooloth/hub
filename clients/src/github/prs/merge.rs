@@ -2,10 +2,11 @@ use anyhow::{Context, Result};
 
 /// Squash-merges a pull request.
 ///
+/// # Errors
 /// Returns an error if the PR is not mergeable, has a merge conflict,
 /// or the GitHub API is unreachable.
 pub async fn merge_pull_request(token: &str, repo: &str, number: u64) -> Result<()> {
-    reqwest::Client::new()
+    let _ = reqwest::Client::new()
         .put(format!(
             "https://api.github.com/repos/{repo}/pulls/{number}/merge"
         ))

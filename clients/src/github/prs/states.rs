@@ -132,7 +132,7 @@ async fn pr_states_with_base(
                 _ => continue,
             };
             if let Some(state) = parse_pr_state(pr_node.get("state").and_then(|s| s.as_str())) {
-                result.insert((repo.clone(), *number), state);
+                let _ = result.insert((repo.clone(), *number), state);
             }
         }
     }
@@ -176,9 +176,10 @@ mod tests {
         for (repo_alias, _, prs) in alias_states {
             let mut repo_obj = serde_json::Map::new();
             for (pr_alias, state) in *prs {
-                repo_obj.insert(pr_alias.to_string(), serde_json::json!({ "state": state }));
+                let _ =
+                    repo_obj.insert(pr_alias.to_string(), serde_json::json!({ "state": state }));
             }
-            data.insert(repo_alias.to_string(), serde_json::Value::Object(repo_obj));
+            let _ = data.insert(repo_alias.to_string(), serde_json::Value::Object(repo_obj));
         }
         serde_json::json!({ "data": data })
     }

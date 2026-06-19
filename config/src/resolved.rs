@@ -3,6 +3,7 @@ use anyhow::{Context, Result};
 use secrecy::Secret;
 use std::collections::HashMap;
 
+#[derive(Debug)]
 pub struct Config {
     pub github_token: Secret<String>,
     pub github_username: String,
@@ -14,6 +15,9 @@ pub struct Config {
 }
 
 impl Config {
+    /// # Errors
+    /// Returns an error if `hub.toml` is missing or malformed, or if any credential
+    /// reference (e.g. an `op://` URI) cannot be resolved.
     pub async fn load() -> Result<Self> {
         let hub_toml = toml::parse_file("hub.toml")?;
         let creds = hub_toml.credentials;
@@ -31,7 +35,7 @@ impl Config {
         };
         let mut extra_credentials = HashMap::new();
         for (k, v) in creds.extra {
-            extra_credentials.insert(k, Secret::new(resolve(v).await?));
+            let _ = extra_credentials.insert(k, Secret::new(resolve(v).await?));
         }
 
         Ok(Self {
@@ -45,6 +49,7 @@ impl Config {
         })
     }
 
+    #[must_use]
     pub fn github_pr_repos(&self) -> Vec<domain::GithubPrsRepo> {
         self.projects
             .iter()
@@ -63,6 +68,7 @@ impl Config {
             .collect()
     }
 
+    #[must_use]
     pub fn github_issue_repos(&self) -> Vec<String> {
         self.projects
             .iter()
@@ -75,6 +81,7 @@ impl Config {
             .collect()
     }
 
+    #[must_use]
     pub fn github_ci_repos(&self) -> Vec<(String, String)> {
         self.projects
             .iter()
@@ -91,6 +98,7 @@ impl Config {
             .collect()
     }
 
+    #[must_use]
     pub fn private_monitor_workflow_names(&self) -> Vec<String> {
         self.monitor
             .as_ref()
@@ -98,6 +106,7 @@ impl Config {
             .unwrap_or_default()
     }
 
+    #[must_use]
     pub fn loki_envs(&self) -> Vec<domain::LokiEnv> {
         self.projects
             .iter()
@@ -144,6 +153,7 @@ impl Config {
             .collect()
     }
 
+    #[must_use]
     pub fn gcp_envs(&self) -> Vec<domain::GcpEnv> {
         self.projects
             .iter()

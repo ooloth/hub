@@ -4,6 +4,9 @@ use domain::{CommentAuthor, TaskComment, TaskId};
 use rusqlite::{params, Connection};
 
 /// Creates the `task_comments` table. Called from `tasks::ensure_table`.
+///
+/// # Errors
+/// Returns an error if the SQL statement fails.
 pub fn ensure_table(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS task_comments (
@@ -18,6 +21,9 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
 }
 
 /// Appends a comment to a task and refreshes the task's `updated_at`.
+///
+/// # Errors
+/// Returns an error if the task does not exist or a SQL statement fails.
 pub fn add(conn: &Connection, id: &TaskId, author: CommentAuthor, content: &str) -> Result<()> {
     let row_id = crate::tasks::task_row_id(id)?;
     let exists: bool = conn
@@ -32,17 +38,19 @@ pub fn add(conn: &Connection, id: &TaskId, author: CommentAuthor, content: &str)
         anyhow::bail!("task {id} not found");
     }
     let now = Utc::now().to_rfc3339();
-    conn.execute(
-        "INSERT INTO task_comments (task_id, author, content, created_at)
+    let _ = conn
+        .execute(
+            "INSERT INTO task_comments (task_id, author, content, created_at)
          VALUES (?1, ?2, ?3, ?4)",
-        params![row_id, author.to_string(), content, now],
-    )
-    .context("failed to insert task comment")?;
-    conn.execute(
-        "UPDATE tasks SET updated_at = ?1 WHERE id = ?2",
-        params![now, row_id],
-    )
-    .context("failed to refresh task updated_at")?;
+            params![row_id, author.to_string(), content, now],
+        )
+        .context("failed to insert task comment")?;
+    let _ = conn
+        .execute(
+            "UPDATE tasks SET updated_at = ?1 WHERE id = ?2",
+            params![now, row_id],
+        )
+        .context("failed to refresh task updated_at")?;
     Ok(())
 }
 

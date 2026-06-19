@@ -48,13 +48,13 @@ pub(super) fn update(app: &mut App, action: Action) -> Vec<Effect> {
             if let Some(modal) = &mut app.ui.modal {
                 match modal.focused_field {
                     TaskFormField::Title => {
-                        modal.title.input(key);
+                        let _ = modal.title.input(key);
                     }
                     TaskFormField::Description => {
-                        modal.description.input(key);
+                        let _ = modal.description.input(key);
                     }
                     TaskFormField::Link => {
-                        modal.link.input(key);
+                        let _ = modal.link.input(key);
                     }
                     TaskFormField::Repo => match key.code {
                         KeyCode::Char(c) => modal.repo.type_char(c),
@@ -69,7 +69,11 @@ pub(super) fn update(app: &mut App, action: Action) -> Vec<Effect> {
             vec![]
         }
         Action::CommitTaskCreation => {
-            let result = app.ui.modal.as_ref().and_then(|m| m.try_into_request());
+            let result = app
+                .ui
+                .modal
+                .as_ref()
+                .and_then(super::super::task_creation::TaskCreationModal::try_into_request);
             match result {
                 None => {
                     if app.ui.modal.is_some() {

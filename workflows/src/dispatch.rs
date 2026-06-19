@@ -114,6 +114,7 @@ pub(crate) fn build_task_prompt(task: &Task) -> String {
 ///
 /// Task dispatch worktrees live here, completely separate from the PR investigation
 /// worktrees at `~/.hub/repos/`. Do not conflate the two systems.
+#[must_use]
 pub fn workspaces_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
     PathBuf::from(home).join(".hub").join("workspaces")
@@ -130,6 +131,7 @@ pub fn workspaces_dir() -> PathBuf {
 /// Pure: derives the path without touching the filesystem. Both dispatch (which
 /// creates the directory) and the TUI session poll (which reads the stream from
 /// it) call this so they agree on where the session lives.
+#[must_use]
 pub fn task_workspace_path(task: &Task) -> PathBuf {
     let base = workspaces_dir().join(task.id.to_string());
     match &task.repo {
@@ -257,6 +259,9 @@ pub(crate) fn cleanup_candidates(tasks: &[Task], now: DateTime<Utc>) -> Vec<Task
 ///
 /// Workspaces that do not exist on disk are silently skipped. Workspaces with
 /// no upstream configured are kept (treated as having unpushed work).
+///
+/// # Errors
+/// Returns an error if a worktree cannot be created or the session cannot be started.
 pub async fn clean_task_worktrees(
     workspaces: &Path,
     tasks: &[Task],
@@ -370,6 +375,9 @@ pub(crate) fn reap_candidates(
 ///
 /// The existence check keeps this idempotent — once a window is gone, later polls
 /// skip it instead of erroring on every tick.
+///
+/// # Errors
+/// Returns an error if a git or filesystem operation fails.
 pub async fn reap_idle_windows(tasks: &[Task], now: DateTime<Utc>) -> Result<()> {
     let candidates = reap_candidates(tasks, now, chrono::Duration::minutes(REAP_BUFFER_MINS));
     if candidates.is_empty() {
@@ -412,7 +420,7 @@ async fn existing_window_names() -> Result<Vec<String>> {
     }
     Ok(String::from_utf8_lossy(&out.stdout)
         .lines()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .collect())
 }
 
@@ -424,6 +432,9 @@ const DISPATCH_CAP: u32 = 1;
 ///
 /// Returns `Ok(())` without spawning if the in-progress count is at the cap, if
 /// no tasks are ready, or if a concurrent tick claimed the task first.
+///
+/// # Errors
+/// Returns an error if a git or filesystem operation fails.
 pub async fn dispatch() -> Result<()> {
     let conn = store::status_cache::connect()?;
     store::tasks::ensure_table(&conn)?;
@@ -541,12 +552,12 @@ mod tests {
         let conn = in_memory();
         let repos_dir = tempfile::tempdir().unwrap();
         // Manually insert an in-progress task to hit the cap.
-        conn.execute(
+        let _ = conn.execute(
             "INSERT INTO tasks (title, status, kind, created_at) VALUES ('running', 'in-progress', 'implement', '2024-01-01T00:00:00Z')",
             [],
         ).unwrap();
         // Add a ready task that should NOT be claimed.
-        store::tasks::create(
+        let _ = store::tasks::create(
             &conn,
             "waiting",
             TaskKind::Implement,
@@ -556,11 +567,12 @@ mod tests {
             &domain::TaskOrigin::Idea,
         )
         .unwrap();
-        conn.execute(
-            "UPDATE tasks SET status = 'ready' WHERE title = 'waiting'",
-            [],
-        )
-        .unwrap();
+        let _ = conn
+            .execute(
+                "UPDATE tasks SET status = 'ready' WHERE title = 'waiting'",
+                [],
+            )
+            .unwrap();
 
         let claude_json = repos_dir.path().join(".claude.json");
         let result = dispatch_inner(&conn, repos_dir.path(), &claude_json).await;

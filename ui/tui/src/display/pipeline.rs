@@ -24,8 +24,7 @@ pub(crate) fn flatten(items: &[DisplayItem], expanded: &HashSet<GroupKey>) -> Ve
                 let is_expanded = expanded.contains(label);
                 let urgency = group_items
                     .first()
-                    .map(item_urgency)
-                    .unwrap_or(domain::Urgency::Low);
+                    .map_or(domain::Urgency::Low, item_urgency);
                 let first_item = group_items
                     .first()
                     .cloned()
@@ -79,7 +78,12 @@ pub(crate) fn aggregate(items: Vec<StatusItem>) -> Vec<DisplayItem> {
         .map(|d| match d {
             DisplayItem::Group { label, items } if items.len() == 1 => {
                 let _ = label;
-                DisplayItem::Single(items.into_iter().next().unwrap())
+                DisplayItem::Single(
+                    items
+                        .into_iter()
+                        .next()
+                        .expect("items is non-empty by construction"),
+                )
             }
             other => other,
         })
@@ -147,7 +151,7 @@ pub(crate) fn badge_and_dedup(
             DisplayItem::Single(signal) if !matches!(signal, StatusItem::AgentSession(_)) => {
                 if let Some(identity) = signal_identity_for_item(signal) {
                     if let Some(task) = task_index.get(&identity) {
-                        consumed.insert(identity);
+                        let _ = consumed.insert(identity);
                         result.push(DisplayItem::BadgedSignal {
                             signal: signal.clone(),
                             task: task.clone(),

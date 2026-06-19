@@ -60,7 +60,7 @@ pub(crate) enum RefreshState {
     Failed(String),
 }
 
-/// Whether the UnifiedList is showing a split detail pane below the list, and
+/// Whether the `UnifiedList` is showing a split detail pane below the list, and
 /// which content is shown. `detail_scroll` only exists inside the visible
 /// variants — a hidden pane cannot have a stale scroll offset.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -120,10 +120,10 @@ impl Screen {
                 selected,
                 ..
             } => match flat_rows.get(*selected)? {
-                FlatRow::Single(item) => Some(item.clone()),
-                FlatRow::GroupChild { item, .. } => Some(item.clone()),
+                FlatRow::Single(item)
+                | FlatRow::GroupChild { item, .. }
+                | FlatRow::BadgedSignal { item, .. } => Some(item.clone()),
                 FlatRow::GroupHeader { .. } => None,
-                FlatRow::BadgedSignal { item, .. } => Some(item.clone()),
             },
             Screen::MergingPr { pr, .. } => Some(StatusItem::Pr(pr.clone())),
         }
@@ -138,15 +138,15 @@ impl Screen {
                 selected,
                 ..
             } => match flat_rows.get(*selected)? {
-                FlatRow::Single(StatusItem::AgentSession(task)) => Some(task.clone()),
-                FlatRow::GroupChild {
+                FlatRow::Single(StatusItem::AgentSession(task))
+                | FlatRow::GroupChild {
                     item: StatusItem::AgentSession(task),
                     ..
-                } => Some(task.clone()),
-                FlatRow::BadgedSignal { task, .. } => Some(task.clone()),
+                }
+                | FlatRow::BadgedSignal { task, .. } => Some(task.clone()),
                 _ => None,
             },
-            _ => None,
+            Screen::MergingPr { .. } => None,
         }
     }
 
@@ -160,9 +160,8 @@ impl Screen {
                 ..
             } => flat_rows
                 .get(*selected)
-                .map(SelectedItemKind::from_row)
-                .unwrap_or(SelectedItemKind::Other),
-            _ => SelectedItemKind::Other,
+                .map_or(SelectedItemKind::Other, SelectedItemKind::from_row),
+            Screen::MergingPr { .. } => SelectedItemKind::Other,
         }
     }
 
@@ -175,10 +174,10 @@ impl Screen {
                 selected,
                 ..
             } => match flat_rows.get(*selected)? {
-                FlatRow::Single(item) => Some(item.clone()),
-                FlatRow::GroupChild { item, .. } => Some(item.clone()),
+                FlatRow::Single(item)
+                | FlatRow::GroupChild { item, .. }
+                | FlatRow::BadgedSignal { item, .. } => Some(item.clone()),
                 FlatRow::GroupHeader { first_item, .. } => Some(first_item.clone()),
-                FlatRow::BadgedSignal { item, .. } => Some(item.clone()),
             },
             Screen::MergingPr { pr, .. } => Some(StatusItem::Pr(pr.clone())),
         }

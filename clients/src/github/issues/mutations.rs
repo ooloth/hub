@@ -8,6 +8,11 @@ use super::labels::fetch_issue_labels;
 /// If any step after the label PUT fails, the original labels are restored
 /// before returning the error. If the restore also fails, both errors are
 /// reported in the error chain.
+///
+/// # Errors
+/// Returns an error if any GitHub API call fails. If the failure occurs after
+/// labels are updated, the original labels are restored before returning; if
+/// the restore also fails, both errors appear in the chain.
 pub async fn dismiss_issue(
     token: &str,
     repo: &str,
@@ -38,7 +43,7 @@ async fn dismiss_issue_with_base(
 
     let original_labels = fetch_issue_labels(&client, base, token, repo, number).await?;
 
-    client
+    let _ = client
         .put(format!("{base}/repos/{repo}/issues/{number}/labels"))
         .bearer_auth(token)
         .header("User-Agent", "hub-cli")
@@ -59,7 +64,7 @@ async fn dismiss_issue_with_base(
             .json(&serde_json::json!({ "labels": original_labels }))
             .send()
             .await
-            .and_then(|r| r.error_for_status());
+            .and_then(reqwest::Response::error_for_status);
         return match rollback {
             Ok(_) => Err(e),
             Err(rb_err) => Err(e.context(format!("label rollback also failed: {rb_err}"))),
@@ -78,7 +83,7 @@ async fn complete_dismissal(
     reason: &str,
 ) -> Result<()> {
     if !reason.is_empty() {
-        client
+        let _ = client
             .post(format!("{base}/repos/{repo}/issues/{number}/comments"))
             .bearer_auth(token)
             .header("User-Agent", "hub-cli")
@@ -93,7 +98,7 @@ async fn complete_dismissal(
             .with_context(|| format!("GitHub API error posting comment on {repo}#{number}"))?;
     }
 
-    client
+    let _ = client
         .patch(format!("{base}/repos/{repo}/issues/{number}"))
         .bearer_auth(token)
         .header("User-Agent", "hub-cli")

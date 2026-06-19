@@ -23,12 +23,14 @@ use tokio::process::Command;
 
 use crate::git::{add_worktree_or_recover, read_default_branch};
 
+#[must_use]
 pub fn repos_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
     PathBuf::from(home).join(".hub").join("repos")
 }
 
 /// Returns the path to the default-branch worktree for `name` if it exists.
+#[must_use]
 pub fn default_branch_worktree(repos_dir: &Path, name: &str) -> Option<PathBuf> {
     let bare = repos_dir.join(name);
     let branch = read_default_branch(&bare)?;
@@ -133,6 +135,9 @@ async fn fetch_project(name: &str, repo: &str, repos_dir: &Path) -> Result<()> {
 /// On first creation the fetch is required; it is followed by a PR-specific fetch
 /// (`pull/<number>/head`), a `git worktree add`, and setting the upstream tracking
 /// branch so `git push` targets the real PR branch, not a phantom `origin/pr-<number>`.
+///
+/// # Errors
+/// Returns an error if a git operation fails.
 pub async fn ensure_pr_worktree(bare: &Path, number: u64, head_branch: &str) -> Result<PathBuf> {
     let bare_str = bare.to_string_lossy().into_owned();
     let branch = format!("pr-{number}");
@@ -146,8 +151,7 @@ pub async fn ensure_pr_worktree(bare: &Path, number: u64, head_branch: &str) -> 
         .args(["-C", &bare_str, "fetch", "origin"])
         .output()
         .await
-        .map(|o| o.status.success())
-        .unwrap_or(false);
+        .is_ok_and(|o| o.status.success());
 
     if worktree_exists {
         return Ok(worktree);
@@ -203,6 +207,9 @@ pub async fn ensure_pr_worktree(bare: &Path, number: u64, head_branch: &str) -> 
 /// opening the default-branch worktree directly — that worktree is reset
 /// unconditionally every 30 minutes and at every investigation launch, so it is not
 /// safe for any agent that runs longer than the refresh interval.
+///
+/// # Errors
+/// Returns an error if a git or filesystem operation fails.
 pub async fn fetch_and_create_investigation_worktree(bare: &Path) -> Result<PathBuf> {
     let bare_str = bare.to_string_lossy().into_owned();
 
@@ -224,6 +231,9 @@ pub async fn fetch_and_create_investigation_worktree(bare: &Path) -> Result<Path
 /// Unlike `ensure_default_branch_worktree` (which skips the fetch), this always
 /// runs `git fetch origin` first so the subsequent reset lands on the actual
 /// latest commit. Called only by the background fetch path (not investigations).
+///
+/// # Errors
+/// Returns an error if a git operation fails.
 pub async fn sync_default_branch_worktree(bare: &Path) -> Result<()> {
     let bare_str = bare.to_string_lossy().into_owned();
 
@@ -240,6 +250,10 @@ pub async fn sync_default_branch_worktree(bare: &Path) -> Result<()> {
     ensure_default_branch_worktree(bare).await
 }
 
+/// Creates the default-branch worktree if absent, then resets it to `origin/<branch>`.
+///
+/// # Errors
+/// Returns an error if a git or filesystem operation fails.
 pub async fn ensure_default_branch_worktree(bare: &Path) -> Result<()> {
     let bare_str = bare.to_string_lossy().into_owned();
     let branch = read_default_branch(bare)
@@ -295,6 +309,9 @@ pub async fn ensure_default_branch_worktree(bare: &Path) -> Result<()> {
 /// Creates a fresh detached-HEAD investigation worktree under `bare` at a
 /// timestamped path. Returns the worktree path. The caller is responsible
 /// for removing it via `git worktree remove --force` when done.
+///
+/// # Errors
+/// Returns an error if a git operation fails.
 pub async fn create_investigation_worktree(bare: &Path) -> Result<PathBuf> {
     let bare_str = bare.to_string_lossy().into_owned();
     let ts = std::time::SystemTime::now()
@@ -362,8 +379,7 @@ async fn clean_merged_worktrees(bare_dir: &str) -> Result<()> {
             let raw = String::from_utf8_lossy(&merge_out.stdout);
             raw.trim()
                 .strip_prefix("refs/heads/")
-                .map(|s| s.to_string())
-                .unwrap_or_else(|| branch.clone())
+                .map_or_else(|| branch.clone(), std::string::ToString::to_string)
         } else {
             branch.clone()
         };
@@ -378,7 +394,7 @@ async fn clean_merged_worktrees(bare_dir: &str) -> Result<()> {
             .success();
 
         if ref_gone {
-            Command::new("git")
+            let _ = Command::new("git")
                 .args(["-C", bare_dir, "worktree", "remove", "--force", &wt_path])
                 .output()
                 .await
@@ -452,7 +468,7 @@ mod tests {
             "setup: bare should be stale before the call"
         );
 
-        ensure_pr_worktree(&bare, 42, "feat/test").await.unwrap();
+        let _ = ensure_pr_worktree(&bare, 42, "feat/test").await.unwrap();
 
         let after = git_rev_parse(&bare, "refs/remotes/origin/main").await;
         assert_eq!(

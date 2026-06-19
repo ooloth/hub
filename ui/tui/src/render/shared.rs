@@ -111,7 +111,13 @@ pub(crate) fn format_keybinds(keybinds: &[(&str, &str)]) -> String {
 }
 
 pub(crate) fn clamp_scroll(total: usize, viewport_height: usize, scroll: &mut u16) {
-    *scroll = (*scroll).min(total.saturating_sub(viewport_height) as u16);
+    let max_scroll = u16::try_from(
+        total
+            .saturating_sub(viewport_height)
+            .min(usize::from(u16::MAX)),
+    )
+    .unwrap_or(u16::MAX);
+    *scroll = (*scroll).min(max_scroll);
 }
 
 pub(crate) fn popup_area(area: Rect, content_lines: u16, content_width: u16) -> Rect {

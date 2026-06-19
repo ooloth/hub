@@ -76,6 +76,106 @@ pub(crate) fn blocks_to_lines(blocks: &[domain::StreamBlock]) -> Vec<Line<'stati
     lines
 }
 
+fn render_stream_pane(
+    frame: &mut ratatui::Frame,
+    blocks: &[domain::StreamBlock],
+    scroll: &mut u16,
+    area: Rect,
+) {
+    let lines = blocks_to_lines(blocks);
+    let pane_h = area.height as usize;
+    let total = lines.len();
+    super::shared::clamp_scroll(total, pane_h, scroll);
+    let visible: Vec<Line<'static>> = lines
+        .into_iter()
+        .skip(*scroll as usize)
+        .take(pane_h)
+        .collect();
+    if visible.is_empty() {
+        frame.render_widget(
+            Paragraph::new("No session data yet.")
+                .style(Style::default().add_modifier(Modifier::DIM)),
+            area,
+        );
+    } else {
+        frame.render_widget(Paragraph::new(visible), area);
+    }
+}
+
+fn task_info_lines(task: &domain::Task) -> Vec<Line<'static>> {
+    let status_color = match task.status {
+        domain::TaskStatus::InReview => YELLOW,
+        domain::TaskStatus::Blocked | domain::TaskStatus::Failed => Color::Red,
+        domain::TaskStatus::InProgress => Color::Cyan,
+        _ => Color::Gray,
+    };
+    let mut lines: Vec<Line<'static>> = vec![Line::from(Span::styled(
+        format!("{} · {}", task.id, task.title),
+        Style::default().add_modifier(Modifier::BOLD),
+    ))];
+
+    if let Some(desc) = &task.description {
+        lines.push(Line::raw(""));
+        for line in desc.split('\n') {
+            lines.push(Line::raw(line.to_string()));
+        }
+    }
+
+    lines.extend([
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled("status  ", Style::default().add_modifier(Modifier::DIM)),
+            Span::styled(task.status.to_string(), Style::default().fg(status_color)),
+        ]),
+        Line::from(vec![
+            Span::styled("kind    ", Style::default().add_modifier(Modifier::DIM)),
+            Span::raw(task.kind.to_string()),
+        ]),
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled("created ", Style::default().add_modifier(Modifier::DIM)),
+            Span::raw(fmt_ts(&task.created_at)),
+        ]),
+        Line::from(vec![
+            Span::styled("updated ", Style::default().add_modifier(Modifier::DIM)),
+            Span::raw(fmt_ts(&task.updated_at)),
+        ]),
+        Line::from(vec![
+            Span::styled("age     ", Style::default().add_modifier(Modifier::DIM)),
+            Span::raw(format_age_short(task.age)),
+        ]),
+    ]);
+
+    if !task.links.is_empty() {
+        lines.push(Line::raw(""));
+        for link in &task.links {
+            lines.push(Line::raw(link.clone()));
+        }
+    }
+
+    if !task.comments.is_empty() {
+        lines.push(Line::raw(""));
+        lines.push(Line::styled(
+            "── comments ──────────────────────",
+            Style::default().add_modifier(Modifier::DIM),
+        ));
+        for comment in &task.comments {
+            lines.push(Line::raw(""));
+            let ts = fmt_ts(&comment.created_at);
+            let author = comment.author.to_string();
+            lines.push(Line::styled(
+                format!("{ts}  {author}"),
+                Style::default().add_modifier(Modifier::DIM),
+            ));
+            for line in comment.content.split('\n') {
+                lines.push(Line::raw(line.to_string()));
+            }
+        }
+    }
+
+    lines
+}
+
 pub(crate) fn render_agent_session_detail(
     frame: &mut ratatui::Frame,
     task: &domain::Task,
@@ -117,98 +217,6 @@ pub(crate) fn render_agent_session_detail(
         buf.set_string(divider_area.x, area.y + area.height - 1, "┴", border_style);
     }
 
-    // Stream pane (left)
-    let lines = blocks_to_lines(blocks);
-    let pane_h = stream_area.height as usize;
-    let total = lines.len();
-    super::shared::clamp_scroll(total, pane_h, scroll);
-    let visible: Vec<Line<'static>> = lines
-        .into_iter()
-        .skip(*scroll as usize)
-        .take(pane_h)
-        .collect();
-    if visible.is_empty() {
-        frame.render_widget(
-            Paragraph::new("No session data yet.")
-                .style(Style::default().add_modifier(Modifier::DIM)),
-            stream_area,
-        );
-    } else {
-        frame.render_widget(Paragraph::new(visible), stream_area);
-    }
-
-    // Info pane (right)
-    let status_color = match task.status {
-        domain::TaskStatus::InReview => YELLOW,
-        domain::TaskStatus::Blocked => Color::Red,
-        domain::TaskStatus::InProgress => Color::Cyan,
-        domain::TaskStatus::Failed => Color::Red,
-        _ => Color::Gray,
-    };
-    let mut info_lines: Vec<Line<'static>> = vec![Line::from(Span::styled(
-        format!("{} · {}", task.id, task.title),
-        Style::default().add_modifier(Modifier::BOLD),
-    ))];
-
-    if let Some(desc) = &task.description {
-        info_lines.push(Line::raw(""));
-        for line in desc.split('\n') {
-            info_lines.push(Line::raw(line.to_string()));
-        }
-    }
-
-    info_lines.extend([
-        Line::raw(""),
-        Line::from(vec![
-            Span::styled("status  ", Style::default().add_modifier(Modifier::DIM)),
-            Span::styled(task.status.to_string(), Style::default().fg(status_color)),
-        ]),
-        Line::from(vec![
-            Span::styled("kind    ", Style::default().add_modifier(Modifier::DIM)),
-            Span::raw(task.kind.to_string()),
-        ]),
-        Line::raw(""),
-        Line::from(vec![
-            Span::styled("created ", Style::default().add_modifier(Modifier::DIM)),
-            Span::raw(fmt_ts(&task.created_at)),
-        ]),
-        Line::from(vec![
-            Span::styled("updated ", Style::default().add_modifier(Modifier::DIM)),
-            Span::raw(fmt_ts(&task.updated_at)),
-        ]),
-        Line::from(vec![
-            Span::styled("age     ", Style::default().add_modifier(Modifier::DIM)),
-            Span::raw(format_age_short(task.age)),
-        ]),
-    ]);
-
-    if !task.links.is_empty() {
-        info_lines.push(Line::raw(""));
-        for link in &task.links {
-            info_lines.push(Line::raw(link.clone()));
-        }
-    }
-
-    let mut all_lines = info_lines;
-    if !task.comments.is_empty() {
-        all_lines.push(Line::raw(""));
-        all_lines.push(Line::styled(
-            "── comments ──────────────────────",
-            Style::default().add_modifier(Modifier::DIM),
-        ));
-        for comment in &task.comments {
-            all_lines.push(Line::raw(""));
-            let ts = fmt_ts(&comment.created_at);
-            let author = comment.author.to_string();
-            all_lines.push(Line::styled(
-                format!("{ts}  {author}"),
-                Style::default().add_modifier(Modifier::DIM),
-            ));
-            for line in comment.content.split('\n') {
-                all_lines.push(Line::raw(line.to_string()));
-            }
-        }
-    }
-
-    frame.render_widget(Paragraph::new(all_lines), meta_area);
+    render_stream_pane(frame, blocks, scroll, stream_area);
+    frame.render_widget(Paragraph::new(task_info_lines(task)), meta_area);
 }

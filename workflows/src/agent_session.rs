@@ -75,6 +75,7 @@ pub struct PollThresholds {
 
 impl PollThresholds {
     /// The thresholds used in production (see the module constants).
+    #[must_use]
     pub fn production() -> Self {
         Self {
             idle_grace: Duration::seconds(IDLE_GRACE_SECS),
@@ -123,6 +124,7 @@ pub enum Transition {
 
 impl Transition {
     /// The status this transition moves the task to.
+    #[must_use]
     pub fn target(self) -> TaskStatus {
         match self {
             Self::Completed | Self::CrashRecovered => TaskStatus::InReview,
@@ -171,6 +173,9 @@ fn sessions_dir() -> PathBuf {
 ///
 /// The PID is unknown at dispatch time, so the file name can't be guessed — the
 /// injected UUID is the stable key, found by reading each record.
+///
+/// # Errors
+/// Returns an error if the session directory cannot be read or a file operation fails.
 pub fn read_session_snapshot(
     sessions_dir: &Path,
     session_id: &str,
@@ -208,6 +213,7 @@ pub fn read_session_snapshot(
 /// Only `in-progress` and `blocked` tasks transition — every other status returns
 /// `None`, so a task already reported `in-review` (or terminal) is never disturbed
 /// (the "no in-review yet" guard falls out of matching on `current`).
+#[must_use]
 pub fn decide_transition(
     current: TaskStatus,
     task_updated_at: DateTime<Utc>,
@@ -249,6 +255,9 @@ pub fn decide_transition(
 /// Errors reading a single task's session (unreadable sessions dir, unparseable
 /// `updated_at`) are logged and skipped — one bad task never blocks the others or
 /// the refresh. `now` is injected so the decision stays deterministic and testable.
+///
+/// # Errors
+/// Returns an error if the file cannot be read or written.
 pub fn poll_sessions(now: DateTime<Utc>) -> Result<Vec<Task>> {
     let conn = store::status_cache::connect()?;
     store::tasks::ensure_table(&conn)?;

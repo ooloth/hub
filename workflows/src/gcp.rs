@@ -2,6 +2,10 @@ use anyhow::Result;
 use chrono::Utc;
 use domain::{GcpEntry, GcpEnv, Urgency};
 
+/// Queries GCP Logging for each configured query and returns matching log entries.
+///
+/// # Errors
+/// Returns an error if `gcloud` exits non-zero or its output cannot be parsed.
 pub async fn run(env: &GcpEnv) -> Result<Vec<GcpEntry>> {
     let mut results = Vec::new();
 
@@ -48,7 +52,7 @@ fn message_for_entry(entry: &clients::gcp::LogEntry, message_field: &str) -> Str
         return first_line.to_string();
     }
     if let Some(req) = &entry.http_request {
-        let status = req.get("status").and_then(|v| v.as_u64());
+        let status = req.get("status").and_then(serde_json::Value::as_u64);
         let url = req.get("requestUrl").and_then(|v| v.as_str());
         if let (Some(s), Some(u)) = (status, url) {
             return format!("HTTP {s} {u}");
@@ -69,7 +73,8 @@ fn console_url(
     let mut url =
         format!("{base};query={encoded_filter};duration=PT{duration}S?project={gcp_project}");
     if let Some(region) = gcp_region {
-        url.push_str(&format!("&region={region}"));
+        url.push_str("&region=");
+        url.push_str(region);
     }
     url
 }
@@ -95,13 +100,16 @@ fn lookback_to_seconds(lookback: &str) -> u64 {
 }
 
 fn percent_encode(s: &str) -> String {
+    use std::fmt::Write as _;
     let mut out = String::with_capacity(s.len() * 3);
     for byte in s.bytes() {
         match byte {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
                 out.push(byte as char);
             }
-            b => out.push_str(&format!("%{b:02X}")),
+            b => {
+                let _ = write!(out, "%{b:02X}");
+            }
         }
     }
     out

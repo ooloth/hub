@@ -177,78 +177,79 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
             title: b.title.clone(),
             error: b.error.clone(),
         }),
-        StatusItem::AgentSession(_) => None,
         _ => None,
+    }
+}
+
+fn pr_line(pr: &domain::PullRequest) -> LineParts {
+    let review_status = match pr.review_decision {
+        Some(domain::ReviewDecision::ChangesRequested) => "changes requested".to_string(),
+        Some(domain::ReviewDecision::Approved) => match pr.approval_count {
+            1 => "1 approval".to_string(),
+            n => format!("{n} approvals"),
+        },
+        None => "no reviews".to_string(),
+    };
+    let mut dim_inline = if pr.kind == domain::PrKind::MyDraft {
+        vec![
+            format!(" #{}", pr.number),
+            pr.author.clone(),
+            "draft".to_string(),
+        ]
+    } else {
+        vec![format!(" #{}", pr.number), pr.author.clone(), review_status]
+    };
+    if let Some(blocker) = pr.merge_blocker {
+        dim_inline.push(merge_blocker_word(blocker).to_string());
+    }
+    LineParts {
+        separator: RowSeparator::Bullet,
+        primary: vec![pr.title.clone()],
+        dim_inline,
+        source: Some(pr.repo.to_string()),
+        category: "PR".to_string(),
+        age: format_age_short(pr.age),
+    }
+}
+
+fn issue_line(i: &domain::Issue) -> LineParts {
+    let dim_inline = if i.labels.is_empty() {
+        vec![format!(" #{}", i.number)]
+    } else {
+        vec![format!(" #{}", i.number), i.labels.join(", ")]
+    };
+    LineParts {
+        separator: RowSeparator::Bullet,
+        primary: vec![i.title.clone()],
+        dim_inline,
+        source: Some(i.repo.to_string()),
+        category: "Issue".to_string(),
+        age: format_age_short(i.age),
+    }
+}
+
+fn ci_line(c: &domain::CiFailure) -> LineParts {
+    let primary = match (&c.job_name, &c.step_name, &c.error) {
+        (Some(job), Some(step), Some(err)) => vec![format!("{job} / {step}"), err.clone()],
+        (Some(job), Some(step), None) => vec![format!("{job} / {step}"), "failed".to_string()],
+        (Some(job), None, _) => vec![job.clone(), "failed".to_string()],
+        _ => vec!["failed".to_string()],
+    };
+    LineParts {
+        separator: RowSeparator::Bullet,
+        primary,
+        dim_inline: vec![],
+        source: Some(c.repo.to_string()),
+        category: "CI".to_string(),
+        age: format_age_short(c.age),
     }
 }
 
 pub(crate) fn item_line(item: &StatusItem) -> LineParts {
     match item {
-        StatusItem::Pr(pr) => {
-            let review_status = match pr.review_decision {
-                Some(domain::ReviewDecision::ChangesRequested) => "changes requested".to_string(),
-                Some(domain::ReviewDecision::Approved) => match pr.approval_count {
-                    1 => "1 approval".to_string(),
-                    n => format!("{n} approvals"),
-                },
-                None => "no reviews".to_string(),
-            };
-            let mut dim_inline = if pr.kind == domain::PrKind::MyDraft {
-                vec![
-                    format!(" #{}", pr.number),
-                    pr.author.clone(),
-                    "draft".to_string(),
-                ]
-            } else {
-                vec![format!(" #{}", pr.number), pr.author.clone(), review_status]
-            };
-            if let Some(blocker) = pr.merge_blocker {
-                dim_inline.push(merge_blocker_word(blocker).to_string());
-            }
-            LineParts {
-                separator: RowSeparator::Bullet,
-                primary: vec![pr.title.clone()],
-                dim_inline,
-                source: Some(pr.repo.to_string()),
-                category: "PR".to_string(),
-                age: format_age_short(pr.age),
-            }
-        }
-        StatusItem::Issue(i) => {
-            let dim_inline = if i.labels.is_empty() {
-                vec![format!(" #{}", i.number)]
-            } else {
-                vec![format!(" #{}", i.number), i.labels.join(", ")]
-            };
-            LineParts {
-                separator: RowSeparator::Bullet,
-                primary: vec![i.title.clone()],
-                dim_inline,
-                source: Some(i.repo.to_string()),
-                category: "Issue".to_string(),
-                age: format_age_short(i.age),
-            }
-        }
-        StatusItem::Ci(c) => {
-            let primary = match (&c.job_name, &c.step_name, &c.error) {
-                (Some(job), Some(step), Some(err)) => {
-                    vec![format!("{job} / {step}"), err.clone()]
-                }
-                (Some(job), Some(step), None) => {
-                    vec![format!("{job} / {step}"), "failed".to_string()]
-                }
-                (Some(job), None, _) => vec![job.clone(), "failed".to_string()],
-                _ => vec!["failed".to_string()],
-            };
-            LineParts {
-                separator: RowSeparator::Bullet,
-                primary,
-                dim_inline: vec![],
-                source: Some(c.repo.to_string()),
-                category: "CI".to_string(),
-                age: format_age_short(c.age),
-            }
-        }
+        StatusItem::Pr(pr) => pr_line(pr),
+        StatusItem::Issue(i) => issue_line(i),
+        StatusItem::Ci(c) => ci_line(c),
         StatusItem::Linear(l) => LineParts {
             separator: RowSeparator::Bullet,
             primary: vec![l.title.clone()],
@@ -346,10 +347,10 @@ pub(crate) fn item_urgency(item: &StatusItem) -> domain::Urgency {
 
 pub(crate) fn flat_row_urgency(row: &FlatRow) -> domain::Urgency {
     match row {
-        FlatRow::Single(item) => item_urgency(item),
         FlatRow::GroupHeader { urgency, .. } => *urgency,
-        FlatRow::GroupChild { item, .. } => item_urgency(item),
-        FlatRow::BadgedSignal { item, .. } => item_urgency(item),
+        FlatRow::Single(item)
+        | FlatRow::GroupChild { item, .. }
+        | FlatRow::BadgedSignal { item, .. } => item_urgency(item),
     }
 }
 

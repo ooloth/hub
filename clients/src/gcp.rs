@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 
+#[derive(Debug)]
 pub struct LogEntry {
     pub timestamp: DateTime<Utc>,
     pub severity: Option<String>,
@@ -12,6 +13,9 @@ pub struct LogEntry {
     pub raw: String,
 }
 
+/// # Errors
+/// Returns an error if `gcloud` is not installed, exits non-zero, or its
+/// output cannot be parsed as JSON log entries.
 pub async fn entries(gcp_project: &str, filter: &str, lookback: &str) -> Result<Vec<LogEntry>> {
     let args = gcloud_args(gcp_project, filter, lookback);
     let output = tokio::process::Command::new("gcloud")
@@ -59,12 +63,12 @@ fn parse_entries(json: &str) -> Result<Vec<LogEntry>> {
             let severity = v
                 .get("severity")
                 .and_then(|s| s.as_str())
-                .map(|s| s.to_string());
+                .map(std::string::ToString::to_string);
 
             let text_payload = v
                 .get("textPayload")
                 .and_then(|t| t.as_str())
-                .map(|s| s.to_string());
+                .map(std::string::ToString::to_string);
 
             let json_payload = v.get("jsonPayload").cloned();
 

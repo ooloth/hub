@@ -81,11 +81,13 @@ pub struct StatusReport {
 
 /// Returned by the private workflow runner so source names come from data, not hub source code.
 #[cfg(feature = "private")]
+#[derive(Debug)]
 pub struct PrivateStatusResult {
     pub items: Vec<StatusItem>,
     pub failed_sources: Vec<String>,
 }
 
+#[derive(Debug)]
 pub struct StatusParams {
     pub github_token: Secret<String>,
     pub github_username: String,
@@ -114,7 +116,11 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
         clients::github::issues(github_token, &params.issue_repos, &params.github_username),
         clients::github::ci_failures(github_token, &params.ci_repos),
         async {
-            match params.linear_token.as_ref().map(|t| t.expose_secret()) {
+            match params
+                .linear_token
+                .as_ref()
+                .map(secrecy::ExposeSecret::expose_secret)
+            {
                 Some(token) => clients::linear::issues(token).await,
                 None => Ok(vec![]),
             }
@@ -130,32 +136,14 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
         Err(_) => errors.push("github issues".to_string()),
     }
 
-    // GitHub PRs — collect errors for each category that fails.
-    let mut all_prs: Vec<PullRequest> = Vec::new();
-    if let Ok(prs) = my_open {
-        all_prs.extend(prs);
-    } else {
-        errors.push("github my open prs".to_string());
-    }
-    if let Ok(prs) = review_queue {
-        all_prs.extend(prs);
-    } else {
-        errors.push("github prs awaiting review".to_string());
-    }
-    if let Ok(prs) = my_drafts {
-        all_prs.extend(prs);
-    } else {
-        errors.push("github my draft prs".to_string());
-    }
-    if let Ok(prs) = external {
-        all_prs.extend(prs);
-    } else {
-        errors.push("github external prs".to_string());
-    }
-    // A PR can match multiple queries (e.g. author + review-requested); keep first occurrence.
-    let mut seen_prs: std::collections::HashSet<(String, u64)> = std::collections::HashSet::new();
-    all_prs.retain(|pr| seen_prs.insert((pr.repo.to_string(), pr.number)));
-    items.extend(all_prs.into_iter().map(StatusItem::Pr));
+    collect_prs(
+        my_open,
+        review_queue,
+        my_drafts,
+        external,
+        &mut items,
+        &mut errors,
+    );
 
     // GitHub CI.
     if let Ok(ci) = ci_failures {
@@ -198,27 +186,11 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
     #[cfg(not(feature = "private"))]
     let _ = params.private_workflow_names;
 
-    // Fold back PR-origin tasks whose PR has merged or closed. Runs before
-    // list_visible() so the updated statuses appear in this same report.
-    // Errors are non-fatal: append to the error list and continue.
-    if let Err(e) = crate::task_fold_back::fold_back_pr_tasks(github_token).await {
-        errors.push(format!("fold-back (prs): {e:#}"));
-    }
-
-    // Fold back issue-origin tasks whose ticket has closed or resolved.
     let linear_token: Option<&str> = params
         .linear_token
         .as_ref()
         .map(|t| t.expose_secret().as_str());
-    if let Err(e) = crate::task_fold_back::fold_back_issue_tasks(github_token, linear_token).await {
-        errors.push(format!("fold-back (issues): {e:#}"));
-    }
-
-    // Fold back CI/alert-origin tasks whose signal has cleared for two
-    // consecutive fetches. Uses the prior cached report for debounce.
-    if let Err(e) = crate::task_fold_back::fold_back_signal_tasks(&items) {
-        errors.push(format!("fold-back (signals): {e:#}"));
-    }
+    run_fold_backs(github_token, linear_token, &items, &mut errors).await;
 
     // Agent tasks — synchronous local SQLite read; degrades gracefully on error.
     match crate::tasks::list_visible() {
@@ -229,4 +201,62 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
     items.sort_by_key(|i| (i.urgency(), Reverse(i.age())));
 
     Ok(StatusReport { items, errors })
+}
+
+fn collect_prs(
+    my_open: Result<Vec<PullRequest>>,
+    review_queue: Result<Vec<PullRequest>>,
+    my_drafts: Result<Vec<PullRequest>>,
+    external: Result<Vec<PullRequest>>,
+    items: &mut Vec<StatusItem>,
+    errors: &mut Vec<String>,
+) {
+    let mut all_prs: Vec<PullRequest> = Vec::new();
+    if let Ok(prs) = my_open {
+        all_prs.extend(prs);
+    } else {
+        errors.push("github my open prs".to_string());
+    }
+    if let Ok(prs) = review_queue {
+        all_prs.extend(prs);
+    } else {
+        errors.push("github prs awaiting review".to_string());
+    }
+    if let Ok(prs) = my_drafts {
+        all_prs.extend(prs);
+    } else {
+        errors.push("github my draft prs".to_string());
+    }
+    if let Ok(prs) = external {
+        all_prs.extend(prs);
+    } else {
+        errors.push("github external prs".to_string());
+    }
+    // A PR can match multiple queries (e.g. author + review-requested); keep first occurrence.
+    let mut seen_prs: std::collections::HashSet<(String, u64)> = std::collections::HashSet::new();
+    all_prs.retain(|pr| seen_prs.insert((pr.repo.to_string(), pr.number)));
+    items.extend(all_prs.into_iter().map(StatusItem::Pr));
+}
+
+async fn run_fold_backs(
+    github_token: &str,
+    linear_token: Option<&str>,
+    items: &[StatusItem],
+    errors: &mut Vec<String>,
+) {
+    // Fold back PR-origin tasks whose PR has merged or closed. Runs before
+    // list_visible() so the updated statuses appear in this same report.
+    // Errors are non-fatal: append to the error list and continue.
+    if let Err(e) = crate::task_fold_back::fold_back_pr_tasks(github_token).await {
+        errors.push(format!("fold-back (prs): {e:#}"));
+    }
+    // Fold back issue-origin tasks whose ticket has closed or resolved.
+    if let Err(e) = crate::task_fold_back::fold_back_issue_tasks(github_token, linear_token).await {
+        errors.push(format!("fold-back (issues): {e:#}"));
+    }
+    // Fold back CI/alert-origin tasks whose signal has cleared for two
+    // consecutive fetches. Uses the prior cached report for debounce.
+    if let Err(e) = crate::task_fold_back::fold_back_signal_tasks(items) {
+        errors.push(format!("fold-back (signals): {e:#}"));
+    }
 }

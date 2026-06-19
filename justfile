@@ -10,10 +10,12 @@ status:
     cargo run -p hub-cli {{_features}} -- status
 
 check:
+    @python3 scripts/check-lint-inheritance.py
     taplo fmt
     taplo check
     cargo fmt
     cargo clippy --fix --allow-dirty --allow-staged {{_features}} -- -D warnings
+    cargo clippy {{_features}} -- -D warnings
 
 build:
     cargo build {{_features}}

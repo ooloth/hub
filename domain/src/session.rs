@@ -23,12 +23,14 @@ pub enum StreamBlock {
 /// `-Users-me--hub-x`. Matching this exactly matters for dispatched tasks, whose
 /// worktrees live under `~/.hub/workspaces/` (a dotted path); without the dot
 /// replacement the session JSONL is never found. Hyphens are preserved.
+#[must_use]
 pub fn encode_project_path(cwd: &str) -> String {
     cwd.replace(['/', '.'], "-")
 }
 
 /// Parses a Claude Code session JSONL file into a sequence of stream blocks.
 /// Malformed lines and unknown top-level types are silently skipped.
+#[must_use]
 pub fn parse_session_jsonl(text: &str) -> Vec<StreamBlock> {
     let mut blocks = Vec::new();
     for line in text.lines() {
@@ -101,7 +103,7 @@ fn parse_user_message(obj: &serde_json::Value, blocks: &mut Vec<StreamBlock>) {
             if block.get("type").and_then(|t| t.as_str()) == Some("tool_result") {
                 let is_error = block
                     .get("is_error")
-                    .and_then(|e| e.as_bool())
+                    .and_then(serde_json::Value::as_bool)
                     .unwrap_or(false);
                 let content = extract_tool_result_content(block);
                 blocks.push(StreamBlock::ToolResult { is_error, content });

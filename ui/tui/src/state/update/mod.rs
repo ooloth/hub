@@ -15,7 +15,85 @@ impl App {
     pub(crate) fn update(&mut self, action: Action) -> Vec<Effect> {
         self.ui.flash = None;
         self.ui.pending_g = false;
-        // Clear the active submenu on any action that isn't part of that submenu.
+        self.clear_submenu_if_stale(action);
+        match action {
+            Action::Quit => vec![Effect::Quit],
+            Action::ToggleHelp => {
+                self.ui.show_help = !self.ui.show_help;
+                vec![]
+            }
+            Action::CloseHelp => {
+                self.ui.show_help = false;
+                vec![]
+            }
+            Action::Refresh => {
+                if matches!(self.data.refresh_state, RefreshState::InProgress) {
+                    vec![]
+                } else {
+                    vec![Effect::StartRefresh]
+                }
+            }
+            Action::Back => self.handle_back(),
+            Action::FilterCategory(_)
+            | Action::ClearFilter
+            | Action::StartQuery
+            | Action::AppendQuery(_)
+            | Action::BackspaceQuery
+            | Action::CommitQuery
+            | Action::CancelQuery => self.handle_filter_action(action),
+            Action::PendingG => {
+                self.ui.pending_g = true;
+                vec![]
+            }
+            Action::ScrollDetailDown | Action::ScrollDetailUp | Action::ToggleSessionDetail => {
+                // Handled in handle_unified_list when detail_mode is Visible.
+                match &self.ui.screen {
+                    Screen::UnifiedList { .. } => self.handle_unified_list(action),
+                    Screen::MergingPr { .. } => vec![],
+                }
+            }
+            Action::PrActionSubmenu
+            | Action::CancelPrSubmenu
+            | Action::OpenPrDiffInDelta
+            | Action::OpenInOcto
+            | Action::OpenInLazygit => self.handle_pr_submenu_action(action),
+            Action::TaskStatusSubmenu
+            | Action::CancelTaskStatusSubmenu
+            | Action::TransitionTaskStatus(_)
+            | Action::OpenTaskCreationForm
+            | Action::OpenBlankTaskCreationForm
+            | Action::CancelTaskCreation
+            | Action::FocusNextField
+            | Action::FocusPrevField
+            | Action::CycleTaskKind
+            | Action::ModalTextInput(_)
+            | Action::CommitTaskCreation => self.handle_task_action(action),
+            Action::MoveUp
+            | Action::MoveDown
+            | Action::MoveToTop
+            | Action::MoveToBottom
+            | Action::MovePageUp
+            | Action::MovePageDown
+            | Action::Enter
+            | Action::OpenUrl
+            | Action::ExpandGroup
+            | Action::CollapseGroup
+            | Action::ApproveForAgent
+            | Action::MergePr
+            | Action::CommitMerge
+            | Action::CancelMerge
+            | Action::Investigate
+            | Action::OpenReviewPicker
+            | Action::CommitReview(_)
+            | Action::CancelReview => match &self.ui.screen {
+                Screen::UnifiedList { .. } => self.handle_unified_list(action),
+                Screen::MergingPr { .. } => self.handle_merging_pr(action),
+            },
+        }
+    }
+
+    /// Clears the active submenu when the incoming action is not part of that submenu.
+    fn clear_submenu_if_stale(&mut self, action: Action) {
         match self.ui.submenu {
             SubmenuState::PrActions
                 if !matches!(
@@ -39,42 +117,33 @@ impl App {
             {
                 self.ui.submenu = SubmenuState::None;
             }
-            _ => {}
+            SubmenuState::None
+            | SubmenuState::PrActions
+            | SubmenuState::ReviewPicker
+            | SubmenuState::TaskStatus => {}
         }
+    }
+
+    fn handle_back(&mut self) -> Vec<Effect> {
+        // Collapse the detail pane before any deeper back navigation.
+        let is_split_visible = matches!(
+            &self.ui.screen,
+            Screen::UnifiedList {
+                detail_mode: DetailMode::Visible { .. },
+                ..
+            }
+        );
+        if is_split_visible {
+            if let Screen::UnifiedList { detail_mode, .. } = &mut self.ui.screen {
+                *detail_mode = DetailMode::Hidden;
+            }
+            return vec![];
+        }
+        vec![]
+    }
+
+    fn handle_filter_action(&mut self, action: Action) -> Vec<Effect> {
         match action {
-            Action::Quit => vec![Effect::Quit],
-            Action::ToggleHelp => {
-                self.ui.show_help = !self.ui.show_help;
-                vec![]
-            }
-            Action::CloseHelp => {
-                self.ui.show_help = false;
-                vec![]
-            }
-            Action::Refresh => {
-                if !matches!(self.data.refresh_state, RefreshState::InProgress) {
-                    vec![Effect::StartRefresh]
-                } else {
-                    vec![]
-                }
-            }
-            Action::Back => {
-                // Collapse the detail pane before any deeper back navigation.
-                let is_split_visible = matches!(
-                    &self.ui.screen,
-                    Screen::UnifiedList {
-                        detail_mode: DetailMode::Visible { .. },
-                        ..
-                    }
-                );
-                if is_split_visible {
-                    if let Screen::UnifiedList { detail_mode, .. } = &mut self.ui.screen {
-                        *detail_mode = DetailMode::Hidden;
-                    }
-                    return vec![];
-                }
-                vec![]
-            }
             Action::FilterCategory(cat) => {
                 let new_cat = match &self.ui.screen {
                     Screen::UnifiedList { filter, .. } => {
@@ -84,11 +153,11 @@ impl App {
                             Some(cat)
                         }
                     }
-                    _ => return vec![],
+                    Screen::MergingPr { .. } => return vec![],
                 };
                 let query = match &self.ui.screen {
                     Screen::UnifiedList { filter, .. } => filter.query.clone(),
-                    _ => None,
+                    Screen::MergingPr { .. } => None,
                 };
                 self.rebuild_unified(Filter {
                     category: new_cat,
@@ -110,7 +179,7 @@ impl App {
                             Filter::default()
                         }
                     }
-                    _ => return vec![],
+                    Screen::MergingPr { .. } => return vec![],
                 };
                 self.rebuild_unified(new_filter);
                 vec![]
@@ -120,7 +189,7 @@ impl App {
                 // rather than forcing them to retype. Esc still clears everything.
                 let existing = match &self.ui.screen {
                     Screen::UnifiedList { filter, .. } => filter.query.clone().unwrap_or_default(),
-                    _ => String::new(),
+                    Screen::MergingPr { .. } => String::new(),
                 };
                 self.ui.query_input = Some(existing);
                 vec![]
@@ -134,7 +203,7 @@ impl App {
             }
             Action::BackspaceQuery => {
                 if let Some(q) = &mut self.ui.query_input {
-                    q.pop();
+                    let _ = q.pop();
                 }
                 self.sync_query_to_filter();
                 vec![]
@@ -154,50 +223,16 @@ impl App {
                 }
                 vec![]
             }
-            Action::PendingG => {
-                self.ui.pending_g = true;
-                vec![]
-            }
-            Action::ScrollDetailDown | Action::ScrollDetailUp | Action::ToggleSessionDetail => {
-                // Handled in handle_unified_list when detail_mode is Visible.
-                match &self.ui.screen {
-                    Screen::UnifiedList { .. } => self.handle_unified_list(action),
-                    _ => vec![],
-                }
-            }
+            _ => vec![],
+        }
+    }
+
+    fn handle_pr_submenu_action(&mut self, action: Action) -> Vec<Effect> {
+        match action {
             Action::PrActionSubmenu => {
                 self.ui.submenu = SubmenuState::PrActions;
                 vec![]
             }
-            // CancelPrSubmenu dismisses the d-submenu without collapsing the split view.
-            // submenu is already cleared by the prologue for any non-submenu action.
-            Action::CancelPrSubmenu => vec![],
-            Action::TaskStatusSubmenu => {
-                if self.ui.screen.selected_task().is_some() {
-                    self.ui.submenu = SubmenuState::TaskStatus;
-                }
-                vec![]
-            }
-            // CancelTaskStatusSubmenu dismisses the submenu; flag already cleared by prologue.
-            Action::CancelTaskStatusSubmenu => vec![],
-            Action::TransitionTaskStatus(status) => {
-                if let Some(task) = self.ui.screen.selected_task() {
-                    vec![Effect::UpdateTaskStatus {
-                        id: task.id,
-                        status,
-                    }]
-                } else {
-                    vec![]
-                }
-            }
-            Action::OpenTaskCreationForm
-            | Action::OpenBlankTaskCreationForm
-            | Action::CancelTaskCreation
-            | Action::FocusNextField
-            | Action::FocusPrevField
-            | Action::CycleTaskKind
-            | Action::ModalTextInput(_)
-            | Action::CommitTaskCreation => task_modal::update(self, action),
             Action::OpenPrDiffInDelta => {
                 self.ui.submenu = SubmenuState::None;
                 if let Some(StatusItem::Pr(pr)) = self.ui.screen.selected_status_item() {
@@ -233,27 +268,37 @@ impl App {
                     vec![]
                 }
             }
-            Action::MoveUp
-            | Action::MoveDown
-            | Action::MoveToTop
-            | Action::MoveToBottom
-            | Action::MovePageUp
-            | Action::MovePageDown
-            | Action::Enter
-            | Action::OpenUrl
-            | Action::ExpandGroup
-            | Action::CollapseGroup
-            | Action::ApproveForAgent
-            | Action::MergePr
-            | Action::CommitMerge
-            | Action::CancelMerge
-            | Action::Investigate
-            | Action::OpenReviewPicker
-            | Action::CommitReview(_)
-            | Action::CancelReview => match &self.ui.screen {
-                Screen::UnifiedList { .. } => self.handle_unified_list(action),
-                Screen::MergingPr { .. } => self.handle_merging_pr(action),
-            },
+            _ => vec![],
+        }
+    }
+
+    fn handle_task_action(&mut self, action: Action) -> Vec<Effect> {
+        match action {
+            Action::TaskStatusSubmenu => {
+                if self.ui.screen.selected_task().is_some() {
+                    self.ui.submenu = SubmenuState::TaskStatus;
+                }
+                vec![]
+            }
+            Action::TransitionTaskStatus(status) => {
+                if let Some(task) = self.ui.screen.selected_task() {
+                    vec![Effect::UpdateTaskStatus {
+                        id: task.id,
+                        status,
+                    }]
+                } else {
+                    vec![]
+                }
+            }
+            Action::OpenTaskCreationForm
+            | Action::OpenBlankTaskCreationForm
+            | Action::CancelTaskCreation
+            | Action::FocusNextField
+            | Action::FocusPrevField
+            | Action::CycleTaskKind
+            | Action::ModalTextInput(_)
+            | Action::CommitTaskCreation => task_modal::update(self, action),
+            _ => vec![],
         }
     }
 }
@@ -262,10 +307,10 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
     match msg {
         Msg::Action(action) => Ok(app.update(action)),
         Msg::Tick => {
-            if !matches!(app.data.refresh_state, RefreshState::InProgress) {
-                Ok(vec![Effect::StartRefresh])
-            } else {
+            if matches!(app.data.refresh_state, RefreshState::InProgress) {
                 Ok(vec![])
+            } else {
+                Ok(vec![Effect::StartRefresh])
             }
         }
         Msg::FetchResult(Ok(report)) => refresh::apply_refresh(app, report),
@@ -324,7 +369,7 @@ mod tests {
 
     fn apply(app: &mut App, actions: &[Action]) {
         for action in actions {
-            app.update(*action);
+            let _ = app.update(*action);
         }
     }
 
@@ -526,9 +571,9 @@ mod tests {
     #[test]
     fn update_toggle_help_flips_flag() {
         let mut app = App::default();
-        app.update(Action::ToggleHelp);
+        let _ = app.update(Action::ToggleHelp);
         assert!(app.ui.show_help);
-        app.update(Action::ToggleHelp);
+        let _ = app.update(Action::ToggleHelp);
         assert!(!app.ui.show_help);
     }
 
@@ -541,7 +586,7 @@ mod tests {
             },
             ..App::default()
         };
-        app.update(Action::ToggleHelp);
+        let _ = app.update(Action::ToggleHelp);
         assert!(app.ui.flash.is_none());
     }
 
@@ -575,7 +620,7 @@ mod tests {
             label: GroupKey::new("hub".to_string()),
             items: vec![ci_failure(), ci_failure()],
         }]);
-        app.update(Action::Enter);
+        let _ = app.update(Action::Enter);
         let len = match app.current_screen() {
             Screen::UnifiedList { flat_rows, .. } => flat_rows.len(),
             _ => panic!(),
@@ -589,7 +634,7 @@ mod tests {
             label: GroupKey::new("hub".to_string()),
             items: vec![gcp_item(), gcp_item()],
         }]);
-        app.update(Action::Enter);
+        let _ = app.update(Action::Enter);
         match app.current_screen() {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 0 });
@@ -605,7 +650,7 @@ mod tests {
             items: vec![ci_failure(), ci_failure()],
         }]);
         assert_eq!(app.active_list_len(), 1);
-        app.update(Action::ExpandGroup);
+        let _ = app.update(Action::ExpandGroup);
         assert_eq!(app.active_list_len(), 3);
     }
 
@@ -615,9 +660,9 @@ mod tests {
             label: GroupKey::new("hub".to_string()),
             items: vec![ci_failure(), ci_failure()],
         }]);
-        app.update(Action::ExpandGroup);
+        let _ = app.update(Action::ExpandGroup);
         assert_eq!(app.active_list_len(), 3);
-        app.update(Action::ExpandGroup);
+        let _ = app.update(Action::ExpandGroup);
         assert_eq!(app.active_list_len(), 3);
     }
 
@@ -627,9 +672,9 @@ mod tests {
             label: GroupKey::new("hub".to_string()),
             items: vec![ci_failure(), ci_failure()],
         }]);
-        app.update(Action::ExpandGroup);
+        let _ = app.update(Action::ExpandGroup);
         assert_eq!(app.active_list_len(), 3);
-        app.update(Action::CollapseGroup);
+        let _ = app.update(Action::CollapseGroup);
         assert_eq!(app.active_list_len(), 1);
     }
 
@@ -639,15 +684,15 @@ mod tests {
             label: GroupKey::new("hub".to_string()),
             items: vec![ci_failure(), ci_failure()],
         }]);
-        app.update(Action::ExpandGroup);
+        let _ = app.update(Action::ExpandGroup);
         // Move to first child (index 1)
-        app.update(Action::MoveDown);
+        let _ = app.update(Action::MoveDown);
         let before_selected = match app.current_screen() {
             Screen::UnifiedList { selected, .. } => *selected,
             _ => panic!(),
         };
         assert_eq!(before_selected, 1);
-        app.update(Action::CollapseGroup);
+        let _ = app.update(Action::CollapseGroup);
         // Should collapse and jump back to header at index 0
         let after_selected = match app.current_screen() {
             Screen::UnifiedList { selected, .. } => *selected,
@@ -678,7 +723,7 @@ mod tests {
     #[test]
     fn back_does_nothing_from_unified_list() {
         let mut app = App::default();
-        app.update(Action::Back);
+        let _ = app.update(Action::Back);
         assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
     }
 
@@ -733,7 +778,7 @@ mod tests {
             },
             ..App::default()
         };
-        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
         assert!(matches!(app.data.refresh_state, RefreshState::Idle));
         assert!(matches!(
             app.current_screen(),
@@ -758,7 +803,7 @@ mod tests {
             },
             ..App::default()
         };
-        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci_and_errors()))).unwrap();
+        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci_and_errors()))).unwrap();
         assert!(
             matches!(&app.data.refresh_state, RefreshState::Partial(sources) if sources == &["media", "linear issues"])
         );
@@ -767,7 +812,7 @@ mod tests {
     #[test]
     fn handle_msg_fetch_ok_with_errors_still_populates_items() {
         let mut app = App::default();
-        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci_and_errors()))).unwrap();
+        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci_and_errors()))).unwrap();
         assert!(matches!(
             app.current_screen(),
             Screen::UnifiedList { items, .. } if !items.is_empty()
@@ -817,7 +862,7 @@ mod tests {
     fn handle_msg_applied_from_cache_with_errors_sets_partial_state() {
         use chrono::Utc;
         let mut app = App::default();
-        handle_msg(
+        let _ = handle_msg(
             &mut app,
             Msg::AppliedFromCache {
                 report: report_with_ci_and_errors(),
@@ -873,7 +918,7 @@ mod tests {
     #[test]
     fn start_query_with_no_prior_filter_begins_empty() {
         let mut app = App::default();
-        app.update(Action::StartQuery);
+        let _ = app.update(Action::StartQuery);
         assert_eq!(app.ui.query_input.as_deref(), Some(""));
     }
 
@@ -891,7 +936,7 @@ mod tests {
             ],
         );
         // Re-entering query mode should restore the committed text, not start blank.
-        app.update(Action::StartQuery);
+        let _ = app.update(Action::StartQuery);
         assert_eq!(app.ui.query_input.as_deref(), Some("fo"));
     }
 
@@ -948,15 +993,15 @@ mod tests {
     #[test]
     fn pending_g_sets_pending_flag() {
         let mut app = App::default();
-        app.update(Action::PendingG);
+        let _ = app.update(Action::PendingG);
         assert!(app.ui.pending_g);
     }
 
     #[test]
     fn any_subsequent_action_clears_pending_g() {
         let mut app = app_with_items(items_n(5));
-        app.update(Action::PendingG);
-        app.update(Action::MoveDown);
+        let _ = app.update(Action::PendingG);
+        let _ = app.update(Action::MoveDown);
         assert!(!app.ui.pending_g);
     }
 
@@ -965,35 +1010,35 @@ mod tests {
         let mut app = app_with_items(items_n(5));
         apply(&mut app, &[Action::MoveDown, Action::MoveDown]);
         assert_eq!(selected(&app), 2);
-        app.update(Action::MoveToTop);
+        let _ = app.update(Action::MoveToTop);
         assert_eq!(selected(&app), 0);
     }
 
     #[test]
     fn move_to_bottom_goes_to_last_item() {
         let mut app = app_with_items(items_n(5));
-        app.update(Action::MoveToBottom);
+        let _ = app.update(Action::MoveToBottom);
         assert_eq!(selected(&app), 4);
     }
 
     #[test]
     fn move_to_bottom_on_empty_list_is_noop() {
         let mut app = app_with_items(vec![]);
-        app.update(Action::MoveToBottom);
+        let _ = app.update(Action::MoveToBottom);
         assert_eq!(selected(&app), 0);
     }
 
     #[test]
     fn move_page_down_advances_by_10() {
         let mut app = app_with_items(items_n(25));
-        app.update(Action::MovePageDown);
+        let _ = app.update(Action::MovePageDown);
         assert_eq!(selected(&app), 10);
     }
 
     #[test]
     fn move_page_down_clamps_at_last_item() {
         let mut app = app_with_items(items_n(5));
-        app.update(Action::MovePageDown);
+        let _ = app.update(Action::MovePageDown);
         assert_eq!(selected(&app), 4);
     }
 
@@ -1002,7 +1047,7 @@ mod tests {
         let mut app = app_with_items(items_n(25));
         apply(&mut app, &[Action::MovePageDown, Action::MovePageDown]);
         assert_eq!(selected(&app), 20);
-        app.update(Action::MovePageUp);
+        let _ = app.update(Action::MovePageUp);
         assert_eq!(selected(&app), 10);
     }
 
@@ -1010,7 +1055,7 @@ mod tests {
     fn move_page_up_clamps_at_first_item() {
         let mut app = app_with_items(items_n(5));
         apply(&mut app, &[Action::MoveDown, Action::MoveDown]);
-        app.update(Action::MovePageUp);
+        let _ = app.update(Action::MovePageUp);
         assert_eq!(selected(&app), 0);
     }
 
@@ -1033,7 +1078,7 @@ mod tests {
     #[test]
     fn enter_on_issue_in_unified_list_activates_split_view() {
         let mut app = app_with_items(vec![DisplayItem::Single(stub_issue())]);
-        app.update(Action::Enter);
+        let _ = app.update(Action::Enter);
         match app.current_screen() {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 0 });
@@ -1045,7 +1090,7 @@ mod tests {
     #[test]
     fn enter_on_ci_in_unified_list_activates_split_view() {
         let mut app = app_with_items(vec![DisplayItem::Single(ci_failure())]);
-        app.update(Action::Enter);
+        let _ = app.update(Action::Enter);
         match app.current_screen() {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 0 });
@@ -1132,7 +1177,7 @@ mod tests {
             DisplayItem::Single(stub_issue()),
         ]);
         apply(&mut app, &[Action::MoveDown]); // cursor → 1
-        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_two_items()))).unwrap();
+        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(report_with_two_items()))).unwrap();
         let Screen::UnifiedList { selected, .. } = app.current_screen() else {
             panic!("expected UnifiedList");
         };
@@ -1149,7 +1194,7 @@ mod tests {
         ]);
         apply(&mut app, &[Action::MoveToBottom]); // cursor → 3
                                                   // report has 2 items → new len 2, cursor clamps to 1
-        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_two_items()))).unwrap();
+        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(report_with_two_items()))).unwrap();
         let Screen::UnifiedList { selected, .. } = app.current_screen() else {
             panic!("expected UnifiedList");
         };
@@ -1175,7 +1220,7 @@ mod tests {
             },
             ..App::default()
         };
-        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_two_items()))).unwrap();
+        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(report_with_two_items()))).unwrap();
         let Screen::UnifiedList { items, .. } = app.current_screen() else {
             panic!("expected UnifiedList");
         };
@@ -1236,7 +1281,7 @@ mod tests {
 
     fn app_in_merging() -> App {
         let mut app = split_view_app_with_pr_for_merge();
-        app.update(Action::MergePr);
+        let _ = app.update(Action::MergePr);
         app
     }
 
@@ -1259,7 +1304,7 @@ mod tests {
     #[test]
     fn cancel_merge_returns_to_unified_list() {
         let mut app = app_in_merging();
-        app.update(Action::CancelMerge);
+        let _ = app.update(Action::CancelMerge);
         assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
     }
 
@@ -1273,7 +1318,7 @@ mod tests {
     #[test]
     fn commit_merge_returns_to_unified_list() {
         let mut app = app_in_merging();
-        app.update(Action::CommitMerge);
+        let _ = app.update(Action::CommitMerge);
         assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
     }
 
@@ -1294,14 +1339,14 @@ mod tests {
     #[test]
     fn refresh_in_merging_preserves_screen_variant() {
         let mut app = app_in_merging();
-        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
         assert!(matches!(app.current_screen(), Screen::MergingPr { .. }));
     }
 
     #[test]
     fn refresh_in_merging_updates_parent_items() {
         let mut app = app_in_merging();
-        handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
         let Screen::MergingPr { parent, .. } = app.current_screen() else {
             panic!("expected MergingPr");
         };
@@ -1327,14 +1372,14 @@ mod tests {
     #[test]
     fn open_task_creation_form_sets_modal() {
         let mut app = App::default();
-        app.update(Action::OpenTaskCreationForm);
+        let _ = app.update(Action::OpenTaskCreationForm);
         assert!(app.ui.modal.is_some());
     }
 
     #[test]
     fn open_blank_task_creation_form_sets_modal_with_no_seed() {
         let mut app = App::default();
-        app.update(Action::OpenBlankTaskCreationForm);
+        let _ = app.update(Action::OpenBlankTaskCreationForm);
         let modal = app.ui.modal.as_ref().unwrap();
         assert!(modal.title.lines().join("").is_empty());
         assert!(modal.description.lines().join("").is_empty());
@@ -1344,7 +1389,7 @@ mod tests {
     #[test]
     fn cancel_task_creation_clears_modal() {
         let mut app = modal_app();
-        app.update(Action::CancelTaskCreation);
+        let _ = app.update(Action::CancelTaskCreation);
         assert!(app.ui.modal.is_none());
     }
 
@@ -1352,7 +1397,7 @@ mod tests {
     fn focus_next_field_advances_from_title_to_description() {
         use crate::state::TaskFormField;
         let mut app = modal_app();
-        app.update(Action::FocusNextField);
+        let _ = app.update(Action::FocusNextField);
         assert_eq!(
             app.ui.modal.as_ref().unwrap().focused_field,
             TaskFormField::Description
@@ -1363,7 +1408,7 @@ mod tests {
     fn focus_prev_field_retreats_from_title_to_submit() {
         use crate::state::TaskFormField;
         let mut app = modal_app();
-        app.update(Action::FocusPrevField);
+        let _ = app.update(Action::FocusPrevField);
         assert_eq!(
             app.ui.modal.as_ref().unwrap().focused_field,
             TaskFormField::Submit
@@ -1375,7 +1420,7 @@ mod tests {
         let mut app = modal_app();
         // blank() defaults to Implement; set to Review to test the cycle start
         app.ui.modal.as_mut().unwrap().kind = domain::TaskKind::Review;
-        app.update(Action::CycleTaskKind);
+        let _ = app.update(Action::CycleTaskKind);
         assert_eq!(
             app.ui.modal.as_ref().unwrap().kind,
             domain::TaskKind::Implement
@@ -1523,7 +1568,7 @@ mod tests {
     #[test]
     fn open_review_picker_from_split_view_sets_submenu_and_stays_on_screen() {
         let mut app = split_view_app_with_pr_item();
-        app.update(Action::OpenReviewPicker);
+        let _ = app.update(Action::OpenReviewPicker);
         assert_eq!(app.ui.submenu, SubmenuState::ReviewPicker);
         assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
     }
@@ -1600,7 +1645,7 @@ mod tests {
     #[test]
     fn enter_from_hidden_activates_split_view() {
         let mut app = app_in_split_view();
-        app.update(Action::Enter);
+        let _ = app.update(Action::Enter);
         match app.current_screen() {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 0 });
@@ -1613,7 +1658,7 @@ mod tests {
     #[test]
     fn enter_while_split_view_active_is_noop() {
         let mut app = app_in_split_view_with_scroll(3);
-        app.update(Action::Enter);
+        let _ = app.update(Action::Enter);
         match app.current_screen() {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 3 });
@@ -1626,7 +1671,7 @@ mod tests {
     #[test]
     fn back_from_split_view_collapses_to_fullscreen_list() {
         let mut app = app_in_split_view_with_scroll(2);
-        app.update(Action::Back);
+        let _ = app.update(Action::Back);
         match app.current_screen() {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(detail_mode, &DetailMode::Hidden);
@@ -1658,7 +1703,7 @@ mod tests {
             },
             ..App::default()
         };
-        app.update(Action::ClearFilter);
+        let _ = app.update(Action::ClearFilter);
         match app.current_screen() {
             Screen::UnifiedList {
                 filter,
@@ -1695,7 +1740,7 @@ mod tests {
             },
             ..App::default()
         };
-        app.update(Action::MoveDown);
+        let _ = app.update(Action::MoveDown);
         match app.current_screen() {
             Screen::UnifiedList {
                 detail_mode,
@@ -1713,7 +1758,7 @@ mod tests {
     #[test]
     fn scroll_detail_down_while_split_view_active_increments_scroll() {
         let mut app = app_in_split_view_with_scroll(0);
-        app.update(Action::ScrollDetailDown);
+        let _ = app.update(Action::ScrollDetailDown);
         match app.current_screen() {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 1 });
@@ -1726,7 +1771,7 @@ mod tests {
     #[test]
     fn scroll_detail_down_while_hidden_is_noop() {
         let mut app = app_in_split_view();
-        app.update(Action::ScrollDetailDown);
+        let _ = app.update(Action::ScrollDetailDown);
         match app.current_screen() {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(detail_mode, &DetailMode::Hidden);
@@ -1739,7 +1784,7 @@ mod tests {
     #[test]
     fn scroll_detail_up_while_split_view_active_decrements_scroll() {
         let mut app = app_in_split_view_with_scroll(3);
-        app.update(Action::ScrollDetailUp);
+        let _ = app.update(Action::ScrollDetailUp);
         match app.current_screen() {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 2 });
@@ -1800,7 +1845,7 @@ mod tests {
     #[test]
     fn toggle_session_detail_visible_to_visible_session() {
         let mut app = app_in_split_view_with_scroll(0);
-        app.update(Action::ToggleSessionDetail);
+        let _ = app.update(Action::ToggleSessionDetail);
         match app.current_screen() {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(
@@ -1832,7 +1877,7 @@ mod tests {
             },
             ..App::default()
         };
-        app.update(Action::ToggleSessionDetail);
+        let _ = app.update(Action::ToggleSessionDetail);
         match app.current_screen() {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 0 });
@@ -1845,7 +1890,7 @@ mod tests {
     #[test]
     fn toggle_session_detail_from_hidden_is_noop() {
         let mut app = app_with_items(vec![DisplayItem::Single(ci_failure())]);
-        app.update(Action::ToggleSessionDetail);
+        let _ = app.update(Action::ToggleSessionDetail);
         match app.current_screen() {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(detail_mode, &DetailMode::Hidden);
@@ -1877,7 +1922,7 @@ mod tests {
             },
             ..App::default()
         };
-        app.update(Action::MoveDown);
+        let _ = app.update(Action::MoveDown);
         match app.current_screen() {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 0 });
@@ -1980,7 +2025,7 @@ mod tests {
     #[test]
     fn task_status_submenu_sets_pending_for_badged_signal() {
         let mut app = app_with_badged_signal();
-        app.update(Action::TaskStatusSubmenu);
+        let _ = app.update(Action::TaskStatusSubmenu);
         assert_eq!(app.ui.submenu, SubmenuState::TaskStatus);
     }
 

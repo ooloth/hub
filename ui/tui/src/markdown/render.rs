@@ -70,7 +70,7 @@ struct HeadingMeta<'a> {
     attrs: Vec<(CowStr<'a>, Option<CowStr<'a>>)>,
 }
 
-impl<'a> HeadingMeta<'a> {
+impl HeadingMeta<'_> {
     fn into_option(self) -> Option<Self> {
         if self.id.is_some() || !self.classes.is_empty() || !self.attrs.is_empty() {
             Some(self)
@@ -148,15 +148,17 @@ where
         match event {
             Event::Start(tag) => self.start_tag(tag),
             Event::End(tag) => self.end_tag(tag),
-            Event::Text(text) => self.text(text),
+            Event::Text(text) => self.text(&text),
             Event::Code(code) => self.code(code),
-            Event::Html(_) | Event::InlineHtml(_) => {}
-            Event::FootnoteReference(_) => {}
+            Event::Html(_)
+            | Event::InlineHtml(_)
+            | Event::FootnoteReference(_)
+            | Event::InlineMath(_)
+            | Event::DisplayMath(_) => {}
             Event::SoftBreak => self.soft_break(),
             Event::HardBreak => self.hard_break(),
             Event::Rule => self.rule(),
             Event::TaskListMarker(checked) => self.task_list_marker(checked),
-            Event::InlineMath(_) | Event::DisplayMath(_) => {}
         }
     }
 
@@ -170,14 +172,14 @@ where
                 attrs,
             } => self.start_heading(level, HeadingMeta { id, classes, attrs }),
             Tag::BlockQuote(kind) => self.start_blockquote(kind),
-            Tag::CodeBlock(kind) => self.start_codeblock(kind),
+            Tag::CodeBlock(kind) => self.start_codeblock(&kind),
             Tag::List(start_index) => self.start_list(start_index),
             Tag::Item => self.start_item(),
             Tag::Emphasis => self.push_inline_style(Style::new().italic()),
             Tag::Strong => self.push_inline_style(Style::new().bold()),
             Tag::Strikethrough => self.push_inline_style(Style::new().crossed_out()),
             Tag::Subscript | Tag::Superscript => {
-                self.push_inline_style(Style::new().dim().italic())
+                self.push_inline_style(Style::new().dim().italic());
             }
             Tag::Link { dest_url, .. } => self.push_link(dest_url),
             Tag::MetadataBlock(_) => self.start_metadata_block(),
@@ -201,8 +203,11 @@ where
             TagEnd::BlockQuote(_) => self.end_blockquote(),
             TagEnd::CodeBlock => self.end_codeblock(),
             TagEnd::List(_) => self.end_list(),
-            TagEnd::Emphasis | TagEnd::Strong | TagEnd::Strikethrough => self.pop_inline_style(),
-            TagEnd::Subscript | TagEnd::Superscript => self.pop_inline_style(),
+            TagEnd::Emphasis
+            | TagEnd::Strong
+            | TagEnd::Strikethrough
+            | TagEnd::Subscript
+            | TagEnd::Superscript => self.pop_inline_style(),
             TagEnd::Link => self.pop_link(),
             TagEnd::MetadataBlock(_) => self.end_metadata_block(),
             TagEnd::Item
@@ -269,14 +274,14 @@ where
     }
 
     fn end_blockquote(&mut self) {
-        self.line_prefixes.pop();
-        self.line_styles.pop();
+        let _ = self.line_prefixes.pop();
+        let _ = self.line_styles.pop();
         self.needs_newline = true;
     }
 
-    fn text(&mut self, text: CowStr<'a>) {
+    fn text(&mut self, text: &CowStr<'a>) {
         if let Some(highlighter) = &mut self.code_highlighter {
-            let highlighted: Text = LinesWithEndings::from(&text)
+            let highlighted: Text = LinesWithEndings::from(text.as_ref())
                 .filter_map(|line| highlighter.highlight_line(line, &SYNTAX_SET).ok())
                 .filter_map(|part| as_24_bit_terminal_escaped(&part, false).into_text().ok())
                 .flatten()
@@ -324,7 +329,7 @@ where
     fn end_metadata_block(&mut self) {
         if self.in_metadata_block {
             self.push_line(Line::from("---"));
-            self.line_styles.pop();
+            let _ = self.line_styles.pop();
             self.in_metadata_block = false;
             self.needs_newline = true;
         }
@@ -346,7 +351,7 @@ where
     }
 
     fn end_list(&mut self) {
-        self.list_indices.pop();
+        let _ = self.list_indices.pop();
         self.needs_newline = true;
     }
 
@@ -395,12 +400,12 @@ where
         }
     }
 
-    fn start_codeblock(&mut self, kind: CodeBlockKind<'_>) {
+    fn start_codeblock(&mut self, kind: &CodeBlockKind<'_>) {
         if !self.text.lines.is_empty() {
             self.push_line(Line::default());
         }
         let lang = match kind {
-            CodeBlockKind::Fenced(ref lang) => lang.as_ref(),
+            CodeBlockKind::Fenced(lang) => lang.as_ref(),
             CodeBlockKind::Indented => "",
         };
         self.set_code_highlighter(lang);
@@ -416,7 +421,7 @@ where
     fn end_codeblock(&mut self) {
         // Pop code style BEFORE the closing fence so only content was coloured.
         if self.code_highlighter.is_none() {
-            self.line_styles.pop();
+            let _ = self.line_styles.pop();
         }
         self.push_line(Span::from("```").into());
         self.needs_newline = true;
@@ -437,13 +442,13 @@ where
     }
 
     fn pop_inline_style(&mut self) {
-        self.inline_styles.pop();
+        let _ = self.inline_styles.pop();
     }
 
     fn push_line(&mut self, line: Line<'a>) {
         let style = self.line_styles.last().copied().unwrap_or_default();
         let mut line = line.patch_style(style);
-        let prefixes: Vec<Span<'a>> = self.line_prefixes.to_vec();
+        let prefixes: Vec<Span<'a>> = self.line_prefixes.clone();
         if !prefixes.is_empty() {
             line.spans.insert(0, " ".into());
         }

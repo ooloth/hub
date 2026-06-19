@@ -11,7 +11,7 @@ pub struct GcpQuery {
     pub query: String,
     pub lookback: String,
     /// JSON payload key used to extract a human-readable message from each entry.
-    /// Falls back to text_payload first line, then the raw log line. Defaults to `"message"`.
+    /// Falls back to `text_payload` first line, then the raw log line. Defaults to `"message"`.
     pub message_field: String,
 }
 

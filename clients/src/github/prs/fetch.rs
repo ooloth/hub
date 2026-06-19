@@ -305,84 +305,78 @@ fn nodes_to_prs(
             let excluded = repos
                 .iter()
                 .find(|r| r.repo == node.repository.name_with_owner)
-                .map(|r| r.exclude_authors.iter().any(|a| a == &node.author.login))
-                .unwrap_or(false);
+                .is_some_and(|r| r.exclude_authors.iter().any(|a| a == &node.author.login));
 
             !excluded
         })
-        .map(|node| {
-            let (owner, repo) =
-                node.repository
-                    .name_with_owner
-                    .split_once('/')
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "expected 'owner/repo', got: {}",
-                            node.repository.name_with_owner
-                        )
-                    })?;
+        .map(|node| node_to_pr(node, urgency, kind))
+        .collect()
+}
 
-            let approval_count = node
-                .reviews
-                .nodes
-                .iter()
-                .filter(|r| r.state == "APPROVED")
-                .count() as u32;
+fn node_to_pr(node: PrNode, urgency: Urgency, kind: PrKind) -> Result<PullRequest> {
+    let (owner, repo) = node
+        .repository
+        .name_with_owner
+        .split_once('/')
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "expected 'owner/repo', got: {}",
+                node.repository.name_with_owner
+            )
+        })?;
 
-            let thread_comment_count: usize = node
-                .review_threads
-                .nodes
-                .iter()
-                .map(|t| t.comments.nodes.len())
-                .sum();
+    let approval_count = u32::try_from(
+        node.reviews
+            .nodes
+            .iter()
+            .filter(|r| r.state == "APPROVED")
+            .count(),
+    )
+    .context("approval count overflow")?;
 
-            let comment_count = (thread_comment_count + node.comments.nodes.len()) as u32;
+    let thread_comment_count: usize = node
+        .review_threads
+        .nodes
+        .iter()
+        .map(|t| t.comments.nodes.len())
+        .sum();
 
-            Ok(PullRequest {
-                number: node.number,
-                title: node.title,
-                repo: RepoSlug::new(owner, repo),
-                url: node.url,
-                body: node.body,
-                ci_status: node
-                    .commits
-                    .nodes
-                    .first()
-                    .and_then(|c| c.commit.status_check_rollup.as_ref())
-                    .and_then(|r| parse_ci_state(&r.state)),
-                total_changed_files: node.files.total_count,
-                changed_files: node
-                    .files
-                    .nodes
-                    .into_iter()
-                    .map(|f| ChangedFile {
-                        path: f.path,
-                        additions: f.additions,
-                        deletions: f.deletions,
-                        patch: None,
-                    })
-                    .collect(),
-                review_threads: node
-                    .review_threads
-                    .nodes
-                    .into_iter()
-                    .filter(|t| !t.is_resolved && t.diff_side == "RIGHT")
-                    .map(|t| ReviewThread {
-                        path: t.path,
-                        line: t.line,
-                        comments: t
-                            .comments
-                            .nodes
-                            .into_iter()
-                            .map(|c| ReviewComment {
-                                author: c.author.login,
-                                age: age(&c.created_at),
-                                body: c.body,
-                            })
-                            .collect(),
-                    })
-                    .collect(),
-                pr_comments: node
+    let comment_count = u32::try_from(thread_comment_count + node.comments.nodes.len())
+        .context("comment count overflow")?;
+
+    Ok(PullRequest {
+        number: node.number,
+        title: node.title,
+        repo: RepoSlug::new(owner, repo),
+        url: node.url,
+        body: node.body,
+        ci_status: node
+            .commits
+            .nodes
+            .first()
+            .and_then(|c| c.commit.status_check_rollup.as_ref())
+            .and_then(|r| parse_ci_state(&r.state)),
+        total_changed_files: node.files.total_count,
+        changed_files: node
+            .files
+            .nodes
+            .into_iter()
+            .map(|f| ChangedFile {
+                path: f.path,
+                additions: f.additions,
+                deletions: f.deletions,
+                patch: None,
+            })
+            .collect(),
+        review_threads: node
+            .review_threads
+            .nodes
+            .into_iter()
+            .filter(|t| !t.is_resolved && t.diff_side == "RIGHT")
+            .map(|t| ReviewThread {
+                path: t.path,
+                line: t.line,
+                comments: t
                     .comments
                     .nodes
                     .into_iter()
@@ -392,19 +386,29 @@ fn nodes_to_prs(
                         body: c.body,
                     })
                     .collect(),
-                age: age(&node.created_at),
-                urgency,
-                kind: if node.is_draft { PrKind::MyDraft } else { kind },
-                author: node.author.login,
-                review_decision: parse_review_decision(node.review_decision.as_deref()),
-                approval_count,
-                comment_count,
-                head_branch: node.head_ref_name,
-                base_branch: node.base_ref_name,
-                merge_blocker: parse_merge_blocker(node.merge_state_status.as_deref()),
             })
-        })
-        .collect()
+            .collect(),
+        pr_comments: node
+            .comments
+            .nodes
+            .into_iter()
+            .map(|c| ReviewComment {
+                author: c.author.login,
+                age: age(&c.created_at),
+                body: c.body,
+            })
+            .collect(),
+        age: age(&node.created_at),
+        urgency,
+        kind: if node.is_draft { PrKind::MyDraft } else { kind },
+        author: node.author.login,
+        review_decision: parse_review_decision(node.review_decision.as_deref()),
+        approval_count,
+        comment_count,
+        head_branch: node.head_ref_name,
+        base_branch: node.base_ref_name,
+        merge_blocker: parse_merge_blocker(node.merge_state_status.as_deref()),
+    })
 }
 
 async fn fetch_file_patches(
@@ -455,7 +459,7 @@ async fn enrich_with_file_patches(token: &str, prs: &mut [PullRequest]) {
     let all_patches = futures::future::join_all(futures).await;
 
     for (pr, patches) in prs.iter_mut().zip(all_patches) {
-        for file in pr.changed_files.iter_mut() {
+        for file in &mut pr.changed_files {
             if let Some(patch) = patches.get(&file.path) {
                 file.patch = patch.clone();
             }

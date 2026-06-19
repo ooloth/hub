@@ -42,7 +42,7 @@ impl RepoPicker {
     }
 
     pub(crate) fn backspace(&mut self) {
-        self.input.pop();
+        let _ = self.input.pop();
         self.refilter();
     }
 
@@ -262,27 +262,7 @@ impl TaskCreationModal {
 /// Returns `None` for task rows and media-backlog rows (opens a blank form).
 pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
     match item {
-        StatusItem::Pr(pr) => {
-            let review_decision = match pr.review_decision {
-                Some(domain::ReviewDecision::Approved) => match pr.approval_count {
-                    1 => "approved (1)".to_string(),
-                    n => format!("approved ({n})"),
-                },
-                Some(domain::ReviewDecision::ChangesRequested) => "changes requested".to_string(),
-                None => "no reviews".to_string(),
-            };
-            Some(TaskCreationSeed {
-                title: Some(pr.title.clone()),
-                description: Some(format!(
-                    "PR #{} · {}\nauthor: {}\nbranch: {} → {}\nstatus: {}",
-                    pr.number, pr.repo, pr.author, pr.head_branch, pr.base_branch, review_decision
-                )),
-                kind: Some(TaskKind::Review),
-                link: Some(pr.url.clone()),
-                repo: Some(pr.repo.clone()),
-                origin: TaskOrigin::from_pr(pr),
-            })
-        }
+        StatusItem::Pr(pr) => Some(seed_from_pr(pr)),
         StatusItem::Issue(issue) => Some(TaskCreationSeed {
             title: Some(issue.title.clone()),
             description: Some(format!(
@@ -302,30 +282,7 @@ pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
             repo: None,
             origin: TaskOrigin::from_linear(l),
         }),
-        StatusItem::Ci(ci) => {
-            let title = match (&ci.job_name, &ci.step_name) {
-                (Some(job), Some(step)) => format!("{}: {} / {}", ci.repo, job, step),
-                (Some(job), None) => format!("{}: {}", ci.repo, job),
-                _ => format!("{}: CI failed", ci.repo),
-            };
-            let mut desc = format!("CI failure · {}\nworkflow: {}", ci.repo, ci.workflow_name);
-            if let (Some(job), Some(step)) = (&ci.job_name, &ci.step_name) {
-                desc.push_str(&format!("\njob: {} / {}", job, step));
-            } else if let Some(job) = &ci.job_name {
-                desc.push_str(&format!("\njob: {}", job));
-            }
-            if let Some(err) = &ci.error {
-                desc.push_str(&format!("\nerror: {}", err));
-            }
-            Some(TaskCreationSeed {
-                title: Some(title),
-                description: Some(desc),
-                kind: Some(TaskKind::Debug),
-                link: Some(ci.url.clone()),
-                repo: Some(ci.repo.clone()),
-                origin: TaskOrigin::from_ci(ci),
-            })
-        }
+        StatusItem::Ci(ci) => Some(seed_from_ci(ci)),
         StatusItem::Loki(l) => Some(TaskCreationSeed {
             title: Some(format!("{}:{} — {}", l.project, l.env, l.title)),
             description: Some(format!(
@@ -351,50 +308,117 @@ pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
         // Task rows open a blank form (no pre-population).
         StatusItem::AgentSession(_) => None,
         #[cfg(feature = "private")]
-        StatusItem::MediaBlocked(b) => Some(TaskCreationSeed {
-            title: Some(b.title.clone()),
-            description: Some(format!("Import blocked · {}\nerror: {}", b.source, b.error)),
-            kind: Some(TaskKind::Debug),
-            link: Some(b.url.clone()),
-            repo: None,
-            // Media origins are constructed here (private-gated) but the
-            // `TaskOrigin::Alert` type itself is feature-independent. `source`
-            // is baked into the key so different media apps never collide.
-            origin: TaskOrigin::Alert {
-                source: domain::AlertSource::Media,
-                key: format!("media/blocked/{}/{}", b.source, b.title),
-                label: b.title.clone(),
-            },
-        }),
+        StatusItem::MediaBlocked(b) => Some(seed_from_media_blocked(b)),
         #[cfg(feature = "private")]
-        StatusItem::MediaMissing(m) => Some(TaskCreationSeed {
-            title: Some(m.title.clone()),
-            description: Some(format!("Missing · {}\naired: {}", m.source, m.air_date)),
-            kind: Some(TaskKind::Debug),
-            link: Some(m.url.clone()),
-            repo: None,
-            origin: TaskOrigin::Alert {
-                source: domain::AlertSource::Media,
-                key: format!("media/missing/{}/{}/{}", m.source, m.title, m.air_date),
-                label: m.title.clone(),
-            },
-        }),
+        StatusItem::MediaMissing(m) => Some(seed_from_media_missing(m)),
         #[cfg(feature = "private")]
-        StatusItem::MediaHealth(h) => Some(TaskCreationSeed {
-            title: Some(h.message.clone()),
-            description: Some(format!("Health · {}", h.source)),
-            kind: Some(TaskKind::Debug),
-            link: (!h.url.is_empty()).then(|| h.url.clone()),
-            repo: None,
-            origin: TaskOrigin::Alert {
-                source: domain::AlertSource::Media,
-                key: format!("media/health/{}/{}", h.source, h.message),
-                label: h.message.clone(),
-            },
-        }),
+        StatusItem::MediaHealth(h) => Some(seed_from_media_health(h)),
         // Backlog rows carry no actionable identity — blank form.
         #[cfg(feature = "private")]
         StatusItem::MediaBacklog { .. } => None,
+    }
+}
+
+fn seed_from_pr(pr: &domain::PullRequest) -> TaskCreationSeed {
+    let review_decision = match pr.review_decision {
+        Some(domain::ReviewDecision::Approved) => match pr.approval_count {
+            1 => "approved (1)".to_string(),
+            n => format!("approved ({n})"),
+        },
+        Some(domain::ReviewDecision::ChangesRequested) => "changes requested".to_string(),
+        None => "no reviews".to_string(),
+    };
+    TaskCreationSeed {
+        title: Some(pr.title.clone()),
+        description: Some(format!(
+            "PR #{} · {}\nauthor: {}\nbranch: {} → {}\nstatus: {}",
+            pr.number, pr.repo, pr.author, pr.head_branch, pr.base_branch, review_decision
+        )),
+        kind: Some(TaskKind::Review),
+        link: Some(pr.url.clone()),
+        repo: Some(pr.repo.clone()),
+        origin: TaskOrigin::from_pr(pr),
+    }
+}
+
+fn seed_from_ci(ci: &domain::CiFailure) -> TaskCreationSeed {
+    let title = match (&ci.job_name, &ci.step_name) {
+        (Some(job), Some(step)) => format!("{}: {} / {}", ci.repo, job, step),
+        (Some(job), None) => format!("{}: {}", ci.repo, job),
+        _ => format!("{}: CI failed", ci.repo),
+    };
+    let mut desc = format!("CI failure · {}\nworkflow: {}", ci.repo, ci.workflow_name);
+    if let (Some(job), Some(step)) = (&ci.job_name, &ci.step_name) {
+        desc.push_str("\njob: ");
+        desc.push_str(job);
+        desc.push_str(" / ");
+        desc.push_str(step);
+    } else if let Some(job) = &ci.job_name {
+        desc.push_str("\njob: ");
+        desc.push_str(job);
+    }
+    if let Some(err) = &ci.error {
+        desc.push_str("\nerror: ");
+        desc.push_str(err);
+    }
+    TaskCreationSeed {
+        title: Some(title),
+        description: Some(desc),
+        kind: Some(TaskKind::Debug),
+        link: Some(ci.url.clone()),
+        repo: Some(ci.repo.clone()),
+        origin: TaskOrigin::from_ci(ci),
+    }
+}
+
+#[cfg(feature = "private")]
+fn seed_from_media_blocked(b: &workflows::private::status::BlockedItem) -> TaskCreationSeed {
+    TaskCreationSeed {
+        title: Some(b.title.clone()),
+        description: Some(format!("Import blocked · {}\nerror: {}", b.source, b.error)),
+        kind: Some(TaskKind::Debug),
+        link: Some(b.url.clone()),
+        repo: None,
+        // Media origins are constructed here (private-gated) but the
+        // `TaskOrigin::Alert` type itself is feature-independent. `source`
+        // is baked into the key so different media apps never collide.
+        origin: TaskOrigin::Alert {
+            source: domain::AlertSource::Media,
+            key: format!("media/blocked/{}/{}", b.source, b.title),
+            label: b.title.clone(),
+        },
+    }
+}
+
+#[cfg(feature = "private")]
+fn seed_from_media_missing(m: &workflows::private::status::MissingItem) -> TaskCreationSeed {
+    TaskCreationSeed {
+        title: Some(m.title.clone()),
+        description: Some(format!("Missing · {}\naired: {}", m.source, m.air_date)),
+        kind: Some(TaskKind::Debug),
+        link: Some(m.url.clone()),
+        repo: None,
+        origin: TaskOrigin::Alert {
+            source: domain::AlertSource::Media,
+            key: format!("media/missing/{}/{}/{}", m.source, m.title, m.air_date),
+            label: m.title.clone(),
+        },
+    }
+}
+
+#[cfg(feature = "private")]
+fn seed_from_media_health(h: &workflows::private::status::HealthItem) -> TaskCreationSeed {
+    TaskCreationSeed {
+        title: Some(h.message.clone()),
+        description: Some(format!("Health · {}", h.source)),
+        kind: Some(TaskKind::Debug),
+        link: (!h.url.is_empty()).then(|| h.url.clone()),
+        repo: None,
+        origin: TaskOrigin::Alert {
+            source: domain::AlertSource::Media,
+            key: format!("media/health/{}/{}", h.source, h.message),
+            label: h.message.clone(),
+        },
     }
 }
 

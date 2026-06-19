@@ -12,6 +12,9 @@ use crate::status::{StatusItem, StatusReport};
 /// Errors are non-fatal from the caller's perspective: `status::run()` appends
 /// them to the report's error list and continues — a failed fold-back cycle
 /// means tasks stay visible until the next successful refresh.
+///
+/// # Errors
+/// Returns an error if a GitHub or store operation fails.
 pub async fn fold_back_pr_tasks(github_token: &str) -> Result<()> {
     let conn = store::status_cache::connect().context("opening status-cache DB")?;
     store::tasks::ensure_table(&conn).context("ensuring tasks table")?;
@@ -63,6 +66,9 @@ pub async fn fold_back_pr_tasks(github_token: &str) -> Result<()> {
 /// Handles GitHub Issues and Linear in a single pass. Per-platform query
 /// failures are non-fatal from the caller's perspective: `status::run()`
 /// appends them to the report's error list and continues.
+///
+/// # Errors
+/// Returns an error if a GitHub, Linear, or store operation fails.
 pub async fn fold_back_issue_tasks(github_token: &str, linear_token: Option<&str>) -> Result<()> {
     let conn = store::status_cache::connect().context("opening status-cache DB")?;
     store::tasks::ensure_table(&conn).context("ensuring tasks table")?;
@@ -180,6 +186,9 @@ fn fold_identity(item: &StatusItem) -> Option<SignalIdentity> {
 ///
 /// `AlertSource::Media` origins are excluded — tracked separately in #324.
 /// Errors are non-fatal from the caller's perspective.
+///
+/// # Errors
+/// Returns an error if the status cache or store cannot be read.
 pub fn fold_back_signal_tasks(items: &[StatusItem]) -> Result<()> {
     let conn = store::status_cache::connect().context("opening status-cache DB")?;
     store::tasks::ensure_table(&conn).context("ensuring tasks table")?;
@@ -233,6 +242,7 @@ pub fn fold_back_signal_tasks(items: &[StatusItem]) -> Result<()> {
 /// - Active session (`InProgress`/`Blocked`/`InReview` with `session_id`) — an
 ///   agent may be the reason the signal cleared; don't fold prematurely.
 /// - Signal present in either set — debounce not satisfied.
+#[must_use]
 pub fn decide_signal_fold(
     status: TaskStatus,
     session_id: Option<&str>,
@@ -264,6 +274,7 @@ pub fn decide_signal_fold(
 /// - Terminal tasks (`Done`/`Failed`/`Cancelled`) always return `None` — a human
 ///   correction is never overwritten by signal inference.
 /// - `PrState::Open` always returns `None` — the signal hasn't resolved yet.
+#[must_use]
 pub fn decide_fold(status: TaskStatus, pr_state: PrState) -> Option<TaskStatus> {
     if status.is_terminal() {
         return None;
@@ -283,6 +294,7 @@ pub fn decide_fold(status: TaskStatus, pr_state: PrState) -> Option<TaskStatus> 
 /// - Terminal tasks (`Done`/`Failed`/`Cancelled`) always return `None` — a human
 ///   correction is never overwritten by signal inference.
 /// - `IssueState::Open` always returns `None` — the signal hasn't resolved yet.
+#[must_use]
 pub fn decide_issue_fold(status: TaskStatus, issue_state: IssueState) -> Option<TaskStatus> {
     if status.is_terminal() {
         return None;

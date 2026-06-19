@@ -30,7 +30,7 @@ pub(super) fn refresh_screen_in_place(screen: &mut Screen, raw: &[workflows::sta
 /// Replaces every agent-session (task) item in `raw` with `fresh_tasks`, leaving
 /// all other signal sources (PRs, CI, Loki, …) untouched.
 ///
-/// The 10s task poll re-reads task state from SQLite and patches it into the
+/// The 10s task poll re-reads task state from `SQLite` and patches it into the
 /// in-memory list so an agent's `hub task report` is reflected within seconds,
 /// without waiting for the full 30-minute external refresh. Tasks are appended
 /// at the end; `build_unified` re-sorts by urgency, so position here is moot.

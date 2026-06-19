@@ -92,9 +92,9 @@ pub(crate) fn pr_diff_lines(pr: &domain::PullRequest, sep_width: usize) -> Vec<L
                     render_thread_comments(&mut out, thread);
                 }
             }
-            Some(patch) => {
+            Some(diff_text) => {
                 let mut new_line: u32 = 0;
-                for raw in patch.lines() {
+                for raw in diff_text.lines() {
                     let line = raw.to_string();
                     if line.starts_with("@@") {
                         out.push(Line::from(""));
@@ -124,7 +124,7 @@ pub(crate) fn pr_diff_lines(pr: &domain::PullRequest, sep_width: usize) -> Vec<L
         out.push(Line::from(""));
     }
 
-    let shown = pr.changed_files.len() as u32;
+    let shown = u32::try_from(pr.changed_files.len()).unwrap_or(u32::MAX);
     let total = pr.total_changed_files;
     if total > shown {
         let hidden = total - shown;

@@ -10,11 +10,11 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
     }
 
     match app.ui.submenu {
-        SubmenuState::ReviewPicker => return review_picker_submenu_key(key),
-        SubmenuState::PrActions => return pr_action_submenu_key(key),
+        SubmenuState::ReviewPicker => return Some(review_picker_submenu_key(key)),
+        SubmenuState::PrActions => return Some(pr_action_submenu_key(key)),
         SubmenuState::TaskStatus => {
             let current_status = app.current_screen().selected_task().map(|t| t.status);
-            return task_status_submenu_key(key, current_status);
+            return Some(task_status_submenu_key(key, current_status));
         }
         SubmenuState::None => {}
     }
@@ -41,7 +41,7 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
     );
     let has_filter = match &app.ui.screen {
         Screen::UnifiedList { filter, .. } => !filter.is_empty(),
-        _ => false,
+        Screen::MergingPr { .. } => false,
     };
 
     match (key.code, key.modifiers) {
@@ -74,31 +74,28 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
     }
 }
 
-fn pr_action_submenu_key(key: KeyEvent) -> Option<Action> {
+fn pr_action_submenu_key(key: KeyEvent) -> Action {
     if matches!(
         (key.code, key.modifiers),
         (KeyCode::Char('c'), KeyModifiers::CONTROL)
     ) {
-        return Some(Action::Quit);
+        return Action::Quit;
     }
     match key.code {
-        KeyCode::Char('d') => Some(Action::OpenPrDiffInDelta),
-        KeyCode::Char('l') => Some(Action::OpenInLazygit),
-        KeyCode::Char('o') => Some(Action::OpenInOcto),
+        KeyCode::Char('d') => Action::OpenPrDiffInDelta,
+        KeyCode::Char('l') => Action::OpenInLazygit,
+        KeyCode::Char('o') => Action::OpenInOcto,
         // Esc and any unrecognized key dismiss the submenu without closing the split view.
-        _ => Some(Action::CancelPrSubmenu),
+        _ => Action::CancelPrSubmenu,
     }
 }
 
-fn task_status_submenu_key(
-    key: KeyEvent,
-    current_status: Option<domain::TaskStatus>,
-) -> Option<Action> {
+fn task_status_submenu_key(key: KeyEvent, current_status: Option<domain::TaskStatus>) -> Action {
     if matches!(
         (key.code, key.modifiers),
         (KeyCode::Char('c'), KeyModifiers::CONTROL)
     ) {
-        return Some(Action::Quit);
+        return Action::Quit;
     }
     let target = match key.code {
         KeyCode::Char('b') => Some(domain::TaskStatus::Backlog),
@@ -113,9 +110,9 @@ fn task_status_submenu_key(
     };
     match (target, current_status) {
         // Pressing the key for the current status cancels without changing state.
-        (Some(t), Some(current)) if t == current => Some(Action::CancelTaskStatusSubmenu),
-        (Some(t), _) => Some(Action::TransitionTaskStatus(t)),
-        (None, _) => Some(Action::CancelTaskStatusSubmenu),
+        (Some(t), Some(current)) if t == current => Action::CancelTaskStatusSubmenu,
+        (Some(t), _) => Action::TransitionTaskStatus(t),
+        (None, _) => Action::CancelTaskStatusSubmenu,
     }
 }
 
@@ -145,8 +142,8 @@ fn unified_list_keys(
         crate::state::DetailMode::Visible { .. } | crate::state::DetailMode::VisibleSession { .. }
     );
     match (key.code, key.modifiers) {
-        (KeyCode::Up, _) | (KeyCode::Char('k'), _) => Some(Action::MoveUp),
-        (KeyCode::Down, _) | (KeyCode::Char('j'), _) => Some(Action::MoveDown),
+        (KeyCode::Up | KeyCode::Char('k'), _) => Some(Action::MoveUp),
+        (KeyCode::Down | KeyCode::Char('j'), _) => Some(Action::MoveDown),
         (KeyCode::Char('J'), _) if split_active => Some(Action::ScrollDetailDown),
         (KeyCode::Char('K'), _) if split_active => Some(Action::ScrollDetailUp),
         (KeyCode::Tab, _) if split_active => Some(Action::ToggleSessionDetail),
@@ -204,31 +201,30 @@ fn modal_key(key: KeyEvent, focused: TaskFormField) -> Option<Action> {
     }
     match (key.code, key.modifiers) {
         (KeyCode::Esc, _) => Some(Action::CancelTaskCreation),
-        (KeyCode::Tab, _) => Some(Action::FocusNextField),
         (KeyCode::BackTab, _) => Some(Action::FocusPrevField),
         (KeyCode::Enter, _) if focused == TaskFormField::Submit => Some(Action::CommitTaskCreation),
         (KeyCode::Enter, _) if focused == TaskFormField::Description => {
             Some(Action::ModalTextInput(key))
         }
-        (KeyCode::Enter, _) => Some(Action::FocusNextField),
+        (KeyCode::Tab | KeyCode::Enter, _) => Some(Action::FocusNextField),
         (KeyCode::Char(' '), _) if focused == TaskFormField::Kind => Some(Action::CycleTaskKind),
         _ if focused == TaskFormField::Kind || focused == TaskFormField::Submit => None,
         _ => Some(Action::ModalTextInput(key)),
     }
 }
 
-fn review_picker_submenu_key(key: KeyEvent) -> Option<Action> {
+fn review_picker_submenu_key(key: KeyEvent) -> Action {
     if matches!(
         (key.code, key.modifiers),
         (KeyCode::Char('c'), KeyModifiers::CONTROL)
     ) {
-        return Some(Action::Quit);
+        return Action::Quit;
     }
     match key.code {
-        KeyCode::Char('c') => Some(Action::CommitReview(ReviewSkill::Converge)),
-        KeyCode::Char('m') => Some(Action::CommitReview(ReviewSkill::PrCommentsConverge)),
+        KeyCode::Char('c') => Action::CommitReview(ReviewSkill::Converge),
+        KeyCode::Char('m') => Action::CommitReview(ReviewSkill::PrCommentsConverge),
         // Esc and any unrecognized key dismiss the submenu without closing the split view.
-        _ => Some(Action::CancelReview),
+        _ => Action::CancelReview,
     }
 }
 

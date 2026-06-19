@@ -3,6 +3,10 @@ use chrono::Utc;
 use domain::{ReadyTask, RepoSlug, SignalIdentity, Task, TaskId, TaskKind, TaskOrigin, TaskStatus};
 use rusqlite::{params, Connection, OptionalExtension};
 
+/// Ensures the `tasks` and `task_comments` tables exist, running any pending migrations.
+///
+/// # Errors
+/// Returns an error if a migration or schema creation statement fails.
 pub fn ensure_table(conn: &Connection) -> Result<()> {
     migrate_consolidate_links_and_kind(conn)?;
 
@@ -49,7 +53,7 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
 }
 
 /// Drops and recreates the tasks tables when the old multi-column link schema
-/// (issue_links / pr_links / doc_links) or the old 'general' kind variant is detected.
+/// (`issue_links` / `pr_links` / `doc_links`) or the old 'general' kind variant is detected.
 /// All data is test data — drop and regenerate is safe.
 /// Idempotent: no-op when the new schema is already in place.
 fn migrate_consolidate_links_and_kind(conn: &Connection) -> Result<()> {
@@ -88,7 +92,7 @@ fn add_column_if_missing(conn: &Connection, table: &str, column: &str, def: &str
     let exists = stmt
         .query_map([], |row| row.get::<_, String>(1))
         .context("failed to read table_info")?
-        .filter_map(|r| r.ok())
+        .filter_map(std::result::Result::ok)
         .any(|name| name == column);
 
     if !exists {
@@ -100,6 +104,9 @@ fn add_column_if_missing(conn: &Connection, table: &str, column: &str, def: &str
 }
 
 /// Inserts a new task in `backlog` status and returns its generated `TaskId`.
+///
+/// # Errors
+/// Returns an error if the SQL statement fails.
 pub fn create(
     conn: &Connection,
     title: &str,
@@ -113,20 +120,21 @@ pub fn create(
     let links_str = links_to_db(links);
     let origin_str = origin_to_db(origin)?;
 
-    conn.execute(
-        "INSERT INTO tasks (title, kind, description, links, repo, origin, created_at, updated_at)
+    let _ = conn
+        .execute(
+            "INSERT INTO tasks (title, kind, description, links, repo, origin, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
-        params![
-            title,
-            kind.to_string(),
-            description,
-            links_str,
-            repo,
-            origin_str,
-            now
-        ],
-    )
-    .context("failed to insert task")?;
+            params![
+                title,
+                kind.to_string(),
+                description,
+                links_str,
+                repo,
+                origin_str,
+                now
+            ],
+        )
+        .context("failed to insert task")?;
 
     let row_id = conn.last_insert_rowid();
 
@@ -135,6 +143,9 @@ pub fn create(
 
 /// Transitions a task from `backlog` to `ready`. Returns an error if the task
 /// does not exist or is not currently in `backlog` status.
+///
+/// # Errors
+/// Returns an error if the task does not exist, is not in `backlog` status, or the SQL statement fails.
 pub fn set_ready(conn: &Connection, id: &TaskId) -> Result<()> {
     let row_id = task_row_id(id)?;
 
@@ -147,8 +158,7 @@ pub fn set_ready(conn: &Connection, id: &TaskId) -> Result<()> {
 
     if changed == 0 {
         anyhow::bail!(
-            "task {} is not in 'backlog' status (may not exist or already transitioned)",
-            id
+            "task {id} is not in 'backlog' status (may not exist or already transitioned)"
         );
     }
 
@@ -162,6 +172,9 @@ const TERMINAL_VISIBLE_DAYS: i64 = 7;
 /// Returns tasks that appear in the TUI unified list: all non-terminal statuses
 /// plus `done`, `failed`, and `cancelled` tasks updated within the last
 /// [`TERMINAL_VISIBLE_DAYS`] days.
+///
+/// # Errors
+/// Returns an error if the SQL query fails or a row value cannot be parsed.
 pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
     let done_cutoff = (Utc::now() - chrono::Duration::days(TERMINAL_VISIBLE_DAYS)).to_rfc3339();
 
@@ -269,6 +282,9 @@ pub fn list_visible(conn: &Connection) -> Result<Vec<Task>> {
 }
 
 /// Returns the full task including all fields and its comment thread.
+///
+/// # Errors
+/// Returns an error if the task does not exist or a row value cannot be parsed.
 pub fn get(conn: &Connection, id: &TaskId) -> Result<Task> {
     let row_id = task_row_id(id)?;
     let (
@@ -356,6 +372,9 @@ pub fn get(conn: &Connection, id: &TaskId) -> Result<Task> {
 }
 
 /// Updates the status of a task and refreshes `updated_at`.
+///
+/// # Errors
+/// Returns an error if the task does not exist or the SQL statement fails.
 pub fn update_status(conn: &Connection, id: &TaskId, status: TaskStatus) -> Result<()> {
     let row_id = task_row_id(id)?;
 
@@ -380,6 +399,9 @@ pub fn update_status(conn: &Connection, id: &TaskId, status: TaskStatus) -> Resu
 /// have no signal to match against.
 ///
 /// Used by the task creation pre-flight check to enforce one-active-task-per-signal.
+///
+/// # Errors
+/// Propagates any error from `list_visible`.
 pub fn active_for_origin(conn: &Connection, origin: &TaskOrigin) -> Result<Option<Task>> {
     if matches!(origin, TaskOrigin::Idea) {
         return Ok(None);
@@ -392,6 +414,9 @@ pub fn active_for_origin(conn: &Connection, origin: &TaskOrigin) -> Result<Optio
 }
 
 /// Returns the count of tasks currently in `in-progress` status.
+///
+/// # Errors
+/// Returns an error if the SQL query fails.
 pub fn count_in_progress(conn: &Connection) -> Result<u32> {
     conn.query_row(
         "SELECT COUNT(*) FROM tasks WHERE status = 'in-progress'",
@@ -402,6 +427,9 @@ pub fn count_in_progress(conn: &Connection) -> Result<u32> {
 }
 
 /// Returns the oldest `ready` task by `created_at`, or `None` if none exist.
+///
+/// # Errors
+/// Returns an error if the SQL query fails or a row value cannot be parsed.
 pub fn oldest_ready(conn: &Connection) -> Result<Option<ReadyTask>> {
     conn.query_row(
         "SELECT id, repo, kind FROM tasks WHERE status = 'ready' ORDER BY created_at ASC LIMIT 1",
@@ -444,6 +472,9 @@ pub fn oldest_ready(conn: &Connection) -> Result<Option<ReadyTask>> {
 /// Atomically transitions a task from `ready` to `in-progress` and writes the
 /// session ID. Returns `true` if the claim succeeded, `false` if the task was
 /// already claimed by a concurrent dispatch tick (rowcount == 0).
+///
+/// # Errors
+/// Returns an error if the SQL statement fails.
 pub fn claim_for_dispatch(conn: &Connection, id: &TaskId, session_id: &str) -> Result<bool> {
     let row_id = task_row_id(id)?;
 
@@ -469,6 +500,9 @@ pub fn claim_for_dispatch(conn: &Connection, id: &TaskId, session_id: &str) -> R
 /// In practice the only caller is `hub task link` (a single-process CLI), so
 /// this race cannot occur. If `links` moves to a normalised table this concern
 /// disappears entirely.
+///
+/// # Errors
+/// Returns an error if the task does not exist or the SQL statement fails.
 pub fn add_link(conn: &Connection, id: &TaskId, value: &str) -> Result<()> {
     let row_id = task_row_id(id)?;
     let links_str: Option<String> = conn
@@ -489,11 +523,12 @@ pub fn add_link(conn: &Connection, id: &TaskId, value: &str) -> Result<()> {
 
     let now = Utc::now().to_rfc3339();
 
-    conn.execute(
-        "UPDATE tasks SET links = ?1, updated_at = ?2 WHERE id = ?3",
-        params![links_to_db(&links), now, row_id],
-    )
-    .context("failed to update task links")?;
+    let _ = conn
+        .execute(
+            "UPDATE tasks SET links = ?1, updated_at = ?2 WHERE id = ?3",
+            params![links_to_db(&links), now, row_id],
+        )
+        .context("failed to update task links")?;
 
     Ok(())
 }
@@ -608,7 +643,7 @@ mod tests {
     fn ensure_table_is_idempotent_and_does_not_drop_existing_tasks() {
         let conn = Connection::open_in_memory().unwrap();
         ensure_table(&conn).unwrap();
-        create(
+        let _ = create(
             &conn,
             "Persistent task",
             TaskKind::Implement,
@@ -731,7 +766,7 @@ mod tests {
     fn list_visible_includes_all_active_statuses() {
         let conn = in_memory();
         for status in &["backlog", "ready", "in-progress", "blocked", "in-review"] {
-            conn.execute(
+            let _ = conn.execute(
                 "INSERT INTO tasks (title, status, kind, created_at) VALUES (?1, ?2, 'implement', ?3)",
                 params![format!("task {status}"), status, Utc::now().to_rfc3339()],
             )
@@ -753,7 +788,7 @@ mod tests {
         let conn = in_memory();
         let recent = Utc::now().to_rfc3339();
         for status in &["done", "failed", "cancelled"] {
-            conn.execute(
+            let _ = conn.execute(
                 "INSERT INTO tasks (title, status, kind, created_at, updated_at) VALUES (?1, ?2, 'implement', ?3, ?3)",
                 params![format!("{status} task"), status, recent],
             )
@@ -772,7 +807,7 @@ mod tests {
         let conn = in_memory();
         let old = (Utc::now() - chrono::Duration::days(TERMINAL_VISIBLE_DAYS + 1)).to_rfc3339();
         for status in &["done", "failed", "cancelled"] {
-            conn.execute(
+            let _ = conn.execute(
                 "INSERT INTO tasks (title, status, kind, created_at, updated_at) VALUES (?1, ?2, 'implement', ?3, ?3)",
                 params![format!("old {status}"), status, old],
             )
@@ -820,7 +855,7 @@ mod tests {
     #[test]
     fn list_visible_returns_empty_comments_when_none_added() {
         let conn = in_memory();
-        create(
+        let _ = create(
             &conn,
             "No comments task",
             TaskKind::Debug,
@@ -1076,7 +1111,7 @@ mod tests {
             key: "proj/prod/db error".into(),
             label: "proj:prod — errors".into(),
         };
-        create(
+        let _ = create(
             &conn,
             "Investigate alert",
             TaskKind::Debug,
@@ -1096,7 +1131,7 @@ mod tests {
         // Rows created before the origin column existed have a NULL origin and
         // must read back as `Idea`, not error.
         let conn = in_memory();
-        conn.execute(
+        let _ = conn.execute(
             "INSERT INTO tasks (title, status, kind, created_at) VALUES ('old', 'backlog', 'implement', ?1)",
             params![Utc::now().to_rfc3339()],
         )
@@ -1108,7 +1143,7 @@ mod tests {
     #[test]
     fn list_visible_reads_null_origin_as_idea() {
         let conn = in_memory();
-        conn.execute(
+        let _ = conn.execute(
             "INSERT INTO tasks (title, status, kind, created_at) VALUES ('old', 'backlog', 'implement', ?1)",
             params![Utc::now().to_rfc3339()],
         )
@@ -1124,12 +1159,12 @@ mod tests {
     fn count_in_progress_returns_correct_count() {
         let conn = in_memory();
         assert_eq!(count_in_progress(&conn).unwrap(), 0);
-        conn.execute(
+        let _ = conn.execute(
             "INSERT INTO tasks (title, status, kind, created_at) VALUES ('t', 'in-progress', 'implement', ?1)",
             params![Utc::now().to_rfc3339()],
         ).unwrap();
         assert_eq!(count_in_progress(&conn).unwrap(), 1);
-        conn.execute(
+        let _ = conn.execute(
             "INSERT INTO tasks (title, status, kind, created_at) VALUES ('t2', 'ready', 'implement', ?1)",
             params![Utc::now().to_rfc3339()],
         ).unwrap();
@@ -1149,11 +1184,11 @@ mod tests {
         let conn = in_memory();
         let older = (Utc::now() - chrono::Duration::hours(2)).to_rfc3339();
         let newer = Utc::now().to_rfc3339();
-        conn.execute(
+        let _ = conn.execute(
             "INSERT INTO tasks (title, status, kind, created_at) VALUES ('newer', 'ready', 'debug', ?1)",
             params![newer],
         ).unwrap();
-        conn.execute(
+        let _ = conn.execute(
             "INSERT INTO tasks (title, status, kind, created_at) VALUES ('older', 'ready', 'implement', ?1)",
             params![older],
         ).unwrap();
@@ -1219,7 +1254,7 @@ mod tests {
         )
         .unwrap();
         set_ready(&conn, &id).unwrap();
-        claim_for_dispatch(&conn, &id, "first").unwrap();
+        let _ = claim_for_dispatch(&conn, &id, "first").unwrap();
         let second = claim_for_dispatch(&conn, &id, "second").unwrap();
         assert!(!second);
     }
@@ -1340,7 +1375,7 @@ mod tests {
     #[test]
     fn active_for_origin_returns_non_terminal_task_with_matching_origin() {
         let conn = in_memory();
-        create(
+        let _ = create(
             &conn,
             "Fix it",
             TaskKind::Implement,
@@ -1375,7 +1410,7 @@ mod tests {
     #[test]
     fn active_for_origin_returns_none_for_idea_origin() {
         let conn = in_memory();
-        create(
+        let _ = create(
             &conn,
             "Idea task",
             TaskKind::Implement,
@@ -1397,7 +1432,7 @@ mod tests {
             repo: domain::RepoSlug::new("ooloth", "hub"),
             number: 99,
         };
-        create(
+        let _ = create(
             &conn,
             "Other task",
             TaskKind::Implement,
@@ -1427,7 +1462,7 @@ mod tests {
             step: None,
             url: "https://github.com/actions/runs/9999".into(), // different run
         };
-        create(
+        let _ = create(
             &conn,
             "Fix CI",
             TaskKind::Debug,

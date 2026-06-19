@@ -27,7 +27,7 @@ pub struct LogEntry {
     pub labels: HashMap<String, String>,
 }
 
-/// Returns log entries for the given LogQL query over the lookback window.
+/// Returns log entries for the given `LogQL` query over the lookback window.
 ///
 /// # Errors
 /// Returns an error if the Loki API is unreachable, returns a non-2xx response,

@@ -48,11 +48,11 @@ pub(crate) fn build_unified_list_item(
         RowSeparator::Bullet => bullet_span(bullet_color),
         RowSeparator::Toggle(expanded) => {
             let arrow = if expanded { "▾" } else { "▸" };
-            Span::styled(format!(" {} ", arrow), Style::default().fg(bullet_color))
+            Span::styled(format!(" {arrow} "), Style::default().fg(bullet_color))
         }
         RowSeparator::TreeChild(last) => {
             let bar = if last { "└" } else { "│" };
-            Span::styled(format!("  {} ", bar), Style::default().fg(bullet_color))
+            Span::styled(format!("  {bar} "), Style::default().fg(bullet_color))
         }
     };
     let mut spans: Vec<Span<'static>> = vec![Span::styled(parts.category, text_style), separator];
@@ -137,7 +137,7 @@ pub(crate) fn unified_title(filter: &Filter, query_input: Option<&str>) -> Strin
     match (&filter.category, &filter.query) {
         (None, None) => " All ".to_string(),
         (Some(cat), None) => format!(" {} ", cat.label()),
-        (None, Some(q)) => format!(" \"{}\" ", q),
+        (None, Some(q)) => format!(" \"{q}\" "),
         (Some(cat), Some(q)) => format!(" {} · \"{}\" ", cat.label(), q),
     }
 }
@@ -224,7 +224,8 @@ pub(crate) fn render_unified(
         if row < scroll {
             continue;
         }
-        let screen_y = inner.y + (row - scroll) as u16;
+        let screen_y =
+            inner.y + u16::try_from((row - scroll).min(usize::from(u16::MAX))).unwrap_or(u16::MAX);
         if screen_y >= inner.y + inner.height {
             break;
         }

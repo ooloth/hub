@@ -235,7 +235,7 @@ fn filter_runs(
         if created.to_utc() < cutoff {
             continue;
         }
-        latest
+        let _ = latest
             .entry(run.path.clone())
             .and_modify(|existing| {
                 if run.created_at > existing.created_at {

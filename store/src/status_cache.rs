@@ -3,12 +3,15 @@ use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
 use std::path::{Path, PathBuf};
 
+#[derive(Debug)]
 pub struct CachedStatus {
     pub refreshed_at: DateTime<Utc>,
     pub schema_version: i32,
     pub payload: String,
 }
 
+/// # Errors
+/// Returns an error if the database directory cannot be created or the database file cannot be opened.
 pub fn connect() -> Result<Connection> {
     let path = db_path()?;
     if let Some(parent) = path.parent() {
@@ -58,6 +61,8 @@ fn apply_pragmas(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+/// # Errors
+/// Returns an error if the SQL statement fails.
 pub fn ensure_table(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS status_cache (
@@ -70,24 +75,30 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
     .context("failed to create status_cache table")
 }
 
+/// # Errors
+/// Returns an error if the SQL statement fails.
 pub fn upsert(conn: &Connection, payload: &str, schema_version: i32) -> Result<()> {
     let now = Utc::now().to_rfc3339();
-    conn.execute(
-        "INSERT INTO status_cache (id, schema_version, refreshed_at, payload)
+    let _ = conn
+        .execute(
+            "INSERT INTO status_cache (id, schema_version, refreshed_at, payload)
          VALUES (1, ?1, ?2, ?3)
          ON CONFLICT(id) DO UPDATE SET
              schema_version = excluded.schema_version,
              refreshed_at   = excluded.refreshed_at,
              payload        = excluded.payload",
-        params![schema_version, now, payload],
-    )
-    .context("failed to upsert status cache")?;
+            params![schema_version, now, payload],
+        )
+        .context("failed to upsert status cache")?;
     Ok(())
 }
 
 /// Returns the cached status only when its `refreshed_at` is within `max_age`
 /// of now. `None` means either no row exists or it is older than `max_age` —
 /// the caller treats both the same: fetch instead of reusing.
+///
+/// # Errors
+/// Returns an error if the underlying SQL query fails.
 pub fn read_if_fresh(conn: &Connection, max_age: chrono::Duration) -> Result<Option<CachedStatus>> {
     match read(conn)? {
         Some(cached) if (Utc::now() - cached.refreshed_at) < max_age => Ok(Some(cached)),
@@ -95,6 +106,8 @@ pub fn read_if_fresh(conn: &Connection, max_age: chrono::Duration) -> Result<Opt
     }
 }
 
+/// # Errors
+/// Returns an error if the SQL query fails or a row value cannot be parsed.
 pub fn read(conn: &Connection) -> Result<Option<CachedStatus>> {
     let mut stmt = conn
         .prepare("SELECT schema_version, refreshed_at, payload FROM status_cache WHERE id = 1")
@@ -170,12 +183,13 @@ mod tests {
         let conn = in_memory();
         if let Some(age) = row_age {
             let written_at = (chrono::Utc::now() - age).to_rfc3339();
-            conn.execute(
-                "INSERT INTO status_cache (id, schema_version, refreshed_at, payload)
+            let _ = conn
+                .execute(
+                    "INSERT INTO status_cache (id, schema_version, refreshed_at, payload)
                  VALUES (1, ?1, ?2, ?3)",
-                rusqlite::params![1i32, written_at, r#"{"items":[]}"#],
-            )
-            .unwrap();
+                    rusqlite::params![1i32, written_at, r#"{"items":[]}"#],
+                )
+                .unwrap();
         }
         let max_age = chrono::Duration::minutes(30);
         let result = read_if_fresh(&conn, max_age).unwrap();
@@ -213,7 +227,7 @@ mod tests {
         apply_pragmas(&conn1).unwrap();
         ensure_table(&conn1).unwrap();
 
-        conn1.execute("BEGIN IMMEDIATE", []).unwrap();
+        let _ = conn1.execute("BEGIN IMMEDIATE", []).unwrap();
 
         let path_for_writer2 = path.clone();
         let writer2_finished = Arc::new(AtomicBool::new(false));
@@ -232,7 +246,7 @@ mod tests {
             "writer2 must be blocked on conn1's transaction"
         );
 
-        conn1.execute("COMMIT", []).unwrap();
+        let _ = conn1.execute("COMMIT", []).unwrap();
         writer2
             .join()
             .expect("writer2 must not panic with SQLITE_BUSY");

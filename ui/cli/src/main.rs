@@ -63,7 +63,7 @@ enum TaskCommands {
         /// Task ID: TASK-0001 or plain integer
         id: String,
 
-        /// URL or file path to register (e.g. https://github.com/... or ~/.hub/agent-session-logs/TASK-0001-slug.md)
+        /// URL or file path to register (e.g. <https://github.com>/... or ~/.hub/agent-session-logs/TASK-0001-slug.md)
         #[arg(long)]
         value: String,
     },

@@ -29,6 +29,19 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let [content_area, bar_area] =
         Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(frame.area());
 
+    render_content(frame, app, content_area);
+    render_status_bar(frame, app, bar_area);
+
+    if let Some(modal) = &mut app.ui.modal {
+        task::render_task_creation_modal(frame, modal);
+    }
+
+    if app.ui.show_help {
+        render_help_popup(frame, app);
+    }
+}
+
+fn render_content(frame: &mut ratatui::Frame, app: &mut App, content_area: ratatui::layout::Rect) {
     match &mut app.ui.screen {
         Screen::UnifiedList {
             flat_rows,
@@ -94,15 +107,27 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
             pr::render_pr_detail(frame, pr, &mut 0, content_area, dim());
         }
     }
+}
 
+fn render_status_bar(frame: &mut ratatui::Frame, app: &mut App, bar_area: ratatui::layout::Rect) {
     let right_status =
         status_bar::right_status_text(&app.data.refresh_state, app.data.last_updated, Utc::now());
 
-    let right_width = Span::raw(right_status.as_str()).width() as u16 + 1;
+    let right_width =
+        u16::try_from(Span::raw(right_status.as_str()).width() + 1).unwrap_or(u16::MAX);
 
     let [bar_left, bar_right] =
         Layout::horizontal([Constraint::Min(0), Constraint::Length(right_width)]).areas(bar_area);
 
+    render_status_bar_left(frame, app, bar_left);
+
+    frame.render_widget(
+        Paragraph::new(format!("{right_status} ")).style(dim()),
+        bar_right,
+    );
+}
+
+fn render_status_bar_left(frame: &mut ratatui::Frame, app: &App, bar_left: ratatui::layout::Rect) {
     if app.ui.submenu == SubmenuState::PrActions {
         let pr_label = app
             .current_screen()
@@ -123,14 +148,13 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
 
         frame.render_widget(Paragraph::new(line), bar_left);
     } else if app.ui.submenu == SubmenuState::TaskStatus {
-        let (task_label, hints_str) = app
-            .current_screen()
-            .selected_task()
-            .map(|task| {
+        let (task_label, hints_str) = app.current_screen().selected_task().map_or_else(
+            || (" status".to_string(), "  [Esc] cancel".to_string()),
+            |task| {
                 let hints = status_bar::task_status_hints(task.status);
                 (format!(" {} · status", task.id), hints)
-            })
-            .unwrap_or_else(|| (" status".to_string(), "  [Esc] cancel".to_string()));
+            },
+        );
 
         let line = Line::from(vec![
             Span::styled(task_label, Style::default().fg(YELLOW)),
@@ -170,32 +194,24 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
         let left = status_bar::status_bar_left(app);
         frame.render_widget(Paragraph::new(format!(" {left}")).style(dim()), bar_left);
     }
+}
 
+fn render_help_popup(frame: &mut ratatui::Frame, app: &App) {
+    let keybinds = match &app.ui.screen {
+        Screen::UnifiedList { .. } => KEYBINDS_LIST,
+        Screen::MergingPr { .. } => KEYBINDS_PR_READER,
+    };
+    let text = crate::render::shared::format_keybinds(keybinds);
+    let lines = u16::try_from(keybinds.len()).unwrap_or(u16::MAX);
+    let width = u16::try_from(text.lines().map(|l| l.chars().count()).max().unwrap_or(0))
+        .unwrap_or(u16::MAX);
+    let popup = crate::render::shared::popup_area(frame.area(), lines, width);
+
+    frame.render_widget(Clear, popup);
     frame.render_widget(
-        Paragraph::new(format!("{right_status} ")).style(dim()),
-        bar_right,
+        Paragraph::new(text).block(Block::new().title(" Keybinds ").borders(Borders::ALL)),
+        popup,
     );
-
-    if let Some(modal) = &mut app.ui.modal {
-        task::render_task_creation_modal(frame, modal);
-    }
-
-    if app.ui.show_help {
-        let keybinds = match &app.ui.screen {
-            Screen::UnifiedList { .. } => KEYBINDS_LIST,
-            Screen::MergingPr { .. } => KEYBINDS_PR_READER,
-        };
-        let text = crate::render::shared::format_keybinds(keybinds);
-        let lines = keybinds.len() as u16;
-        let width = text.lines().map(|l| l.chars().count()).max().unwrap_or(0) as u16;
-        let popup = crate::render::shared::popup_area(frame.area(), lines, width);
-
-        frame.render_widget(Clear, popup);
-        frame.render_widget(
-            Paragraph::new(text).block(Block::new().title(" Keybinds ").borders(Borders::ALL)),
-            popup,
-        );
-    }
 }
 
 #[cfg(test)]
@@ -244,7 +260,7 @@ mod tests {
     fn draw(app: &mut App, width: u16, height: u16) -> ratatui::buffer::Buffer {
         let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|frame| render(frame, app)).unwrap();
+        let _ = terminal.draw(|frame| render(frame, app)).unwrap();
         terminal.backend().buffer().clone()
     }
 
@@ -259,8 +275,8 @@ mod tests {
     ) -> ratatui::buffer::Buffer {
         let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|frame| render(frame, app1)).unwrap();
-        terminal.draw(|frame| render(frame, app2)).unwrap();
+        let _ = terminal.draw(|frame| render(frame, app1)).unwrap();
+        let _ = terminal.draw(|frame| render(frame, app2)).unwrap();
         terminal.backend().buffer().clone()
     }
 
@@ -481,7 +497,7 @@ mod tests {
             items: group_items,
         }];
         let mut expanded = HashSet::new();
-        expanded.insert(key);
+        let _ = expanded.insert(key);
         let flat_rows = flatten(&items, &expanded);
         App {
             ui: UiState {

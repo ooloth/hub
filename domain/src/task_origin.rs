@@ -67,6 +67,7 @@ pub enum TaskOrigin {
 
 impl TaskOrigin {
     /// A pull request row. Identity is the repo and PR number.
+    #[must_use]
     pub fn from_pr(pr: &PullRequest) -> Self {
         Self::Pr {
             repo: pr.repo.clone(),
@@ -76,6 +77,7 @@ impl TaskOrigin {
 
     /// A GitHub issue row. `id` is the issue number as a string; `repo` is
     /// always present for GitHub.
+    #[must_use]
     pub fn from_issue(issue: &Issue) -> Self {
         Self::Issue {
             system: IssueSystem::GitHub,
@@ -86,6 +88,7 @@ impl TaskOrigin {
 
     /// A Linear issue row. `id` is the globally unique identifier (e.g.
     /// `ENG-123`); Linear has no repo.
+    #[must_use]
     pub fn from_linear(issue: &LinearIssue) -> Self {
         Self::Issue {
             system: IssueSystem::Linear,
@@ -96,6 +99,7 @@ impl TaskOrigin {
 
     /// A CI failure row. Identity is `(repo, workflow, job, step)` — all
     /// invariant for the same failing check; `url` is kept for navigation only.
+    #[must_use]
     pub fn from_ci(ci: &CiFailure) -> Self {
         Self::Ci {
             repo: ci.repo.clone(),
@@ -110,6 +114,7 @@ impl TaskOrigin {
     /// stable error category Loki groups by; it is the contract caller's
     /// responsibility that the query resolves `message` to a real stream label
     /// rather than the raw-line fallback. `label` is display only.
+    #[must_use]
     pub fn from_loki(entry: &LokiEntry) -> Self {
         Self::Alert {
             source: AlertSource::Loki,
@@ -121,6 +126,7 @@ impl TaskOrigin {
     /// A GCP alert row. `key` is `project/env/message` using the hub project
     /// name (not the cloud project id), symmetric with Loki. `label` is display
     /// only.
+    #[must_use]
     pub fn from_gcp(entry: &GcpEntry) -> Self {
         Self::Alert {
             source: AlertSource::Gcp,

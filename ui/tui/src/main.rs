@@ -34,7 +34,7 @@ mod private;
 const REFRESH_INTERVAL_SECS: u64 = 30 * 60;
 
 fn refresh_interval_chrono() -> chrono::Duration {
-    chrono::Duration::seconds(REFRESH_INTERVAL_SECS as i64)
+    chrono::Duration::seconds(i64::try_from(REFRESH_INTERVAL_SECS).unwrap_or(i64::MAX))
 }
 
 struct TerminalSession {
@@ -163,9 +163,9 @@ fn spawn_fetch(config: &config::Config, tx: mpsc::Sender<Result<StatusReport>>) 
         extra_credentials: config.extra_credentials.clone(),
     };
 
-    tokio::spawn(async move {
+    drop(tokio::spawn(async move {
         let _ = tx.send(workflows::status::run(params).await).await;
-    });
+    }));
 }
 
 /// Spawns a background task that drives automatic task-state transitions
@@ -173,20 +173,20 @@ fn spawn_fetch(config: &config::Config, tx: mpsc::Sender<Result<StatusReport>>) 
 /// Results arrive via `tasks_tx`.
 fn spawn_session_state_poll(tasks_tx: mpsc::Sender<Vec<domain::Task>>) {
     let now = chrono::Utc::now();
-    tokio::spawn(async move {
+    drop(tokio::spawn(async move {
         if let Ok(tasks) = workflows::agent_session::poll_sessions(now) {
             if let Err(e) = workflows::dispatch::reap_idle_windows(&tasks, now).await {
                 eprintln!("reap error: {e}");
             }
             let _ = tasks_tx.send(tasks).await;
         }
-    });
+    }));
 }
 
 /// Spawns a background task to read the selected agent session's JSONL stream,
-/// if the detail pane is open on an AgentSession row. Updates stream state on
+/// if the detail pane is open on an `AgentSession` row. Updates stream state on
 /// session change and sends new blocks via `stream_tx`.
-fn try_stream_selected_session(app: &mut App, stream_tx: mpsc::Sender<Vec<domain::StreamBlock>>) {
+fn try_stream_selected_session(app: &mut App, stream_tx: &mpsc::Sender<Vec<domain::StreamBlock>>) {
     let (cwd, session_id) = {
         let Screen::UnifiedList {
             flat_rows,
@@ -217,11 +217,11 @@ fn try_stream_selected_session(app: &mut App, stream_tx: mpsc::Sender<Vec<domain
         app.data.stream_session_id = Some(session_id.clone());
     }
     let stx = stream_tx.clone();
-    tokio::spawn(async move {
+    drop(tokio::spawn(async move {
         if let Ok(blocks) = workflows::tasks::read_session_stream(&cwd, &session_id).await {
             let _ = stx.send(blocks).await;
         }
-    });
+    }));
 }
 
 fn spawn_git_fetch(config: &config::Config) {
@@ -230,11 +230,11 @@ fn spawn_git_fetch(config: &config::Config) {
         .iter()
         .map(|p| (p.name.clone(), p.repo.clone()))
         .collect();
-    tokio::spawn(async move {
+    drop(tokio::spawn(async move {
         if let Err(e) = workflows::fetch::run(&projects).await {
             eprintln!("hub fetch: {e}");
         }
-    });
+    }));
 }
 
 fn request_refresh(
@@ -265,7 +265,7 @@ fn request_refresh(
                 .collect::<Vec<(String, String)>>()
         });
         let tx = tx.clone();
-        tokio::spawn(async move {
+        drop(tokio::spawn(async move {
             tokio::time::sleep(d).await;
             let _ = tx.send(workflows::status::run(params).await).await;
             if let Some(projects) = git_params {
@@ -273,7 +273,7 @@ fn request_refresh(
                     eprintln!("hub fetch: {e}");
                 }
             }
-        });
+        }));
     } else {
         if matches!(app.data.refresh_state, RefreshState::InProgress) {
             return;
@@ -297,22 +297,23 @@ async fn run_loop(
     let mut events = EventStream::new();
     let mut refresh_interval =
         tokio::time::interval(tokio::time::Duration::from_secs(REFRESH_INTERVAL_SECS));
-    refresh_interval.tick().await;
+    // Consume the first tick so the interval fires after a full period.
+    let _ = refresh_interval.tick().await;
     // Wakes the loop every minute so the "updated Xm ago" timestamp
     // advances without requiring a keypress.
-    let mut display_interval = tokio::time::interval(tokio::time::Duration::from_secs(60));
-    display_interval.tick().await;
+    let mut display_interval = tokio::time::interval(tokio::time::Duration::from_mins(1));
+    let _ = display_interval.tick().await;
     // Live-polls the JSONL stream for the selected AgentSession while detail is open.
     let mut stream_interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
-    stream_interval.tick().await;
+    let _ = stream_interval.tick().await;
     // Claims the oldest ready task and spawns its agent session.
     let mut dispatch_interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
-    dispatch_interval.tick().await;
+    let _ = dispatch_interval.tick().await;
     let (stream_tx, mut stream_rx) = mpsc::channel::<Vec<domain::StreamBlock>>(1);
     let (tasks_tx, mut tasks_rx) = mpsc::channel::<Vec<domain::Task>>(1);
 
     'run: loop {
-        terminal.draw(|f| render(f, app))?;
+        let _ = terminal.draw(|f| render(f, app))?;
 
         let effects: Vec<Effect> = tokio::select! {
             Some(event) = events.next() => {
@@ -327,23 +328,12 @@ async fn run_loop(
                     vec![]
                 }
             }
-            _ = refresh_interval.tick() => {
-                let cached = store::status_cache::read_if_fresh(conn, refresh_interval_chrono())
-                    .context("failed to read status cache on tick")?;
-                match cached {
-                    Some(cached) if cached.schema_version == SCHEMA_VERSION => {
-                        let report: StatusReport = serde_json::from_str(&cached.payload)
-                            .context("failed to deserialize cached status on tick")?;
-                        handle_msg(app, Msg::AppliedFromCache { report, refreshed_at: cached.refreshed_at })?
-                    }
-                    _ => handle_msg(app, Msg::Tick)?,
-                }
-            }
+            _ = refresh_interval.tick() => on_refresh_tick(app, conn)?,
             _ = display_interval.tick() => vec![], // redraw only; no state change
             Some(result) = rx.recv() => handle_msg(app, Msg::FetchResult(result))?,
             _ = stream_interval.tick() => {
                 spawn_session_state_poll(tasks_tx.clone());
-                try_stream_selected_session(app, stream_tx.clone());
+                try_stream_selected_session(app, &stream_tx);
                 vec![]
             }
             Some(blocks) = stream_rx.recv() => handle_msg(app, Msg::StreamUpdate(blocks))?,
@@ -357,279 +347,471 @@ async fn run_loop(
         };
 
         for effect in effects {
-            match effect {
-                Effect::Quit => break 'run,
-                Effect::OpenUrl(url) => {
-                    let _ = open::that_detached(url);
-                }
-                Effect::OpenPrDiffInDelta { repo, number } => {
-                    let window_name = format!("{repo}#{number}-diff");
-                    let cmd = format!("gh pr diff {number} -R {repo} | delta; read",);
-                    let _ = std::process::Command::new("tmux")
-                        .args(["new-window", "-n", &window_name, &cmd])
-                        .spawn();
-                }
-                Effect::LaunchCi { repo, run_url } => {
-                    if let Err(err) = investigations::launch(
-                        investigations::ci::config(&repo, &run_url),
-                        investigations::WorktreeSpec::EphemeralFresh { repo },
-                        config,
-                    )
-                    .await
-                    {
-                        app.ui.flash = Some(err.to_string());
-                    }
-                }
-                Effect::LaunchIssue { repo, number } => {
-                    if let Err(err) = investigations::launch(
-                        investigations::issue::config(&repo, number),
-                        investigations::WorktreeSpec::EphemeralFresh { repo },
-                        config,
-                    )
-                    .await
-                    {
-                        app.ui.flash = Some(err.to_string());
-                    }
-                }
-                Effect::LaunchPr {
-                    repo,
-                    number,
-                    kind,
-                    review_decision,
-                    head_branch,
-                    ..
-                } => {
-                    let ownership = PrOwnership::from_kind(kind);
-                    let skill = if review_decision == Some(domain::ReviewDecision::ChangesRequested)
-                    {
-                        ReviewSkill::PrCommentsConverge
-                    } else {
-                        ReviewSkill::Converge
-                    };
-                    if let Err(err) = investigations::launch(
-                        investigations::pr::review_config(number, &repo, ownership, skill),
-                        investigations::WorktreeSpec::PullRequest {
-                            repo,
-                            number,
-                            head_branch,
-                        },
-                        config,
-                    )
-                    .await
-                    {
-                        app.ui.flash = Some(err.to_string());
-                    }
-                }
-                Effect::ReviewPr {
-                    repo,
-                    number,
-                    ownership,
-                    skill,
-                    head_branch,
-                    ..
-                } => {
-                    if let Err(err) = investigations::launch(
-                        investigations::pr::review_config(number, &repo, ownership, skill),
-                        investigations::WorktreeSpec::PullRequest {
-                            repo,
-                            number,
-                            head_branch,
-                        },
-                        config,
-                    )
-                    .await
-                    {
-                        app.ui.flash = Some(err.to_string());
-                    }
-                }
-                Effect::OpenInOcto {
-                    repo,
-                    number,
-                    head_branch,
-                } => {
-                    if let Err(err) =
-                        investigations::open_in_octo(&repo, number, &head_branch, config).await
-                    {
-                        app.ui.flash = Some(err.to_string());
-                    }
-                }
-                Effect::OpenInLazygit {
-                    repo,
-                    number,
-                    head_branch,
-                } => {
-                    if let Err(err) =
-                        investigations::open_in_lazygit(&repo, number, &head_branch, config).await
-                    {
-                        app.ui.flash = Some(err.to_string());
-                    }
-                }
-                Effect::LaunchGcp {
-                    project,
-                    env,
-                    title,
-                    message,
-                    line,
-                    url,
-                    lookback,
-                    gcp_project,
-                } => {
-                    if let Err(err) = investigations::launch(
-                        investigations::gcp::config(
-                            &project,
-                            &env,
-                            &title,
-                            &message,
-                            &line,
-                            &url,
-                            &lookback,
-                            &gcp_project,
-                        ),
-                        investigations::WorktreeSpec::Ephemeral { project },
-                        config,
-                    )
-                    .await
-                    {
-                        app.ui.flash = Some(err.to_string());
-                    }
-                }
-                Effect::LaunchLoki {
-                    project,
-                    env,
-                    title,
-                    message,
-                    line,
-                    url,
-                    lookback,
-                } => {
-                    if let Err(err) = investigations::launch(
-                        investigations::loki::config(
-                            &project, &env, &title, &message, &line, &url, &lookback,
-                        ),
-                        investigations::WorktreeSpec::Ephemeral { project },
-                        config,
-                    )
-                    .await
-                    {
-                        app.ui.flash = Some(err.to_string());
-                    }
-                }
-                #[cfg(feature = "private")]
-                Effect::LaunchMediaBlocked { title, error } => {
-                    let result = match investigations::media::config(
-                        &title,
-                        &error,
-                        &config.extra_credentials,
-                    ) {
-                        Ok(cfg) => {
-                            investigations::launch(
-                                cfg,
-                                investigations::WorktreeSpec::CurrentDir,
-                                config,
-                            )
-                            .await
-                        }
-                        Err(e) => Err(e),
-                    };
-                    if let Err(err) = result {
-                        app.ui.flash = Some(err.to_string());
-                    }
-                }
-                Effect::SetIssueLabels {
-                    repo,
-                    number,
-                    labels,
-                } => {
-                    match clients::github::set_issue_labels(
-                        config.github_token.expose_secret(),
-                        &repo,
-                        number,
-                        &labels,
-                    )
-                    .await
-                    {
-                        Ok(()) => {
-                            app.ui.flash = Some(format!("Marked #{number} ready for agent"));
-                            request_refresh(app, config, tx, false, None);
-                        }
-                        Err(e) => {
-                            app.ui.flash =
-                                Some(format!("Could not mark #{number} ready for agent: {e}"));
-                        }
-                    }
-                }
-                Effect::MergePullRequest { repo, number } => {
-                    match clients::github::merge_pull_request(
-                        config.github_token.expose_secret(),
-                        &repo,
-                        number,
-                    )
-                    .await
-                    {
-                        Ok(()) => {
-                            app.ui.flash = Some(format!("Merged #{number}"));
-                            request_refresh(app, config, tx, true, Some(Duration::from_secs(5)));
-                        }
-                        Err(e) => {
-                            app.ui.flash = Some(format!("Could not merge #{number}: {e}"));
-                        }
-                    }
-                }
-                Effect::UpdateTaskStatus { id, status } => {
-                    match workflows::tasks::update_status(&id, status) {
-                        Ok(()) => {
-                            app.ui.flash = Some(format!("{id} → {status}"));
-                            request_refresh(app, config, tx, false, None);
-                        }
-                        Err(e) => {
-                            app.ui.flash = Some(format!("Could not update {id}: {e}"));
-                        }
-                    }
-                }
-                Effect::CreateTask {
-                    title,
-                    description,
-                    kind,
-                    links,
-                    repo,
-                    origin,
-                } => match store::tasks::active_for_origin(conn, &origin) {
-                    Err(e) => {
-                        app.ui.flash = Some(format!("Could not check active tasks: {e}"));
-                    }
-                    Ok(Some(existing)) => {
-                        app.ui.flash = Some(format!(
-                            "{} already active for this signal — close it first",
-                            existing.id
-                        ));
-                    }
-                    Ok(None) => match workflows::tasks::create(
-                        &title,
-                        kind,
-                        description.as_deref(),
-                        &links,
-                        repo.as_ref().map(|r| r.to_string()).as_deref(),
-                        &origin,
-                    ) {
-                        Ok(id) => {
-                            app.ui.flash = Some(format!("{id} created"));
-                            request_refresh(app, config, tx, false, None);
-                        }
-                        Err(e) => {
-                            app.ui.flash = Some(format!("Could not create task: {e}"));
-                        }
-                    },
-                },
-                Effect::StartRefresh => {
-                    request_refresh(app, config, tx, true, None);
-                }
-                Effect::WriteCache(json) => {
-                    store::status_cache::upsert(conn, &json, SCHEMA_VERSION)
-                        .context("failed to upsert status cache")?;
-                }
+            if handle_effect(effect, app, conn, config, tx).await? {
+                break 'run;
             }
         }
     }
 
     Ok(())
+}
+
+fn on_refresh_tick(app: &mut App, conn: &rusqlite::Connection) -> Result<Vec<Effect>> {
+    let cached = store::status_cache::read_if_fresh(conn, refresh_interval_chrono())
+        .context("failed to read status cache on tick")?;
+    match cached {
+        Some(cached) if cached.schema_version == SCHEMA_VERSION => {
+            let report: StatusReport = serde_json::from_str(&cached.payload)
+                .context("failed to deserialize cached status on tick")?;
+            handle_msg(
+                app,
+                Msg::AppliedFromCache {
+                    report,
+                    refreshed_at: cached.refreshed_at,
+                },
+            )
+        }
+        _ => handle_msg(app, Msg::Tick),
+    }
+}
+
+/// Processes a single effect. Returns `true` if the loop should quit.
+async fn handle_effect(
+    effect: Effect,
+    app: &mut App,
+    conn: &rusqlite::Connection,
+    config: &config::Config,
+    tx: &mpsc::Sender<Result<StatusReport>>,
+) -> Result<bool> {
+    match effect {
+        Effect::Quit => return Ok(true),
+        Effect::OpenUrl(url) => {
+            let _ = open::that_detached(url);
+        }
+        Effect::OpenPrDiffInDelta { repo, number } => open_pr_diff(&repo, number),
+        Effect::SetIssueLabels {
+            repo,
+            number,
+            labels,
+        } => {
+            handle_set_issue_labels(app, config, tx, repo, number, labels).await;
+        }
+        Effect::MergePullRequest { repo, number } => {
+            handle_merge_pull_request(app, config, tx, repo, number).await;
+        }
+        Effect::UpdateTaskStatus { id, status } => {
+            handle_update_task_status(app, config, tx, &id, status);
+        }
+        Effect::CreateTask {
+            title,
+            description,
+            kind,
+            links,
+            repo,
+            origin,
+        } => {
+            handle_create_task(
+                app,
+                conn,
+                config,
+                tx,
+                &title,
+                description.as_deref(),
+                kind,
+                &links,
+                repo.as_ref(),
+                &origin,
+            );
+        }
+        Effect::StartRefresh => request_refresh(app, config, tx, true, None),
+        Effect::WriteCache(json) => {
+            store::status_cache::upsert(conn, &json, SCHEMA_VERSION)
+                .context("failed to upsert status cache")?;
+        }
+        other => handle_investigation_effect(other, app, config).await,
+    }
+    Ok(false)
+}
+
+/// Dispatches investigation/launch effects that only need `app` and `config`.
+async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &config::Config) {
+    match effect {
+        Effect::LaunchCi { repo, run_url } => handle_launch_ci(app, config, repo, run_url).await,
+        Effect::LaunchIssue { repo, number } => {
+            handle_launch_issue(app, config, repo, number).await;
+        }
+        Effect::LaunchPr {
+            repo,
+            number,
+            kind,
+            review_decision,
+            head_branch,
+            ..
+        } => {
+            handle_launch_pr(
+                app,
+                config,
+                repo,
+                number,
+                kind,
+                review_decision,
+                head_branch,
+            )
+            .await;
+        }
+        Effect::ReviewPr {
+            repo,
+            number,
+            ownership,
+            skill,
+            head_branch,
+            ..
+        } => {
+            handle_review_pr(app, config, repo, number, ownership, skill, head_branch).await;
+        }
+        Effect::OpenInOcto {
+            repo,
+            number,
+            head_branch,
+        } => {
+            handle_open_in_octo(app, config, repo, number, head_branch).await;
+        }
+        Effect::OpenInLazygit {
+            repo,
+            number,
+            head_branch,
+        } => {
+            handle_open_in_lazygit(app, config, repo, number, head_branch).await;
+        }
+        Effect::LaunchGcp {
+            project,
+            env,
+            title,
+            message,
+            line,
+            url,
+            lookback,
+            gcp_project,
+        } => {
+            handle_launch_gcp(
+                app,
+                config,
+                project,
+                env,
+                title,
+                message,
+                line,
+                url,
+                lookback,
+                gcp_project,
+            )
+            .await;
+        }
+        Effect::LaunchLoki {
+            project,
+            env,
+            title,
+            message,
+            line,
+            url,
+            lookback,
+        } => {
+            handle_launch_loki(
+                app, config, project, env, title, message, line, url, lookback,
+            )
+            .await;
+        }
+        #[cfg(feature = "private")]
+        Effect::LaunchMediaBlocked { title, error } => {
+            handle_launch_media(app, config, title, error).await;
+        }
+        _ => {}
+    }
+}
+
+fn open_pr_diff(repo: &str, number: u64) {
+    let window_name = format!("{repo}#{number}-diff");
+    let cmd = format!("gh pr diff {number} -R {repo} | delta; read");
+    let _ = std::process::Command::new("tmux")
+        .args(["new-window", "-n", &window_name, &cmd])
+        .spawn();
+}
+
+fn handle_update_task_status(
+    app: &mut App,
+    config: &config::Config,
+    tx: &mpsc::Sender<Result<StatusReport>>,
+    id: &domain::TaskId,
+    status: domain::TaskStatus,
+) {
+    match workflows::tasks::update_status(id, status) {
+        Ok(()) => {
+            app.ui.flash = Some(format!("{id} → {status}"));
+            request_refresh(app, config, tx, false, None);
+        }
+        Err(e) => {
+            app.ui.flash = Some(format!("Could not update {id}: {e}"));
+        }
+    }
+}
+
+async fn handle_launch_ci(app: &mut App, config: &config::Config, repo: String, run_url: String) {
+    if let Err(err) = investigations::launch(
+        investigations::ci::config(&repo, &run_url),
+        investigations::WorktreeSpec::EphemeralFresh { repo },
+        config,
+    )
+    .await
+    {
+        app.ui.flash = Some(err.to_string());
+    }
+}
+
+async fn handle_launch_issue(app: &mut App, config: &config::Config, repo: String, number: u64) {
+    if let Err(err) = investigations::launch(
+        investigations::issue::config(&repo, number),
+        investigations::WorktreeSpec::EphemeralFresh { repo },
+        config,
+    )
+    .await
+    {
+        app.ui.flash = Some(err.to_string());
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn handle_launch_pr(
+    app: &mut App,
+    config: &config::Config,
+    repo: String,
+    number: u64,
+    kind: domain::PrKind,
+    review_decision: Option<domain::ReviewDecision>,
+    head_branch: String,
+) {
+    let ownership = PrOwnership::from_kind(kind);
+    let skill = if review_decision == Some(domain::ReviewDecision::ChangesRequested) {
+        ReviewSkill::PrCommentsConverge
+    } else {
+        ReviewSkill::Converge
+    };
+    if let Err(err) = investigations::launch(
+        investigations::pr::review_config(number, &repo, ownership, skill),
+        investigations::WorktreeSpec::PullRequest {
+            repo,
+            number,
+            head_branch,
+        },
+        config,
+    )
+    .await
+    {
+        app.ui.flash = Some(err.to_string());
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn handle_review_pr(
+    app: &mut App,
+    config: &config::Config,
+    repo: String,
+    number: u64,
+    ownership: PrOwnership,
+    skill: ReviewSkill,
+    head_branch: String,
+) {
+    if let Err(err) = investigations::launch(
+        investigations::pr::review_config(number, &repo, ownership, skill),
+        investigations::WorktreeSpec::PullRequest {
+            repo,
+            number,
+            head_branch,
+        },
+        config,
+    )
+    .await
+    {
+        app.ui.flash = Some(err.to_string());
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn handle_launch_gcp(
+    app: &mut App,
+    config: &config::Config,
+    project: String,
+    env: String,
+    title: String,
+    message: String,
+    line: String,
+    url: String,
+    lookback: String,
+    gcp_project: String,
+) {
+    if let Err(err) = investigations::launch(
+        investigations::gcp::config(
+            &project,
+            &env,
+            &title,
+            &message,
+            &line,
+            &url,
+            &lookback,
+            &gcp_project,
+        ),
+        investigations::WorktreeSpec::Ephemeral { project },
+        config,
+    )
+    .await
+    {
+        app.ui.flash = Some(err.to_string());
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn handle_launch_loki(
+    app: &mut App,
+    config: &config::Config,
+    project: String,
+    env: String,
+    title: String,
+    message: String,
+    line: String,
+    url: String,
+    lookback: String,
+) {
+    if let Err(err) = investigations::launch(
+        investigations::loki::config(&project, &env, &title, &message, &line, &url, &lookback),
+        investigations::WorktreeSpec::Ephemeral { project },
+        config,
+    )
+    .await
+    {
+        app.ui.flash = Some(err.to_string());
+    }
+}
+
+async fn handle_open_in_octo(
+    app: &mut App,
+    config: &config::Config,
+    repo: String,
+    number: u64,
+    head_branch: String,
+) {
+    if let Err(err) = investigations::open_in_octo(&repo, number, &head_branch, config).await {
+        app.ui.flash = Some(err.to_string());
+    }
+}
+
+async fn handle_open_in_lazygit(
+    app: &mut App,
+    config: &config::Config,
+    repo: String,
+    number: u64,
+    head_branch: String,
+) {
+    if let Err(err) = investigations::open_in_lazygit(&repo, number, &head_branch, config).await {
+        app.ui.flash = Some(err.to_string());
+    }
+}
+
+#[cfg(feature = "private")]
+async fn handle_launch_media(app: &mut App, config: &config::Config, title: String, error: String) {
+    let result = match investigations::media::config(&title, &error, &config.extra_credentials) {
+        Ok(cfg) => {
+            investigations::launch(cfg, investigations::WorktreeSpec::CurrentDir, config).await
+        }
+        Err(e) => Err(e),
+    };
+    if let Err(err) = result {
+        app.ui.flash = Some(err.to_string());
+    }
+}
+
+async fn handle_set_issue_labels(
+    app: &mut App,
+    config: &config::Config,
+    tx: &mpsc::Sender<Result<StatusReport>>,
+    repo: String,
+    number: u64,
+    labels: Vec<String>,
+) {
+    match clients::github::set_issue_labels(
+        config.github_token.expose_secret(),
+        &repo,
+        number,
+        &labels,
+    )
+    .await
+    {
+        Ok(()) => {
+            app.ui.flash = Some(format!("Marked #{number} ready for agent"));
+            request_refresh(app, config, tx, false, None);
+        }
+        Err(e) => {
+            app.ui.flash = Some(format!("Could not mark #{number} ready for agent: {e}"));
+        }
+    }
+}
+
+async fn handle_merge_pull_request(
+    app: &mut App,
+    config: &config::Config,
+    tx: &mpsc::Sender<Result<StatusReport>>,
+    repo: String,
+    number: u64,
+) {
+    match clients::github::merge_pull_request(config.github_token.expose_secret(), &repo, number)
+        .await
+    {
+        Ok(()) => {
+            app.ui.flash = Some(format!("Merged #{number}"));
+            request_refresh(app, config, tx, true, Some(Duration::from_secs(5)));
+        }
+        Err(e) => {
+            app.ui.flash = Some(format!("Could not merge #{number}: {e}"));
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_create_task(
+    app: &mut App,
+    conn: &rusqlite::Connection,
+    config: &config::Config,
+    tx: &mpsc::Sender<Result<StatusReport>>,
+    title: &str,
+    description: Option<&str>,
+    kind: domain::TaskKind,
+    links: &[String],
+    repo: Option<&domain::RepoSlug>,
+    origin: &domain::TaskOrigin,
+) {
+    match store::tasks::active_for_origin(conn, origin) {
+        Err(e) => {
+            app.ui.flash = Some(format!("Could not check active tasks: {e}"));
+        }
+        Ok(Some(existing)) => {
+            app.ui.flash = Some(format!(
+                "{} already active for this signal — close it first",
+                existing.id
+            ));
+        }
+        Ok(None) => match workflows::tasks::create(
+            title,
+            kind,
+            description,
+            links,
+            repo.map(std::string::ToString::to_string).as_deref(),
+            origin,
+        ) {
+            Ok(id) => {
+                app.ui.flash = Some(format!("{id} created"));
+                request_refresh(app, config, tx, false, None);
+            }
+            Err(e) => {
+                app.ui.flash = Some(format!("Could not create task: {e}"));
+            }
+        },
+    }
 }

@@ -3,6 +3,10 @@ use chrono::Utc;
 use domain::{LokiEntry, LokiEnv, Urgency};
 use secrecy::ExposeSecret;
 
+/// Queries Loki for each configured query and returns matching log entries.
+///
+/// # Errors
+/// Returns an error if the Loki HTTP request fails or the response cannot be parsed.
 pub async fn run(env: &LokiEnv) -> Result<Vec<LokiEntry>> {
     let mut results = Vec::new();
 
@@ -71,13 +75,16 @@ fn grafana_explore_url(grafana_url: Option<&str>, query: &str, lookback: &str) -
 }
 
 fn percent_encode(s: &str) -> String {
+    use std::fmt::Write as _;
     let mut out = String::with_capacity(s.len() * 3);
     for byte in s.bytes() {
         match byte {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
                 out.push(byte as char);
             }
-            b => out.push_str(&format!("%{b:02X}")),
+            b => {
+                let _ = write!(out, "%{b:02X}");
+            }
         }
     }
     out

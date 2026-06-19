@@ -97,7 +97,7 @@ async fn issue_states_with_base(
             let state = issue_node.get("state").and_then(|s| s.as_str());
             let state_reason = issue_node.get("stateReason").and_then(|s| s.as_str());
             if let Some(s) = parse_issue_state(state, state_reason) {
-                result.insert((repo.clone(), *number), s);
+                let _ = result.insert((repo.clone(), *number), s);
             }
         }
     }
@@ -157,20 +157,20 @@ mod tests {
             let mut repo_obj = serde_json::Map::new();
             for (issue_alias, state, state_reason) in *issues {
                 let mut node = serde_json::Map::new();
-                node.insert(
+                let _ = node.insert(
                     "state".to_string(),
                     serde_json::Value::String(state.to_string()),
                 );
-                node.insert(
+                let _ = node.insert(
                     "stateReason".to_string(),
                     match state_reason {
                         Some(r) => serde_json::Value::String(r.to_string()),
                         None => serde_json::Value::Null,
                     },
                 );
-                repo_obj.insert(issue_alias.to_string(), serde_json::Value::Object(node));
+                let _ = repo_obj.insert(issue_alias.to_string(), serde_json::Value::Object(node));
             }
-            data.insert(repo_alias.to_string(), serde_json::Value::Object(repo_obj));
+            let _ = data.insert(repo_alias.to_string(), serde_json::Value::Object(repo_obj));
         }
         serde_json::json!({ "data": data })
     }

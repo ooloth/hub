@@ -56,7 +56,7 @@ pub(crate) enum WorktreeSpec {
     /// investigations where a fresh fetch is not critical (GCP, Loki).
     /// `project` is the directory name under `~/.hub/repos/`.
     Ephemeral { project: String },
-    /// Use the process's current directory (MediaBlocked, last-resort fallback).
+    /// Use the process's current directory (`MediaBlocked`, last-resort fallback).
     #[cfg(feature = "private")]
     CurrentDir,
 }
@@ -106,15 +106,17 @@ pub(crate) async fn launch(
     let pane = std::env::var("TMUX_PANE").unwrap_or_default();
 
     let mut cmd = std::process::Command::new("tmux");
-    cmd.args(["split-window", "-h", "-t", &pane, "-c"])
+    let _ = cmd
+        .args(["split-window", "-h", "-t", &pane, "-c"])
         .arg(&cwd);
-    cmd.arg("-e")
+    let _ = cmd
+        .arg("-e")
         .arg(format!("HUB_SYSTEM_PROMPT={}", config.system_prompt));
-    cmd.arg("-e").arg(format!("HUB_TASK_PROMPT={prompt}"));
+    let _ = cmd.arg("-e").arg(format!("HUB_TASK_PROMPT={prompt}"));
     for (k, v) in &config.env {
-        cmd.arg("-e").arg(format!("{k}={v}"));
+        let _ = cmd.arg("-e").arg(format!("{k}={v}"));
     }
-    cmd.arg(&command);
+    let _ = cmd.arg(&command);
 
     let status = cmd.status().context("failed to start tmux split-window")?;
 
@@ -144,11 +146,12 @@ pub(crate) async fn open_in_lazygit(
         .await
         .context("Failed to create PR worktree")?;
 
-    let repo_name = repo.split_once('/').map(|(_, name)| name).unwrap_or(repo);
+    let repo_name = repo.split_once('/').map_or(repo, |(_, name)| name);
     let window_name = format!("{repo_name}#{number}-git");
 
     let mut cmd = std::process::Command::new("tmux");
-    cmd.args(["new-window", "-n", &window_name, "-c"])
+    let _ = cmd
+        .args(["new-window", "-n", &window_name, "-c"])
         .arg(&cwd)
         .arg("lazygit");
 
@@ -179,11 +182,12 @@ pub(crate) async fn open_in_octo(
         .await
         .context("Failed to create PR worktree")?;
 
-    let repo_name = repo.split_once('/').map(|(_, name)| name).unwrap_or(repo);
+    let repo_name = repo.split_once('/').map_or(repo, |(_, name)| name);
     let window_name = format!("{repo_name}#{number}");
 
     let mut cmd = std::process::Command::new("tmux");
-    cmd.args(["new-window", "-n", &window_name, "-c"])
+    let _ = cmd
+        .args(["new-window", "-n", &window_name, "-c"])
         .arg(&cwd)
         .arg(format!(
             "NVIM_APPNAME=nvim-ide nvim +'Octo pr edit {number}'"

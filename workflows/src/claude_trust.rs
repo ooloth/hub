@@ -46,7 +46,8 @@ pub(crate) fn trust_workspace(claude_json: &Path, workspace: &Path) -> Result<()
         .context("failed to create tempfile for claude.json")?;
     serde_json::to_writer_pretty(&mut tmp, &updated)
         .context("failed to serialise updated claude.json")?;
-    tmp.persist(claude_json)
+    let _ = tmp
+        .persist(claude_json)
         .context("failed to atomically replace claude.json")?;
 
     Ok(())
@@ -74,11 +75,11 @@ fn set_trust_flag(mut doc: serde_json::Value, workspace: &Path) -> Result<serde_
             .entry(path_key)
             .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
 
-        let project_obj = project
+        let project_entry = project
             .as_object_mut()
             .context("project entry is not a JSON object")?;
 
-        project_obj.insert(
+        let _ = project_entry.insert(
             "hasTrustDialogAccepted".into(),
             serde_json::Value::Bool(true),
         );

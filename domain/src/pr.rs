@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 pub struct RepoSlug(String);
 
 impl RepoSlug {
+    /// # Panics
+    /// Panics if `owner` or `repo` is empty.
+    #[must_use]
     pub fn new(owner: &str, repo: &str) -> Self {
         assert!(!owner.is_empty(), "owner must not be empty");
         assert!(!repo.is_empty(), "repo must not be empty");
@@ -81,11 +84,9 @@ impl std::str::FromStr for RepoSlug {
 }
 
 impl RepoSlug {
+    #[must_use]
     pub fn repo_name(&self) -> &str {
-        self.0
-            .split_once('/')
-            .map(|(_, repo)| repo)
-            .unwrap_or(&self.0)
+        self.0.split_once('/').map_or(&self.0, |(_, repo)| repo)
     }
 }
 

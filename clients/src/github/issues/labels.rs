@@ -16,7 +16,7 @@ pub async fn set_issue_labels(
     number: u64,
     labels: &[String],
 ) -> Result<()> {
-    reqwest::Client::new()
+    let _ = reqwest::Client::new()
         .put(format!(
             "https://api.github.com/repos/{repo}/issues/{number}/labels"
         ))

@@ -96,8 +96,9 @@ pub(crate) fn status_bar_left(app: &App) -> String {
                     Some(FlatRow::GroupHeader {
                         expanded: false, ..
                     }) => " · [l] expand",
-                    Some(FlatRow::GroupHeader { expanded: true, .. }) => " · [h] collapse",
-                    Some(FlatRow::GroupChild { .. }) => " · [h] collapse",
+                    Some(
+                        FlatRow::GroupHeader { expanded: true, .. } | FlatRow::GroupChild { .. },
+                    ) => " · [h] collapse",
                     _ => "",
                 };
                 format!(
@@ -148,11 +149,9 @@ pub(crate) fn right_status_text(
     match state {
         RefreshState::InProgress => "refreshing…".to_string(),
         RefreshState::Partial(failed_sources) => {
-            let time_str = last_updated
-                .map(age_str)
-                .unwrap_or_else(|| "unknown".to_string());
+            let time_str = last_updated.map_or_else(|| "unknown".to_string(), age_str);
             let sources = failed_sources.join(", ");
-            format!("! {} unreachable (updated {time_str})", sources)
+            format!("! {sources} unreachable (updated {time_str})")
         }
         RefreshState::Failed(err) => format!("refresh failed: {err}"),
         RefreshState::Idle => last_updated

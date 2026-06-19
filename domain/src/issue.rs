@@ -11,6 +11,7 @@ pub const WONTFIX_LABEL: &str = "wontfix";
 /// Returns the label set that marks an issue as ready for an agent:
 /// removes `NEEDS_HUMAN_REVIEW_LABEL` (if present) and adds `READY_FOR_AGENT_LABEL`
 /// (if not already present). All other labels are preserved in order. Idempotent.
+#[must_use]
 pub fn agent_ready_labels(labels: &[String]) -> Vec<String> {
     let mut result: Vec<String> = labels
         .iter()
@@ -26,6 +27,7 @@ pub fn agent_ready_labels(labels: &[String]) -> Vec<String> {
 /// Returns the label set that dismisses an issue as won't fix:
 /// removes `NEEDS_HUMAN_REVIEW_LABEL` (if present) and adds `WONTFIX_LABEL`
 /// (if not already present). All other labels are preserved in order. Idempotent.
+#[must_use]
 pub fn dismissed_labels(labels: &[String]) -> Vec<String> {
     let mut result: Vec<String> = labels
         .iter()

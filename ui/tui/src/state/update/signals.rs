@@ -60,36 +60,45 @@ impl App {
 
     pub(super) fn handle_unified_list(&mut self, action: Action) -> Vec<Effect> {
         match action {
-            Action::MoveUp => {
-                self.move_up();
-                self.reset_detail_scroll();
-                vec![]
-            }
-            Action::MoveDown => {
-                self.move_down();
-                self.reset_detail_scroll();
-                vec![]
-            }
-            Action::MoveToTop => {
-                self.move_to_top();
-                self.reset_detail_scroll();
-                vec![]
-            }
-            Action::MoveToBottom => {
-                self.move_to_bottom();
-                self.reset_detail_scroll();
-                vec![]
-            }
-            Action::MovePageUp => {
-                self.move_page_up();
-                self.reset_detail_scroll();
-                vec![]
-            }
-            Action::MovePageDown => {
-                self.move_page_down();
-                self.reset_detail_scroll();
-                vec![]
-            }
+            Action::MoveUp
+            | Action::MoveDown
+            | Action::MoveToTop
+            | Action::MoveToBottom
+            | Action::MovePageUp
+            | Action::MovePageDown => self.handle_navigation(action),
+            Action::Enter
+            | Action::ToggleSessionDetail
+            | Action::ScrollDetailDown
+            | Action::ScrollDetailUp => self.handle_detail_panel(action),
+            Action::ExpandGroup => self.handle_expand_group(),
+            Action::CollapseGroup => self.handle_collapse_group(),
+            Action::OpenUrl
+            | Action::OpenReviewPicker
+            | Action::CommitReview(_)
+            | Action::CancelReview
+            | Action::MergePr
+            | Action::ApproveForAgent
+            | Action::Investigate => self.handle_list_action(action),
+            _ => unreachable!(),
+        }
+    }
+
+    fn handle_navigation(&mut self, action: Action) -> Vec<Effect> {
+        match action {
+            Action::MoveUp => self.move_up(),
+            Action::MoveDown => self.move_down(),
+            Action::MoveToTop => self.move_to_top(),
+            Action::MoveToBottom => self.move_to_bottom(),
+            Action::MovePageUp => self.move_page_up(),
+            Action::MovePageDown => self.move_page_down(),
+            _ => unreachable!(),
+        }
+        self.reset_detail_scroll();
+        vec![]
+    }
+
+    fn handle_detail_panel(&mut self, action: Action) -> Vec<Effect> {
+        match action {
             Action::Enter => {
                 let is_hidden = matches!(
                     &self.ui.screen,
@@ -116,7 +125,6 @@ impl App {
                         };
                     }
                 }
-                vec![]
             }
             Action::ToggleSessionDetail => {
                 if let Screen::UnifiedList { detail_mode, .. } = &mut self.ui.screen {
@@ -130,7 +138,6 @@ impl App {
                         DetailMode::Hidden => DetailMode::Hidden,
                     };
                 }
-                vec![]
             }
             Action::ScrollDetailDown => {
                 let detail_scroll = match &mut self.ui.screen {
@@ -147,7 +154,6 @@ impl App {
                 if let Some(scroll) = detail_scroll {
                     *scroll = scroll.saturating_add(1);
                 }
-                vec![]
             }
             Action::ScrollDetailUp => {
                 let detail_scroll = match &mut self.ui.screen {
@@ -164,88 +170,97 @@ impl App {
                 if let Some(scroll) = detail_scroll {
                     *scroll = scroll.saturating_sub(1);
                 }
-                vec![]
             }
-            Action::ExpandGroup => {
-                let to_expand = {
-                    let Screen::UnifiedList {
-                        flat_rows,
-                        selected,
-                        ..
-                    } = &self.ui.screen
-                    else {
-                        return vec![];
-                    };
-                    match flat_rows.get(*selected) {
-                        Some(FlatRow::GroupHeader {
-                            key,
-                            expanded: false,
-                            ..
-                        }) => Some(key.clone()),
-                        _ => None,
-                    }
-                };
-                if let Some(key) = to_expand {
-                    if let Screen::UnifiedList {
-                        items,
-                        flat_rows,
-                        expanded_groups,
-                        ..
-                    } = &mut self.ui.screen
+            _ => unreachable!(),
+        }
+        vec![]
+    }
+
+    fn handle_expand_group(&mut self) -> Vec<Effect> {
+        let to_expand = {
+            let Screen::UnifiedList {
+                flat_rows,
+                selected,
+                ..
+            } = &self.ui.screen
+            else {
+                return vec![];
+            };
+            match flat_rows.get(*selected) {
+                Some(FlatRow::GroupHeader {
+                    key,
+                    expanded: false,
+                    ..
+                }) => Some(key.clone()),
+                _ => None,
+            }
+        };
+        if let Some(key) = to_expand {
+            if let Screen::UnifiedList {
+                items,
+                flat_rows,
+                expanded_groups,
+                ..
+            } = &mut self.ui.screen
+            {
+                let _ = expanded_groups.insert(key);
+                *flat_rows = flatten(items, expanded_groups);
+            }
+        }
+        vec![]
+    }
+
+    fn handle_collapse_group(&mut self) -> Vec<Effect> {
+        let to_collapse = {
+            let Screen::UnifiedList {
+                flat_rows,
+                selected,
+                expanded_groups,
+                ..
+            } = &self.ui.screen
+            else {
+                return vec![];
+            };
+            match flat_rows.get(*selected) {
+                Some(FlatRow::GroupHeader {
+                    key,
+                    expanded: true,
+                    ..
+                }) => Some((key.clone(), false)),
+                Some(FlatRow::GroupChild { parent_key, .. })
+                    if expanded_groups.contains(parent_key) =>
+                {
+                    Some((parent_key.clone(), true))
+                }
+                _ => None,
+            }
+        };
+        if let Some((key, jump_to_parent)) = to_collapse {
+            if let Screen::UnifiedList {
+                items,
+                flat_rows,
+                selected,
+                expanded_groups,
+                ..
+            } = &mut self.ui.screen
+            {
+                let _ = expanded_groups.remove(&key);
+                *flat_rows = flatten(items, expanded_groups);
+                if jump_to_parent {
+                    if let Some(idx) = flat_rows
+                        .iter()
+                        .position(|r| matches!(r, FlatRow::GroupHeader { key: k, .. } if k == &key))
                     {
-                        expanded_groups.insert(key);
-                        *flat_rows = flatten(items, expanded_groups);
+                        *selected = idx;
                     }
                 }
-                vec![]
             }
-            Action::CollapseGroup => {
-                let to_collapse = {
-                    let Screen::UnifiedList {
-                        flat_rows,
-                        selected,
-                        expanded_groups,
-                        ..
-                    } = &self.ui.screen
-                    else {
-                        return vec![];
-                    };
-                    match flat_rows.get(*selected) {
-                        Some(FlatRow::GroupHeader {
-                            key,
-                            expanded: true,
-                            ..
-                        }) => Some((key.clone(), false)),
-                        Some(FlatRow::GroupChild { parent_key, .. })
-                            if expanded_groups.contains(parent_key) =>
-                        {
-                            Some((parent_key.clone(), true))
-                        }
-                        _ => None,
-                    }
-                };
-                if let Some((key, jump_to_parent)) = to_collapse {
-                    if let Screen::UnifiedList {
-                        items,
-                        flat_rows,
-                        selected,
-                        expanded_groups,
-                        ..
-                    } = &mut self.ui.screen
-                    {
-                        expanded_groups.remove(&key);
-                        *flat_rows = flatten(items, expanded_groups);
-                        if jump_to_parent {
-                            if let Some(idx) = flat_rows.iter().position(
-                                |r| matches!(r, FlatRow::GroupHeader { key: k, .. } if k == &key),
-                            ) {
-                                *selected = idx;
-                            }
-                        }
-                    }
-                }
-                vec![]
-            }
+        }
+        vec![]
+    }
+
+    fn handle_list_action(&mut self, action: Action) -> Vec<Effect> {
+        match action {
             Action::OpenUrl => {
                 if let Some(url) = self.selected_url() {
                     vec![Effect::OpenUrl(url.to_string())]
@@ -392,10 +407,10 @@ impl App {
                 selected,
                 ..
             } => match flat_rows.get(*selected)? {
-                FlatRow::Single(item) => item_url(item),
-                FlatRow::GroupChild { item, .. } => item_url(item),
+                FlatRow::Single(item)
+                | FlatRow::GroupChild { item, .. }
+                | FlatRow::BadgedSignal { item, .. } => item_url(item),
                 FlatRow::GroupHeader { .. } => None,
-                FlatRow::BadgedSignal { item, .. } => item_url(item),
             },
             Screen::MergingPr { pr, .. } => Some(&pr.url),
         }

@@ -42,9 +42,11 @@ pub(crate) fn render_split_detail_pane(
     }
 
     match selected_row {
-        Some(FlatRow::Single(item))
-        | Some(FlatRow::GroupChild { item, .. })
-        | Some(FlatRow::BadgedSignal { item, .. }) => match item {
+        Some(
+            FlatRow::Single(item)
+            | FlatRow::GroupChild { item, .. }
+            | FlatRow::BadgedSignal { item, .. },
+        ) => match item {
             workflows::status::StatusItem::Pr(pr) => {
                 super::pr::render_pr_detail(frame, pr, detail_scroll, area, border_style);
             }

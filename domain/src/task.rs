@@ -17,8 +17,11 @@ pub const TASK_DISPATCH_NS: Uuid = Uuid::from_bytes([
 pub struct TaskId(String);
 
 impl TaskId {
-    /// Constructs a `TaskId` from a value produced by the `tasks` SQLite table.
-    /// Panics if the DB-generated value somehow violates the TASK-NNNN invariant.
+    /// Constructs a `TaskId` from a value produced by the `tasks` `SQLite` table.
+    ///
+    /// # Panics
+    /// Panics if the DB-generated value violates the `TASK-NNNN` invariant.
+    #[must_use]
     pub fn from_db(s: String) -> Self {
         assert!(
             s.starts_with("TASK-") && s.len() > 5 && s[5..].bytes().all(|b| b.is_ascii_digit()),
@@ -52,6 +55,7 @@ impl TaskId {
     /// Returns a deterministic UUID v5 for this task's Claude Code session.
     /// The same task ID always produces the same UUID, enabling reliable resume
     /// via `claude --resume <session-id>` after a crash or re-dispatch.
+    #[must_use]
     pub fn session_id(&self) -> Uuid {
         Uuid::new_v5(&TASK_DISPATCH_NS, self.0.as_bytes())
     }
@@ -71,6 +75,7 @@ pub enum TaskStatus {
 }
 
 impl TaskStatus {
+    #[must_use]
     pub fn urgency(self) -> Urgency {
         match self {
             Self::InReview | Self::Blocked => Urgency::High,
@@ -78,6 +83,7 @@ impl TaskStatus {
         }
     }
 
+    #[must_use]
     pub fn is_terminal(self) -> bool {
         matches!(self, Self::Done | Self::Failed | Self::Cancelled)
     }
@@ -134,6 +140,7 @@ impl TaskKind {
     /// When multi-runner support is added, this becomes `agent_config()` returning an
     /// `AgentConfig { runner, model }`. The call sites are identical; the rename is
     /// mechanical.
+    #[must_use]
     pub fn model(self) -> &'static str {
         match self {
             Self::Debug => "claude-opus-4-8",

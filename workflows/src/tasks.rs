@@ -2,6 +2,9 @@ use anyhow::{Context, Result};
 use domain::{CommentAuthor, StreamBlock, Task, TaskId, TaskKind, TaskOrigin, TaskStatus};
 
 /// Creates a new task in `backlog` status and returns its generated `TaskId`.
+///
+/// # Errors
+/// Returns an error if the database operation fails.
 pub fn create(
     title: &str,
     kind: TaskKind,
@@ -16,6 +19,9 @@ pub fn create(
 }
 
 /// Returns the full task including all fields and its comment thread.
+///
+/// # Errors
+/// Returns an error if the database operation fails.
 pub fn get(id: &TaskId) -> Result<Task> {
     let conn = store::status_cache::connect()?;
     store::tasks::ensure_table(&conn)?;
@@ -23,6 +29,9 @@ pub fn get(id: &TaskId) -> Result<Task> {
 }
 
 /// Updates the status of a task and refreshes `updated_at`.
+///
+/// # Errors
+/// Returns an error if the database operation fails.
 pub fn update_status(id: &TaskId, status: TaskStatus) -> Result<()> {
     let conn = store::status_cache::connect()?;
     store::tasks::ensure_table(&conn)?;
@@ -30,6 +39,9 @@ pub fn update_status(id: &TaskId, status: TaskStatus) -> Result<()> {
 }
 
 /// Appends a comment to a task and refreshes the task's `updated_at`.
+///
+/// # Errors
+/// Returns an error if the database operation fails.
 pub fn add_comment(id: &TaskId, author: CommentAuthor, content: &str) -> Result<()> {
     let conn = store::status_cache::connect()?;
     store::tasks::ensure_table(&conn)?;
@@ -38,6 +50,9 @@ pub fn add_comment(id: &TaskId, author: CommentAuthor, content: &str) -> Result<
 
 /// Appends `value` (a URL or file path) to the task's links list.
 /// Idempotent: duplicate values are silently ignored.
+///
+/// # Errors
+/// Returns an error if the database operation fails.
 pub fn add_link(id: &TaskId, value: &str) -> Result<()> {
     let conn = store::status_cache::connect()?;
     store::tasks::ensure_table(&conn)?;
@@ -45,6 +60,9 @@ pub fn add_link(id: &TaskId, value: &str) -> Result<()> {
 }
 
 /// Transitions a task from `backlog` to `ready`.
+///
+/// # Errors
+/// Returns an error if the database operation fails.
 pub fn set_ready(id: &TaskId) -> Result<()> {
     let conn = store::status_cache::connect()?;
     store::tasks::ensure_table(&conn)?;
@@ -52,6 +70,9 @@ pub fn set_ready(id: &TaskId) -> Result<()> {
 }
 
 /// Returns all tasks that appear in the TUI unified list (in-progress, blocked, review).
+///
+/// # Errors
+/// Returns an error if the database operation fails.
 pub fn list_visible() -> Result<Vec<Task>> {
     let conn = store::status_cache::connect()?;
     store::tasks::ensure_table(&conn)?;
@@ -60,6 +81,9 @@ pub fn list_visible() -> Result<Vec<Task>> {
 
 /// Reads and parses the Claude Code session JSONL for `session_id` in `cwd`.
 /// Returns `Ok(vec![])` if the file does not yet exist (session hasn't started writing).
+///
+/// # Errors
+/// Returns an error if the database operation fails.
 pub async fn read_session_stream(cwd: &str, session_id: &str) -> Result<Vec<StreamBlock>> {
     let home = std::env::var("HOME").context("HOME env var not set")?;
     let encoded = domain::encode_project_path(cwd);
