@@ -37,3 +37,36 @@ as agent usage patterns surface real needs.
 - The CLI gains the agent-toolkit role described above; concrete
   commands are added as needed, not speculatively.
 - Skill prompts simplify once the toolkit exists. Specifics deferred.
+
+## Addendum (2026-06-20) — post-019 scope
+
+[Decision 019](019-drop-task-model-filesystem-sessions.md) removed the
+`hub task *` session protocol; the CLI no longer brokers any session
+lifecycle. With that use case gone, this sharpens what the toolkit is for.
+
+**The dividing line between the CLI and skills.** Hub also exposes project
+knowledge through Claude Code skills that read `hub.toml`. To avoid two
+overlapping ways to teach an agent the same thing:
+
+- A `hub` command earns its place when the operation needs **computation**,
+  hub's **resolved config/secrets**, or **output-shaping** — things a markdown
+  skill cannot do. The strongest case is context-window protection: a command
+  returns exactly the fields an agent needs instead of the agent running a
+  generic command and drowning in raw, unformatted output.
+- **Skills** remain the home for instructions and workflows. They may call CLI
+  accessors, but a thin wrapper around a generic command (no compute, no config,
+  no shaping) belongs in a skill, not the binary.
+
+**Guardrails:**
+
+- **Stateless.** The toolkit reads context, shapes output, and performs discrete
+  helper actions. It does not regain a lifecycle or a `report`-shaped state
+  machine — 019 deleted that on purpose, and the CLI must not become a second
+  source of truth.
+- **Demand-driven.** Each command is nominated by an observed session failure —
+  an agent guessing wrong about a generic command, or a context window flooded
+  by unshaped output — the same iterative-grooming loop 019 prescribes for
+  investigation prompts. Nothing is added speculatively.
+
+This is non-blocking: post-019 the CLI may shrink to near-nothing and regrow
+only as real sessions surface the need.

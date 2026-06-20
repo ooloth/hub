@@ -1,5 +1,10 @@
 # Two worktree systems
 
+> **⚠ Partially superseded by [Decision 019](../decisions/019-drop-task-model-filesystem-sessions.md) (accepted; not yet implemented).**
+> PR investigation worktrees are unchanged. The "task dispatch worktrees" system
+> below is removed — those worktrees become general `i`-launched investigation
+> sessions with no task lifecycle. Accurate as built until 019 is implemented.
+
 Hub uses git worktrees in two distinct contexts. They share the same underlying
 `git worktree add` mechanism but exist at different paths, serve different
 audiences, and have different lifetime and cleanup rules. Do not conflate them.

@@ -1,5 +1,10 @@
 # 013 — One task, one session; comments as agent log; JSONL-driven status
 
+> **⚠ Superseded by [Decision 019](019-drop-task-model-filesystem-sessions.md) (accepted).**
+> The one-task-one-session model, agent comment log, and JSONL-driven status are
+> removed; sessions are per-launch (not per-task), and state is the presence of
+> `report.md`. Recorded here for rationale and history.
+
 > For the system as built see [architecture/tasks.md](../architecture/tasks.md)
 > (model) and [architecture/task-dispatch.md](../architecture/task-dispatch.md)
 > (mechanics); for the why see [vision.md](../vision.md). This ADR records the

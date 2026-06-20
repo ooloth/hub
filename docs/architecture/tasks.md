@@ -1,5 +1,11 @@
 # Tasks
 
+> **⚠ Superseded by [Decision 019](../decisions/019-drop-task-model-filesystem-sessions.md) (accepted; not yet implemented).**
+> The task model described below is removed by 019 — replaced by per-launch
+> filesystem session records under `~/.hub/sessions/`. This document still
+> describes the model **as currently built**; it remains accurate until 019 is
+> implemented, then will be rewritten or removed.
+
 Tasks are the unit of delegated work in hub — the spine of the flywheel in
 [vision.md](../vision.md). A task is a desired outcome assigned to an agent:
 "fix this CI failure", "implement this feature", "investigate this alert".

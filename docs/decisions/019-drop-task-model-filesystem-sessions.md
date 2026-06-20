@@ -1,8 +1,10 @@
 # 019 — Drop the task model; filesystem-based session tracking
 
-> **⚠ Proposal for evaluation.** This document proposes superseding ADRs 011–016.
-> It has not been implemented. An evaluating agent should weigh it against the
-> direction those ADRs established and surface any consequences this document misses.
+> **Status: Accepted (2026-06-20); not yet implemented.** This decision supersedes
+> ADRs 011–018 (see "What this supersedes"). The task-model code — the
+> `tasks`/`task_comments` tables, the dispatch tick, fold-back, and the
+> `hub task *` CLI — still exists and will be removed when this is carried out.
+> Until then, the `architecture/` docs describe the task model as still built.
 
 ## Context
 
@@ -78,6 +80,15 @@ signal in the list. Removing the Task removes all of that coordination overhead.
 - The TUI owning the refresh loop and session tracking (011 Option B still holds;
   only the SQLite task tracking within it is dropped)
 
+**Where non-signal ideas go:** Removing `n`/`N` means hub no longer has a place to
+park a pure idea with no underlying signal. This is intentional. Hub's job is
+triaging and acting on *signals*; an idea with no signal is handled by opening a
+Claude session and talking it through, which typically lands as an issue in the
+relevant project's tracker — a real signal hub will surface on its next refresh. A
+throwaway-session keymap (a tmux popup pointed at a read-only scratch workspace) is
+a possible future convenience, but ideation is not a current pain point relative to
+detecting and acting on signals, so hub does not model an idea backlog.
+
 ### `i` opens a detached named tmux window
 
 The `i` keybinding changes from `tmux split-window -h` (attached split, one at a
@@ -93,6 +104,15 @@ scanning tmux window names; the user finds them in the tmux status bar.
 The split-pane model assumed the user watches the session live. Detached windows
 assume the user kicks off work and returns to the TUI. The `a` (attach) action
 in the signal detail pane is how the user checks in on a specific session.
+
+**Concurrency is self-throttled, not queued.** There is no `ready` backlog, no
+dispatch tick claiming work, and no concurrency cap. The user runs as many sessions
+as they choose to start — pressing `i` five times runs five — and self-throttles to
+what they can actually review, which is the real constraint. Hub deliberately does
+*not* model a human-initiated task queue. Machine-initiated background work (the
+"runs while I sleep" direction) returns later as *scheduled routines* brought inside
+the hub boundary — a distinct, time-triggered concept — not as a resurrected task
+backlog.
 
 **What is lost:** The split-pane experience of watching investigation happen
 alongside the TUI. This tradeoff is accepted in exchange for concurrent sessions
@@ -114,8 +134,10 @@ Each session directory contains:
       pr-159/
         origin.toml     ← written at launch by hub: typed signal identity for TUI matching
         prompt.md       ← written at launch by hub: system prompt + user prompt sent to agent
-        session-id.txt  ← Claude's session UUID, for locating the transcript at
-                          ~/.claude/sessions/<uuid>.jsonl
+        session-id.txt  ← session UUID minted by hub and written before launch;
+                          hub forces it via `claude --session-id <uuid>`, so the
+                          transcript at ~/.claude/sessions/<uuid>.jsonl is locatable
+                          without agent cooperation
         report.md       ← written by the agent before stopping main work
                           (expected but not enforced)
       ci-test-suite/
@@ -238,6 +260,18 @@ them, identifies where agents struggled, and proposes improvements to
 investigation prompts. The corpus is never pruned; session directories accumulate
 indefinitely by default (cleanup policy deferred to a future decision).
 
+**Produced artifacts are not recorded at launch.** The work a session yields — a
+pushed branch, an opened PR, a filed issue — is an *artifact*, and git and GitHub
+are already its source of truth. Hub does not ask the agent to write an artifact
+record, and does not mint one itself: a session and the branches it produces are
+decoupled (a session can create, switch, and abandon branches freely), so there is
+no stable branch worth capturing at launch, and the base branch hub starts the
+worktree on is often not the branch that carries the deliverable. When a mining
+workflow is eventually built, it reconstructs produced artifacts post-hoc from the
+transcript (tool calls like `gh pr create`, `git push`) and from GitHub state — not
+from anything recorded during the session. `report.md` carries the agent's own
+account of what it did in the meantime, which is sufficient until mining exists.
+
 This supersedes the `agent-session-logs/` convention from 014 and the verdict
 signal model from 017. Mining happens from raw files, not from structured DB
 fields or summary rows.
@@ -301,8 +335,20 @@ workspace support (parallel worktrees under one session directory) is deferred.
 **Open questions not resolved here:**
 - Exact directory naming convention (deferred; timestamp-first is agreed,
   full scheme is authoring work)
-- Whether `hub` CLI gains any session-writing helpers (e.g. `hub session report`)
-  or whether agents write files directly with no hub CLI involvement
 - Cleanup policy for `~/.hub/sessions/` directories
 - Whether the `i` key retains a split-pane variant for cases where the user
   wants to watch the session live
+
+**Resolved during evaluation:**
+- *Agents write files directly; there is no `hub` CLI session-writing helper and no
+  artifact-reporting partnership.* The agent writes `report.md` itself; hub writes
+  `origin.toml`, `prompt.md`, and `session-id.txt` at launch. Produced artifacts
+  (branch/PR/issue) are not recorded — they are reconstructed post-hoc from the
+  transcript and GitHub when mining is built (see "Session reports are hub's
+  learning corpus").
+- *`session-id.txt` is minted by hub, not discovered.* Hub generates the UUID and
+  forces it via `claude --session-id <uuid>` at launch, so the transcript is
+  locatable without agent cooperation.
+- *Fold-back stays deleted.* Done-ness of signal-backed work is encoded by the
+  signal row disappearing from the list when its source resolves; the session-dir
+  scan only renders activity indicators, it does not transition any task state.

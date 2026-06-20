@@ -1,5 +1,10 @@
 # 014 — Task dispatch: workspaces, prompt injection, completion detection, data home
 
+> **⚠ Partially superseded by [Decision 019](019-drop-task-model-filesystem-sessions.md) (accepted).**
+> The worktree/`~/.hub/` data-home mechanics are kept; the dispatch tick, task
+> lifecycle, stall detection, and `hub task *` CLI are dropped. Sessions are
+> launched by `i` and tracked as filesystem records.
+
 > For the system as built see [architecture/task-dispatch.md](../architecture/task-dispatch.md)
 > (mechanics) and [architecture/tasks.md](../architecture/tasks.md) (model); for
 > the why see [vision.md](../vision.md). This ADR records the original decision

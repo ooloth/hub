@@ -48,7 +48,7 @@ This is the core loop and the reason hub exists. Each turn makes the next
 turn cheaper, because the agents get better at making the choices I'd make.
 
 ```
-1. DEFINE   a signal or idea becomes a dispatched task
+1. DEFINE   a signal becomes an agent session (launched with `i`)
 2. RUN      an agent works async; I watch live, resume if needed
 3. REVIEW   I judge the work PRODUCT on its native surface (the PR/issue),
             fast — because the agent supplied proof it's correct
@@ -63,38 +63,39 @@ The dream this enables: kick off five to ten well-defined pieces of work
 in the morning and have them land as shipped improvements by end of day —
 not because I typed faster, but because I trusted more.
 
-### Tasks are the spine
+### Signals are the spine; sessions are work on them
 
-A Task is the unit that makes one piece of delegated agent work
-**visible** (it shows in the list, streaming live activity),
-**resumable** (reopening the session to course-correct — the `o` key is
-planned, [issue 289](https://github.com/ooloth/hub/issues/289)),
-**reviewable** (its report and links lead me straight to the artifact and
-the agent's reasoning), and **mineable** (its session, report, and verdict
-are raw material for improving future agents).
+The **signal** is the unit of work — a PR to review, a CI failure to fix, an
+alert to investigate. Hub does not wrap a signal in a second identity (a
+TASK-XXXX); an agent **session** is simply work done *on* a signal, launched
+with `i`. A session makes that work **visible** (the signal row badges when
+sessions exist for it), **resumable** (its tmux window stays open — attach to
+course-correct), **reviewable** (its `report.md` and the artifact it produced
+lead me to the agent's reasoning), and **mineable** (its `prompt.md`,
+`report.md`, and transcript are raw material for improving future agents).
 
-Tasks are *not* a parallel project-management layer. They are not a kanban
-board, not a second inbox, not a place I do bookkeeping. They are the
-join point between a signal, an agent run, and the resulting artifact.
+This is *not* a parallel project-management layer — no kanban board, no second
+inbox, no bookkeeping. The session record is just the join point between a
+signal, an agent run, and the resulting artifact. See
+[Decision 019](decisions/019-drop-task-model-filesystem-sessions.md).
 
-### Tasks fold back into signals
+### No second touchpoint, by construction
 
-The touchpoint principle: **a task must never require an action that
-duplicates an action on its underlying signal.** A task's terminal
-transition is a _consequence_ of the signal's, not a separate decision.
+The touchpoint principle: **work on a signal must never require an action that
+duplicates an action on the signal itself.** Because hub no longer creates a
+second identity for the work, there is nothing to keep in sync and nothing to
+"fold back."
 
-- An **implement** task folds into the PR it produces. I review and merge
-  the PR exactly as I would without hub; merging closes the task, closing
-  it unmerged fails it. Zero extra touchpoints on the happy path.
-- A **review** task folds into the PR it reviewed. The agent's posted
-  review is _input_ to my decision, not a duplicate of it.
-- A **debug** task that produces only findings is the one case where the
-  task itself is the artifact — or it folds into the alert it explains.
+- Work on a PR (review or implement) resolves when I review and merge the PR
+  exactly as I would without hub. The signal row disappears on its next
+  refresh; that _is_ completion.
+- A **debug** session on an alert resolves when the alert clears — or, when it
+  produces only findings, its `report.md` is itself the artifact.
 
-So the only time I touch a task's status directly is a pure idea with no
-signal, or a `blocked`/`failed` task that needs redirection. Everything
-else dissolves on its own. That is what makes tasks feel like _one_
-workflow, not two.
+The signal's own lifecycle already encodes done-ness, so there is no task
+status to transition and no fold-back machinery. That is what makes this feel
+like _one_ workflow, not two. See
+[Decision 019](decisions/019-drop-task-model-filesystem-sessions.md).
 
 ### The training signal
 
@@ -107,18 +108,20 @@ between what the agent produced and what actually shipped.**
 - debug → the agent's issue draft vs. the issue I edited and kept
 
 Almost all of that delta already lives on GitHub and Linear. The meta-loop
-does not need me to hand-write feedback — it needs to _fetch and diff_.
-The only thing that makes this computable is hub knowing which artifact a
-task produced, which is why a typed task↔signal link is the keystone the
-rest of the flywheel depends on (see
-[Decision 016](decisions/016-tasks-fold-back-into-signals.md)).
+does not need me to hand-write feedback — it needs to _fetch and diff_. What
+makes this computable is knowing which artifact a session produced; rather than
+recording a typed link during the run, hub reconstructs it post-hoc from the
+session's transcript (the `gh pr create` / `git push` tool calls) and from
+GitHub state. See
+[Decision 019](decisions/019-drop-task-model-filesystem-sessions.md).
 
 ### Trust-gated scaling
 
-Running ten tasks at once is a _trust outcome_, not a feature to switch on.
-Concurrency and autonomy follow earned trust, never the reverse. Raising
-the dispatch cap or enabling auto-merge before the flywheel has turned
-enough just ships bad changes faster.
+Running ten sessions at once is a _trust outcome_, not a feature to switch on.
+Today concurrency is self-throttled — I start as many `i` sessions as I can
+review. Machine-initiated dispatch (future scheduled routines) and auto-merge
+follow earned trust, never the reverse: enabling them before the flywheel has
+turned enough just ships bad changes faster.
 
 So the build order optimizes the loop first — define → review → mine →
 improve — and lets capacity and autonomy ramp _per workflow-kind_ as each
@@ -204,10 +207,13 @@ auto-refresh and keyboard navigation: read signals, create tasks, watch
 agent sessions stream live, review results. This is the primary place to
 interact with hub.
 
-**CLI (`hub`)** — the agent-facing toolkit. Agents call it during their
-sessions to read their assigned task, write a captain's-log comment, and
-signal completion. The system calls it on a polling loop to claim ready
-tasks and spawn sessions. Humans do not use this CLI directly.
+**CLI (`hub`)** — hub's command-line surface. The autonomous task-claiming
+loop and the `hub task *` session protocol are removed by
+[Decision 019](decisions/019-drop-task-model-filesystem-sessions.md): sessions
+are launched by `i` and agents write their `report.md` directly, so the CLI no
+longer brokers session lifecycle. Its remaining agent-facing role (reading
+signal context) is being re-scoped. Humans do not use it for triage — that is
+the TUI.
 
 Both surfaces share the same workflows and data layer. The UI is a render
 target, not where logic lives. See
@@ -225,19 +231,22 @@ target, not where logic lives. See
 
 And, specifically, what the flywheel does **not** build:
 
-- **A kanban / todo board** — hub isn't a todo app; tasks fold into
-  signals, they don't live in swim lanes.
-- **A bidirectional comment thread** — comments are an agent→human
-  captain's log. Dialogue happens by resuming the session (planned: `o`), not by
-  typing back. See [Decision 013](decisions/013-task-session-model.md).
-- **A quality gate** — `done` means "I acknowledged and closed this," not
-  "I certify this is correct." GitHub PR review and merge is the real
-  quality signal.
-- **A manual task↔signal correlation UI** — the link is typed and
-  automatic; I never hand-match a task to the PR it produced.
+- **A kanban / todo board** — hub isn't a todo app; work lives on its signal,
+  not in swim lanes.
+- **A bidirectional comment thread** — a session's `report.md` is an
+  agent→human account, not a chat. Dialogue happens by attaching to the
+  session's tmux window, not by typing back. See
+  [Decision 019](decisions/019-drop-task-model-filesystem-sessions.md).
+- **A quality gate** — clearing a signal means "I acknowledged and closed
+  this," not "I certify this is correct." GitHub PR review and merge is the
+  real quality signal.
+- **A manual signal↔artifact correlation UI** — I never hand-match work to the
+  PR it produced; the link is reconstructed from the session transcript and
+  GitHub state.
 - **Auto-merge — for now** — merging stays on GitHub. Autonomy ramps only
   as a workflow-kind earns trust (see Trust-gated scaling).
 
-See [docs/architecture/tasks.md](architecture/tasks.md) for the task model
-as built, and [docs/architecture/task-dispatch.md](architecture/task-dispatch.md)
-for how dispatch runs today.
+See [Decision 019](decisions/019-drop-task-model-filesystem-sessions.md) for the
+filesystem session model that replaces the task model. The
+[docs/architecture/](architecture/) docs still describe the task model as
+currently built, pending 019's implementation.

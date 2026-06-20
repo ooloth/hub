@@ -1,5 +1,10 @@
 # 011 — TUI extends to session and task tracking; single process continues
 
+> **⚠ Partially superseded by [Decision 019](019-drop-task-model-filesystem-sessions.md) (accepted).**
+> The single-process TUI model (this ADR's core) still holds; only the SQLite
+> task/session tracking it introduced is dropped. Session tracking moves to the
+> filesystem (`~/.hub/sessions/`).
+
 ## Context
 
 [Decision 008](008-tui-owns-refresh-loop.md) placed the refresh loop in

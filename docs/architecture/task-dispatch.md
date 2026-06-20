@@ -1,5 +1,11 @@
 # Task Dispatch
 
+> **⚠ Superseded by [Decision 019](../decisions/019-drop-task-model-filesystem-sessions.md) (accepted; not yet implemented).**
+> The dispatch tick, lifecycle state machine, stall detection, and `hub task *`
+> protocol described below are removed by 019. The worktree/prompt-injection
+> mechanics are kept and repurposed for `i`-launched sessions. This document
+> describes the system **as currently built**, accurate until 019 is implemented.
+
 This document describes how hub's TUI background loop detects ready tasks, claims
 them atomically, and spawns Claude Code agents to work on them. It covers the state
 machine, the component interactions, and the completion/stall detection mechanisms.
