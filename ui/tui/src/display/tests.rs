@@ -1,6 +1,3 @@
-use std::collections::HashMap;
-
-use domain::{AlertSource, IssueSystem, SignalIdentity};
 use rstest::rstest;
 use workflows::status::StatusItem;
 
@@ -173,44 +170,6 @@ fn ci_full() -> StatusItem {
     })
 }
 
-fn agent_session() -> StatusItem {
-    StatusItem::AgentSession(domain::Task {
-        id: "TASK-0042".parse().unwrap(),
-        title: "Fix auth bug".to_string(),
-        description: None,
-        status: domain::TaskStatus::InProgress,
-        kind: domain::TaskKind::Implement,
-        session_id: Some("abc-123".to_string()),
-        repo: None,
-        origin: domain::TaskOrigin::Idea,
-        links: vec![],
-        created_at: String::new(),
-        updated_at: String::new(),
-        age: chrono::Duration::zero(),
-        urgency: domain::Urgency::Low,
-        comments: vec![],
-    })
-}
-
-fn agent_session_review() -> StatusItem {
-    StatusItem::AgentSession(domain::Task {
-        id: "TASK-0043".parse().unwrap(),
-        title: "Update README".to_string(),
-        description: None,
-        status: domain::TaskStatus::InReview,
-        kind: domain::TaskKind::Implement,
-        session_id: None,
-        repo: None,
-        origin: domain::TaskOrigin::Idea,
-        links: vec![],
-        created_at: String::new(),
-        updated_at: String::new(),
-        age: chrono::Duration::zero(),
-        urgency: domain::Urgency::High,
-        comments: vec![],
-    })
-}
-
 #[test]
 fn snapshot_item_lines() {
     let lines = [
@@ -256,11 +215,6 @@ fn snapshot_item_lines() {
         format!("linear:      {}", item_line(&linear()).flat()),
         format!("loki:        {}", item_line(&loki()).flat()),
         format!("gcp:         {}", item_line(&gcp()).flat()),
-        format!("agent_in_progress: {}", item_line(&agent_session()).flat()),
-        format!(
-            "agent_review:      {}",
-            item_line(&agent_session_review()).flat()
-        ),
         format!(
             "group_3:     {}",
             flat_row_line(&FlatRow::GroupHeader {
@@ -312,11 +266,6 @@ fn item_category_linear_is_issues() {
 #[test]
 fn item_category_gcp_is_errors() {
     assert_eq!(item_category(&gcp()), Category::Errors);
-}
-
-#[test]
-fn item_category_agent_session_is_tasks() {
-    assert_eq!(item_category(&agent_session()), Category::Tasks);
 }
 
 #[test]
@@ -855,7 +804,6 @@ fn build_unified_sorts_by_urgency_ascending_critical_first() {
                 .first()
                 .map(item_urgency)
                 .unwrap_or(domain::Urgency::Low),
-            DisplayItem::BadgedSignal { signal, .. } => item_urgency(signal),
         })
         .collect();
     assert_eq!(
@@ -865,243 +813,6 @@ fn build_unified_sorts_by_urgency_ascending_critical_first() {
             domain::Urgency::Medium,
             domain::Urgency::Low
         ]
-    );
-}
-
-// --- badge_and_dedup ---
-
-fn task_for_pr(number: u64, status: domain::TaskStatus) -> domain::Task {
-    domain::Task {
-        id: "TASK-0099".parse().unwrap(),
-        title: "Fix PR".to_string(),
-        description: None,
-        status,
-        kind: domain::TaskKind::Implement,
-        session_id: None,
-        repo: Some(domain::RepoSlug::new("owner", "repo")),
-        origin: domain::TaskOrigin::Pr {
-            repo: domain::RepoSlug::new("owner", "repo"),
-            number,
-        },
-        links: vec![],
-        created_at: String::new(),
-        updated_at: String::new(),
-        age: chrono::Duration::zero(),
-        urgency: domain::Urgency::Medium,
-        comments: vec![],
-    }
-}
-
-fn agent_session_for_pr(number: u64, status: domain::TaskStatus) -> StatusItem {
-    StatusItem::AgentSession(task_for_pr(number, status))
-}
-
-// BD1: A signal with a matching non-terminal task becomes BadgedSignal;
-//      the AgentSession row is suppressed.
-#[test]
-fn badge_and_dedup_badges_signal_and_suppresses_task_row() {
-    let task = task_for_pr(42, domain::TaskStatus::InProgress);
-    let task_index = HashMap::from([(SignalIdentity::from(&task.origin), task.clone())]);
-    let items = vec![
-        DisplayItem::Single(pr()),
-        DisplayItem::Single(StatusItem::AgentSession(task.clone())),
-    ];
-    let result = badge_and_dedup(items, &task_index);
-    assert_eq!(result.len(), 1, "task row should be suppressed");
-    assert!(
-        matches!(result[0], DisplayItem::BadgedSignal { .. }),
-        "signal row should become BadgedSignal"
-    );
-}
-
-// BD1b: A terminal task does not badge its signal row.
-#[test]
-fn badge_and_dedup_does_not_badge_terminal_task() {
-    let items = vec![pr(), agent_session_for_pr(42, domain::TaskStatus::Done)];
-    let result = build_unified(items, &Filter::default());
-    // Both rows visible; PR is not badged (task row comes after in stable sort).
-    assert_eq!(result.len(), 2);
-    assert!(matches!(result[0], DisplayItem::Single(StatusItem::Pr(_))));
-    assert!(matches!(
-        result[1],
-        DisplayItem::Single(StatusItem::AgentSession(_))
-    ));
-}
-
-// BD2: A signal with no matching task stays as Single.
-#[test]
-fn badge_and_dedup_leaves_unmatched_signal_as_single() {
-    let task = task_for_pr(99, domain::TaskStatus::InProgress);
-    let task_index = HashMap::from([(SignalIdentity::from(&task.origin), task)]);
-    let items = vec![DisplayItem::Single(pr())]; // pr() uses number 42, not 99
-    let result = badge_and_dedup(items, &task_index);
-    assert_eq!(result.len(), 1);
-    assert!(matches!(result[0], DisplayItem::Single(_)));
-}
-
-// BD3: An AgentSession row with Idea origin is never suppressed.
-#[test]
-fn badge_and_dedup_keeps_idea_task_row() {
-    let task_index = HashMap::new();
-    let items = vec![DisplayItem::Single(agent_session())]; // origin = Idea
-    let result = badge_and_dedup(items, &task_index);
-    assert_eq!(result.len(), 1);
-    assert!(matches!(
-        result[0],
-        DisplayItem::Single(StatusItem::AgentSession(_))
-    ));
-}
-
-// BD4: An AgentSession row with no matching signal stays as Single.
-#[test]
-fn badge_and_dedup_keeps_unmatched_task_row() {
-    let task = task_for_pr(42, domain::TaskStatus::InProgress);
-    // No matching PR in the item list — task row should survive.
-    let task_index = HashMap::from([(SignalIdentity::from(&task.origin), task.clone())]);
-    let items = vec![DisplayItem::Single(StatusItem::AgentSession(task))];
-    let result = badge_and_dedup(items, &task_index);
-    assert_eq!(result.len(), 1);
-    assert!(matches!(
-        result[0],
-        DisplayItem::Single(StatusItem::AgentSession(_))
-    ));
-}
-
-// BD5: build_unified with a PR filter still badges the PR even though
-//      the AgentSession row is filtered out.
-#[test]
-fn build_unified_badges_pr_under_pr_filter() {
-    let items = vec![
-        pr(),
-        agent_session_for_pr(42, domain::TaskStatus::InProgress),
-    ];
-    let filter = Filter {
-        category: Some(Category::Prs),
-        query: None,
-    };
-    let result = build_unified(items, &filter);
-    assert_eq!(result.len(), 1, "task row should be absent under PR filter");
-    assert!(
-        matches!(result[0], DisplayItem::BadgedSignal { .. }),
-        "PR should be badged even when task row is filtered out"
-    );
-}
-
-// --- signal_identity_for_item ---
-
-// SI1: PR maps to Pr identity.
-#[test]
-fn signal_identity_for_pr() {
-    assert_eq!(
-        signal_identity_for_item(&pr()),
-        Some(SignalIdentity::Pr {
-            repo: domain::RepoSlug::new("owner", "repo"),
-            number: 42,
-        })
-    );
-}
-
-// SI2: GitHub issue maps to Issue identity with GitHub system.
-#[test]
-fn signal_identity_for_github_issue() {
-    assert_eq!(
-        signal_identity_for_item(&issue()),
-        Some(SignalIdentity::Issue {
-            system: IssueSystem::GitHub,
-            repo: Some(domain::RepoSlug::new("owner", "repo")),
-            id: "7".to_string(),
-        })
-    );
-}
-
-// SI3: Linear issue maps to Issue identity with Linear system.
-#[test]
-fn signal_identity_for_linear_issue() {
-    assert_eq!(
-        signal_identity_for_item(&linear()),
-        Some(SignalIdentity::Issue {
-            system: IssueSystem::Linear,
-            repo: None,
-            id: "ENG-99".to_string(),
-        })
-    );
-}
-
-// SI4: CI failure maps to Ci identity (url excluded).
-#[test]
-fn signal_identity_for_ci() {
-    assert_eq!(
-        signal_identity_for_item(&ci()),
-        Some(SignalIdentity::Ci {
-            repo: domain::RepoSlug::new("owner", "repo"),
-            workflow: "CI".to_string(),
-            job: None,
-            step: None,
-        })
-    );
-}
-
-// SI5: Loki alert maps to Alert identity with project/env/message key.
-#[test]
-fn signal_identity_for_loki() {
-    assert_eq!(
-        signal_identity_for_item(&loki()),
-        Some(SignalIdentity::Alert {
-            source: AlertSource::Loki,
-            key: "project-x/prod/OOM killed".to_string(),
-        })
-    );
-}
-
-// SI6: AgentSession returns None (not a signal).
-#[test]
-fn signal_identity_for_agent_session_is_none() {
-    assert_eq!(signal_identity_for_item(&agent_session()), None);
-}
-
-// --- flat_row_line badge ---
-
-// FL1: BadgedSignal row includes task id and status in dim_inline.
-#[test]
-fn flat_row_line_badged_signal_appends_badge() {
-    let task = task_for_pr(42, domain::TaskStatus::InProgress);
-    let row = FlatRow::BadgedSignal {
-        item: pr(),
-        task: task.clone(),
-    };
-    let parts = flat_row_line(&row);
-    let badge = format!("[{} · {}]", task.id, task.status);
-    assert!(
-        parts.dim_inline.iter().any(|s| s == &badge),
-        "badge should appear in dim_inline"
-    );
-}
-
-// FL2: attached_task returns Some for BadgedSignal, None for Single.
-#[test]
-fn attached_task_returns_task_for_badged_signal() {
-    let task = task_for_pr(42, domain::TaskStatus::InProgress);
-    let row = FlatRow::BadgedSignal {
-        item: pr(),
-        task: task.clone(),
-    };
-    assert!(row.attached_task().is_some());
-    assert_eq!(
-        row.attached_task().unwrap().id.to_string(),
-        task.id.to_string()
-    );
-    let single = FlatRow::Single(pr());
-    assert!(single.attached_task().is_none());
-}
-
-// SK1: from_row returns BadgedSignal for a BadgedSignal row.
-#[test]
-fn from_row_badged_signal_returns_badged_signal_kind() {
-    let task = task_for_pr(42, domain::TaskStatus::InProgress);
-    let row = FlatRow::BadgedSignal { item: pr(), task };
-    assert_eq!(
-        SelectedItemKind::from_row(&row),
-        SelectedItemKind::BadgedSignal
     );
 }
 

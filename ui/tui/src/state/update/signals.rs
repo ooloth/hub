@@ -41,20 +41,12 @@ impl App {
     }
 
     pub(super) const fn reset_detail_scroll(&mut self) {
-        match &mut self.ui.screen {
-            Screen::UnifiedList {
-                detail_mode: DetailMode::Visible { detail_scroll },
-                ..
-            } => *detail_scroll = 0,
-            // Moving away from a BadgedSignal row while the session is toggled
-            // resets to signal-detail so the toggle doesn't persist on a
-            // mismatched row.
-            Screen::UnifiedList { detail_mode, .. }
-                if matches!(detail_mode, DetailMode::VisibleSession { .. }) =>
-            {
-                *detail_mode = DetailMode::Visible { detail_scroll: 0 };
-            }
-            _ => {}
+        if let Screen::UnifiedList {
+            detail_mode: DetailMode::Visible { detail_scroll },
+            ..
+        } = &mut self.ui.screen
+        {
+            *detail_scroll = 0;
         }
     }
 
@@ -66,10 +58,9 @@ impl App {
             | Action::MoveToBottom
             | Action::MovePageUp
             | Action::MovePageDown => self.handle_navigation(action),
-            Action::Enter
-            | Action::ToggleSessionDetail
-            | Action::ScrollDetailDown
-            | Action::ScrollDetailUp => self.handle_detail_panel(action),
+            Action::Enter | Action::ScrollDetailDown | Action::ScrollDetailUp => {
+                self.handle_detail_panel(action)
+            }
             Action::ExpandGroup => self.handle_expand_group(),
             Action::CollapseGroup => self.handle_collapse_group(),
             Action::OpenUrl
@@ -108,67 +99,27 @@ impl App {
                     }
                 );
                 if is_hidden {
-                    if let Screen::UnifiedList {
-                        detail_mode,
-                        flat_rows,
-                        selected,
-                        ..
-                    } = &mut self.ui.screen
-                    {
-                        let is_agent = matches!(
-                            flat_rows.get(*selected),
-                            Some(FlatRow::Single(StatusItem::AgentSession(_)))
-                        );
-                        let initial_scroll = if is_agent { u16::MAX } else { 0 };
-                        *detail_mode = DetailMode::Visible {
-                            detail_scroll: initial_scroll,
-                        };
+                    if let Screen::UnifiedList { detail_mode, .. } = &mut self.ui.screen {
+                        *detail_mode = DetailMode::Visible { detail_scroll: 0 };
                     }
-                }
-            }
-            Action::ToggleSessionDetail => {
-                if let Screen::UnifiedList { detail_mode, .. } = &mut self.ui.screen {
-                    *detail_mode = match detail_mode {
-                        DetailMode::Visible { .. } => {
-                            DetailMode::VisibleSession { detail_scroll: 0 }
-                        }
-                        DetailMode::VisibleSession { .. } => {
-                            DetailMode::Visible { detail_scroll: 0 }
-                        }
-                        DetailMode::Hidden => DetailMode::Hidden,
-                    };
                 }
             }
             Action::ScrollDetailDown => {
-                let detail_scroll = match &mut self.ui.screen {
-                    Screen::UnifiedList {
-                        detail_mode: DetailMode::Visible { detail_scroll },
-                        ..
-                    }
-                    | Screen::UnifiedList {
-                        detail_mode: DetailMode::VisibleSession { detail_scroll },
-                        ..
-                    } => Some(detail_scroll),
-                    _ => None,
-                };
-                if let Some(scroll) = detail_scroll {
-                    *scroll = scroll.saturating_add(1);
+                if let Screen::UnifiedList {
+                    detail_mode: DetailMode::Visible { detail_scroll },
+                    ..
+                } = &mut self.ui.screen
+                {
+                    *detail_scroll = detail_scroll.saturating_add(1);
                 }
             }
             Action::ScrollDetailUp => {
-                let detail_scroll = match &mut self.ui.screen {
-                    Screen::UnifiedList {
-                        detail_mode: DetailMode::Visible { detail_scroll },
-                        ..
-                    }
-                    | Screen::UnifiedList {
-                        detail_mode: DetailMode::VisibleSession { detail_scroll },
-                        ..
-                    } => Some(detail_scroll),
-                    _ => None,
-                };
-                if let Some(scroll) = detail_scroll {
-                    *scroll = scroll.saturating_sub(1);
+                if let Screen::UnifiedList {
+                    detail_mode: DetailMode::Visible { detail_scroll },
+                    ..
+                } = &mut self.ui.screen
+                {
+                    *detail_scroll = detail_scroll.saturating_sub(1);
                 }
             }
             _ => unreachable!(),
@@ -403,9 +354,7 @@ impl App {
                 selected,
                 ..
             } => match flat_rows.get(*selected)? {
-                FlatRow::Single(item)
-                | FlatRow::GroupChild { item, .. }
-                | FlatRow::BadgedSignal { item, .. } => item_url(item),
+                FlatRow::Single(item) | FlatRow::GroupChild { item, .. } => item_url(item),
                 FlatRow::GroupHeader { .. } => None,
             },
             Screen::MergingPr { pr, .. } => Some(&pr.url),

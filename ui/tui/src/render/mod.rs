@@ -5,7 +5,6 @@ pub(crate) mod detail;
 pub(crate) mod issue;
 pub(crate) mod log;
 pub(crate) mod pr;
-pub(crate) mod session;
 pub(crate) mod shared;
 pub(crate) mod status_bar;
 pub(crate) mod task;
@@ -50,59 +49,49 @@ fn render_content(frame: &mut ratatui::Frame, app: &mut App, content_area: ratat
             items,
             detail_mode,
             ..
-        } => {
-            let show_session = matches!(detail_mode, DetailMode::VisibleSession { .. });
-
-            match detail_mode {
-                DetailMode::Hidden => {
-                    unified::render_unified(
-                        frame,
-                        flat_rows,
-                        *selected,
-                        filter,
-                        app.ui.query_input.as_deref(),
-                        content_area,
-                    );
-                }
-                DetailMode::Visible { detail_scroll }
-                | DetailMode::VisibleSession { detail_scroll } => {
-                    let max_list_height = content_area.height * 30 / 100;
-
-                    let [list_area, detail_area] = Layout::vertical([
-                        Constraint::Length(unified::unified_list_height(
-                            flat_rows,
-                            max_list_height,
-                        )),
-                        Constraint::Min(0),
-                    ])
-                    .areas(content_area);
-
-                    unified::render_unified(
-                        frame,
-                        flat_rows,
-                        *selected,
-                        filter,
-                        app.ui.query_input.as_deref(),
-                        list_area,
-                    );
-
-                    frame.render_widget(Clear, detail_area);
-
-                    let selected_row = flat_rows.get(*selected);
-
-                    detail::render_split_detail_pane(
-                        frame,
-                        detail_area,
-                        items,
-                        selected_row,
-                        detail_scroll,
-                        &app.data.stream_blocks,
-                        unified::filter_chrome_style(filter, app.ui.query_input.as_deref()),
-                        show_session,
-                    );
-                }
+        } => match detail_mode {
+            DetailMode::Hidden => {
+                unified::render_unified(
+                    frame,
+                    flat_rows,
+                    *selected,
+                    filter,
+                    app.ui.query_input.as_deref(),
+                    content_area,
+                );
             }
-        }
+            DetailMode::Visible { detail_scroll } => {
+                let max_list_height = content_area.height * 30 / 100;
+
+                let [list_area, detail_area] = Layout::vertical([
+                    Constraint::Length(unified::unified_list_height(flat_rows, max_list_height)),
+                    Constraint::Min(0),
+                ])
+                .areas(content_area);
+
+                unified::render_unified(
+                    frame,
+                    flat_rows,
+                    *selected,
+                    filter,
+                    app.ui.query_input.as_deref(),
+                    list_area,
+                );
+
+                frame.render_widget(Clear, detail_area);
+
+                let selected_row = flat_rows.get(*selected);
+
+                detail::render_split_detail_pane(
+                    frame,
+                    detail_area,
+                    items,
+                    selected_row,
+                    detail_scroll,
+                    unified::filter_chrome_style(filter, app.ui.query_input.as_deref()),
+                );
+            }
+        },
         Screen::MergingPr { pr, .. } => {
             pr::render_pr_detail(frame, pr, &mut 0, content_area, dim());
         }
@@ -144,21 +133,6 @@ fn render_status_bar_left(frame: &mut ratatui::Frame, app: &App, bar_left: ratat
         let line = Line::from(vec![
             Span::styled(pr_label, Style::default().fg(YELLOW)),
             Span::styled("  [d] delta · [l] lazygit · [o] octo · [Esc] cancel", dim()),
-        ]);
-
-        frame.render_widget(Paragraph::new(line), bar_left);
-    } else if app.ui.submenu == SubmenuState::TaskStatus {
-        let (task_label, hints_str) = app.current_screen().selected_task().map_or_else(
-            || (" status".to_string(), "  [Esc] cancel".to_string()),
-            |task| {
-                let hints = status_bar::task_status_hints(task.status);
-                (format!(" {} · status", task.id), hints)
-            },
-        );
-
-        let line = Line::from(vec![
-            Span::styled(task_label, Style::default().fg(YELLOW)),
-            Span::styled(hints_str, dim()),
         ]);
 
         frame.render_widget(Paragraph::new(line), bar_left);
@@ -1055,60 +1029,6 @@ mod tests {
         insta::assert_snapshot!(screen_text(&buf));
     }
 
-    // SV7: Split view with an in-review task — description, links, timestamps, and comment
-    // thread all render in the right pane.
-    #[test]
-    fn split_view_task_in_review_with_comments() {
-        let item = StatusItem::AgentSession(domain::Task {
-            id: "TASK-0001".parse().unwrap(),
-            title: "Fix auth bug".to_string(),
-            description: Some("OAuth token refresh was not wired\nin the middleware.".to_string()),
-            status: domain::TaskStatus::InReview,
-            kind: domain::TaskKind::Implement,
-            session_id: None,
-            repo: None,
-            origin: domain::TaskOrigin::Idea,
-            links: vec!["https://github.com/org/hub/pull/42".to_string()],
-            created_at: "2026-06-04T10:00:00Z".to_string(),
-            updated_at: "2026-06-04T11:00:00Z".to_string(),
-            age: chrono::Duration::zero(),
-            urgency: domain::Urgency::Low,
-            comments: vec![
-                domain::TaskComment {
-                    id: 1,
-                    author: domain::CommentAuthor::Agent,
-                    content: "Found the issue in auth.rs.".to_string(),
-                    created_at: "2026-06-04T10:30:00Z".to_string(),
-                },
-                domain::TaskComment {
-                    id: 2,
-                    author: domain::CommentAuthor::Agent,
-                    content: "Fixed. Token refresh wired in middleware.\nAll tests pass."
-                        .to_string(),
-                    created_at: "2026-06-04T11:00:00Z".to_string(),
-                },
-            ],
-        });
-        let mut app = split_view_app(vec![DisplayItem::Single(item)], 0, 0);
-        let buf = draw(&mut app, 120, 30);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    // SV8: Split view with an in-review task with no comments — no stray comment separator.
-    #[test]
-    fn split_view_task_in_review_no_comments() {
-        let mut app = split_view_app(
-            vec![DisplayItem::Single(task_item(
-                domain::TaskStatus::InReview,
-                domain::Urgency::Low,
-            ))],
-            0,
-            0,
-        );
-        let buf = draw(&mut app, 120, 30);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
     // SL5: PrActions submenu shows in status bar.
     #[test]
     fn status_bar_pending_pr_action_shows_submenu() {
@@ -1198,64 +1118,6 @@ mod tests {
         ];
         let mut app = split_view_app(items, 0, 0);
         let buf = draw(&mut app, 120, 40);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    fn task_submenu_app(status: domain::TaskStatus) -> App {
-        let urgency = status.urgency();
-        let mut app = unified_list_app(vec![DisplayItem::Single(task_item(status, urgency))]);
-        // Simulate split view open
-        if let Screen::UnifiedList {
-            ref mut detail_mode,
-            ..
-        } = app.ui.screen
-        {
-            *detail_mode = DetailMode::Visible { detail_scroll: 0 };
-        }
-        app.ui.submenu = SubmenuState::TaskStatus;
-        app
-    }
-
-    fn task_item(status: domain::TaskStatus, urgency: domain::Urgency) -> StatusItem {
-        StatusItem::AgentSession(domain::Task {
-            id: "TASK-0001".parse().unwrap(),
-            title: "Implement feature X".to_string(),
-            description: None,
-            status,
-            kind: domain::TaskKind::Implement,
-            session_id: None,
-            repo: None,
-            origin: domain::TaskOrigin::Idea,
-            links: vec![],
-            created_at: String::new(),
-            updated_at: String::new(),
-            age: chrono::Duration::zero(),
-            urgency,
-            comments: vec![],
-        })
-    }
-
-    #[test]
-    fn full_screen_unified_list_task_status_submenu_backlog() {
-        // U13: Status submenu open on a backlog task — locks in "r ready · a archive · Esc cancel" hint.
-        let mut app = task_submenu_app(domain::TaskStatus::Backlog);
-        let buf = draw(&mut app, 80, 15);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn full_screen_unified_list_task_status_submenu_review() {
-        // U14: Status submenu open on a review task — locks in "d done · r re-queue · Esc cancel" hint.
-        let mut app = task_submenu_app(domain::TaskStatus::InReview);
-        let buf = draw(&mut app, 80, 15);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn full_screen_unified_list_task_status_submenu_done() {
-        // U15: Status submenu open on a done task — locks in "r re-queue · Esc cancel" hint.
-        let mut app = task_submenu_app(domain::TaskStatus::Done);
-        let buf = draw(&mut app, 80, 15);
         insta::assert_snapshot!(screen_text(&buf));
     }
 
@@ -1399,19 +1261,6 @@ mod tests {
             url: "https://grafana.example.com/d/abc".to_string(),
         });
         let buf = draw(&mut seeded_modal_app(item), 80, 24);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    #[test]
-    fn full_screen_unified_list_backlog_and_ready_tasks() {
-        // U12: Backlog and ready tasks appear in the unified list at Low urgency.
-        // Locks in that list_visible now surfaces these statuses and they render
-        // with the correct status label (no session, Low urgency dot).
-        let mut app = unified_list_app(vec![
-            DisplayItem::Single(task_item(domain::TaskStatus::Backlog, domain::Urgency::Low)),
-            DisplayItem::Single(task_item(domain::TaskStatus::Ready, domain::Urgency::Low)),
-        ]);
-        let buf = draw(&mut app, 80, 15);
         insta::assert_snapshot!(screen_text(&buf));
     }
 }

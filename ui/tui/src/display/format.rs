@@ -27,23 +27,14 @@ pub(crate) fn item_url(item: &StatusItem) -> Option<&str> {
         StatusItem::MediaMissing(m) => Some(&m.url),
         #[cfg(feature = "private")]
         StatusItem::MediaHealth(h) => Some(&h.url),
-        StatusItem::AgentSession(_) => None,
         #[cfg(feature = "private")]
         StatusItem::MediaBacklog { .. } => None,
     }
 }
 
-/// Formats an RFC3339 timestamp as `YYYY-MM-DD HH:MM` for display.
-pub(crate) fn fmt_ts(ts: &str) -> String {
-    if ts.len() >= 16 {
-        ts[..16].replace('T', " ")
-    } else {
-        ts.to_string()
-    }
-}
-
 pub(crate) fn format_age_short(d: chrono::Duration) -> String {
     let secs = d.num_seconds();
+
     if secs < 60 {
         "now".to_string()
     } else if secs < 3600 {
@@ -57,12 +48,15 @@ pub(crate) fn format_age_short(d: chrono::Duration) -> String {
 
 pub(crate) fn truncate_to_width(s: &str, w: usize) -> String {
     let chars: Vec<char> = s.chars().collect();
+
     if chars.len() <= w {
         return s.to_string();
     }
+
     if w == 0 {
         return String::new();
     }
+
     chars
         .get(..w.saturating_sub(1))
         .unwrap_or_default()
@@ -279,14 +273,6 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             category: "GCP".to_string(),
             age: format_age_short(g.age),
         },
-        StatusItem::AgentSession(t) => LineParts {
-            separator: RowSeparator::Bullet,
-            primary: vec![t.id.to_string(), t.title.clone()],
-            dim_inline: vec![format!(" {}", t.status), t.kind.to_string()],
-            source: None,
-            category: "Agent".to_string(),
-            age: format_age_short(t.age),
-        },
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => LineParts {
             separator: RowSeparator::Bullet,
@@ -344,7 +330,6 @@ pub(crate) const fn item_urgency(item: &StatusItem) -> domain::Urgency {
         StatusItem::MediaMissing(m) => m.urgency,
         #[cfg(feature = "private")]
         StatusItem::MediaHealth(h) => h.urgency,
-        StatusItem::AgentSession(t) => t.urgency,
         #[cfg(feature = "private")]
         StatusItem::MediaBacklog { .. } => domain::Urgency::Low,
     }
@@ -353,9 +338,7 @@ pub(crate) const fn item_urgency(item: &StatusItem) -> domain::Urgency {
 pub(crate) const fn flat_row_urgency(row: &FlatRow) -> domain::Urgency {
     match row {
         FlatRow::GroupHeader { urgency, .. } => *urgency,
-        FlatRow::Single(item)
-        | FlatRow::GroupChild { item, .. }
-        | FlatRow::BadgedSignal { item, .. } => item_urgency(item),
+        FlatRow::Single(item) | FlatRow::GroupChild { item, .. } => item_urgency(item),
     }
 }
 
@@ -380,13 +363,6 @@ pub(crate) fn flat_row_line(row: &FlatRow) -> LineParts {
             parts.separator = RowSeparator::TreeChild(*is_last);
             parts
         }
-        FlatRow::BadgedSignal { item, task } => {
-            let mut parts = item_line(item);
-            parts
-                .dim_inline
-                .push(format!("[{} · {}]", task.id, task.status));
-            parts
-        }
     }
 }
 
@@ -395,7 +371,6 @@ pub(crate) const fn item_category(item: &StatusItem) -> Category {
         StatusItem::Ci(_) | StatusItem::Loki(_) | StatusItem::Gcp(_) => Category::Errors,
         StatusItem::Pr(_) => Category::Prs,
         StatusItem::Issue(_) | StatusItem::Linear(_) => Category::Issues,
-        StatusItem::AgentSession(_) => Category::Tasks,
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(_)
         | StatusItem::MediaMissing(_)

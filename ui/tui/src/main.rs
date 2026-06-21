@@ -110,8 +110,6 @@ async fn main() -> Result<()> {
                 RefreshState::Idle
             },
             last_updated: initial_updated,
-            stream_blocks: Vec::new(),
-            stream_session_id: None,
         },
         ui: UiState {
             screen: Screen::UnifiedList {
@@ -166,62 +164,6 @@ fn spawn_fetch(config: &config::Config, tx: mpsc::Sender<Result<StatusReport>>) 
 
     drop(tokio::spawn(async move {
         let _ = tx.send(workflows::status::run(params).await).await;
-    }));
-}
-
-/// Spawns a background task that drives automatic task-state transitions
-/// (completion, crash, stall, self-heal) and reaps idle tmux windows.
-/// Results arrive via `tasks_tx`.
-fn spawn_session_state_poll(tasks_tx: mpsc::Sender<Vec<domain::Task>>) {
-    let now = chrono::Utc::now();
-    drop(tokio::spawn(async move {
-        if let Ok(tasks) = workflows::agent_session::poll_sessions(now) {
-            if let Err(e) = workflows::dispatch::reap_idle_windows(&tasks, now).await {
-                eprintln!("reap error: {e}");
-            }
-            let _ = tasks_tx.send(tasks).await;
-        }
-    }));
-}
-
-/// Spawns a background task to read the selected agent session's JSONL stream,
-/// if the detail pane is open on an `AgentSession` row. Updates stream state on
-/// session change and sends new blocks via `stream_tx`.
-fn try_stream_selected_session(app: &mut App, stream_tx: &mpsc::Sender<Vec<domain::StreamBlock>>) {
-    let (cwd, session_id) = {
-        let Screen::UnifiedList {
-            flat_rows,
-            selected,
-            detail_mode: DetailMode::Visible { .. },
-            ..
-        } = &app.ui.screen
-        else {
-            return;
-        };
-        let Some(crate::display::FlatRow::Single(workflows::status::StatusItem::AgentSession(
-            task,
-        ))) = flat_rows.get(*selected)
-        else {
-            return;
-        };
-        let Some(session_id) = &task.session_id else {
-            return;
-        };
-        // The session JSONL lives under the task's worktree, not the TUI's cwd.
-        let cwd = workflows::dispatch::task_workspace_path(task)
-            .to_string_lossy()
-            .to_string();
-        (cwd, session_id.clone())
-    };
-    if app.data.stream_session_id.as_deref() != Some(session_id.as_str()) {
-        app.data.stream_blocks.clear();
-        app.data.stream_session_id = Some(session_id.clone());
-    }
-    let stx = stream_tx.clone();
-    drop(tokio::spawn(async move {
-        if let Ok(blocks) = workflows::tasks::read_session_stream(&cwd, &session_id).await {
-            let _ = stx.send(blocks).await;
-        }
     }));
 }
 
@@ -305,14 +247,9 @@ async fn run_loop(
     // advances without requiring a keypress.
     let mut display_interval = tokio::time::interval(tokio::time::Duration::from_mins(1));
     let _ = display_interval.tick().await;
-    // Live-polls the JSONL stream for the selected AgentSession while detail is open.
-    let mut stream_interval = tokio::time::interval(tokio::time::Duration::from_secs(10));
-    let _ = stream_interval.tick().await;
     // Claims the oldest ready task and spawns its agent session.
     let mut dispatch_interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
     let _ = dispatch_interval.tick().await;
-    let (stream_tx, mut stream_rx) = mpsc::channel::<Vec<domain::StreamBlock>>(1);
-    let (tasks_tx, mut tasks_rx) = mpsc::channel::<Vec<domain::Task>>(1);
 
     'run: loop {
         let _ = terminal.draw(|f| render(f, app))?;
@@ -333,13 +270,6 @@ async fn run_loop(
             _ = refresh_interval.tick() => on_refresh_tick(app, conn)?,
             _ = display_interval.tick() => vec![], // redraw only; no state change
             Some(result) = rx.recv() => handle_msg(app, Msg::FetchResult(result))?,
-            _ = stream_interval.tick() => {
-                spawn_session_state_poll(tasks_tx.clone());
-                try_stream_selected_session(app, &stream_tx);
-                vec![]
-            }
-            Some(blocks) = stream_rx.recv() => handle_msg(app, Msg::StreamUpdate(blocks))?,
-            Some(tasks) = tasks_rx.recv() => handle_msg(app, Msg::TasksPatched(tasks))?,
             _ = dispatch_interval.tick() => {
                 if let Err(e) = workflows::dispatch::dispatch().await {
                     eprintln!("dispatch error: {e}");
@@ -401,9 +331,6 @@ async fn handle_effect(
         }
         Effect::MergePullRequest { repo, number } => {
             handle_merge_pull_request(app, config, tx, repo, number).await;
-        }
-        Effect::UpdateTaskStatus { id, status } => {
-            handle_update_task_status(app, config, tx, &id, status);
         }
         Effect::CreateTask {
             title,
@@ -538,24 +465,6 @@ fn open_pr_diff(repo: &str, number: u64) {
     let _ = std::process::Command::new("tmux")
         .args(["new-window", "-n", &window_name, &cmd])
         .spawn();
-}
-
-fn handle_update_task_status(
-    app: &mut App,
-    config: &config::Config,
-    tx: &mpsc::Sender<Result<StatusReport>>,
-    id: &domain::TaskId,
-    status: domain::TaskStatus,
-) {
-    match workflows::tasks::update_status(id, status) {
-        Ok(()) => {
-            app.ui.flash = Some(format!("{id} → {status}"));
-            request_refresh(app, config, tx, false, None);
-        }
-        Err(e) => {
-            app.ui.flash = Some(format!("Could not update {id}: {e}"));
-        }
-    }
 }
 
 async fn handle_launch_ci(app: &mut App, config: &config::Config, repo: String, run_url: String) {

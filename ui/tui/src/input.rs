@@ -12,10 +12,6 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
     match app.ui.submenu {
         SubmenuState::ReviewPicker => return Some(review_picker_submenu_key(key)),
         SubmenuState::PrActions => return Some(pr_action_submenu_key(key)),
-        SubmenuState::TaskStatus => {
-            let current_status = app.current_screen().selected_task().map(|t| t.status);
-            return Some(task_status_submenu_key(key, current_status));
-        }
         SubmenuState::None => {}
     }
 
@@ -33,9 +29,6 @@ pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
         &app.ui.screen,
         Screen::UnifiedList {
             detail_mode: crate::state::DetailMode::Visible { .. },
-            ..
-        } | Screen::UnifiedList {
-            detail_mode: crate::state::DetailMode::VisibleSession { .. },
             ..
         }
     );
@@ -90,32 +83,6 @@ const fn pr_action_submenu_key(key: KeyEvent) -> Action {
     }
 }
 
-fn task_status_submenu_key(key: KeyEvent, current_status: Option<domain::TaskStatus>) -> Action {
-    if matches!(
-        (key.code, key.modifiers),
-        (KeyCode::Char('c'), KeyModifiers::CONTROL)
-    ) {
-        return Action::Quit;
-    }
-    let target = match key.code {
-        KeyCode::Char('b') => Some(domain::TaskStatus::Backlog),
-        KeyCode::Char('r') => Some(domain::TaskStatus::Ready),
-        KeyCode::Char('i') => Some(domain::TaskStatus::InProgress),
-        KeyCode::Char('l') => Some(domain::TaskStatus::Blocked),
-        KeyCode::Char('v') => Some(domain::TaskStatus::InReview),
-        KeyCode::Char('d') => Some(domain::TaskStatus::Done),
-        KeyCode::Char('f') => Some(domain::TaskStatus::Failed),
-        KeyCode::Char('c') => Some(domain::TaskStatus::Cancelled),
-        _ => None,
-    };
-    match (target, current_status) {
-        // Pressing the key for the current status cancels without changing state.
-        (Some(t), Some(current)) if t == current => Action::CancelTaskStatusSubmenu,
-        (Some(t), _) => Action::TransitionTaskStatus(t),
-        (None, _) => Action::CancelTaskStatusSubmenu,
-    }
-}
-
 const fn query_mode_key(key: KeyEvent) -> Option<Action> {
     if matches!(
         (key.code, key.modifiers),
@@ -137,16 +104,12 @@ fn unified_list_keys(
     detail_mode: &crate::state::DetailMode,
     item_kind: SelectedItemKind,
 ) -> Option<Action> {
-    let split_active = matches!(
-        detail_mode,
-        crate::state::DetailMode::Visible { .. } | crate::state::DetailMode::VisibleSession { .. }
-    );
+    let split_active = matches!(detail_mode, crate::state::DetailMode::Visible { .. });
     match (key.code, key.modifiers) {
         (KeyCode::Up | KeyCode::Char('k'), _) => Some(Action::MoveUp),
         (KeyCode::Down | KeyCode::Char('j'), _) => Some(Action::MoveDown),
         (KeyCode::Char('J'), _) if split_active => Some(Action::ScrollDetailDown),
         (KeyCode::Char('K'), _) if split_active => Some(Action::ScrollDetailUp),
-        (KeyCode::Tab, _) if split_active => Some(Action::ToggleSessionDetail),
         // PR-specific actions available when split view is showing a PR.
         (KeyCode::Char('v'), _) if split_active && item_kind == SelectedItemKind::Pr => {
             Some(Action::OpenReviewPicker)
@@ -161,15 +124,6 @@ fn unified_list_keys(
         // Issue-specific actions available when split view is showing an issue.
         (KeyCode::Char('a'), _) if split_active && item_kind == SelectedItemKind::Issue => {
             Some(Action::ApproveForAgent)
-        }
-        // Task status submenu — available on task rows and on badged signal rows.
-        (KeyCode::Char('s'), _)
-            if matches!(
-                item_kind,
-                SelectedItemKind::Task | SelectedItemKind::BadgedSignal
-            ) =>
-        {
-            Some(Action::TaskStatusSubmenu)
         }
         (KeyCode::Char('h'), _) => Some(Action::CollapseGroup),
         (KeyCode::Char('l'), _) => Some(Action::ExpandGroup),
@@ -665,184 +619,6 @@ mod tests {
         );
     }
 
-    fn split_view_app_with_task(status: domain::TaskStatus) -> App {
-        use crate::display::{flatten, DisplayItem};
-        let urgency = status.urgency();
-        let item = workflows::status::StatusItem::AgentSession(domain::Task {
-            id: "TASK-0001".parse().unwrap(),
-            title: "Fix auth bug".to_string(),
-            description: None,
-            status,
-            kind: domain::TaskKind::Implement,
-            session_id: None,
-            repo: None,
-            origin: domain::TaskOrigin::Idea,
-            links: vec![],
-            created_at: String::new(),
-            updated_at: String::new(),
-            age: chrono::Duration::zero(),
-            urgency,
-            comments: vec![],
-        });
-        let items = vec![DisplayItem::Single(item)];
-        let expanded = std::collections::HashSet::new();
-        let flat_rows = flatten(&items, &expanded);
-        App {
-            ui: UiState {
-                screen: Screen::UnifiedList {
-                    flat_rows,
-                    items,
-                    selected: 0,
-                    filter: Filter::default(),
-                    expanded_groups: expanded,
-                    detail_mode: crate::state::DetailMode::Visible { detail_scroll: 0 },
-                },
-                ..UiState::default()
-            },
-            ..App::default()
-        }
-    }
-
-    fn pending_task_status_app(status: domain::TaskStatus) -> App {
-        let mut app = split_view_app_with_task(status);
-        app.ui.submenu = SubmenuState::TaskStatus;
-        app
-    }
-
-    // K14: s on task in split view → TaskStatusSubmenu
-    #[test]
-    fn s_on_task_in_split_view_arms_task_status_submenu() {
-        assert_eq!(
-            key_to_action(
-                &split_view_app_with_task(domain::TaskStatus::Backlog),
-                ch('s')
-            ),
-            Some(Action::TaskStatusSubmenu)
-        );
-    }
-
-    // K15: s on non-task in split view does nothing
-    #[test]
-    fn s_on_pr_in_split_view_does_nothing() {
-        assert_eq!(key_to_action(&split_view_app_with_pr(), ch('s')), None);
-    }
-
-    // K16–K22: each key maps to its target status regardless of current status
-    #[rstest]
-    #[case(ch('b'), domain::TaskStatus::Backlog)]
-    #[case(ch('r'), domain::TaskStatus::Ready)]
-    #[case(ch('i'), domain::TaskStatus::InProgress)]
-    #[case(ch('l'), domain::TaskStatus::Blocked)]
-    #[case(ch('v'), domain::TaskStatus::InReview)]
-    #[case(ch('d'), domain::TaskStatus::Done)]
-    #[case(ch('c'), domain::TaskStatus::Cancelled)]
-    fn task_status_submenu_keys_map_to_target(
-        #[case] key: KeyEvent,
-        #[case] target: domain::TaskStatus,
-    ) {
-        // Use a different current status so we don't hit the same-status cancel path.
-        let current = if target == domain::TaskStatus::Backlog {
-            domain::TaskStatus::Ready
-        } else {
-            domain::TaskStatus::Backlog
-        };
-        assert_eq!(
-            key_to_action(&pending_task_status_app(current), key),
-            Some(Action::TransitionTaskStatus(target))
-        );
-    }
-
-    // K23: pressing the key for the current status cancels without transitioning
-    #[test]
-    fn task_status_submenu_same_status_key_cancels() {
-        assert_eq!(
-            key_to_action(
-                &pending_task_status_app(domain::TaskStatus::Backlog),
-                ch('b')
-            ),
-            Some(Action::CancelTaskStatusSubmenu)
-        );
-    }
-
-    // K24: s is available without split view for tasks
-    #[test]
-    fn s_on_task_without_split_view_arms_submenu() {
-        use crate::display::{flatten, DisplayItem};
-        let item = workflows::status::StatusItem::AgentSession(domain::Task {
-            id: "TASK-0001".parse().unwrap(),
-            title: "Task".to_string(),
-            description: None,
-            status: domain::TaskStatus::InProgress,
-            kind: domain::TaskKind::Implement,
-            session_id: None,
-            repo: None,
-            origin: domain::TaskOrigin::Idea,
-            links: vec![],
-            created_at: String::new(),
-            updated_at: String::new(),
-            age: chrono::Duration::zero(),
-            urgency: domain::Urgency::Low,
-            comments: vec![],
-        });
-        let items = vec![DisplayItem::Single(item)];
-        let expanded = std::collections::HashSet::new();
-        let flat_rows = flatten(&items, &expanded);
-        let app = App {
-            ui: UiState {
-                screen: Screen::UnifiedList {
-                    flat_rows,
-                    items,
-                    selected: 0,
-                    filter: Filter::default(),
-                    expanded_groups: expanded,
-                    detail_mode: crate::state::DetailMode::Hidden, // no split view
-                },
-                ..UiState::default()
-            },
-            ..App::default()
-        };
-        assert_eq!(
-            key_to_action(&app, ch('s')),
-            Some(Action::TaskStatusSubmenu)
-        );
-    }
-
-    // K25: unrecognised key in submenu → cancel
-    #[test]
-    fn unrecognized_key_in_task_status_submenu_cancels() {
-        assert_eq!(
-            key_to_action(
-                &pending_task_status_app(domain::TaskStatus::Backlog),
-                ch('x')
-            ),
-            Some(Action::CancelTaskStatusSubmenu)
-        );
-    }
-
-    // K26: Esc in task status submenu → cancel
-    #[test]
-    fn esc_in_task_status_submenu_cancels() {
-        assert_eq!(
-            key_to_action(
-                &pending_task_status_app(domain::TaskStatus::Backlog),
-                k(KeyCode::Esc)
-            ),
-            Some(Action::CancelTaskStatusSubmenu)
-        );
-    }
-
-    // K27: Ctrl-C in task status submenu → Quit
-    #[test]
-    fn ctrl_c_quits_during_task_status_submenu() {
-        assert_eq!(
-            key_to_action(
-                &pending_task_status_app(domain::TaskStatus::Backlog),
-                ctrl('c')
-            ),
-            Some(Action::Quit)
-        );
-    }
-
     // ── Modal intercept ──────────────────────────────────────────────────────
 
     fn modal_open_app() -> App {
@@ -924,22 +700,7 @@ mod tests {
         );
     }
 
-    // K33b: Tab while split view is active produces ToggleSessionDetail.
-    #[test]
-    fn tab_while_split_active_produces_toggle_session_detail() {
-        assert_eq!(
-            key_to_action(&split_view_app_with_pr(), k(KeyCode::Tab)),
-            Some(Action::ToggleSessionDetail)
-        );
-    }
-
-    // K33c: Tab while split is hidden is a no-op.
-    #[test]
-    fn tab_while_hidden_is_noop() {
-        assert_eq!(key_to_action(&App::default(), k(KeyCode::Tab)), None);
-    }
-
-    // K34: modal intercept fires even when query or task-status would normally intercept
+    // K34: modal intercept fires even when query would normally intercept
     #[test]
     fn modal_intercept_takes_priority_over_query_mode() {
         use crate::state::TaskCreationModal;

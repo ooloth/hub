@@ -45,22 +45,16 @@ impl App {
                 self.ui.pending_g = true;
                 vec![]
             }
-            Action::ScrollDetailDown | Action::ScrollDetailUp | Action::ToggleSessionDetail => {
-                // Handled in handle_unified_list when detail_mode is Visible.
-                match &self.ui.screen {
-                    Screen::UnifiedList { .. } => self.handle_unified_list(action),
-                    Screen::MergingPr { .. } => vec![],
-                }
-            }
+            Action::ScrollDetailDown | Action::ScrollDetailUp => match &self.ui.screen {
+                Screen::UnifiedList { .. } => self.handle_unified_list(action),
+                Screen::MergingPr { .. } => vec![],
+            },
             Action::PrActionSubmenu
             | Action::CancelPrSubmenu
             | Action::OpenPrDiffInDelta
             | Action::OpenInOcto
             | Action::OpenInLazygit => self.handle_pr_submenu_action(action),
-            Action::TaskStatusSubmenu
-            | Action::CancelTaskStatusSubmenu
-            | Action::TransitionTaskStatus(_)
-            | Action::OpenTaskCreationForm
+            Action::OpenTaskCreationForm
             | Action::OpenBlankTaskCreationForm
             | Action::CancelTaskCreation
             | Action::FocusNextField
@@ -109,18 +103,7 @@ impl App {
             SubmenuState::ReviewPicker if !matches!(action, Action::OpenReviewPicker) => {
                 self.ui.submenu = SubmenuState::None;
             }
-            SubmenuState::TaskStatus
-                if !matches!(
-                    action,
-                    Action::TaskStatusSubmenu | Action::TransitionTaskStatus(_)
-                ) =>
-            {
-                self.ui.submenu = SubmenuState::None;
-            }
-            SubmenuState::None
-            | SubmenuState::PrActions
-            | SubmenuState::ReviewPicker
-            | SubmenuState::TaskStatus => {}
+            SubmenuState::None | SubmenuState::PrActions | SubmenuState::ReviewPicker => {}
         }
     }
 
@@ -274,22 +257,6 @@ impl App {
 
     fn handle_task_action(&mut self, action: Action) -> Vec<Effect> {
         match action {
-            Action::TaskStatusSubmenu => {
-                if self.ui.screen.selected_task().is_some() {
-                    self.ui.submenu = SubmenuState::TaskStatus;
-                }
-                vec![]
-            }
-            Action::TransitionTaskStatus(status) => {
-                if let Some(task) = self.ui.screen.selected_task() {
-                    vec![Effect::UpdateTaskStatus {
-                        id: task.id,
-                        status,
-                    }]
-                } else {
-                    vec![]
-                }
-            }
             Action::OpenTaskCreationForm
             | Action::OpenBlankTaskCreationForm
             | Action::CancelTaskCreation
@@ -323,14 +290,6 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
             refreshed_at,
         } => {
             refresh::apply_report(app, report, refreshed_at);
-            Ok(vec![])
-        }
-        Msg::StreamUpdate(blocks) => {
-            app.data.stream_blocks = blocks;
-            Ok(vec![])
-        }
-        Msg::TasksPatched(tasks) => {
-            refresh::patch_tasks(app, tasks);
             Ok(vec![])
         }
     }
@@ -1837,204 +1796,5 @@ mod tests {
         let mut app = app_with_items(vec![]);
         let effects = app.update(Action::OpenUrl);
         assert!(effects.is_empty());
-    }
-
-    // --- ToggleSessionDetail ---
-
-    // TS1: ToggleSessionDetail from Visible transitions to VisibleSession.
-    #[test]
-    fn toggle_session_detail_visible_to_visible_session() {
-        let mut app = app_in_split_view_with_scroll(0);
-        let _ = app.update(Action::ToggleSessionDetail);
-        match app.current_screen() {
-            Screen::UnifiedList { detail_mode, .. } => {
-                assert_eq!(
-                    detail_mode,
-                    &DetailMode::VisibleSession { detail_scroll: 0 }
-                );
-            }
-            _ => panic!("expected UnifiedList"),
-        }
-    }
-
-    // TS2: ToggleSessionDetail from VisibleSession transitions back to Visible.
-    #[test]
-    fn toggle_session_detail_visible_session_to_visible() {
-        let item = DisplayItem::Single(ci_failure());
-        let expanded = HashSet::new();
-        let flat_rows = flatten(&[item.clone()], &expanded);
-        let mut app = App {
-            ui: UiState {
-                screen: Screen::UnifiedList {
-                    items: vec![item],
-                    flat_rows,
-                    selected: 0,
-                    filter: Filter::default(),
-                    expanded_groups: expanded,
-                    detail_mode: DetailMode::VisibleSession { detail_scroll: 5 },
-                },
-                ..UiState::default()
-            },
-            ..App::default()
-        };
-        let _ = app.update(Action::ToggleSessionDetail);
-        match app.current_screen() {
-            Screen::UnifiedList { detail_mode, .. } => {
-                assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 0 });
-            }
-            _ => panic!("expected UnifiedList"),
-        }
-    }
-
-    // TS3: ToggleSessionDetail from Hidden is a no-op.
-    #[test]
-    fn toggle_session_detail_from_hidden_is_noop() {
-        let mut app = app_with_items(vec![DisplayItem::Single(ci_failure())]);
-        let _ = app.update(Action::ToggleSessionDetail);
-        match app.current_screen() {
-            Screen::UnifiedList { detail_mode, .. } => {
-                assert_eq!(detail_mode, &DetailMode::Hidden);
-            }
-            _ => panic!("expected UnifiedList"),
-        }
-    }
-
-    // TS4: Navigation (MoveDown) while VisibleSession resets to Visible.
-    #[test]
-    fn move_down_while_visible_session_resets_to_visible() {
-        let items = vec![
-            DisplayItem::Single(ci_failure()),
-            DisplayItem::Single(ci_failure()),
-        ];
-        let expanded = HashSet::new();
-        let flat_rows = flatten(&items, &expanded);
-        let mut app = App {
-            ui: UiState {
-                screen: Screen::UnifiedList {
-                    items,
-                    flat_rows,
-                    selected: 0,
-                    filter: Filter::default(),
-                    expanded_groups: expanded,
-                    detail_mode: DetailMode::VisibleSession { detail_scroll: 3 },
-                },
-                ..UiState::default()
-            },
-            ..App::default()
-        };
-        let _ = app.update(Action::MoveDown);
-        match app.current_screen() {
-            Screen::UnifiedList { detail_mode, .. } => {
-                assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 0 });
-            }
-            _ => panic!("expected UnifiedList"),
-        }
-    }
-
-    // --- BadgedSignal: selected_task / selected_item_kind / TaskStatusSubmenu ---
-
-    fn badged_signal_task() -> domain::Task {
-        domain::Task {
-            id: "TASK-0042".parse().unwrap(),
-            title: "Fix PR".to_string(),
-            description: None,
-            status: domain::TaskStatus::InProgress,
-            kind: domain::TaskKind::Implement,
-            session_id: None,
-            repo: None,
-            origin: domain::TaskOrigin::Pr {
-                repo: domain::RepoSlug::new("owner", "repo"),
-                number: 42,
-            },
-            links: vec![],
-            created_at: String::new(),
-            updated_at: String::new(),
-            age: chrono::Duration::zero(),
-            urgency: domain::Urgency::Medium,
-            comments: vec![],
-        }
-    }
-
-    fn app_with_badged_signal() -> App {
-        use crate::display::{DisplayItem, FlatRow};
-        let task = badged_signal_task();
-        let pr = StatusItem::Pr(domain::PullRequest {
-            number: 42,
-            title: "Add feature".to_string(),
-            repo: domain::RepoSlug::new("owner", "repo"),
-            url: "https://github.com/owner/repo/pull/42".to_string(),
-            age: chrono::Duration::zero(),
-            urgency: domain::Urgency::Medium,
-            kind: domain::PrKind::ToReview,
-            author: "alice".to_string(),
-            review_decision: None,
-            approval_count: 0,
-            comment_count: 0,
-            head_branch: "feat".to_string(),
-            base_branch: "main".to_string(),
-            body: None,
-            ci_status: None,
-            changed_files: vec![],
-            total_changed_files: 0,
-            review_threads: vec![],
-            pr_comments: vec![],
-            merge_blocker: None,
-        });
-        let item = DisplayItem::BadgedSignal {
-            signal: pr.clone(),
-            task: task.clone(),
-        };
-        let flat_rows = vec![FlatRow::BadgedSignal { item: pr, task }];
-        App {
-            ui: UiState {
-                screen: Screen::UnifiedList {
-                    items: vec![item],
-                    flat_rows,
-                    selected: 0,
-                    filter: Filter::default(),
-                    expanded_groups: HashSet::new(),
-                    detail_mode: DetailMode::Hidden,
-                },
-                ..UiState::default()
-            },
-            ..App::default()
-        }
-    }
-
-    // BS1: selected_task returns the attached task for a BadgedSignal row.
-    #[test]
-    fn selected_task_returns_task_for_badged_signal_row() {
-        let app = app_with_badged_signal();
-        let task = app.current_screen().selected_task();
-        assert!(task.is_some());
-        assert_eq!(task.unwrap().id.to_string(), "TASK-0042");
-    }
-
-    // BS2: selected_item_kind returns BadgedSignal for a BadgedSignal row.
-    #[test]
-    fn selected_item_kind_returns_badged_signal_for_badged_row() {
-        use crate::display::SelectedItemKind;
-        let app = app_with_badged_signal();
-        assert_eq!(
-            app.current_screen().selected_item_kind(),
-            SelectedItemKind::BadgedSignal
-        );
-    }
-
-    // BS3: TaskStatusSubmenu sets TaskStatus submenu for a BadgedSignal row.
-    #[test]
-    fn task_status_submenu_sets_pending_for_badged_signal() {
-        let mut app = app_with_badged_signal();
-        let _ = app.update(Action::TaskStatusSubmenu);
-        assert_eq!(app.ui.submenu, SubmenuState::TaskStatus);
-    }
-
-    // BS4: TransitionTaskStatus emits UpdateTaskStatus from a BadgedSignal row.
-    #[test]
-    fn transition_task_status_emits_update_for_badged_signal() {
-        let mut app = app_with_badged_signal();
-        let effects = app.update(Action::TransitionTaskStatus(domain::TaskStatus::Done));
-        assert_eq!(effects.len(), 1);
-        assert!(matches!(&effects[0], Effect::UpdateTaskStatus { .. }));
     }
 }

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use domain::{PrKind, PullRequest, RepoSlug, ReviewDecision, TaskId, TaskStatus};
+use domain::{PrKind, PullRequest, RepoSlug, ReviewDecision};
 use workflows::status::{StatusItem, StatusReport};
 
 use crate::display::{
@@ -17,7 +17,6 @@ pub(crate) enum SubmenuState {
     None,
     PrActions,
     ReviewPicker,
-    TaskStatus,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -60,20 +59,16 @@ pub(crate) enum RefreshState {
     Failed(String),
 }
 
-/// Whether the `UnifiedList` is showing a split detail pane below the list, and
-/// which content is shown. `detail_scroll` only exists inside the visible
-/// variants — a hidden pane cannot have a stale scroll offset.
+/// Whether the `UnifiedList` is showing a split detail pane below the list.
+/// `detail_scroll` only exists inside the visible variant — a hidden pane cannot
+/// have a stale scroll offset.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) enum DetailMode {
     #[default]
     Hidden,
-    /// Split view is open showing the selected signal's own detail (PR body,
-    /// issue body, CI log, session transcript for task rows, etc.).
+    /// Split view is open showing the selected signal's detail (PR body,
+    /// issue body, CI log, etc.).
     Visible { detail_scroll: u16 },
-    /// Split view is open and toggled to show the agent session detail for the
-    /// attached task of a `BadgedSignal` row. Only reachable when the selected
-    /// row is a `DisplayItem::BadgedSignal`.
-    VisibleSession { detail_scroll: u16 },
 }
 
 #[derive(Debug)]
@@ -120,38 +115,14 @@ impl Screen {
                 selected,
                 ..
             } => match flat_rows.get(*selected)? {
-                FlatRow::Single(item)
-                | FlatRow::GroupChild { item, .. }
-                | FlatRow::BadgedSignal { item, .. } => Some(item.clone()),
+                FlatRow::Single(item) | FlatRow::GroupChild { item, .. } => Some(item.clone()),
                 FlatRow::GroupHeader { .. } => None,
             },
             Self::MergingPr { pr, .. } => Some(StatusItem::Pr(pr.clone())),
         }
     }
 
-    /// Returns the task for the selected row — either an `AgentSession` item or the
-    /// attached task on a `BadgedSignal` row. Used for the status submenu.
-    pub(crate) fn selected_task(&self) -> Option<domain::Task> {
-        match self {
-            Self::UnifiedList {
-                flat_rows,
-                selected,
-                ..
-            } => match flat_rows.get(*selected)? {
-                FlatRow::Single(StatusItem::AgentSession(task))
-                | FlatRow::GroupChild {
-                    item: StatusItem::AgentSession(task),
-                    ..
-                }
-                | FlatRow::BadgedSignal { task, .. } => Some(task.clone()),
-                _ => None,
-            },
-            Self::MergingPr { .. } => None,
-        }
-    }
-
-    /// Returns the `SelectedItemKind` for the currently selected row, correctly
-    /// detecting `BadgedSignal` rows (which `from_item` alone cannot see).
+    /// Returns the `SelectedItemKind` for the currently selected row.
     pub(crate) fn selected_item_kind(&self) -> SelectedItemKind {
         match self {
             Self::UnifiedList {
@@ -174,9 +145,7 @@ impl Screen {
                 selected,
                 ..
             } => match flat_rows.get(*selected)? {
-                FlatRow::Single(item)
-                | FlatRow::GroupChild { item, .. }
-                | FlatRow::BadgedSignal { item, .. } => Some(item.clone()),
+                FlatRow::Single(item) | FlatRow::GroupChild { item, .. } => Some(item.clone()),
                 FlatRow::GroupHeader { first_item, .. } => Some(first_item.clone()),
             },
             Self::MergingPr { pr, .. } => Some(StatusItem::Pr(pr.clone())),
@@ -261,9 +230,6 @@ pub(crate) enum Action {
     OpenInLazygit,
     CommitMerge,
     CancelMerge,
-    TaskStatusSubmenu,
-    CancelTaskStatusSubmenu,
-    TransitionTaskStatus(TaskStatus),
     // Task creation modal
     OpenTaskCreationForm,
     OpenBlankTaskCreationForm,
@@ -275,7 +241,6 @@ pub(crate) enum Action {
     CommitTaskCreation,
     ScrollDetailDown,
     ScrollDetailUp,
-    ToggleSessionDetail,
     // Filter actions — only take effect from UnifiedList in normal mode.
     FilterCategory(Category),
     ClearFilter,
@@ -360,10 +325,6 @@ pub(crate) enum Effect {
     },
     StartRefresh,
     WriteCache(String),
-    UpdateTaskStatus {
-        id: TaskId,
-        status: TaskStatus,
-    },
     CreateTask {
         title: String,
         description: Option<String>,
@@ -382,8 +343,4 @@ pub(crate) enum Msg {
         report: StatusReport,
         refreshed_at: DateTime<Utc>,
     },
-    StreamUpdate(Vec<domain::StreamBlock>),
-    /// Fresh task list from the 10s poll, patched into the in-memory items so
-    /// status changes surface without waiting for the full external refresh.
-    TasksPatched(Vec<domain::Task>),
 }

@@ -1,4 +1,4 @@
-use crate::display::{FlatRow, SelectedItemKind};
+use crate::display::FlatRow;
 use crate::state::{
     compute_investigate_action, App, DetailMode, InvestigateAction, RefreshState, Screen,
 };
@@ -18,27 +18,6 @@ pub(crate) fn position_label(screen: &Screen) -> String {
         }
         Screen::MergingPr { .. } => String::new(),
     }
-}
-
-/// Builds the task status submenu hint, listing all statuses except the current one.
-pub(crate) fn task_status_hints(current: domain::TaskStatus) -> String {
-    const ENTRIES: &[(char, domain::TaskStatus, &str)] = &[
-        ('b', domain::TaskStatus::Backlog, "backlog"),
-        ('l', domain::TaskStatus::Blocked, "blocked"),
-        ('c', domain::TaskStatus::Cancelled, "cancelled"),
-        ('d', domain::TaskStatus::Done, "done"),
-        ('f', domain::TaskStatus::Failed, "failed"),
-        ('i', domain::TaskStatus::InProgress, "in-progress"),
-        ('v', domain::TaskStatus::InReview, "in-review"),
-        ('r', domain::TaskStatus::Ready, "ready"),
-    ];
-    let mut parts: Vec<String> = ENTRIES
-        .iter()
-        .filter(|(_, s, _)| *s != current)
-        .map(|(k, _, name)| format!("[{k}] {name}"))
-        .collect();
-    parts.push("[Esc] cancel".to_string());
-    format!("  {}", parts.join(" · "))
 }
 
 pub(crate) const fn investigate_hint(investigate: &InvestigateAction) -> &'static str {
@@ -82,15 +61,6 @@ pub(crate) fn status_bar_left(app: &App) -> String {
         let inv = compute_investigate_action(app);
         match detail_mode {
             DetailMode::Hidden => {
-                let item_kind = app.current_screen().selected_item_kind();
-                let task_hint = if matches!(
-                    item_kind,
-                    SelectedItemKind::Task | SelectedItemKind::BadgedSignal
-                ) {
-                    " · [s] status"
-                } else {
-                    ""
-                };
                 let inv_hint = investigate_hint(&inv);
                 let group_hint = match flat_rows.get(*selected) {
                     Some(FlatRow::GroupHeader {
@@ -102,30 +72,23 @@ pub(crate) fn status_bar_left(app: &App) -> String {
                     _ => "",
                 };
                 format!(
-                    "{pos} · [↩] details{task_hint} · [n/N] new task · [p] prs · [O] issues · [e] errors · [/] search{inv_hint}{group_hint}"
+                    "{pos} · [↩] details · [n/N] new task · [p] prs · [O] issues · [e] errors · [/] search{inv_hint}{group_hint}"
                 )
             }
             DetailMode::Visible { .. } => {
                 let item_kind = app.current_screen().selected_item_kind();
                 match item_kind {
-                    SelectedItemKind::Pr => format!(
+                    crate::display::SelectedItemKind::Pr => format!(
                         "{pos} · [o] open · [d] diff · [v] review · [m] merge · [i] ask · [Esc] back"
                     ),
-                    SelectedItemKind::Issue => format!(
+                    crate::display::SelectedItemKind::Issue => format!(
                         "{pos} · [o] open · [a] approve · [i] investigate · [Esc] back"
                     ),
-                    SelectedItemKind::Task => format!("{pos} · [s] status · [Esc] back"),
-                    SelectedItemKind::BadgedSignal => {
-                        format!("{pos} · [s] status · [Tab] session · [Esc] back")
-                    }
-                    SelectedItemKind::Other => {
+                    crate::display::SelectedItemKind::Other => {
                         let inv_hint = investigate_hint(&inv);
                         format!("{pos} · [o] open{inv_hint} · [Esc] back")
                     }
                 }
-            }
-            DetailMode::VisibleSession { .. } => {
-                format!("{pos} · [Tab] signal detail · [Esc] back")
             }
         }
     } else {

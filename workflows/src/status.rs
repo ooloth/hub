@@ -1,5 +1,5 @@
 use anyhow::Result;
-use domain::{CiFailure, Issue, LinearIssue, PullRequest, Task, Urgency};
+use domain::{CiFailure, Issue, LinearIssue, PullRequest, Urgency};
 use secrecy::{ExposeSecret, Secret};
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
@@ -23,8 +23,6 @@ pub enum StatusItem {
     Loki(domain::LokiEntry),
     /// A GCP log alert entry.
     Gcp(domain::GcpEntry),
-    /// An active or terminal agent task session.
-    AgentSession(Task),
     /// A blocked media download (private).
     #[cfg(feature = "private")]
     MediaBlocked(crate::private::status::BlockedItem),
@@ -53,7 +51,6 @@ impl StatusItem {
             Self::Linear(l) => l.urgency,
             Self::Loki(l) => l.urgency,
             Self::Gcp(g) => g.urgency,
-            Self::AgentSession(t) => t.urgency,
             #[cfg(feature = "private")]
             Self::MediaBlocked(b) => b.urgency,
             #[cfg(feature = "private")]
@@ -73,7 +70,6 @@ impl StatusItem {
             Self::Linear(l) => l.age,
             Self::Loki(l) => l.age,
             Self::Gcp(g) => g.age,
-            Self::AgentSession(t) => t.age,
             #[cfg(feature = "private")]
             Self::MediaBlocked(b) => b.age,
             #[cfg(feature = "private")]
@@ -221,12 +217,6 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
         .as_ref()
         .map(|t| t.expose_secret().as_str());
     run_fold_backs(github_token, linear_token, &items, &mut errors).await;
-
-    // Agent tasks — synchronous local SQLite read; degrades gracefully on error.
-    match crate::tasks::list_visible() {
-        Ok(tasks) => items.extend(tasks.into_iter().map(StatusItem::AgentSession)),
-        Err(_) => errors.push("agent tasks".to_string()),
-    }
 
     items.sort_by_key(|i| (i.urgency(), Reverse(i.age())));
 

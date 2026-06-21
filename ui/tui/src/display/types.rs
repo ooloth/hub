@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 
-use domain::Task;
 use workflows::status::StatusItem;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -34,20 +33,6 @@ pub(crate) enum FlatRow {
         item: StatusItem,
         is_last: bool,
     },
-    /// A signal row with an attached in-progress task badge.
-    BadgedSignal {
-        item: StatusItem,
-        task: Task,
-    },
-}
-
-impl FlatRow {
-    pub(crate) const fn attached_task(&self) -> Option<&Task> {
-        match self {
-            Self::BadgedSignal { task, .. } => Some(task),
-            _ => None,
-        }
-    }
 }
 
 /// A single log line, parsed once at construction.
@@ -109,12 +94,6 @@ pub(crate) enum DisplayItem {
         label: GroupKey,
         items: Vec<StatusItem>,
     },
-    /// A signal row with an attached in-progress task. The task row is
-    /// suppressed and replaced by this badge on the signal row.
-    BadgedSignal {
-        signal: StatusItem,
-        task: Task,
-    },
 }
 
 #[derive(Clone, Debug)]
@@ -166,10 +145,6 @@ impl LineParts {
 pub(crate) enum SelectedItemKind {
     Pr,
     Issue,
-    Task,
-    /// A signal row (PR, Issue, CI, etc.) that has an attached active task.
-    /// The `s` key opens the task status submenu on these rows.
-    BadgedSignal,
     Other,
 }
 
@@ -178,14 +153,12 @@ impl SelectedItemKind {
         match item {
             StatusItem::Pr(_) => Self::Pr,
             StatusItem::Issue(_) => Self::Issue,
-            StatusItem::AgentSession(_) => Self::Task,
             _ => Self::Other,
         }
     }
 
     pub(crate) const fn from_row(row: &FlatRow) -> Self {
         match row {
-            FlatRow::BadgedSignal { .. } => Self::BadgedSignal,
             FlatRow::Single(item) | FlatRow::GroupChild { item, .. } => Self::from_item(item),
             FlatRow::GroupHeader { .. } => Self::Other,
         }

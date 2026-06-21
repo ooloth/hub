@@ -307,8 +307,6 @@ pub(crate) fn seed_from_item(item: &StatusItem) -> Option<TaskCreationSeed> {
             repo: None,
             origin: TaskOrigin::from_gcp(g),
         }),
-        // Task rows open a blank form (no pre-population).
-        StatusItem::AgentSession(_) => None,
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => Some(seed_from_media_blocked(b)),
         #[cfg(feature = "private")]
@@ -934,27 +932,6 @@ mod tests {
         let expected = seed.origin.clone();
         let modal = TaskCreationModal::with_seed(Some(seed), vec![]);
         assert_eq!(modal.try_into_request().unwrap().origin, expected);
-    }
-
-    #[test]
-    fn seed_from_agent_session_returns_none() {
-        let task = StatusItem::AgentSession(domain::Task {
-            id: "TASK-0001".parse().unwrap(),
-            title: "some task".to_string(),
-            description: None,
-            status: domain::TaskStatus::InProgress,
-            kind: TaskKind::Debug,
-            session_id: None,
-            repo: None,
-            origin: domain::TaskOrigin::Idea,
-            links: vec![],
-            created_at: String::new(),
-            updated_at: String::new(),
-            age: chrono::Duration::zero(),
-            urgency: domain::Urgency::Low,
-            comments: vec![],
-        });
-        assert!(seed_from_item(&task).is_none());
     }
 
     #[cfg(feature = "private")]

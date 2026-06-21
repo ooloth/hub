@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use domain::{RepoSlug, StreamBlock};
+use domain::RepoSlug;
 use workflows::status::StatusItem;
 
 use crate::state::task_creation::TaskCreationModal;
@@ -26,8 +26,6 @@ pub(crate) struct DataState {
     pub(crate) raw_items: Vec<StatusItem>,
     pub(crate) refresh_state: crate::state::types::RefreshState,
     pub(crate) last_updated: Option<DateTime<Utc>>,
-    pub(crate) stream_blocks: Vec<StreamBlock>,
-    pub(crate) stream_session_id: Option<String>,
 }
 
 #[derive(Debug, Default)]
