@@ -1,6 +1,4 @@
 //! Orchestrated workflows for the hub task and signal pipeline.
-/// Claude Code session state detection and transition decisions.
-pub mod agent_session;
 /// PR investigation worktree management.
 pub mod fetch;
 /// GCP Logging query and entry parsing.

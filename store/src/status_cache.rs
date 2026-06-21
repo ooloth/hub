@@ -26,6 +26,7 @@ pub fn connect() -> Result<Connection> {
     let conn = Connection::open(&path)
         .with_context(|| format!("failed to open db at {}", path.display()))?;
     apply_pragmas(&conn).context("failed to configure connection pragmas")?;
+    drop_task_tables(&conn).context("failed to drop legacy task tables")?;
     Ok(conn)
 }
 
@@ -55,6 +56,16 @@ fn maybe_migrate(legacy: &Path, new: &Path) -> Result<()> {
     src.execute_batch(&format!("VACUUM INTO '{dest}'"))
         .with_context(|| format!("failed to migrate db to {}", new.display()))?;
     Ok(())
+}
+
+/// Drops the task tables introduced by the old task model (ADR 019).
+/// Idempotent — safe to run on every startup regardless of whether the tables exist.
+fn drop_task_tables(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "DROP TABLE IF EXISTS task_comments;
+         DROP TABLE IF EXISTS tasks;",
+    )
+    .context("failed to drop task tables")
 }
 
 fn apply_pragmas(conn: &Connection) -> Result<()> {

@@ -6,7 +6,7 @@ use std::cmp::Reverse;
 use std::collections::HashMap;
 
 /// Bump when the serialized `StatusReport` format changes incompatibly.
-pub const SCHEMA_VERSION: i32 = 17;
+pub const SCHEMA_VERSION: i32 = 18;
 
 /// A single signal from any source, as stored in the unified status list.
 #[derive(Clone, Debug, Serialize, Deserialize)]
