@@ -7,7 +7,6 @@ pub(crate) mod log;
 pub(crate) mod pr;
 pub(crate) mod shared;
 pub(crate) mod status_bar;
-pub(crate) mod task;
 pub(crate) mod unified;
 
 pub(crate) use theme::{dim, list_highlight, FOCUS_COLOR, LAVENDER, YELLOW};
@@ -30,10 +29,6 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
 
     render_content(frame, app, content_area);
     render_status_bar(frame, app, bar_area);
-
-    if let Some(modal) = &mut app.ui.modal {
-        task::render_task_creation_modal(frame, modal);
-    }
 
     if app.ui.show_help {
         render_help_popup(frame, app);
@@ -1118,149 +1113,6 @@ mod tests {
         ];
         let mut app = split_view_app(items, 0, 0);
         let buf = draw(&mut app, 120, 40);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    // ── Task creation modal snapshots ────────────────────────────────────────
-
-    fn modal_app_blank() -> App {
-        use crate::state::TaskCreationModal;
-        App {
-            ui: UiState {
-                modal: Some(TaskCreationModal::blank()),
-                ..UiState::default()
-            },
-            ..App::default()
-        }
-    }
-
-    fn modal_app_submit_focused() -> App {
-        use crate::state::{TaskCreationModal, TaskFormField};
-        use tui_textarea::TextArea;
-        let mut modal = TaskCreationModal::blank();
-        modal.title = TextArea::new(vec!["Fix auth bug".to_string()]);
-        modal.description = TextArea::new(vec!["Auth is broken in prod".to_string()]);
-        modal.kind = domain::TaskKind::Debug;
-        modal.link = TextArea::new(vec!["https://github.com/org/repo/issues/1".to_string()]);
-        modal.focused_field = TaskFormField::Submit;
-        App {
-            ui: UiState {
-                modal: Some(modal),
-                ..UiState::default()
-            },
-            ..App::default()
-        }
-    }
-
-    // M1: blank (task_creation,) Title focused — baseline layout snapshot.
-    #[test]
-    fn task_creation_modal_blank_title_focused() {
-        let mut app = modal_app_blank();
-        let buf = draw(&mut app, 80, 24);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    // M2: all fields populated, Submit focused — "ready to create" state.
-    #[test]
-    fn task_creation_modal_all_fields_submit_focused() {
-        let mut app = modal_app_submit_focused();
-        let buf = draw(&mut app, 80, 24);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    fn seeded_modal_app(item: workflows::status::StatusItem) -> App {
-        use crate::state::{task_creation, TaskCreationModal};
-        App {
-            ui: UiState {
-                modal: Some(TaskCreationModal::with_seed(
-                    task_creation::seed_from_item(&item),
-                    vec![],
-                )),
-                ..UiState::default()
-            },
-            ..App::default()
-        }
-    }
-
-    // M3: seeded from a CI failure — description renders as separate lines; kind=Debug; link=run URL.
-    #[test]
-    fn task_creation_modal_seeded_from_ci_row() {
-        let item = workflows::status::StatusItem::Ci(domain::CiFailure {
-            repo: domain::RepoSlug::new("org", "hub"),
-            workflow_name: "CI".to_string(),
-            job_name: Some("build".to_string()),
-            step_name: Some("run tests".to_string()),
-            error: Some("panicked at assertion failed".to_string()),
-            age: chrono::Duration::zero(),
-            urgency: domain::Urgency::High,
-            url: "https://github.com/org/hub/actions/runs/99".to_string(),
-        });
-        let buf = draw(&mut seeded_modal_app(item), 80, 24);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    // M4: seeded from a PR — kind=Review; description shows author/branch/status.
-    #[test]
-    fn task_creation_modal_seeded_from_pr_row() {
-        let item = workflows::status::StatusItem::Pr(domain::PullRequest {
-            number: 42,
-            title: "Add dark mode".to_string(),
-            repo: domain::RepoSlug::new("org", "hub"),
-            url: "https://github.com/org/hub/pull/42".to_string(),
-            age: chrono::Duration::zero(),
-            urgency: domain::Urgency::Low,
-            kind: domain::PrKind::ToReview,
-            author: "alice".to_string(),
-            review_decision: Some(domain::ReviewDecision::ChangesRequested),
-            approval_count: 0,
-            comment_count: 0,
-            head_branch: "feat/dark-mode".to_string(),
-            base_branch: "main".to_string(),
-            body: None,
-            ci_status: None,
-            changed_files: vec![],
-            total_changed_files: 0,
-            review_threads: vec![],
-            pr_comments: vec![],
-            merge_blocker: None,
-        });
-        let buf = draw(&mut seeded_modal_app(item), 80, 24);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    // M5: seeded from a GitHub issue — kind=Implement; description shows repo/author.
-    #[test]
-    fn task_creation_modal_seeded_from_issue_row() {
-        let item = workflows::status::StatusItem::Issue(domain::Issue {
-            number: 7,
-            title: "Button misaligned on mobile".to_string(),
-            repo: domain::RepoSlug::new("org", "hub"),
-            url: "https://github.com/org/hub/issues/7".to_string(),
-            author: "bob".to_string(),
-            age: chrono::Duration::zero(),
-            urgency: domain::Urgency::Low,
-            labels: vec!["bug".to_string()],
-            body: None,
-        });
-        let buf = draw(&mut seeded_modal_app(item), 80, 24);
-        insta::assert_snapshot!(screen_text(&buf));
-    }
-
-    // M6: seeded from a Loki alert — kind=Debug; description shows alert/message/line/lookback.
-    #[test]
-    fn task_creation_modal_seeded_from_loki_row() {
-        let item = workflows::status::StatusItem::Loki(domain::LokiEntry {
-            title: "High error rate".to_string(),
-            project: "myapp".to_string(),
-            env: "prod".to_string(),
-            message: "connection refused".to_string(),
-            line: r#"{"level":"error","msg":"connection refused"}"#.to_string(),
-            lookback: "15m".to_string(),
-            age: chrono::Duration::zero(),
-            urgency: domain::Urgency::Critical,
-            url: "https://grafana.example.com/d/abc".to_string(),
-        });
-        let buf = draw(&mut seeded_modal_app(item), 80, 24);
         insta::assert_snapshot!(screen_text(&buf));
     }
 }

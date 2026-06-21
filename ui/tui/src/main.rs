@@ -120,11 +120,6 @@ async fn main() -> Result<()> {
                 expanded_groups: HashSet::new(),
                 detail_mode: DetailMode::Hidden,
             },
-            available_repos: config
-                .projects
-                .iter()
-                .filter_map(|p| p.repo.parse().ok())
-                .collect(),
             ..UiState::default()
         },
     };
@@ -331,27 +326,6 @@ async fn handle_effect(
         }
         Effect::MergePullRequest { repo, number } => {
             handle_merge_pull_request(app, config, tx, repo, number).await;
-        }
-        Effect::CreateTask {
-            title,
-            description,
-            kind,
-            links,
-            repo,
-            origin,
-        } => {
-            handle_create_task(
-                app,
-                conn,
-                config,
-                tx,
-                &title,
-                description.as_deref(),
-                kind,
-                &links,
-                repo.as_ref(),
-                &origin,
-            );
         }
         Effect::StartRefresh => request_refresh(app, config, tx, true, None),
         Effect::WriteCache(json) => {
@@ -683,47 +657,5 @@ async fn handle_merge_pull_request(
         Err(e) => {
             app.ui.flash = Some(format!("Could not merge #{number}: {e}"));
         }
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn handle_create_task(
-    app: &mut App,
-    conn: &rusqlite::Connection,
-    config: &config::Config,
-    tx: &mpsc::Sender<Result<StatusReport>>,
-    title: &str,
-    description: Option<&str>,
-    kind: domain::TaskKind,
-    links: &[String],
-    repo: Option<&domain::RepoSlug>,
-    origin: &domain::TaskOrigin,
-) {
-    match store::tasks::active_for_origin(conn, origin) {
-        Err(e) => {
-            app.ui.flash = Some(format!("Could not check active tasks: {e}"));
-        }
-        Ok(Some(existing)) => {
-            app.ui.flash = Some(format!(
-                "{} already active for this signal — close it first",
-                existing.id
-            ));
-        }
-        Ok(None) => match workflows::tasks::create(
-            title,
-            kind,
-            description,
-            links,
-            repo.map(std::string::ToString::to_string).as_deref(),
-            origin,
-        ) {
-            Ok(id) => {
-                app.ui.flash = Some(format!("{id} created"));
-                request_refresh(app, config, tx, false, None);
-            }
-            Err(e) => {
-                app.ui.flash = Some(format!("Could not create task: {e}"));
-            }
-        },
     }
 }

@@ -4,21 +4,21 @@ expression: screen_text(&buf)
 ---
 ╭ All ─────────────────────────────────────────────────────────────────────────╮
 │CI · check / fmt · failed                                     ooloth/hub · now│
-│         ┌ Keybinds ───────────────────────────────────────────────┐          │
-│         │  ?                 toggle help                          │          │
-│         │  k / j             up / down                            │          │
-│         │  gg / G            go to top / bottom                   │          │
-│         │  Ctrl-u / Ctrl-d   page up / down                       │          │
-│         │  h / l             collapse / expand group              │          │
-│         │  Enter             open                                 │          │
-│         │  i                 investigate                          │          │
-│         │  n                 new task (seeded from selected row)  │          │
-│         │  N                 new task (blank)                     │          │
-│         │  p / e / o         filter PRs / Errors / Issues         │          │
-│         │  /                 search                               │          │
-│         │  a / Esc           clear filter                         │          │
-│         │  r                 refresh                              │          │
-│         │  q / Ctrl-C        quit                                 │          │
-│         └─────────────────────────────────────────────────────────┘          │
+│                                                                              │
+│             ┌ Keybinds ────────────────────────────────────────┐             │
+│             │  ?                 toggle help                   │             │
+│             │  k / j             up / down                     │             │
+│             │  gg / G            go to top / bottom            │             │
+│             │  Ctrl-u / Ctrl-d   page up / down                │             │
+│             │  h / l             collapse / expand group       │             │
+│             │  Enter             open                          │             │
+│             │  i                 investigate                   │             │
+│             │  p / e / o         filter PRs / Errors / Issues  │             │
+│             │  /                 search                        │             │
+│             │  a / Esc           clear filter                  │             │
+│             │  r                 refresh                       │             │
+│             │  q / Ctrl-C        quit                          │             │
+│             └──────────────────────────────────────────────────┘             │
+│                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- 1/1 · [↩] details · [n/N] new task · [p] prs · [O] issues · [e] errors · [/] s
+ 1/1 · [↩] details · [p] prs · [O] issues · [e] errors · [/] search · [i] inves

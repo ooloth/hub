@@ -7,7 +7,6 @@ use workflows::status::StatusItem;
 mod pr;
 mod refresh;
 mod signals;
-mod task_modal;
 
 pub(crate) use signals::compute_investigate_action;
 
@@ -54,14 +53,6 @@ impl App {
             | Action::OpenPrDiffInDelta
             | Action::OpenInOcto
             | Action::OpenInLazygit => self.handle_pr_submenu_action(action),
-            Action::OpenTaskCreationForm
-            | Action::OpenBlankTaskCreationForm
-            | Action::CancelTaskCreation
-            | Action::FocusNextField
-            | Action::FocusPrevField
-            | Action::CycleTaskKind
-            | Action::ModalTextInput(_)
-            | Action::CommitTaskCreation => self.handle_task_action(action),
             Action::MoveUp
             | Action::MoveDown
             | Action::MoveToTop
@@ -251,20 +242,6 @@ impl App {
                     vec![]
                 }
             }
-            _ => vec![],
-        }
-    }
-
-    fn handle_task_action(&mut self, action: Action) -> Vec<Effect> {
-        match action {
-            Action::OpenTaskCreationForm
-            | Action::OpenBlankTaskCreationForm
-            | Action::CancelTaskCreation
-            | Action::FocusNextField
-            | Action::FocusPrevField
-            | Action::CycleTaskKind
-            | Action::ModalTextInput(_)
-            | Action::CommitTaskCreation => task_modal::update(self, action),
             _ => vec![],
         }
     }
@@ -1313,151 +1290,6 @@ mod tests {
             parent.items[0],
             DisplayItem::Single(workflows::status::StatusItem::Ci(_))
         ));
-    }
-
-    // --- Task creation modal ---
-
-    fn modal_app() -> App {
-        use crate::state::TaskCreationModal;
-        App {
-            ui: UiState {
-                modal: Some(TaskCreationModal::blank()),
-                ..UiState::default()
-            },
-            ..App::default()
-        }
-    }
-
-    #[test]
-    fn open_task_creation_form_sets_modal() {
-        let mut app = App::default();
-        let _ = app.update(Action::OpenTaskCreationForm);
-        assert!(app.ui.modal.is_some());
-    }
-
-    #[test]
-    fn open_blank_task_creation_form_sets_modal_with_no_seed() {
-        let mut app = App::default();
-        let _ = app.update(Action::OpenBlankTaskCreationForm);
-        let modal = app.ui.modal.as_ref().unwrap();
-        assert!(modal.title.lines().join("").is_empty());
-        assert!(modal.description.lines().join("").is_empty());
-        assert_eq!(modal.kind, domain::TaskKind::Implement);
-    }
-
-    #[test]
-    fn cancel_task_creation_clears_modal() {
-        let mut app = modal_app();
-        let _ = app.update(Action::CancelTaskCreation);
-        assert!(app.ui.modal.is_none());
-    }
-
-    #[test]
-    fn focus_next_field_advances_from_title_to_description() {
-        use crate::state::TaskFormField;
-        let mut app = modal_app();
-        let _ = app.update(Action::FocusNextField);
-        assert_eq!(
-            app.ui.modal.as_ref().unwrap().focused_field,
-            TaskFormField::Description
-        );
-    }
-
-    #[test]
-    fn focus_prev_field_retreats_from_title_to_submit() {
-        use crate::state::TaskFormField;
-        let mut app = modal_app();
-        let _ = app.update(Action::FocusPrevField);
-        assert_eq!(
-            app.ui.modal.as_ref().unwrap().focused_field,
-            TaskFormField::Submit
-        );
-    }
-
-    #[test]
-    fn cycle_task_kind_advances_from_review_to_implement() {
-        let mut app = modal_app();
-        // blank() defaults to Implement; set to Review to test the cycle start
-        app.ui.modal.as_mut().unwrap().kind = domain::TaskKind::Review;
-        let _ = app.update(Action::CycleTaskKind);
-        assert_eq!(
-            app.ui.modal.as_ref().unwrap().kind,
-            domain::TaskKind::Implement
-        );
-    }
-
-    #[test]
-    fn commit_task_creation_with_blank_title_flashes_error_and_keeps_modal() {
-        let mut app = modal_app();
-        let effects = app.update(Action::CommitTaskCreation);
-        assert!(effects.is_empty());
-        assert_eq!(app.ui.flash.as_deref(), Some("Title required"));
-        assert!(app.ui.modal.is_some());
-    }
-
-    #[test]
-    fn commit_task_creation_with_title_emits_create_task_and_clears_modal() {
-        use crate::state::TaskCreationModal;
-        use tui_textarea::TextArea;
-        let mut modal = TaskCreationModal::blank();
-        modal.title = TextArea::new(vec!["Fix auth bug".to_string()]);
-        let mut app = App {
-            ui: UiState {
-                modal: Some(modal),
-                ..UiState::default()
-            },
-            ..App::default()
-        };
-        let effects = app.update(Action::CommitTaskCreation);
-        assert!(app.ui.modal.is_none());
-        assert_eq!(effects.len(), 1);
-        let Effect::CreateTask {
-            title,
-            description,
-            kind,
-            links,
-            ..
-        } = effects.into_iter().next().unwrap()
-        else {
-            panic!("expected CreateTask");
-        };
-        assert_eq!(title, "Fix auth bug");
-        assert!(description.is_none());
-        assert_eq!(kind, domain::TaskKind::Implement);
-        assert!(links.is_empty());
-    }
-
-    #[test]
-    fn commit_task_creation_with_all_fields_populates_effect_correctly() {
-        use crate::state::TaskCreationModal;
-        use tui_textarea::TextArea;
-        let mut modal = TaskCreationModal::blank();
-        modal.title = TextArea::new(vec!["Fix auth bug".to_string()]);
-        modal.description = TextArea::new(vec!["Auth is broken".to_string()]);
-        modal.kind = domain::TaskKind::Debug;
-        modal.link = TextArea::new(vec!["https://github.com/org/repo/issues/1".to_string()]);
-        let mut app = App {
-            ui: UiState {
-                modal: Some(modal),
-                ..UiState::default()
-            },
-            ..App::default()
-        };
-        let effects = app.update(Action::CommitTaskCreation);
-        let Effect::CreateTask {
-            title,
-            description,
-            kind,
-            links,
-            ..
-        } = effects.into_iter().next().unwrap()
-        else {
-            panic!("expected CreateTask");
-        };
-        assert_eq!(title, "Fix auth bug");
-        assert_eq!(description.as_deref(), Some("Auth is broken"));
-        assert_eq!(kind, domain::TaskKind::Debug);
-        assert_eq!(links, vec!["https://github.com/org/repo/issues/1"]);
     }
 
     // --- OpenInOcto / OpenInLazygit from split view ---

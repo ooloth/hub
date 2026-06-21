@@ -72,7 +72,7 @@ pub(crate) fn status_bar_left(app: &App) -> String {
                     _ => "",
                 };
                 format!(
-                    "{pos} · [↩] details · [n/N] new task · [p] prs · [O] issues · [e] errors · [/] search{inv_hint}{group_hint}"
+                    "{pos} · [↩] details · [p] prs · [O] issues · [e] errors · [/] search{inv_hint}{group_hint}"
                 )
             }
             DetailMode::Visible { .. } => {

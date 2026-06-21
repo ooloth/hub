@@ -73,8 +73,6 @@ pub(crate) const KEYBINDS_LIST: &[(&str, &str)] = &[
     ("h / l", "collapse / expand group"),
     ("Enter", "open"),
     ("i", "investigate"),
-    ("n", "new task (seeded from selected row)"),
-    ("N", "new task (blank)"),
     ("p / e / o", "filter PRs / Errors / Issues"),
     ("/", "search"),
     ("a / Esc", "clear filter"),

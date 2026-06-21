@@ -2,4 +2,4 @@
 source: ui/tui/src/render/mod.rs
 expression: status_row(&buf)
 ---
-  · [↩] details · [n/N] new task · [p] ! source-a unreachable (updated unknown)
+  · [↩] details · [p] prs · [O] issues ! source-a unreachable (updated unknown)

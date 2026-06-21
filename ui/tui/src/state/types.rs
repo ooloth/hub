@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use domain::{PrKind, PullRequest, RepoSlug, ReviewDecision};
+use domain::{PrKind, PullRequest, ReviewDecision};
 use workflows::status::{StatusItem, StatusReport};
 
 use crate::display::{
@@ -135,22 +135,6 @@ impl Screen {
             Self::MergingPr { .. } => SelectedItemKind::Other,
         }
     }
-
-    /// Like `selected_status_item`, but returns the `first_item` of a `GroupHeader`
-    /// rather than `None` — used to seed the task creation form from grouped rows.
-    pub(crate) fn selected_item_for_seeding(&self) -> Option<StatusItem> {
-        match self {
-            Self::UnifiedList {
-                flat_rows,
-                selected,
-                ..
-            } => match flat_rows.get(*selected)? {
-                FlatRow::Single(item) | FlatRow::GroupChild { item, .. } => Some(item.clone()),
-                FlatRow::GroupHeader { first_item, .. } => Some(first_item.clone()),
-            },
-            Self::MergingPr { pr, .. } => Some(StatusItem::Pr(pr.clone())),
-        }
-    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -230,15 +214,6 @@ pub(crate) enum Action {
     OpenInLazygit,
     CommitMerge,
     CancelMerge,
-    // Task creation modal
-    OpenTaskCreationForm,
-    OpenBlankTaskCreationForm,
-    CancelTaskCreation,
-    FocusNextField,
-    FocusPrevField,
-    CycleTaskKind,
-    ModalTextInput(crossterm::event::KeyEvent),
-    CommitTaskCreation,
     ScrollDetailDown,
     ScrollDetailUp,
     // Filter actions — only take effect from UnifiedList in normal mode.
@@ -325,14 +300,6 @@ pub(crate) enum Effect {
     },
     StartRefresh,
     WriteCache(String),
-    CreateTask {
-        title: String,
-        description: Option<String>,
-        kind: domain::TaskKind,
-        links: Vec<String>,
-        repo: Option<RepoSlug>,
-        origin: domain::TaskOrigin,
-    },
 }
 
 pub(crate) enum Msg {

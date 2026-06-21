@@ -1,8 +1,6 @@
 use chrono::{DateTime, Utc};
-use domain::RepoSlug;
 use workflows::status::StatusItem;
 
-use crate::state::task_creation::TaskCreationModal;
 use crate::state::types::{Screen, SubmenuState};
 
 #[derive(Debug, Default)]
@@ -14,11 +12,6 @@ pub(crate) struct UiState {
     pub(crate) pending_g: bool,
     /// Which two-key submenu is currently intercepting keypresses, if any.
     pub(crate) submenu: SubmenuState,
-    /// Some while the task creation modal overlay is open.
-    pub(crate) modal: Option<TaskCreationModal>,
-    /// Repos available for selection in the task creation picker.
-    /// Populated from config at startup; empty in tests.
-    pub(crate) available_repos: Vec<RepoSlug>,
 }
 
 #[derive(Debug, Default)]
