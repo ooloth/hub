@@ -1,10 +1,9 @@
 # 019 — Drop the task model; filesystem-based session tracking
 
-> **Status: Accepted (2026-06-20); not yet implemented.** This decision supersedes
+> **Status: Accepted and implemented (2026-06-20).** This decision supersedes
 > ADRs 011–018 (see "What this supersedes"). The task-model code — the
 > `tasks`/`task_comments` tables, the dispatch tick, fold-back, and the
-> `hub task *` CLI — still exists and will be removed when this is carried out.
-> Until then, the `architecture/` docs describe the task model as still built.
+> `hub task *` CLI — has been removed.
 
 ## Context
 

@@ -1,37 +1,12 @@
 # ui/cli
 
-The `hub` binary — the **agent's communication channel with hub**.
+The `hub` binary — the **agent's in-session toolkit**.
 
-Agent sessions call `hub task` commands to read their assigned task, write
-captain's log entries, and report status. This is the complete intended surface.
-It does not mirror or shadow the TUI's capabilities — human-owned operations
-(create, promote, approve, cancel, dispatch) intentionally do not exist here.
+No subcommands are currently wired. The task subcommand (`hub task get/report/comment`)
+was removed with the task model (ADR 019). Future agent-facing subcommands belong here
+when the filesystem session model is built out.
 
-Humans do not use this CLI directly. `hub-tui` is the human-facing surface;
-the dispatch workflow is TUI-managed. Any command that feels like "something
-a human would do in the TUI" does not belong in this binary.
-
-## Commands
-
-```
-hub task get TASK-XXXX
-    Read the full task as JSON at session start. Returns title, description,
-    kind, status, linked resources, and the agent comment thread.
-
-hub task report TASK-XXXX --status <in-review|blocked>
-    Report status back to hub. Use `in-review` when work is complete;
-    use `blocked` when the agent cannot continue. These are the only two
-    status transitions the agent owns — done, failed, and cancelled are
-    human decisions made in the TUI.
-
-hub task comment TASK-XXXX --content "..."
-    Append a captain's log entry. Record choices made, friction encountered,
-    trade-offs taken — anything the human might wonder about when reviewing
-    the session. One-way: agent writes, human reads.
-```
-
-All output is single-line and machine-parseable. Errors go to stderr, exit 1,
-with an actionable message.
+Humans do not use this CLI directly. `hub-tui` is the human-facing surface.
 
 ## CLI (clap)
 

@@ -203,17 +203,15 @@ sharpening them is _how_ agent quality compounds. See
 ## The two surfaces
 
 **TUI (`hub-tui`)** — the human-facing surface. A Ratatui dashboard with
-auto-refresh and keyboard navigation: read signals, create tasks, watch
-agent sessions stream live, review results. This is the primary place to
-interact with hub.
+auto-refresh and keyboard navigation: read signals, watch investigation
+sessions, review results. This is the primary place to interact with hub.
 
-**CLI (`hub`)** — hub's command-line surface. The autonomous task-claiming
-loop and the `hub task *` session protocol are removed by
-[Decision 019](decisions/019-drop-task-model-filesystem-sessions.md): sessions
-are launched by `i` and agents write their `report.md` directly, so the CLI no
-longer brokers session lifecycle. Its remaining agent-facing role (reading
-signal context) is being re-scoped. Humans do not use it for triage — that is
-the TUI.
+**CLI (`hub`)** — hub's command-line surface. The task model (task-claiming
+loop, `hub task *` protocol) was removed by
+[Decision 019](decisions/019-drop-task-model-filesystem-sessions.md). The CLI
+is a stub; agent-facing session-toolkit subcommands will be added here as the
+filesystem session model is built out. Humans do not use it for triage — that
+is the TUI.
 
 Both surfaces share the same workflows and data layer. The UI is a render
 target, not where logic lives. See
@@ -247,6 +245,4 @@ And, specifically, what the flywheel does **not** build:
   as a workflow-kind earns trust (see Trust-gated scaling).
 
 See [Decision 019](decisions/019-drop-task-model-filesystem-sessions.md) for the
-filesystem session model that replaces the task model. The
-[docs/architecture/](architecture/) docs still describe the task model as
-currently built, pending 019's implementation.
+filesystem session model that replaces the task model.

@@ -83,10 +83,6 @@ Hard rules for agents:
   baked in, impossible to substitute for an unrelated string. New domain concepts
   follow the same pattern — the type is proof of validity, not a comment.
 
-### Schema versioning
-
-When adding, removing, or changing any field on a `#[derive(Serialize, Deserialize)]` domain type, check `ui/tui/README.md` to determine whether `SCHEMA_VERSION` in `workflows/src/status.rs` needs a bump. Bump it before committing — the rules for when a bump is required are in that file.
-
 ## Development
 
 ```bash
@@ -166,9 +162,7 @@ and the `decisions/` ADRs describe where we are going.** One concept, one home.
 | Doc                                      | Covers                                                                                                            |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `docs/vision.md`                         | **Read this first** — the why; the trust-building flywheel; what we are and are not building                      |
-| `docs/architecture/tasks.md`             | Task **model**: lifecycle, schema, kinds, TUI/CLI surfaces                                                        |
-| `docs/architecture/task-dispatch.md`     | Task dispatch **mechanics**: state machine, session file signals, component diagram — read for any dispatch work  |
-| `docs/architecture/worktrees.md`         | Two worktree systems (PR investigations vs task dispatch) — read before touching `fetch.rs` or `dispatch.rs`      |
+| `docs/architecture/worktrees.md`         | PR investigation worktrees — read before touching `fetch.rs`                                                      |
 | `docs/architecture/secrets.md`           | 1Password → op read → Secret<String> model                                                                        |
 | `docs/architecture/private-workflows.md` | Two-repo model for private workflows                                                                              |
 | `docs/decisions/`                        | ADRs (rationale). 016–018 record the agent-flywheel direction (typed links, verdict signal, mining) — not yet built |
