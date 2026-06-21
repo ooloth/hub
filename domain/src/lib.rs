@@ -14,12 +14,6 @@ pub mod pr;
 pub mod serde_helpers;
 /// Claude Code session transcript parsing.
 pub mod session;
-/// Stable signal identity for task↔signal matching and deduplication.
-pub mod signal_identity;
-/// Hub task model — lifecycle, status, kind, and comment types.
-pub mod task;
-/// Task origin provenance — the signal a task was created from.
-pub mod task_origin;
 /// Urgency ranking used across all signal and task types.
 pub mod urgency;
 
@@ -34,9 +28,6 @@ pub use issue::*;
 pub use loki::*;
 pub use pr::*;
 pub use session::*;
-pub use signal_identity::*;
-pub use task::*;
-pub use task_origin::*;
 pub use urgency::*;
 
 #[cfg(test)]
@@ -156,108 +147,6 @@ mod tests {
                 "result missing WONTFIX_LABEL for input {labels:?}"
             );
         }
-    }
-
-    // ── task_id ───────────────────────────────────────────────────────────────
-
-    #[test]
-    fn task_id_from_str_accepts_valid_format() {
-        assert!("TASK-0001".parse::<TaskId>().is_ok());
-        assert!("TASK-9999".parse::<TaskId>().is_ok());
-        assert!("TASK-10000".parse::<TaskId>().is_ok());
-    }
-
-    #[test]
-    fn task_id_from_str_rejects_invalid_format() {
-        assert!("task-0001".parse::<TaskId>().is_err());
-        assert!("TASK-".parse::<TaskId>().is_err());
-        assert!("TASK-abc".parse::<TaskId>().is_err());
-        assert!("0001".parse::<TaskId>().is_err());
-    }
-
-    #[test]
-    fn task_id_display_round_trips() {
-        let id: TaskId = "TASK-0042".parse().unwrap();
-        assert_eq!(id.to_string(), "TASK-0042");
-    }
-
-    // ── comment_author ────────────────────────────────────────────────────────
-
-    #[rstest::rstest]
-    #[case("human", CommentAuthor::Human)]
-    #[case("agent", CommentAuthor::Agent)]
-    fn comment_author_serde_round_trips(#[case] s: &str, #[case] expected: CommentAuthor) {
-        let json = format!(r#""{s}""#);
-        let author: CommentAuthor = serde_json::from_str(&json).unwrap();
-        assert_eq!(author, expected);
-        let back = serde_json::to_string(&author).unwrap();
-        assert_eq!(back, json);
-    }
-
-    #[rstest::rstest]
-    #[case("human", Ok(CommentAuthor::Human))]
-    #[case("agent", Ok(CommentAuthor::Agent))]
-    #[case("bot", Err(()))]
-    fn comment_author_from_str(#[case] s: &str, #[case] expected: Result<CommentAuthor, ()>) {
-        assert_eq!(s.parse::<CommentAuthor>().map_err(|_| ()), expected);
-    }
-
-    // ── task_status_urgency ───────────────────────────────────────────────────
-
-    #[test]
-    fn task_status_review_has_high_urgency() {
-        assert_eq!(TaskStatus::InReview.urgency(), Urgency::High);
-    }
-
-    #[test]
-    fn task_status_blocked_has_high_urgency() {
-        assert_eq!(TaskStatus::Blocked.urgency(), Urgency::High);
-    }
-
-    #[test]
-    fn task_status_in_progress_has_low_urgency() {
-        assert_eq!(TaskStatus::InProgress.urgency(), Urgency::Low);
-    }
-
-    #[test]
-    fn task_status_failed_has_low_urgency() {
-        assert_eq!(TaskStatus::Failed.urgency(), Urgency::Low);
-    }
-
-    // ── task_status_is_terminal ───────────────────────────────────────────────
-
-    #[rstest::rstest]
-    #[case(TaskStatus::Done, true)]
-    #[case(TaskStatus::Failed, true)]
-    #[case(TaskStatus::Cancelled, true)]
-    #[case(TaskStatus::Backlog, false)]
-    #[case(TaskStatus::Ready, false)]
-    #[case(TaskStatus::InProgress, false)]
-    #[case(TaskStatus::Blocked, false)]
-    #[case(TaskStatus::InReview, false)]
-    fn task_status_is_terminal(#[case] status: TaskStatus, #[case] expected: bool) {
-        assert_eq!(status.is_terminal(), expected);
-    }
-
-    // ── task_status_display_and_fromstr ───────────────────────────────────────
-
-    #[rstest::rstest]
-    #[case(TaskStatus::Backlog, "backlog")]
-    #[case(TaskStatus::Ready, "ready")]
-    #[case(TaskStatus::InProgress, "in-progress")]
-    #[case(TaskStatus::Blocked, "blocked")]
-    #[case(TaskStatus::InReview, "in-review")]
-    #[case(TaskStatus::Done, "done")]
-    #[case(TaskStatus::Failed, "failed")]
-    #[case(TaskStatus::Cancelled, "cancelled")]
-    fn task_status_display_and_fromstr_roundtrip(#[case] status: TaskStatus, #[case] s: &str) {
-        assert_eq!(status.to_string(), s);
-        assert_eq!(s.parse::<TaskStatus>(), Ok(status));
-    }
-
-    #[test]
-    fn task_status_fromstr_rejects_unknown() {
-        assert!("unknown".parse::<TaskStatus>().is_err());
     }
 
     // ── repo_slug ─────────────────────────────────────────────────────────────
