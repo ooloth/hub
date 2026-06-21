@@ -6,20 +6,14 @@ If `../hub-private/CLAUDE.md` exists, read it before writing or editing any file
 
 ## What This Is
 
-Hub is a personal command center that aggregates signals from multiple sources — GitHub PRs, CI status, Loki alerts, Linear issues, and more via the `private` feature — into a single urgency-ranked terminal view, and delegates action on those signals to agents via a task queue.
+Hub is a personal command center that aggregates signals from multiple sources — GitHub PRs, CI status, Loki alerts, Linear issues, and more via the `private` feature — into a single urgency-ranked terminal view, and delegates action on those signals to agents via filesystem-based investigation sessions.
 
 Its two binaries serve two distinct audiences:
 
-- **`hub-tui`** (Ratatui dashboard) — the **human-facing surface**. Read signals, create tasks, monitor agent sessions, approve results.
-- **`hub`** (CLI) — the **agent's toolkit**. Agents call it _during a session_ to read their task context, write captain's log entries, and report status back to hub. It is **not** how agents receive tasks — task assignment happens via the prompt injected at dispatch time. It does not expose human-owned operations — dispatch, create, promote, approve, and cancel all belong in the TUI.
+- **`hub-tui`** (Ratatui dashboard) — the **human-facing surface**. Read signals, launch investigation sessions, watch session progress, review results.
+- **`hub`** (CLI) — the **agent's toolkit** (stub). The task subcommand (`hub task *`) was removed with the task model (ADR 019). Future agent-facing subcommands will be added here as the filesystem session model is built out.
 
-**NOTE: `hub` CLI is not a function runner.** It only exposes the toolkit agents should reach for during
-their sessions — `hub task report`, `hub task comment`, etc. TUI workflow-layer functions (dispatch,
-worktree management, fetch) are never exposed through it and are managed by the TUI instead.
-
-The dispatch system is the bridge: the TUI creates and promotes tasks; dispatch spawns a Claude Code session in an isolated worktree with the task context injected as the opening prompt; the CLI is how the agent reports back.
-
-The core value is cross-domain triage plus agent delegation: signals from different systems are ranked together in one list, and any signal can become a task for an agent to address.
+The core value is cross-domain triage plus agent delegation: signals from different systems are ranked together in one list, and any signal can be investigated by pressing `i` to launch a named tmux window with injected context.
 
 See [README.md](README.md) for the full feature list and value proposition.
 
