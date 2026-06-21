@@ -1,7 +1,6 @@
 # Inspiration: a personal control-center project
 
-> **Raw research — superseded by [vision.md](../vision.md).** Kept as an idea
-> mine; not current truth.
+> **Raw research — superseded by [vision.md](../vision.md) and [ADR 019](../decisions/019-remove-task-model.md).** The task model described here was removed. Kept as an idea mine; not current truth.
 
 Raw itemization of ideas from a personal control-center project with a web dashboard + agent
 CLI + SQLite backend. Goal: apply the best of these to hub's TUI. No filter — big and small.

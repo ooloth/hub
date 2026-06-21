@@ -1,7 +1,6 @@
 # Agent Task Management
 
-> **Raw research — superseded by [vision.md](../vision.md).** Kept for
-> provenance; not current truth.
+> **Raw research — superseded by [vision.md](../vision.md) and [ADR 019](../decisions/019-remove-task-model.md).** The task model described here was removed. Kept for provenance; not current truth.
 
 Research notes on patterns for dispatching Claude Code agents on tasks, tracking their work,
 and surfacing results in the TUI. Informed by studying a mature agent task loop in a work project.

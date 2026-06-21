@@ -1,7 +1,6 @@
 # Synthesis: Agent Control Plane Roadmap
 
-> **Raw research — superseded by [vision.md](../vision.md).** Kept for
-> provenance; not current truth.
+> **Raw research — superseded by [vision.md](../vision.md) and [ADR 019](../decisions/019-remove-task-model.md).** The task model described here was removed. Kept for provenance; not current truth.
 
 Distilled from studying a mature agent task loop in a work project (see
 `2026-06-02-inspiration-personal-control-center.md` and

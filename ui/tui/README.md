@@ -135,12 +135,6 @@ just test-update
 
 ## Investigations
 
-> **Not the task dispatch path.** Investigation sessions are human-triggered,
-> attached, and ephemeral. Task dispatch sessions are queue-driven, detached
-> (`new-window -d -n TASK-XXXX`), and persistent. If you are implementing
-> agent task dispatch, see `docs/architecture/task-dispatch.md` and
-> `workflows/src/tasks.rs` — do not modify or extend this module for that.
-
 Investigation types live in `investigations/`. Each type is a separate file;
 `mod.rs` provides the shared tmux launcher. Each file exposes a `config()`
 function that returns a `LaunchConfig` with a system prompt (loaded via
