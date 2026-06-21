@@ -212,12 +212,6 @@ pub async fn run(params: StatusParams) -> Result<StatusReport> {
     #[cfg(not(feature = "private"))]
     let _ = params.private_workflow_names;
 
-    let linear_token: Option<&str> = params
-        .linear_token
-        .as_ref()
-        .map(|t| t.expose_secret().as_str());
-    run_fold_backs(github_token, linear_token, &items, &mut errors).await;
-
     items.sort_by_key(|i| (i.urgency(), Reverse(i.age())));
 
     Ok(StatusReport { items, errors })
@@ -256,27 +250,4 @@ fn collect_prs(
     let mut seen_prs: std::collections::HashSet<(String, u64)> = std::collections::HashSet::new();
     all_prs.retain(|pr| seen_prs.insert((pr.repo.to_string(), pr.number)));
     items.extend(all_prs.into_iter().map(StatusItem::Pr));
-}
-
-async fn run_fold_backs(
-    github_token: &str,
-    linear_token: Option<&str>,
-    items: &[StatusItem],
-    errors: &mut Vec<String>,
-) {
-    // Fold back PR-origin tasks whose PR has merged or closed. Runs before
-    // list_visible() so the updated statuses appear in this same report.
-    // Errors are non-fatal: append to the error list and continue.
-    if let Err(e) = crate::task_fold_back::fold_back_pr_tasks(github_token).await {
-        errors.push(format!("fold-back (prs): {e:#}"));
-    }
-    // Fold back issue-origin tasks whose ticket has closed or resolved.
-    if let Err(e) = crate::task_fold_back::fold_back_issue_tasks(github_token, linear_token).await {
-        errors.push(format!("fold-back (issues): {e:#}"));
-    }
-    // Fold back CI/alert-origin tasks whose signal has cleared for two
-    // consecutive fetches. Uses the prior cached report for debounce.
-    if let Err(e) = crate::task_fold_back::fold_back_signal_tasks(items) {
-        errors.push(format!("fold-back (signals): {e:#}"));
-    }
 }

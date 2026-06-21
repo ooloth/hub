@@ -3,25 +3,12 @@
   name = "hub-cli"
   version = "0.1.0"
 
-[features]
-  private = ["workflows/private"]
-
 [[bin]]
   name = "hub"
   path = "src/main.rs"
 
 [dependencies]
-  anyhow = "1"
-  chrono = "0.4"
   clap = { version = "4", features = ["derive"] }
-  config = { path = "../../config" }
-  domain = { path = "../../domain" }
-  serde_json = "1"
-  tokio = { version = "1", features = ["full"] }
-  workflows = { path = "../../workflows" }
-
-[dev-dependencies]
-  rstest = "0.25"
 
 [lints]
   workspace = true

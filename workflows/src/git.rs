@@ -44,41 +44,6 @@ pub(crate) async fn add_worktree_or_recover(
     anyhow::bail!("git worktree add failed: {stderr}")
 }
 
-/// Runs `git worktree add -b <new_branch> <worktree> <start_point>` in `bare_str`,
-/// creating a new branch from `start_point` (e.g. `origin/main`). If the add fails
-/// but the worktree directory now exists, treats it as success — another process won
-/// the race. Otherwise surfaces the original git error.
-pub(crate) async fn create_branch_worktree_or_recover(
-    bare_str: &str,
-    worktree: &Path,
-    new_branch: &str,
-    start_point: &str,
-) -> Result<()> {
-    let worktree_str = worktree.to_string_lossy();
-    let add = Command::new("git")
-        .args([
-            "-C",
-            bare_str,
-            "worktree",
-            "add",
-            "-b",
-            new_branch,
-            &worktree_str,
-            start_point,
-        ])
-        .output()
-        .await
-        .context("git worktree add -b invocation failed")?;
-    if add.status.success() {
-        return Ok(());
-    }
-    if worktree.is_dir() {
-        return Ok(());
-    }
-    let stderr = String::from_utf8_lossy(&add.stderr);
-    anyhow::bail!("git worktree add -b failed: {stderr}")
-}
-
 #[cfg(test)]
 pub(crate) mod test_helpers {
     use std::path::{Path, PathBuf};
@@ -213,79 +178,5 @@ mod tests {
         let worktree = bare.join("pr-nope");
         let result = add_worktree_or_recover(&bare_str, &worktree, "nonexistent-branch").await;
         assert!(result.is_err(), "expected Err, got {result:?}");
-    }
-
-    // ── create_branch_worktree_or_recover ─────────────────────────────────────
-
-    #[tokio::test]
-    async fn create_branch_worktree_creates_directory_on_new_branch() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (_origin, bare) = setup_origin_and_bare(tmp.path()).await;
-        let bare_str = bare.to_string_lossy().into_owned();
-
-        let worktree = bare.join("task-wt");
-        create_branch_worktree_or_recover(
-            &bare_str,
-            &worktree,
-            "agent/TASK-0001",
-            "refs/remotes/origin/main",
-        )
-        .await
-        .unwrap();
-
-        assert!(worktree.is_dir(), "worktree directory must be created");
-
-        // Confirm the new branch exists in the bare repo.
-        let out = Command::new("git")
-            .args(["-C", &bare_str, "rev-parse", "--verify", "agent/TASK-0001"])
-            .output()
-            .await
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "branch agent/TASK-0001 must exist in bare repo"
-        );
-    }
-
-    #[tokio::test]
-    async fn create_branch_worktree_returns_ok_when_directory_already_exists() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (_origin, bare) = setup_origin_and_bare(tmp.path()).await;
-        let bare_str = bare.to_string_lossy().into_owned();
-
-        let worktree = bare.join("task-wt");
-        std::fs::create_dir(&worktree).unwrap();
-
-        let result = create_branch_worktree_or_recover(
-            &bare_str,
-            &worktree,
-            "agent/TASK-0001",
-            "refs/remotes/origin/main",
-        )
-        .await;
-        assert!(
-            result.is_ok(),
-            "expected Ok when directory already exists, got {result:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn create_branch_worktree_propagates_error_when_start_point_absent() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (_origin, bare) = setup_origin_and_bare(tmp.path()).await;
-        let bare_str = bare.to_string_lossy().into_owned();
-
-        let worktree = bare.join("task-wt");
-        let result = create_branch_worktree_or_recover(
-            &bare_str,
-            &worktree,
-            "agent/TASK-0001",
-            "refs/remotes/origin/nonexistent",
-        )
-        .await;
-        assert!(
-            result.is_err(),
-            "expected Err for missing start point, got {result:?}"
-        );
     }
 }

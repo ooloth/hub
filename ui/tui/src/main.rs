@@ -242,10 +242,6 @@ async fn run_loop(
     // advances without requiring a keypress.
     let mut display_interval = tokio::time::interval(tokio::time::Duration::from_mins(1));
     let _ = display_interval.tick().await;
-    // Claims the oldest ready task and spawns its agent session.
-    let mut dispatch_interval = tokio::time::interval(tokio::time::Duration::from_secs(30));
-    let _ = dispatch_interval.tick().await;
-
     'run: loop {
         let _ = terminal.draw(|f| render(f, app))?;
 
@@ -265,12 +261,6 @@ async fn run_loop(
             _ = refresh_interval.tick() => on_refresh_tick(app, conn)?,
             _ = display_interval.tick() => vec![], // redraw only; no state change
             Some(result) = rx.recv() => handle_msg(app, Msg::FetchResult(result))?,
-            _ = dispatch_interval.tick() => {
-                if let Err(e) = workflows::dispatch::dispatch().await {
-                    eprintln!("dispatch error: {e}");
-                }
-                vec![]
-            }
         };
 
         for effect in effects {

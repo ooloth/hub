@@ -73,7 +73,6 @@ pub(crate) enum Category {
     Prs,
     Issues,
     Errors,
-    Tasks,
 }
 
 impl Category {
@@ -82,7 +81,6 @@ impl Category {
             Self::Prs => "PRs",
             Self::Issues => "Issues",
             Self::Errors => "Errors",
-            Self::Tasks => "Tasks",
         }
     }
 }
