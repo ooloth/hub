@@ -21,7 +21,7 @@ build:
     cargo build {{_features}}
 
 install:
-    cargo install --path ui/cli {{_features}}
+    # FIXME: cargo install --path ui/cli {{_features}}
     cargo install --path ui/tui {{_features}}
 
 cli:
