@@ -236,28 +236,3 @@ pub(crate) fn render_unified(
         buf.set_string(area.x + area.width - 1, screen_y, "┤", chrome);
     }
 }
-
-const LIST_BORDER_LINES: u16 = 2;
-
-// Pure arithmetic extracted for property testing.
-pub(crate) fn unified_list_height_from_counts(
-    item_count: usize,
-    divider_count: usize,
-    max_height: u16,
-) -> u16 {
-    let needed = (item_count + divider_count + LIST_BORDER_LINES as usize)
-        .try_into()
-        .unwrap_or(u16::MAX);
-    needed.min(max_height)
-}
-
-// Height of the list box in split view: content rows + urgency dividers + borders, capped at
-// max_height. Mirrors the divider injection logic in render_unified — keep in sync.
-#[allow(clippy::indexing_slicing)] // windows(2) guarantees exactly 2 elements
-pub(crate) fn unified_list_height(rows: &[FlatRow], max_height: u16) -> u16 {
-    let divider_count = rows
-        .windows(2)
-        .filter(|w| flat_row_urgency(&w[0]) != flat_row_urgency(&w[1]))
-        .count();
-    unified_list_height_from_counts(rows.len(), divider_count, max_height)
-}

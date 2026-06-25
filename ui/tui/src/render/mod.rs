@@ -21,6 +21,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
 };
 
+use crate::display::{flat_row_urgency, FlatRow};
 use crate::state::{App, DetailMode, Screen, SubmenuState};
 
 pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
@@ -33,6 +34,17 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     if app.ui.show_help {
         render_help_popup(frame, app);
     }
+}
+
+#[allow(clippy::indexing_slicing)] // windows(2) guarantees exactly 2 elements
+fn split_list_height(rows: &[FlatRow], viewport_height: u16) -> u16 {
+    let cap = viewport_height * 20 / 100;
+    let dividers = rows
+        .windows(2)
+        .filter(|w| flat_row_urgency(&w[0]) != flat_row_urgency(&w[1]))
+        .count();
+    let needed = (rows.len() + dividers + 2).try_into().unwrap_or(u16::MAX);
+    needed.min(cap)
 }
 
 fn render_content(frame: &mut ratatui::Frame, app: &mut App, content_area: ratatui::layout::Rect) {
@@ -56,10 +68,8 @@ fn render_content(frame: &mut ratatui::Frame, app: &mut App, content_area: ratat
                 );
             }
             DetailMode::Visible { detail_scroll } => {
-                let max_list_height = content_area.height * 20 / 100;
-
                 let [list_area, detail_area] = Layout::vertical([
-                    Constraint::Length(unified::unified_list_height(flat_rows, max_list_height)),
+                    Constraint::Length(split_list_height(flat_rows, content_area.height)),
                     Constraint::Min(0),
                 ])
                 .areas(content_area);
@@ -188,7 +198,7 @@ mod tests {
     use super::{
         render,
         shared::{urgency_color, urgency_style},
-        status_bar, unified,
+        split_list_height, status_bar, unified,
     };
     use crate::display::{flatten, Category, DisplayItem, Filter, FlatRow, GroupKey, ListSnapshot};
     use crate::state::{
@@ -1033,7 +1043,7 @@ mod tests {
         insta::assert_snapshot!(status_row(&buf));
     }
 
-    // ── unified_list_height ──────────────────────────────────────────────────
+    // ── split_list_height ────────────────────────────────────────────────────
 
     fn pr_with_urgency(urgency: domain::Urgency) -> StatusItem {
         StatusItem::Pr(domain::PullRequest {
@@ -1045,61 +1055,51 @@ mod tests {
         })
     }
 
-    #[test]
-    fn unified_list_height_shrinks_to_fit_when_below_cap() {
-        let rows = vec![
-            FlatRow::Single(pr()),
-            FlatRow::Single(pr()),
-            FlatRow::Single(pr()),
-        ];
-        // 3 items + 0 dividers (all Urgency::Low) + 2 borders = 5
-        assert_eq!(unified::unified_list_height(&rows, 30), 5);
+    // Viewport height 150 → cap = 150 * 20 / 100 = 30.
+    // Viewport height 50  → cap = 50  * 20 / 100 = 10.
+    #[rstest]
+    #[case(3, 150, 5)] // 3 items + 0 dividers + 2 borders = 5  < cap 30
+    #[case(20, 50, 10)] // 20 items + 0 dividers + 2 borders = 22 > cap 10 → capped
+    #[case(0, 150, 2)] // 0 items + 0 dividers + 2 borders = 2  < cap 30
+    fn split_list_height_homogeneous_rows(
+        #[case] item_count: usize,
+        #[case] viewport_height: u16,
+        #[case] expected: u16,
+    ) {
+        let rows: Vec<FlatRow> = (0..item_count).map(|_| FlatRow::Single(pr())).collect();
+        assert_eq!(split_list_height(&rows, viewport_height), expected);
     }
 
     #[test]
-    fn unified_list_height_clamped_to_max_when_rows_exceed_cap() {
-        let rows: Vec<FlatRow> = (0..20).map(|_| FlatRow::Single(pr())).collect();
-        // 20 items + 0 dividers + 2 borders = 22, capped at 10
-        assert_eq!(unified::unified_list_height(&rows, 10), 10);
-    }
-
-    #[test]
-    fn unified_list_height_includes_divider_lines() {
+    fn split_list_height_counts_urgency_dividers() {
         let rows = vec![
             FlatRow::Single(pr_with_urgency(domain::Urgency::High)),
             FlatRow::Single(pr()),
         ];
-        // 2 items + 1 divider (High → Low) + 2 borders = 5
-        assert_eq!(unified::unified_list_height(&rows, 30), 5);
+        // 2 items + 1 divider (High → Low) + 2 borders = 5; cap(150) = 30
+        assert_eq!(split_list_height(&rows, 150), 5);
     }
 
     #[test]
-    fn unified_list_height_counts_multiple_dividers() {
+    fn split_list_height_counts_multiple_urgency_dividers() {
         let rows = vec![
             FlatRow::Single(pr_with_urgency(domain::Urgency::Critical)),
             FlatRow::Single(pr_with_urgency(domain::Urgency::High)),
             FlatRow::Single(pr()),
         ];
-        // 3 items + 2 dividers (Critical→High, High→Low) + 2 borders = 7
-        assert_eq!(unified::unified_list_height(&rows, 30), 7);
-    }
-
-    #[test]
-    fn unified_list_height_empty_rows_yields_borders_only() {
-        let rows: Vec<FlatRow> = vec![];
-        // 0 items + 0 dividers + 2 borders = 2
-        assert_eq!(unified::unified_list_height(&rows, 30), 2);
+        // 3 items + 2 dividers (Critical→High, High→Low) + 2 borders = 7; cap(150) = 30
+        assert_eq!(split_list_height(&rows, 150), 7);
     }
 
     proptest! {
         #[test]
-        fn unified_list_height_never_exceeds_max(
-            item_count in 0usize..=1000,
-            divider_count in 0usize..=10,
-            max_height in 0u16..=200,
+        fn split_list_height_never_exceeds_20_percent_of_viewport(
+            item_count in 0usize..=100,
+            viewport_height in 0u16..=200,
         ) {
-            let result = unified::unified_list_height_from_counts(item_count, divider_count, max_height);
-            assert!(result <= max_height);
+            let rows: Vec<FlatRow> = (0..item_count).map(|_| FlatRow::Single(pr())).collect();
+            let result = split_list_height(&rows, viewport_height);
+            assert!(result <= viewport_height * 20 / 100);
         }
     }
 
@@ -1113,6 +1113,16 @@ mod tests {
         ];
         let mut app = split_view_app(items, 0, 0);
         let buf = draw(&mut app, 120, 40);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    // SV8: Split view with list overflowing the 20% cap (many items, tall terminal).
+    // 120×50 terminal: cap = 50 * 20 / 100 = 10 rows; 20 items + 2 borders = 22 > cap.
+    #[test]
+    fn split_view_list_capped_at_20_percent_of_viewport_height() {
+        let items: Vec<DisplayItem> = (0..20).map(|_| DisplayItem::Single(pr())).collect();
+        let mut app = split_view_app(items, 0, 0);
+        let buf = draw(&mut app, 120, 50);
         insta::assert_snapshot!(screen_text(&buf));
     }
 }
