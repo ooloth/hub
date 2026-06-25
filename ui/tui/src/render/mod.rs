@@ -56,7 +56,7 @@ fn render_content(frame: &mut ratatui::Frame, app: &mut App, content_area: ratat
                 );
             }
             DetailMode::Visible { detail_scroll } => {
-                let max_list_height = content_area.height * 30 / 100;
+                let max_list_height = content_area.height * 20 / 100;
 
                 let [list_area, detail_area] = Layout::vertical([
                     Constraint::Length(unified::unified_list_height(flat_rows, max_list_height)),
