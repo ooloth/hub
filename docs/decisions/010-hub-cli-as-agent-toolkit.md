@@ -70,3 +70,12 @@ overlapping ways to teach an agent the same thing:
 
 This is non-blocking: post-019 the CLI may shrink to near-nothing and regrow
 only as real sessions surface the need.
+
+## Addendum (2026-09-04) — no unattended processes
+
+A background surface for unattended PR detection (`hub-daemon`) was considered as an addition to
+this CLI before being placed in its own surface instead. Recording explicitly, since nothing above
+ruled it out directly: **hub-cli may not run as a long-lived or scheduled process.** It stays what
+019 and the addendum above already established — stateless, invoked once per command, no lifecycle
+of its own. Any capability that needs to run unattended, on a schedule, or outlive a single
+invocation belongs in a separate surface, not this one.
