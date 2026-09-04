@@ -1,4 +1,4 @@
-use domain::{CiStatus, PullRequest, ReviewDecision};
+use domain::{CiStatus, PullRequest, ReviewStatus};
 use ratatui::{
     style::{Color, Style},
     text::{Line, Span},
@@ -25,14 +25,21 @@ pub(super) fn pr_right_column_lines(
     lines.push(field_row_spans("checks", check_status_spans(pr.ci_status)));
     lines.push(field_row_spans(
         "status",
-        review_decision_spans(pr.review_decision),
+        review_status_spans(pr.review_status()),
     ));
 
-    if pr.approval_count > 0 {
-        let label = if pr.approval_count == 1 {
-            "1 approval".to_string()
+    let total_reviews = pr.approval_count + pr.changes_requested_count;
+    if total_reviews > 0 {
+        let label = if pr.changes_requested_count == 0 {
+            if pr.approval_count == 1 {
+                "1 approval".to_string()
+            } else {
+                format!("{} approvals", pr.approval_count)
+            }
+        } else if total_reviews == 1 {
+            "1 review".to_string()
         } else {
-            format!("{} approvals", pr.approval_count)
+            format!("{total_reviews} reviews")
         };
         lines.push(field_row_plain("reviews", &label));
     }
@@ -128,18 +135,18 @@ fn check_status_spans(ci: Option<CiStatus>) -> Vec<Span<'static>> {
     }
 }
 
-fn review_decision_spans(decision: Option<ReviewDecision>) -> Vec<Span<'static>> {
-    match decision {
-        Some(ReviewDecision::Approved) => {
+fn review_status_spans(status: ReviewStatus) -> Vec<Span<'static>> {
+    match status {
+        ReviewStatus::Approved(_) => {
             vec![Span::styled("Approved", Style::default().fg(Color::Green))]
         }
-        Some(ReviewDecision::ChangesRequested) => {
+        ReviewStatus::ChangesRequested => {
             vec![Span::styled(
                 "Changes requested",
                 Style::default().fg(Color::Red),
             )]
         }
-        None => vec![Span::styled("0 reviews", dim())],
+        ReviewStatus::NoReviews => vec![Span::styled("0 reviews", dim())],
     }
 }
 
@@ -245,6 +252,7 @@ mod tests {
             author: "alice".to_string(),
             review_decision: Some(ReviewDecision::Approved),
             approval_count: 2,
+            changes_requested_count: 0,
             comment_count: 5,
             head_branch: "feat/two-col".to_string(),
             base_branch: "main".to_string(),
@@ -305,6 +313,36 @@ mod tests {
         assert!(
             all_text.contains(expected),
             "expected '{expected}' in:\n{all_text}"
+        );
+    }
+
+    #[test]
+    fn pr_right_column_lines_reviews_row_sums_approvals_and_changes_requested() {
+        let mut p = pr_with_all_fields();
+        p.approval_count = 1;
+        p.changes_requested_count = 1;
+        let lines = pr_right_column_lines(&p, W, H, dim());
+        let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(
+            all_text.contains("2 reviews"),
+            "expected '2 reviews' in:\n{all_text}"
+        );
+        assert!(
+            !all_text.contains("1 approval"),
+            "did not expect the approval-only wording once changes-requested reviews exist:\n{all_text}"
+        );
+    }
+
+    #[test]
+    fn pr_right_column_lines_status_row_shows_changes_requested_alongside_approvals() {
+        let mut p = pr_with_all_fields();
+        p.approval_count = 1;
+        p.changes_requested_count = 1;
+        let lines = pr_right_column_lines(&p, W, H, dim());
+        let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        assert!(
+            all_text.contains("Changes requested"),
+            "expected the status row to say 'Changes requested':\n{all_text}"
         );
     }
 

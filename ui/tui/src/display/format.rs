@@ -180,15 +180,18 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
     }
 }
 
+fn review_status_label(status: domain::ReviewStatus) -> String {
+    match status {
+        domain::ReviewStatus::ChangesRequested => "changes requested".to_string(),
+        domain::ReviewStatus::Approved(Some(1)) => "1 approval".to_string(),
+        domain::ReviewStatus::Approved(Some(n)) => format!("{n} approvals"),
+        domain::ReviewStatus::Approved(None) => "approved".to_string(),
+        domain::ReviewStatus::NoReviews => "no reviews".to_string(),
+    }
+}
+
 fn pr_line(pr: &domain::PullRequest) -> LineParts {
-    let review_status = match pr.review_decision {
-        Some(domain::ReviewDecision::ChangesRequested) => "changes requested".to_string(),
-        Some(domain::ReviewDecision::Approved) => match pr.approval_count {
-            1 => "1 approval".to_string(),
-            n => format!("{n} approvals"),
-        },
-        None => "no reviews".to_string(),
-    };
+    let review_status = review_status_label(pr.review_status());
     let mut dim_inline = if pr.kind == domain::PrKind::MyDraft {
         vec![
             format!(" #{}", pr.number),

@@ -71,6 +71,11 @@ struct ReviewConnection {
 #[derive(Deserialize)]
 struct ReviewStateNode {
     state: String,
+    /// `None` if the reviewer's account was deleted.
+    author: Option<PrAuthor>,
+    /// `None` for `PENDING` reviews, which haven't been submitted yet.
+    #[serde(rename = "submittedAt")]
+    submitted_at: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -312,6 +317,46 @@ fn nodes_to_prs(
         .collect()
 }
 
+/// Reduces raw review nodes to each author's most recently submitted review.
+///
+/// `reviews(first: 50)` returns every review ever submitted, not one per
+/// reviewer — a reviewer who re-reviews (e.g. requests changes, then later
+/// approves) appears more than once. Counting raw nodes would count that
+/// reviewer twice; GitHub's own review decision counts only the latest
+/// review per reviewer. Nodes with no author (deleted account) or no
+/// `submittedAt` (a `PENDING` review) are dropped.
+fn latest_review_per_author(nodes: &[ReviewStateNode]) -> Vec<&ReviewStateNode> {
+    let mut latest: std::collections::HashMap<
+        &str,
+        (&ReviewStateNode, chrono::DateTime<chrono::Utc>),
+    > = std::collections::HashMap::new();
+
+    for node in nodes {
+        let Some(author) = &node.author else {
+            continue;
+        };
+        let Some(submitted_at) = node.submitted_at.as_deref() else {
+            continue;
+        };
+        let Ok(submitted) = chrono::DateTime::parse_from_rfc3339(submitted_at) else {
+            continue;
+        };
+        let submitted = submitted.to_utc();
+
+        let _ = latest
+            .entry(author.login.as_str())
+            .and_modify(|(existing_node, existing_time)| {
+                if submitted > *existing_time {
+                    *existing_node = node;
+                    *existing_time = submitted;
+                }
+            })
+            .or_insert((node, submitted));
+    }
+
+    latest.into_values().map(|(node, _)| node).collect()
+}
+
 fn node_to_pr(node: PrNode, urgency: Urgency, kind: PrKind) -> Result<PullRequest> {
     let (owner, repo) = node
         .repository
@@ -324,14 +369,23 @@ fn node_to_pr(node: PrNode, urgency: Urgency, kind: PrKind) -> Result<PullReques
             )
         })?;
 
+    let latest_reviews = latest_review_per_author(&node.reviews.nodes);
+
     let approval_count = u32::try_from(
-        node.reviews
-            .nodes
+        latest_reviews
             .iter()
             .filter(|r| r.state == "APPROVED")
             .count(),
     )
     .context("approval count overflow")?;
+
+    let changes_requested_count = u32::try_from(
+        latest_reviews
+            .iter()
+            .filter(|r| r.state == "CHANGES_REQUESTED")
+            .count(),
+    )
+    .context("changes requested count overflow")?;
 
     let thread_comment_count: usize = node
         .review_threads
@@ -403,6 +457,7 @@ fn node_to_pr(node: PrNode, urgency: Urgency, kind: PrKind) -> Result<PullReques
         author: node.author.login,
         review_decision: parse_review_decision(node.review_decision.as_deref()),
         approval_count,
+        changes_requested_count,
         comment_count,
         head_branch: node.head_ref_name,
         base_branch: node.base_ref_name,
@@ -512,7 +567,7 @@ async fn graphql_prs(token: &str, base: &str, repos: &[GithubPrsRepo]) -> Result
             author {{ login }}
             createdAt isDraft reviewDecision mergeStateStatus
             headRefName baseRefName
-            reviews(first: 50) {{ nodes {{ state }} }}
+            reviews(first: 50) {{ nodes {{ state author {{ login }} submittedAt }} }}
             repository {{ nameWithOwner }}
             assignees(first: 10) {{ nodes {{ login }} }}
             commits(last: 1) {{ nodes {{ commit {{ statusCheckRollup {{ state }} }} }} }}
@@ -704,6 +759,105 @@ mod tests {
         )
         .unwrap();
         assert_eq!(result.len(), 2);
+    }
+
+    // ── latest_review_per_author ──────────────────────────────────────────────
+
+    fn review(state: &str, author: &str, submitted_at: &str) -> ReviewStateNode {
+        ReviewStateNode {
+            state: state.into(),
+            author: Some(PrAuthor {
+                login: author.into(),
+            }),
+            submitted_at: Some(submitted_at.into()),
+        }
+    }
+
+    #[test]
+    fn latest_review_per_author_keeps_one_review_per_distinct_author() {
+        let nodes = vec![
+            review("APPROVED", "alice", "2024-01-01T00:00:00Z"),
+            review("CHANGES_REQUESTED", "bob", "2024-01-02T00:00:00Z"),
+        ];
+        assert_eq!(latest_review_per_author(&nodes).len(), 2);
+    }
+
+    #[test]
+    fn latest_review_per_author_keeps_only_the_most_recent_review_when_author_reviews_twice() {
+        let nodes = vec![
+            review("CHANGES_REQUESTED", "alice", "2024-01-01T00:00:00Z"),
+            review("APPROVED", "alice", "2024-01-02T00:00:00Z"),
+        ];
+        let latest = latest_review_per_author(&nodes);
+        assert_eq!(latest.len(), 1);
+        assert_eq!(latest[0].state, "APPROVED");
+    }
+
+    #[test]
+    fn latest_review_per_author_ignores_review_with_no_author() {
+        let nodes = vec![ReviewStateNode {
+            state: "APPROVED".into(),
+            author: None,
+            submitted_at: Some("2024-01-01T00:00:00Z".into()),
+        }];
+        assert!(latest_review_per_author(&nodes).is_empty());
+    }
+
+    #[test]
+    fn latest_review_per_author_ignores_pending_review_with_no_submitted_at() {
+        let nodes = vec![ReviewStateNode {
+            state: "PENDING".into(),
+            author: Some(PrAuthor {
+                login: "alice".into(),
+            }),
+            submitted_at: None,
+        }];
+        assert!(latest_review_per_author(&nodes).is_empty());
+    }
+
+    // ── node_to_pr review counts ──────────────────────────────────────────────
+
+    fn node_with_reviews(reviews: Vec<ReviewStateNode>) -> PrNode {
+        let mut node = make_node(vec![]);
+        node.reviews = ReviewConnection { nodes: reviews };
+        node
+    }
+
+    #[test]
+    fn node_to_pr_counts_one_approval_when_other_reviewer_only_commented() {
+        // Regression test for the reported bug: a PR with 2 COMMENTED reviews
+        // from one reviewer and 1 APPROVED review from another still counts
+        // exactly 1 approval and 0 changes-requested.
+        let node = node_with_reviews(vec![
+            review("COMMENTED", "reviewer-a", "2024-01-01T00:00:00Z"),
+            review("COMMENTED", "reviewer-a", "2024-01-01T01:00:00Z"),
+            review("APPROVED", "reviewer-b", "2024-01-01T02:00:00Z"),
+        ]);
+        let pr = node_to_pr(node, Urgency::Medium, PrKind::ToReview).unwrap();
+        assert_eq!(pr.approval_count, 1);
+        assert_eq!(pr.changes_requested_count, 0);
+    }
+
+    #[test]
+    fn node_to_pr_counts_approvals_and_changes_requested_from_different_reviewers() {
+        let node = node_with_reviews(vec![
+            review("APPROVED", "reviewer-a", "2024-01-01T00:00:00Z"),
+            review("CHANGES_REQUESTED", "reviewer-b", "2024-01-01T01:00:00Z"),
+        ]);
+        let pr = node_to_pr(node, Urgency::Medium, PrKind::ToReview).unwrap();
+        assert_eq!(pr.approval_count, 1);
+        assert_eq!(pr.changes_requested_count, 1);
+    }
+
+    #[test]
+    fn node_to_pr_counts_reviewer_who_re_reviews_only_once() {
+        let node = node_with_reviews(vec![
+            review("CHANGES_REQUESTED", "reviewer-a", "2024-01-01T00:00:00Z"),
+            review("APPROVED", "reviewer-a", "2024-01-01T01:00:00Z"),
+        ]);
+        let pr = node_to_pr(node, Urgency::Medium, PrKind::ToReview).unwrap();
+        assert_eq!(pr.approval_count, 1);
+        assert_eq!(pr.changes_requested_count, 0);
     }
 
     // ── parse_review_decision ─────────────────────────────────────────────────

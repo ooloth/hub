@@ -45,6 +45,46 @@ pub enum ReviewDecision {
     ChangesRequested,
 }
 
+/// The review state of a pull request, resolved from `approval_count`,
+/// `changes_requested_count` and `review_decision` into one consistent value.
+///
+/// Counts are trusted first since `review_decision` can be `null` even when
+/// reviews exist (e.g. no branch-protection policy requires one).
+/// `review_decision` is used only as a fallback when both counts are zero,
+/// so a real GitHub decision is never silently dropped.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReviewStatus {
+    /// No approvals and no changes-requested reviews.
+    NoReviews,
+    /// `Some(n)` is a counted approval total (n > 0). `None` means a decision
+    /// of `Approved` was trusted from `review_decision` with no counted
+    /// approvals to report (the fallback case) — no count is invented.
+    Approved(Option<u32>),
+    /// At least one changes-requested review exists (or is trusted from
+    /// `review_decision` as a fallback). Carries no count: the word alone
+    /// is shown, regardless of how many approvals also exist.
+    ChangesRequested,
+}
+
+impl PullRequest {
+    /// Resolves this PR's review state, preferring counted reviews over the
+    /// aggregate `review_decision`, which can be `null` even when reviews exist.
+    #[must_use]
+    pub const fn review_status(&self) -> ReviewStatus {
+        if self.changes_requested_count > 0 {
+            return ReviewStatus::ChangesRequested;
+        }
+        if self.approval_count > 0 {
+            return ReviewStatus::Approved(Some(self.approval_count));
+        }
+        match self.review_decision {
+            Some(ReviewDecision::ChangesRequested) => ReviewStatus::ChangesRequested,
+            Some(ReviewDecision::Approved) => ReviewStatus::Approved(None),
+            None => ReviewStatus::NoReviews,
+        }
+    }
+}
+
 /// The rolled-up CI status for a pull request's head commit.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum CiStatus {
@@ -167,6 +207,9 @@ pub struct PullRequest {
     /// Number of approvals the PR has received.
     #[serde(default)]
     pub approval_count: u32,
+    /// Number of changes-requested reviews the PR has received.
+    #[serde(default)]
+    pub changes_requested_count: u32,
     /// Number of review comments on the PR.
     #[serde(default)]
     pub comment_count: u32,
@@ -227,5 +270,83 @@ mod tests {
             input.parse::<RepoSlug>().is_err(),
             "expected error for {input:?}"
         );
+    }
+
+    // ── review_status ─────────────────────────────────────────────────────────
+
+    fn pr_with_review_state(
+        review_decision: Option<ReviewDecision>,
+        approval_count: u32,
+        changes_requested_count: u32,
+    ) -> PullRequest {
+        PullRequest {
+            number: 1,
+            title: "title".to_string(),
+            repo: RepoSlug::new("owner", "repo"),
+            url: "https://github.com/owner/repo/pull/1".to_string(),
+            age: Duration::zero(),
+            urgency: crate::urgency::Urgency::Medium,
+            kind: PrKind::ToReview,
+            author: "alice".to_string(),
+            review_decision,
+            approval_count,
+            changes_requested_count,
+            comment_count: 0,
+            head_branch: "feat/thing".to_string(),
+            base_branch: "main".to_string(),
+            body: None,
+            ci_status: None,
+            changed_files: vec![],
+            total_changed_files: 0,
+            review_threads: vec![],
+            pr_comments: vec![],
+            merge_blocker: None,
+        }
+    }
+
+    #[test]
+    fn review_status_no_reviews_when_no_decision_and_no_counts() {
+        let pr = pr_with_review_state(None, 0, 0);
+        assert_eq!(pr.review_status(), ReviewStatus::NoReviews);
+    }
+
+    #[test]
+    fn review_status_reports_approval_count_even_when_decision_is_null() {
+        // Regression: GitHub's reviewDecision can be null (e.g. no required-review
+        // branch protection) even when a raw APPROVED review exists.
+        let pr = pr_with_review_state(None, 1, 0);
+        assert_eq!(pr.review_status(), ReviewStatus::Approved(Some(1)));
+    }
+
+    #[test]
+    fn review_status_reports_changes_requested_even_when_decision_is_null() {
+        let pr = pr_with_review_state(None, 0, 1);
+        assert_eq!(pr.review_status(), ReviewStatus::ChangesRequested);
+    }
+
+    #[test]
+    fn review_status_changes_requested_trumps_approvals() {
+        let pr = pr_with_review_state(None, 2, 1);
+        assert_eq!(pr.review_status(), ReviewStatus::ChangesRequested);
+    }
+
+    #[test]
+    fn review_status_trusts_approved_decision_when_counts_are_zero() {
+        // Fallback for the (rare) case where reviewDecision reports a real
+        // decision but the counted reviews found nothing — never fabricates a count.
+        let pr = pr_with_review_state(Some(ReviewDecision::Approved), 0, 0);
+        assert_eq!(pr.review_status(), ReviewStatus::Approved(None));
+    }
+
+    #[test]
+    fn review_status_trusts_changes_requested_decision_when_counts_are_zero() {
+        let pr = pr_with_review_state(Some(ReviewDecision::ChangesRequested), 0, 0);
+        assert_eq!(pr.review_status(), ReviewStatus::ChangesRequested);
+    }
+
+    #[test]
+    fn review_status_uses_approval_count_when_decision_agrees() {
+        let pr = pr_with_review_state(Some(ReviewDecision::Approved), 3, 0);
+        assert_eq!(pr.review_status(), ReviewStatus::Approved(Some(3)));
     }
 }

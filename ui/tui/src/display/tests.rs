@@ -50,6 +50,7 @@ fn pr() -> StatusItem {
         author: "alice".to_string(),
         review_decision: None,
         approval_count: 0,
+        changes_requested_count: 0,
         comment_count: 0,
         head_branch: "feat/add-feature".to_string(),
         base_branch: "main".to_string(),
@@ -182,7 +183,8 @@ fn snapshot_item_lines() {
             item_line(&make_pr_with(
                 domain::PrKind::Mine,
                 Some(domain::ReviewDecision::Approved),
-                2
+                2,
+                0
             ))
             .flat()
         ),
@@ -191,9 +193,21 @@ fn snapshot_item_lines() {
             item_line(&make_pr_with(
                 domain::PrKind::Mine,
                 Some(domain::ReviewDecision::ChangesRequested),
+                1,
                 1
             ))
             .flat()
+        ),
+        format!(
+            "pr_approved_null_decision: {}",
+            // Regression: reviewDecision null (e.g. no branch-protection policy)
+            // must not hide a counted approval.
+            item_line(&make_pr_with(domain::PrKind::Mine, None, 1, 0)).flat()
+        ),
+        format!(
+            "pr_changes_requested_trumps_approvals: {}",
+            // Any changes-requested review shows the bare word, even with approvals.
+            item_line(&make_pr_with(domain::PrKind::Mine, None, 2, 1)).flat()
         ),
         format!(
             "pr_draft:              {}",
@@ -295,11 +309,11 @@ fn group_key_gcp_returns_key() {
 }
 
 fn make_pr(kind: domain::PrKind) -> StatusItem {
-    make_pr_with(kind, None, 0)
+    make_pr_with(kind, None, 0, 0)
 }
 
 fn make_pr_conflicting(kind: domain::PrKind) -> StatusItem {
-    let StatusItem::Pr(mut pr) = make_pr_with(kind, None, 0) else {
+    let StatusItem::Pr(mut pr) = make_pr_with(kind, None, 0, 0) else {
         unreachable!()
     };
     pr.merge_blocker = Some(domain::MergeBlocker::Conflict);
@@ -310,6 +324,7 @@ fn make_pr_with(
     kind: domain::PrKind,
     review_decision: Option<domain::ReviewDecision>,
     approval_count: u32,
+    changes_requested_count: u32,
 ) -> StatusItem {
     StatusItem::Pr(domain::PullRequest {
         number: 42,
@@ -322,6 +337,7 @@ fn make_pr_with(
         author: "ooloth".to_string(),
         review_decision,
         approval_count,
+        changes_requested_count,
         comment_count: 0,
         head_branch: "feat/add-feature".to_string(),
         base_branch: "main".to_string(),
