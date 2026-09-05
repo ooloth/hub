@@ -13,9 +13,28 @@ Its two binaries serve two distinct audiences:
 - **`hub-tui`** (Ratatui dashboard) — the **human-facing surface**. Read signals, launch investigation sessions, watch session progress, review results.
 - **`hub`** (CLI) — the **agent's toolkit** (stub). The task subcommand (`hub task *`) was removed with the task model (ADR 019). Future agent-facing subcommands will be added here as the filesystem session model is built out.
 
-The core value is cross-domain triage plus agent delegation: signals from different systems are ranked together in one list, and any signal can be investigated by pressing `i` to launch a named tmux window with injected context.
+The core value is cross-domain triage plus agent delegation: signals from different systems are ranked together in one list, and any signal can be investigated by pressing `i` to launch a Claude Code session with injected context. That session currently opens as a `tmux split-window` beside the TUI, not as a named window ([#330](https://github.com/ooloth/hub/issues/330) changes it).
 
 See [README.md](README.md) for the full feature list and value proposition.
+
+## Active milestone
+
+Work in flight is tracked in the GitHub milestone **Granular PR queue notifications**, epic
+[#327](https://github.com/ooloth/hub/issues/327). Before starting anything in it, read the epic's
+plan of record:
+
+```bash
+gh issue view 327 --comments
+```
+
+The plan lives in a **comment**. `gh issue view 327` on its own prints the body and stops, and the
+body predates the plan on several points, so reading it alone gives you a superseded design. The
+comment carries the settled architecture, the measured spike findings, and the full phase sequence.
+
+**The title numbering is the work order.** Issues are titled `Phase N.M — ...`; take them in that
+order. Hard dependencies are recorded separately as GitHub `blockedBy` relationships, readable only
+via GraphQL, and there is currently exactly one (#331 needs #330). Everything else the numbering
+implies is sequence, not blocking.
 
 ## Project Structure
 
