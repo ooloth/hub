@@ -21,6 +21,27 @@ frontmatter, or — matching existing practice here — a status line under the 
 Superseded by Decision 012`) and/or an `## Addendum (YYYY-MM-DD) — topic` section appended at the
 end.
 
+## What doesn't go here
+
+A record captures an **architectural** decision: one that changes the system's boundaries or
+constrains long-term technical options. Plenty of things get settled in the course of the work
+without meeting that bar, and they are not records however much discussion they took.
+
+Two that look like candidates and aren't:
+
+- **A reversible feature nuance.** How many items a notification names, whether a list backfills
+  immediately or waits for the next pass. Reversing it later costs an afternoon and moves no
+  boundary.
+- **A choice settled by trying it.** Where building is cheaper than arguing, build it — the code
+  is the record, and a spike that produced an observation belongs in a question's **Findings**.
+
+The test: reversing this later, would someone have to revisit a boundary, or just edit a value?
+
+Promoting a nuance anyway is not a harmless excess. Everything written after a record treats it as
+settled, so a record nobody needed constrains work that had no reason to be constrained. These
+still need somewhere to live — record them in the issue that implements the behaviour, and see
+[../questions/README.md](../questions/README.md) for closing the question that raised them.
+
 ## Before you decide
 
 Start with a listing of this folder — every title states what's now true, so the listing is the

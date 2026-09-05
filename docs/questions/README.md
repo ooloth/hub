@@ -19,7 +19,8 @@ order, present even when empty — an empty section is the reminder that nobody'
 2. **What would settle it** — the evidence, measurement, or event that ends the question. Not
    another question. A question that genuinely can't be worked until another is answered says so
    here, in prose, as part of describing what an answer requires.
-3. **Resolves into** — where the answer lands (a decision, recorded in `../decisions/`).
+3. **Resolves into** — where the answer lands: a decision recorded in `../decisions/`, or, for a
+   question that turns out not to be architectural, the issue implementing the behaviour.
 4. **Source** — where the question came from, so it survives whatever raised it being deleted.
 5. **Options** — each candidate answer, with its strongest case and its cost.
 6. **Findings** — evidence gathered so far, written in as it's established, not batched at the
@@ -37,8 +38,15 @@ and gets trusted precisely because it reads as fact rather than judgement.
 A question resolves into as many decision records as it contains distinct decisions. Split it when
 only part of it is actually blocking something — the blocking part becomes its own file, and the
 rest stays where it belongs, keeping the same six-section format. Delete a question once nothing
-is left in it that a decision record hasn't settled — mine its Findings first, since they don't
-survive the deletion otherwise.
+unsettled is left in it — mine its Findings first, since they don't survive the deletion
+otherwise.
+
+**A question has two exits, not one.** Most close into a decision record. Some close because the
+work answered them and the answer was a reversible feature nuance rather than a boundary — see
+[../decisions/README.md](../decisions/README.md) for the distinction. Those close into the issue
+that implements the behaviour, which is where a future reader will look for the answer anyway.
+Without the second exit a nuance has nowhere to go but a record it doesn't deserve, so it either
+gets promoted or stays open forever, and both are worse than closing it where the work happened.
 
 ## Working on an active milestone
 
