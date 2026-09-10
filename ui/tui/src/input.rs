@@ -1,11 +1,13 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::display::{Category, SelectedItemKind};
-use crate::state::{Action, App, ReviewSkill, Screen, SubmenuState};
+use crate::state::{Action, App, PrAuthor, Screen, SubmenuState};
 
 pub(crate) fn key_to_action(app: &App, key: KeyEvent) -> Option<Action> {
-    match app.ui.submenu {
-        SubmenuState::ReviewPicker => return Some(review_picker_submenu_key(key)),
+    match &app.ui.submenu {
+        SubmenuState::ReviewPicker(target) => {
+            return Some(review_picker_submenu_key(key, target.author))
+        }
         SubmenuState::PrActions => return Some(pr_action_submenu_key(key)),
         SubmenuState::None => {}
     }
@@ -138,19 +140,30 @@ fn unified_list_keys(
     }
 }
 
-const fn review_picker_submenu_key(key: KeyEvent) -> Action {
+/// Resolves a keypress against the reviews this author's PRs offer.
+///
+/// The option table is the same one the status bar renders from, so a key the
+/// bar advertises always resolves here and a key it does not advertise never
+/// does.
+fn review_picker_submenu_key(key: KeyEvent, author: PrAuthor) -> Action {
     if matches!(
         (key.code, key.modifiers),
         (KeyCode::Char('c'), KeyModifiers::CONTROL)
     ) {
         return Action::Quit;
     }
-    match key.code {
-        KeyCode::Char('c') => Action::CommitReview(ReviewSkill::Converge),
-        KeyCode::Char('m') => Action::CommitReview(ReviewSkill::PrCommentsConverge),
-        // Esc and any unrecognized key dismiss the submenu without closing the split view.
-        _ => Action::CancelReview,
+    if let KeyCode::Char(pressed) = key.code {
+        if let Some(option) = author
+            .review_options()
+            .iter()
+            .find(|option| option.key == pressed)
+        {
+            return Action::CommitReview(option.review);
+        }
     }
+    // Esc, and any key this author has no review for, dismiss the submenu
+    // without closing the split view.
+    Action::CancelReview
 }
 
 const fn merge_confirm_key(key: KeyEvent) -> Option<Action> {
@@ -172,7 +185,8 @@ mod tests {
     use super::key_to_action;
     use crate::display::{Category, Filter, ListSnapshot};
     use crate::state::{
-        Action, App, DetailMode, PrPrevScreen, ReviewSkill, Screen, SubmenuState, UiState,
+        Action, App, DetailMode, PrAuthor, PrPrevScreen, PrReview, PrReviewTarget, Screen,
+        SubmenuState, UiState,
     };
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use rstest::rstest;
@@ -389,31 +403,75 @@ mod tests {
         assert_eq!(key_to_action(&merging_app(), ctrl('c')), Some(Action::Quit));
     }
 
-    fn pending_review_action_app_with_pr() -> App {
+    fn picker_app(author: PrAuthor) -> App {
         let mut app = split_view_app_with_pr();
-        app.ui.submenu = SubmenuState::ReviewPicker;
+        app.ui.submenu = SubmenuState::ReviewPicker(PrReviewTarget {
+            repo: "owner/repo".to_string(),
+            number: 1,
+            head_branch: "feature".to_string(),
+            author,
+        });
         app
     }
 
     #[rstest]
-    #[case(ch('c'), Some(Action::CommitReview(ReviewSkill::Converge)))]
-    #[case(ch('m'), Some(Action::CommitReview(ReviewSkill::PrCommentsConverge)))]
-    #[case(k(KeyCode::Esc), Some(Action::CancelReview))]
-    #[case(ch('j'), Some(Action::CancelReview))]
-    #[case(ch('k'), Some(Action::CancelReview))]
-    #[case(ch('v'), Some(Action::CancelReview))]
-    #[case(ch('x'), Some(Action::CancelReview))]
-    fn review_picker_submenu_keys(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
-        assert_eq!(
-            key_to_action(&pending_review_action_app_with_pr(), key),
-            expected
-        );
+    #[case(PrAuthor::Me, ch('c'), Action::CommitReview(PrReview::ReviewMine))]
+    #[case(PrAuthor::Me, ch('f'), Action::CommitReview(PrReview::FixMine))]
+    #[case(PrAuthor::Me, ch('m'), Action::CommitReview(PrReview::AnswerReviewers))]
+    #[case(PrAuthor::Peer, ch('c'), Action::CommitReview(PrReview::ReviewPeer))]
+    // A peer's PR offers no review that edits their branch, so the keys that
+    // would launch one on my own PR cancel instead.
+    #[case(PrAuthor::Peer, ch('f'), Action::CancelReview)]
+    #[case(PrAuthor::Peer, ch('m'), Action::CancelReview)]
+    #[case(PrAuthor::Me, k(KeyCode::Esc), Action::CancelReview)]
+    #[case(PrAuthor::Peer, k(KeyCode::Esc), Action::CancelReview)]
+    #[case(PrAuthor::Me, ch('j'), Action::CancelReview)]
+    #[case(PrAuthor::Me, ch('v'), Action::CancelReview)]
+    #[case(PrAuthor::Peer, ch('x'), Action::CancelReview)]
+    fn review_picker_submenu_keys(
+        #[case] author: PrAuthor,
+        #[case] key: KeyEvent,
+        #[case] expected: Action,
+    ) {
+        assert_eq!(key_to_action(&picker_app(author), key), Some(expected));
     }
 
-    #[test]
-    fn ctrl_c_quits_during_review_picker_submenu() {
+    /// The status bar renders its options from `review_options`, so every key it
+    /// advertises has to launch a review and every other key has to cancel.
+    /// This is what stops the bar and the handler drifting apart.
+    #[rstest]
+    #[case(PrAuthor::Me)]
+    #[case(PrAuthor::Peer)]
+    fn the_picker_accepts_exactly_the_keys_it_advertises(#[case] author: PrAuthor) {
+        let advertised: Vec<char> = author.review_options().iter().map(|o| o.key).collect();
+
+        for option in author.review_options() {
+            assert_eq!(
+                key_to_action(&picker_app(author), ch(option.key)),
+                Some(Action::CommitReview(option.review)),
+                "advertised key {} did not launch its review",
+                option.key
+            );
+        }
+
+        for candidate in 'a'..='z' {
+            if advertised.contains(&candidate) {
+                continue;
+            }
+            assert_eq!(
+                key_to_action(&picker_app(author), ch(candidate)),
+                Some(Action::CancelReview),
+                "unadvertised key {candidate} was not a cancel"
+            );
+        }
+    }
+
+    #[rstest]
+    #[case(PrAuthor::Me)]
+    #[case(PrAuthor::Peer)]
+    fn ctrl_c_quits_during_review_picker_submenu(#[case] author: PrAuthor) {
         assert_eq!(
-            key_to_action(&pending_review_action_app_with_pr(), ctrl('c')),
+            key_to_action(&picker_app(author), ctrl('c')),
             Some(Action::Quit)
         );
     }

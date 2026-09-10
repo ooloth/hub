@@ -141,22 +141,22 @@ fn render_status_bar_left(frame: &mut ratatui::Frame, app: &App, bar_left: ratat
         ]);
 
         frame.render_widget(Paragraph::new(line), bar_left);
-    } else if app.ui.submenu == SubmenuState::ReviewPicker {
-        let pr_label = app
-            .current_screen()
-            .selected_status_item()
-            .and_then(|item| {
-                if let workflows::status::StatusItem::Pr(pr) = item {
-                    Some(format!(" Review #{}", pr.number))
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(|| " Review".to_string());
+    } else if let SubmenuState::ReviewPicker(target) = &app.ui.submenu {
+        // Options come from the same table the key handler resolves against, so
+        // the bar cannot advertise a key that does nothing.
+        let offered: Vec<String> = target
+            .author
+            .review_options()
+            .iter()
+            .map(|option| format!("[{}] {}", option.key, option.label))
+            .collect();
 
         let line = Line::from(vec![
-            Span::styled(pr_label, Style::default().fg(YELLOW)),
-            Span::styled("  [c] code · [m] comments · [Esc] cancel", dim()),
+            Span::styled(
+                format!(" Review #{}", target.number),
+                Style::default().fg(YELLOW),
+            ),
+            Span::styled(format!("  {} · [Esc] cancel", offered.join(" · ")), dim()),
         ]);
 
         frame.render_widget(Paragraph::new(line), bar_left);
@@ -1041,6 +1041,33 @@ mod tests {
     fn status_bar_pending_pr_action_shows_submenu() {
         let mut app = split_view_app(vec![DisplayItem::Single(pr())], 0, 0);
         app.ui.submenu = SubmenuState::PrActions;
+        let buf = draw(&mut app, 120, 5);
+        insta::assert_snapshot!(status_row(&buf));
+    }
+
+    fn armed_review_picker(author: crate::state::PrAuthor) -> App {
+        let mut app = split_view_app(vec![DisplayItem::Single(pr())], 0, 0);
+        app.ui.submenu = SubmenuState::ReviewPicker(crate::state::PrReviewTarget {
+            repo: "owner/repo".to_string(),
+            number: 1,
+            head_branch: "feature".to_string(),
+            author,
+        });
+        app
+    }
+
+    // SL6: review picker on my own PR offers read, fix and reviewer replies.
+    #[test]
+    fn status_bar_review_picker_on_my_pr_offers_every_review() {
+        let mut app = armed_review_picker(crate::state::PrAuthor::Me);
+        let buf = draw(&mut app, 120, 5);
+        insta::assert_snapshot!(status_row(&buf));
+    }
+
+    // SL7: review picker on a peer's PR offers only the read-only review.
+    #[test]
+    fn status_bar_review_picker_on_a_peer_pr_offers_only_code() {
+        let mut app = armed_review_picker(crate::state::PrAuthor::Peer);
         let buf = draw(&mut app, 120, 5);
         insta::assert_snapshot!(status_row(&buf));
     }

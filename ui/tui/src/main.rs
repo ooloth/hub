@@ -17,8 +17,8 @@ use crate::display::{build_unified, flatten, Filter};
 use crate::input::key_to_action;
 use crate::render::render;
 use crate::state::{
-    handle_msg, App, DataState, DetailMode, Effect, Msg, PrOwnership, RefreshState, ReviewSkill,
-    Screen, UiState,
+    handle_msg, App, DataState, DetailMode, Effect, Msg, PrAuthor, PrReview, PrReviewTarget,
+    RefreshState, Screen, UiState,
 };
 use std::collections::HashSet;
 
@@ -337,31 +337,13 @@ async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &con
         Effect::LaunchPr {
             repo,
             number,
-            kind,
-            review_decision,
+            author,
             head_branch,
-            ..
         } => {
-            handle_launch_pr(
-                app,
-                config,
-                repo,
-                number,
-                kind,
-                review_decision,
-                head_branch,
-            )
-            .await;
+            handle_launch_pr(app, config, repo, number, author, head_branch).await;
         }
-        Effect::ReviewPr {
-            repo,
-            number,
-            ownership,
-            skill,
-            head_branch,
-            ..
-        } => {
-            handle_review_pr(app, config, repo, number, ownership, skill, head_branch).await;
+        Effect::ReviewPr { target, review } => {
+            handle_review_pr(app, config, &target, review).await;
         }
         Effect::OpenInOcto {
             repo,
@@ -455,24 +437,16 @@ async fn handle_launch_issue(app: &mut App, config: &config::Config, repo: Strin
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn handle_launch_pr(
     app: &mut App,
     config: &config::Config,
     repo: String,
     number: u64,
-    kind: domain::PrKind,
-    review_decision: Option<domain::ReviewDecision>,
+    author: PrAuthor,
     head_branch: String,
 ) {
-    let ownership = PrOwnership::from_kind(kind);
-    let skill = if review_decision == Some(domain::ReviewDecision::ChangesRequested) {
-        ReviewSkill::PrCommentsConverge
-    } else {
-        ReviewSkill::Converge
-    };
     if let Err(err) = investigations::launch(
-        investigations::pr::review_config(number, &repo, ownership, skill),
+        investigations::pr::ask_config(number, &repo, author),
         investigations::WorktreeSpec::PullRequest {
             repo,
             number,
@@ -486,22 +460,18 @@ async fn handle_launch_pr(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn handle_review_pr(
     app: &mut App,
     config: &config::Config,
-    repo: String,
-    number: u64,
-    ownership: PrOwnership,
-    skill: ReviewSkill,
-    head_branch: String,
+    target: &PrReviewTarget,
+    review: PrReview,
 ) {
     if let Err(err) = investigations::launch(
-        investigations::pr::review_config(number, &repo, ownership, skill),
+        investigations::pr::review_config(target, review),
         investigations::WorktreeSpec::PullRequest {
-            repo,
-            number,
-            head_branch,
+            repo: target.repo.clone(),
+            number: target.number,
+            head_branch: target.head_branch.clone(),
         },
         config,
     )

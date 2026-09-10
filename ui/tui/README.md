@@ -172,17 +172,30 @@ commits that haven't been pushed yet. `EphemeralFresh` and `Ephemeral` are immun
 because each investigation gets its own detached-HEAD worktree that the refresh loop
 never touches, and that is cleaned up on exit.
 
-### PR investigation routing
+### PR sessions
 
-Pressing `i` on a PR auto-selects the skill based on the PR's kind and review state,
-then launches an interactive Claude Code session in a per-PR git worktree
-(`~/.hub/repos/<project>/pr-<number>/`):
+Both `i` and `v` open an interactive Claude Code session in a per-PR git worktree
+(`~/.hub/repos/<project>/pr-<number>/`). They differ in whether a skill is chosen.
 
-| PR kind        | Review state       | Skill                        | Intent                                          |
-| -------------- | ------------------ | ---------------------------- | ----------------------------------------------- |
-| ToReview       | any                | `/review-code`               | Reviewer — identify issues, no local changes    |
-| Mine / MyDraft | ChangesRequested   | `/review-pr-comments-converge` | Author — address reviewer feedback locally    |
-| Mine / MyDraft | other              | `/review-converge`           | Author — improve your own PR locally            |
+`i` chooses nothing. It opens a session carrying the PR number, repo, and whether
+the PR is yours, with no task prompt, ready for a question. Routing `i` by PR kind
+was tried and removed in `9f402d6` for being too prescriptive, so treat a request
+to make `i` "smarter" as a change of direction rather than a fix.
+
+`v` opens the review picker, which is the only place a skill gets selected. Which
+reviews it offers depends on who wrote the PR, because a session launched on
+someone else's branch must not edit it:
+
+| Key | Your PR (`Mine`, `MyDraft`)    | Someone else's (`ToReview`, `External`) |
+| --- | ------------------------------ | --------------------------------------- |
+| c   | `/review-code`                 | `/review-code`                          |
+| f   | `/review-converge`             | not offered                             |
+| m   | `/review-pr-comments-converge` | not offered                             |
+
+The offered set lives in `PrAuthor::review_options` (`src/state/types.rs`), which
+the status bar renders from and the key handler resolves against. Adding a review
+means adding a `PrReview` variant and a row to that table; the bar and the handler
+cannot drift apart because there is only one table.
 
 ## Cache and schema version
 
@@ -243,7 +256,7 @@ One screen (`UnifiedList`) with an optional split detail pane. `Enter` opens the
 | K          | scroll detail up                                |
 | Tab        | toggle between signal detail and session detail |
 | Esc        | close split detail pane                         |
-| v          | open review picker (PR only)                    |
+| v          | open review picker (PR only; see PR sessions)   |
 | m          | merge PR (PR only)                              |
 | d          | open PR diff submenu (PR only)                  |
 | a          | approve for agent (issue only; otherwise clears filter)         |

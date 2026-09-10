@@ -148,7 +148,6 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
             number: pr.number,
             kind: pr.kind,
             author: pr.author.clone(),
-            review_decision: pr.review_decision,
             head_branch: pr.head_branch.clone(),
             base_branch: pr.base_branch.clone(),
         }),

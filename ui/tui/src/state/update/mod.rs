@@ -78,23 +78,26 @@ impl App {
     }
 
     /// Clears the active submenu when the incoming action is not part of that submenu.
-    const fn clear_submenu_if_stale(&mut self, action: Action) {
-        match self.ui.submenu {
-            SubmenuState::PrActions
-                if !matches!(
-                    action,
-                    Action::PrActionSubmenu
-                        | Action::OpenPrDiffInDelta
-                        | Action::OpenInLazygit
-                        | Action::OpenInOcto
-                ) =>
-            {
-                self.ui.submenu = SubmenuState::None;
-            }
-            SubmenuState::ReviewPicker if !matches!(action, Action::OpenReviewPicker) => {
-                self.ui.submenu = SubmenuState::None;
-            }
-            SubmenuState::None | SubmenuState::PrActions | SubmenuState::ReviewPicker => {}
+    ///
+    /// The review picker's own actions are kept so its handler can read the
+    /// target it captured; those handlers clear the submenu themselves.
+    fn clear_submenu_if_stale(&mut self, action: Action) {
+        let belongs_to_active_submenu = match &self.ui.submenu {
+            SubmenuState::None => true,
+            SubmenuState::PrActions => matches!(
+                action,
+                Action::PrActionSubmenu
+                    | Action::OpenPrDiffInDelta
+                    | Action::OpenInLazygit
+                    | Action::OpenInOcto
+            ),
+            SubmenuState::ReviewPicker(_) => matches!(
+                action,
+                Action::OpenReviewPicker | Action::CommitReview(_) | Action::CancelReview
+            ),
+        };
+        if !belongs_to_active_submenu {
+            self.ui.submenu = SubmenuState::None;
         }
     }
 
@@ -276,6 +279,8 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
 mod tests {
     use std::collections::HashSet;
 
+    use rstest::rstest;
+
     use super::{compute_investigate_action, handle_msg};
     use crate::display::{flatten, Category, DisplayItem, Filter, GroupKey};
     use crate::state::{
@@ -418,7 +423,6 @@ mod tests {
                 number: 7,
                 kind: domain::PrKind::ToReview,
                 author: "alice".to_string(),
-                review_decision: None,
                 head_branch: "feat/thing".to_string(),
                 base_branch: "main".to_string(),
             }
@@ -459,7 +463,6 @@ mod tests {
                 number: 8,
                 kind: domain::PrKind::Mine,
                 author: "ooloth".to_string(),
-                review_decision: Some(domain::ReviewDecision::Approved),
                 head_branch: "feat/mine".to_string(),
                 base_branch: "main".to_string(),
             }
@@ -500,7 +503,6 @@ mod tests {
                 number: 9,
                 kind: domain::PrKind::MyDraft,
                 author: "ooloth".to_string(),
-                review_decision: Some(domain::ReviewDecision::ChangesRequested),
                 head_branch: "feat/draft".to_string(),
                 base_branch: "main".to_string(),
             }
@@ -1360,54 +1362,98 @@ mod tests {
         }
     }
 
-    #[test]
-    fn open_review_picker_from_split_view_sets_submenu_and_stays_on_screen() {
-        let mut app = split_view_app_with_pr_item();
+    fn armed_picker(app: &mut App) -> crate::state::PrReviewTarget {
         let _ = app.update(Action::OpenReviewPicker);
-        assert_eq!(app.ui.submenu, SubmenuState::ReviewPicker);
+        let SubmenuState::ReviewPicker(target) = &app.ui.submenu else {
+            panic!("expected an armed review picker");
+        };
+        target.clone()
+    }
+
+    #[test]
+    fn open_review_picker_from_split_view_captures_the_pr_and_stays_on_screen() {
+        let mut app = split_view_app_with_pr_item();
+        let target = armed_picker(&mut app);
+        assert_eq!(target.repo, "ooloth/hub");
+        assert_eq!(target.number, 7);
+        assert_eq!(target.head_branch, "feat/thing");
+        assert_eq!(target.author, crate::state::PrAuthor::Me);
         assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
     }
 
     #[test]
-    fn commit_review_converge_from_split_view_emits_review_pr_effect() {
+    fn open_review_picker_on_a_non_pr_row_leaves_the_submenu_closed() {
+        let mut app = app_with_items(vec![DisplayItem::Single(ci_failure())]);
+        let _ = app.update(Action::OpenReviewPicker);
+        assert_eq!(app.ui.submenu, SubmenuState::None);
+    }
+
+    #[rstest]
+    #[case(crate::state::PrReview::ReviewMine)]
+    #[case(crate::state::PrReview::FixMine)]
+    #[case(crate::state::PrReview::AnswerReviewers)]
+    fn committing_a_review_emits_the_effect_for_the_captured_pr(
+        #[case] review: crate::state::PrReview,
+    ) {
         let mut app = split_view_app_with_pr_item();
-        app.ui.submenu = SubmenuState::ReviewPicker;
-        let effects = app.update(Action::CommitReview(crate::state::ReviewSkill::Converge));
+        let target = armed_picker(&mut app);
+        let effects = app.update(Action::CommitReview(review));
         assert_eq!(app.ui.submenu, SubmenuState::None);
         assert_eq!(effects.len(), 1);
         let Effect::ReviewPr {
-            skill, ownership, ..
+            target: launched,
+            review: launched_review,
         } = effects.into_iter().next().unwrap()
         else {
             panic!("expected ReviewPr");
         };
-        assert_eq!(skill, crate::state::ReviewSkill::Converge);
-        assert_eq!(ownership, crate::state::PrOwnership::Owned);
+        assert_eq!(launched, target);
+        assert_eq!(launched_review, review);
     }
 
     #[test]
-    fn commit_review_pr_comments_from_split_view_emits_review_pr_effect() {
+    fn a_refresh_while_the_picker_is_armed_does_not_redirect_the_launch() {
         let mut app = split_view_app_with_pr_item();
-        app.ui.submenu = SubmenuState::ReviewPicker;
-        let effects = app.update(Action::CommitReview(
-            crate::state::ReviewSkill::PrCommentsConverge,
-        ));
-        assert_eq!(app.ui.submenu, SubmenuState::None);
+        let target = armed_picker(&mut app);
+
+        // A background refresh replaces the list with a different PR under the
+        // same selection index. The captured target must survive it.
+        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+
+        let effects = app.update(Action::CommitReview(crate::state::PrReview::FixMine));
         assert_eq!(effects.len(), 1);
-        let Effect::ReviewPr { skill, .. } = effects.into_iter().next().unwrap() else {
+        let Effect::ReviewPr {
+            target: launched, ..
+        } = effects.into_iter().next().unwrap()
+        else {
             panic!("expected ReviewPr");
         };
-        assert_eq!(skill, crate::state::ReviewSkill::PrCommentsConverge);
+        assert_eq!(launched, target);
+    }
+
+    #[test]
+    fn committing_a_review_with_no_armed_picker_emits_nothing() {
+        let mut app = split_view_app_with_pr_item();
+        let effects = app.update(Action::CommitReview(crate::state::PrReview::FixMine));
+        assert!(effects.is_empty());
     }
 
     #[test]
     fn cancel_review_from_split_view_clears_submenu_stays_on_screen() {
         let mut app = split_view_app_with_pr_item();
-        app.ui.submenu = SubmenuState::ReviewPicker;
+        let _ = armed_picker(&mut app);
         let effects = app.update(Action::CancelReview);
         assert_eq!(app.ui.submenu, SubmenuState::None);
         assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
         assert!(effects.is_empty());
+    }
+
+    #[test]
+    fn an_unrelated_action_clears_an_armed_review_picker() {
+        let mut app = split_view_app_with_pr_item();
+        let _ = armed_picker(&mut app);
+        let _ = app.update(Action::MoveDown);
+        assert_eq!(app.ui.submenu, SubmenuState::None);
     }
 
     // --- Split view state transitions ---

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use domain::{PrKind, PullRequest, ReviewDecision};
+use domain::{PrKind, PullRequest};
 use workflows::status::{StatusItem, StatusReport};
 
 use crate::display::{
@@ -11,41 +11,195 @@ use crate::display::{
 
 /// Which two-key submenu is currently intercepting keypresses. At most one can
 /// be active at a time — mutually exclusive states represented as an enum.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) enum SubmenuState {
     #[default]
     None,
     PrActions,
-    ReviewPicker,
+    /// The review picker, holding the PR it was opened for. Capturing the target
+    /// at open time keeps a background refresh from swapping the PR out from
+    /// under an armed picker — the same reason `Screen::MergingPr` snapshots its
+    /// `PullRequest`.
+    ReviewPicker(PrReviewTarget),
 }
 
+/// Who wrote a PR, from the current user's point of view.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ReviewSkill {
-    Converge,
-    PrCommentsConverge,
+pub(crate) enum PrAuthor {
+    Me,
+    Peer,
 }
 
-impl ReviewSkill {
+impl PrAuthor {
+    pub(crate) const fn from_kind(kind: PrKind) -> Self {
+        match kind {
+            PrKind::Mine | PrKind::MyDraft => Self::Me,
+            PrKind::ToReview | PrKind::External => Self::Peer,
+        }
+    }
+
+    /// The review sessions offered for a PR with this author, in picker order.
+    ///
+    /// Single source of truth for both the status-bar label and the key handler,
+    /// so the bar cannot advertise a key the handler ignores.
+    pub(crate) fn review_options(self) -> &'static [ReviewOption] {
+        const MINE: &[ReviewOption] = &[
+            ReviewOption {
+                key: 'c',
+                review: PrReview::ReviewMine,
+                label: "code",
+            },
+            ReviewOption {
+                key: 'f',
+                review: PrReview::FixMine,
+                label: "fix",
+            },
+            ReviewOption {
+                key: 'm',
+                review: PrReview::AnswerReviewers,
+                label: "comments",
+            },
+        ];
+
+        // A peer's PR offers no review that edits their branch.
+        const PEER: &[ReviewOption] = &[ReviewOption {
+            key: 'c',
+            review: PrReview::ReviewPeer,
+            label: "code",
+        }];
+
+        let options = match self {
+            Self::Me => MINE,
+            Self::Peer => PEER,
+        };
+
+        assert!(
+            !options.is_empty(),
+            "review picker offers no option for this author"
+        );
+        assert!(
+            options
+                .iter()
+                .enumerate()
+                .all(|(i, option)| options.iter().skip(i + 1).all(|o| o.key != option.key)),
+            "review picker options share a key"
+        );
+        assert!(
+            options.iter().all(|option| option.review.author() == self),
+            "review picker offers a review meant for a different author"
+        );
+        options
+    }
+}
+
+/// What a review session does to a PR.
+///
+/// Flat rather than an author-by-mode pair so that a peer's PR combined with a
+/// fixing skill is not a value anyone can write.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PrReview {
+    /// My PR: read it critically, change nothing.
+    ReviewMine,
+    /// My PR: review and fix it.
+    FixMine,
+    /// My PR: work through what reviewers said.
+    AnswerReviewers,
+    /// Someone else's PR: read it critically, change nothing.
+    ReviewPeer,
+}
+
+impl PrReview {
     pub(crate) const fn slash_command(self) -> &'static str {
         match self {
-            Self::Converge => "/review-converge",
-            Self::PrCommentsConverge => "/review-pr-comments-converge",
+            Self::ReviewMine | Self::ReviewPeer => "/review-code",
+            Self::FixMine => "/review-converge",
+            Self::AnswerReviewers => "/review-pr-comments-converge",
+        }
+    }
+
+    pub(crate) const fn author(self) -> PrAuthor {
+        match self {
+            Self::ReviewMine | Self::FixMine | Self::AnswerReviewers => PrAuthor::Me,
+            Self::ReviewPeer => PrAuthor::Peer,
         }
     }
 }
 
+/// One entry in the review picker: the key that selects it, what it launches,
+/// and how the status bar names it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum PrOwnership {
-    Owned,
-    External,
+pub(crate) struct ReviewOption {
+    pub(crate) key: char,
+    pub(crate) review: PrReview,
+    pub(crate) label: &'static str,
 }
 
-impl PrOwnership {
-    pub(crate) const fn from_kind(kind: PrKind) -> Self {
-        match kind {
-            PrKind::Mine | PrKind::MyDraft => Self::Owned,
-            PrKind::ToReview | PrKind::External => Self::External,
+/// The PR a review picker was opened for, captured at the moment it opens.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PrReviewTarget {
+    pub(crate) repo: String,
+    pub(crate) number: u64,
+    pub(crate) head_branch: String,
+    pub(crate) author: PrAuthor,
+}
+
+impl PrReviewTarget {
+    pub(crate) fn from_pr(pr: &PullRequest) -> Self {
+        Self {
+            repo: pr.repo.to_string(),
+            number: pr.number,
+            head_branch: pr.head_branch.clone(),
+            author: PrAuthor::from_kind(pr.kind),
         }
+    }
+}
+
+#[cfg(test)]
+mod review_option_tests {
+    use rstest::rstest;
+
+    use super::{PrAuthor, PrReview};
+
+    #[test]
+    fn peer_pr_offers_only_a_read_only_review() {
+        let options = PrAuthor::Peer.review_options();
+        let offered: Vec<_> = options.iter().map(|o| (o.key, o.review)).collect();
+        assert_eq!(offered, vec![('c', PrReview::ReviewPeer)]);
+    }
+
+    #[test]
+    fn my_pr_offers_read_only_fix_and_reviewer_replies() {
+        let options = PrAuthor::Me.review_options();
+        let offered: Vec<_> = options.iter().map(|o| (o.key, o.review)).collect();
+        assert_eq!(
+            offered,
+            vec![
+                ('c', PrReview::ReviewMine),
+                ('f', PrReview::FixMine),
+                ('m', PrReview::AnswerReviewers),
+            ]
+        );
+    }
+
+    #[rstest]
+    #[case(PrAuthor::Me)]
+    #[case(PrAuthor::Peer)]
+    fn every_offered_review_belongs_to_the_author_it_is_offered_for(#[case] author: PrAuthor) {
+        for option in author.review_options() {
+            assert_eq!(option.review.author(), author, "key {}", option.key);
+        }
+    }
+
+    #[rstest]
+    #[case(PrReview::ReviewMine, "/review-code")]
+    #[case(PrReview::ReviewPeer, "/review-code")]
+    #[case(PrReview::FixMine, "/review-converge")]
+    #[case(PrReview::AnswerReviewers, "/review-pr-comments-converge")]
+    fn slash_command_names_the_skill_for_each_review(
+        #[case] review: PrReview,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(review.slash_command(), expected);
     }
 }
 
@@ -172,7 +326,6 @@ pub(crate) enum InvestigateAction {
         number: u64,
         kind: PrKind,
         author: String,
-        review_decision: Option<ReviewDecision>,
         head_branch: String,
         base_branch: String,
     },
@@ -201,7 +354,7 @@ pub(crate) enum Action {
     CollapseGroup,
     Investigate,
     OpenReviewPicker,
-    CommitReview(ReviewSkill),
+    CommitReview(PrReview),
     CancelReview,
     OpenUrl,
     PrActionSubmenu,
@@ -272,16 +425,12 @@ pub(crate) enum Effect {
     LaunchPr {
         repo: String,
         number: u64,
-        kind: PrKind,
-        review_decision: Option<ReviewDecision>,
+        author: PrAuthor,
         head_branch: String,
     },
     ReviewPr {
-        repo: String,
-        number: u64,
-        ownership: PrOwnership,
-        skill: ReviewSkill,
-        head_branch: String,
+        target: PrReviewTarget,
+        review: PrReview,
     },
     OpenInOcto {
         repo: String,

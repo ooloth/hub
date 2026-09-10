@@ -196,7 +196,6 @@ pub(crate) enum InvestigationKind {
         number: u64,
         kind: domain::PrKind,
         author: String,
-        review_decision: Option<domain::ReviewDecision>,
         head_branch: String,
         base_branch: String,
     },

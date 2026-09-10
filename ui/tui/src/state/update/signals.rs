@@ -5,8 +5,8 @@ use crate::display::{
     ListSnapshot,
 };
 use crate::state::{
-    Action, App, DetailMode, Effect, InvestigateAction, PrOwnership, PrPrevScreen, Screen,
-    SubmenuState,
+    Action, App, DetailMode, Effect, InvestigateAction, PrAuthor, PrPrevScreen, PrReviewTarget,
+    Screen, SubmenuState,
 };
 use workflows::status::StatusItem;
 
@@ -216,23 +216,29 @@ impl App {
                 .selected_url()
                 .map_or_else(Vec::new, |url| vec![Effect::OpenUrl(url.to_string())]),
             Action::OpenReviewPicker => {
-                self.ui.submenu = SubmenuState::ReviewPicker;
-                vec![]
-            }
-            Action::CommitReview(skill) => {
                 let Some(StatusItem::Pr(pr)) = self.ui.screen.selected_status_item() else {
                     return vec![];
                 };
-                let ownership = PrOwnership::from_kind(pr.kind);
-                vec![Effect::ReviewPr {
-                    repo: pr.repo.to_string(),
-                    number: pr.number,
-                    ownership,
-                    skill,
-                    head_branch: pr.head_branch,
-                }]
+                self.ui.submenu = SubmenuState::ReviewPicker(PrReviewTarget::from_pr(&pr));
+                vec![]
             }
-            Action::CancelReview => vec![],
+            Action::CommitReview(review) => {
+                // The target was captured when the picker opened, so a refresh
+                // that reorders the list mid-pick cannot redirect the launch.
+                let SubmenuState::ReviewPicker(target) = &self.ui.submenu else {
+                    return vec![];
+                };
+                let effect = Effect::ReviewPr {
+                    target: target.clone(),
+                    review,
+                };
+                self.ui.submenu = SubmenuState::None;
+                vec![effect]
+            }
+            Action::CancelReview => {
+                self.ui.submenu = SubmenuState::None;
+                vec![]
+            }
             Action::MergePr => {
                 let Some(StatusItem::Pr(pr)) = self.ui.screen.selected_status_item() else {
                     return vec![];
@@ -290,14 +296,12 @@ impl App {
                 repo,
                 number,
                 kind,
-                review_decision,
                 head_branch,
                 ..
             } => vec![Effect::LaunchPr {
                 repo,
                 number,
-                kind,
-                review_decision,
+                author: PrAuthor::from_kind(kind),
                 head_branch,
             }],
             InvestigateAction::LaunchGcp {
@@ -378,7 +382,6 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
             number,
             kind,
             author,
-            review_decision,
             head_branch,
             base_branch,
         }) => InvestigateAction::LaunchPr {
@@ -386,7 +389,6 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
             number,
             kind,
             author,
-            review_decision,
             head_branch,
             base_branch,
         },
