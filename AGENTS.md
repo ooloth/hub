@@ -191,6 +191,7 @@ builds it.
 | `docs/architecture/secrets.md`           | 1Password → op read → Secret<String> model                                                                        |
 | `docs/architecture/private-workflows.md` | Two-repo model for private workflows                                                                              |
 | `docs/decisions/`                        | ADRs (rationale). Unbuilt ones say so under the title — see the note above          |
+| `docs/invariants/`                       | What must always hold, and the check that holds it up. No exceptions, unlike a standard |
 | `clients/README.md`                      | reqwest pattern for HTTP clients                                                                                  |
 | `store/README.md`                        | rusqlite pattern, db path, Connection threading notes                                                             |
 | `ui/cli/README.md`                       | clap derive API for CLI commands                                                                                  |

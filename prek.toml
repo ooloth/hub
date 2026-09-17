@@ -19,6 +19,7 @@
       "pre-push",
     ] },
     { id = "check-banned-terms", name = "check banned terms", entry = "scripts/check-banned-terms.sh", language = "system", pass_filenames = false },
+    { id = "check-domain-is-pure", name = "check domain is pure", entry = "scripts/check-domain-is-pure.sh", language = "system", pass_filenames = false },
     { id = "clippy", name = "cargo clippy", entry = "just lint", language = "system", pass_filenames = false },
     { id = "deny", name = "cargo deny", entry = "cargo deny check bans advisories sources", language = "system", pass_filenames = false, stages = [
       "pre-push",
