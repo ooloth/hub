@@ -5,9 +5,8 @@
 > removed; sessions are per-launch (not per-task), and state is the presence of
 > `report.md`. Recorded here for rationale and history.
 
-> For the system as built see [architecture/tasks.md](../architecture/tasks.md)
-> (model) and [architecture/task-dispatch.md](../architecture/task-dispatch.md)
-> (mechanics); for the why see [vision.md](../vision.md). This ADR records the
+> There is no architecture doc for this model, because it is not built and will
+> not be. For the why see [vision.md](../vision.md). This ADR records the
 > original decision and rationale.
 
 ## Context
@@ -91,8 +90,7 @@ No partial state is possible.
 **Superseded (this section only):** The JSONL-based completion model below was
 invalidated by a lifecycle spike: interactive sessions never emit `result` events,
 and JSONL mtime polling was replaced by `~/.claude/sessions/<pid>.json` status field
-polling. The correct model is in [Decision 014](014-task-dispatch.md) and
-[docs/architecture/task-dispatch.md](../architecture/task-dispatch.md). The rest of
+polling. The correct model is in [Decision 014](014-task-dispatch.md). The rest of
 this decision (session model, comments, UUID5, terminal states) remains valid.
 
 ~~The TUI derives session state by polling the session's JSONL file alongside the task

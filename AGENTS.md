@@ -172,13 +172,25 @@ what is actually available. Never assume a prerequisite is missing.
 The organizing rule: **`architecture/` describes what is built; `vision.md`
 and the `decisions/` ADRs describe where we are going.** One concept, one home.
 
+**An accepted ADR is not a built system.** An ADR whose subject has not been
+built carries `_Status: accepted; not yet implemented._` under its title, naming
+the file or symbol that proves it. So:
+
+```bash
+rg "not yet implemented" docs/decisions/
+```
+
+is the list of designs that are settled and pending. Read it before writing code
+against anything an ADR describes, and delete an ADR's line in the change that
+builds it.
+
 | Doc                                      | Covers                                                                                                            |
 | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `docs/vision.md`                         | **Read this first** — the why; the trust-building flywheel; what we are and are not building                      |
 | `docs/architecture/worktrees.md`         | PR investigation worktrees — read before touching `fetch.rs`                                                      |
 | `docs/architecture/secrets.md`           | 1Password → op read → Secret<String> model                                                                        |
 | `docs/architecture/private-workflows.md` | Two-repo model for private workflows                                                                              |
-| `docs/decisions/`                        | ADRs (rationale). 016–018 record the agent-flywheel direction (typed links, verdict signal, mining) — not yet built |
+| `docs/decisions/`                        | ADRs (rationale). Unbuilt ones say so under the title — see the note above          |
 | `clients/README.md`                      | reqwest pattern for HTTP clients                                                                                  |
 | `store/README.md`                        | rusqlite pattern, db path, Connection threading notes                                                             |
 | `ui/cli/README.md`                       | clap derive API for CLI commands                                                                                  |

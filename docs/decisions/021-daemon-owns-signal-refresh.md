@@ -6,6 +6,9 @@ date: 2026-09-16
 
 # 021 — The daemon owns signal refresh and is the only cache writer
 
+_Status: accepted; not yet implemented. `ui/tui/src/main.rs` still drives the
+refresh interval and calls `store::status_cache::upsert`._
+
 ## Forced by
 
 [Decision 020](020-hub-runs-an-unattended-surface.md) puts a process on the machine that has to

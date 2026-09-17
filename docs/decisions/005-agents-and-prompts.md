@@ -22,13 +22,18 @@ not be conflated:
 
 ## Decision
 
-> **⚠ Superseded by [Decision 012](012-task-model.md).** The investigation
-> prompt model described here — TUI keypress launches a Claude session in a
-> tmux window — is replaced by the task system. All delegated work, including
-> investigations, now flows through tasks dispatched via the `hub` CLI polling
-> loop. Skills still live in hub's repo and provide agents with zero-setup
-> context, but they are invoked through task dispatch, not direct TUI keypresses.
-> The `agents/` crate section was already superseded by Decision 009.
+> **⚠ Superseded by [Decision 012](012-task-model.md), which
+> [Decision 019](019-drop-task-model-filesystem-sessions.md) then dropped.** 012
+> routed all delegated work through tasks dispatched by a `hub` CLI polling
+> loop. 019 removed the task model, so the model described below is the one that
+> runs: a TUI keypress launches a Claude session in a tmux pane, with the prompt
+> embedded by `include_str!`. See `ui/tui/src/investigations/`.
+>
+> The `agents/` crate is the exception, and it is not built.
+> [Decision 009](009-no-scheduled-runs.md) cancelled it and nothing has revived
+> it: the Cargo workspace has no `agents` member.
+> [Decision 020](020-hub-runs-an-unattended-surface.md) adds an unattended
+> surface, but that surface makes no Claude calls, so it is not this crate.
 
 ### Interactive investigation → `prompts/`
 

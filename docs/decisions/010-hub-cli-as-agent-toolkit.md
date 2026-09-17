@@ -1,5 +1,8 @@
 # 010 — `hub` CLI repurposed as agent toolkit
 
+_Status: accepted; not yet implemented. `ui/cli/src/main.rs` parses an empty
+`Cli` struct and defines no subcommands._
+
 ## Context
 
 The `hub` CLI today prints status data to stdout for human consumption.

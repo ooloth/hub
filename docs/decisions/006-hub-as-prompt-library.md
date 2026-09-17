@@ -23,12 +23,12 @@ project to hub, you also have to add the prompt to that repo.
 
 ## Decision
 
-> **⚠ Launch mechanism superseded by [Decision 012](012-task-model.md).** Hub's
-> repo remains the right home for skills, and `hub.toml` context is still how
-> agents start with zero setup. But the launch mechanism has changed: skills are
-> invoked through task dispatch (the system polling loop claims a ready task and
-> spawns an agent with the appropriate skill pre-loaded), not via direct TUI
-> keypress to a tmux session. The `add-a-prompt` playbook has been removed.
+> **⚠ Launch mechanism superseded by [Decision 012](012-task-model.md), which
+> [Decision 019](019-drop-task-model-filesystem-sessions.md) then dropped.**
+> Hub's repo remains the right home for skills, and `hub.toml` context is still
+> how agents start with zero setup. 012 moved launching to task dispatch; 019
+> removed the task model, so launch is what this record describes: a TUI keypress
+> on a signal opens a tmux pane. There is no `add-a-prompt` playbook.
 
 Hub's repo houses a library of investigation prompts in `prompts/`.
 These prompts:

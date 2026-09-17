@@ -6,6 +6,9 @@ date: 2026-09-16
 
 # 022 — The TUI reads the cache and never fetches
 
+_Status: accepted; not yet implemented. The TUI still fetches, in
+`ui/tui/src/main.rs`._
+
 ## Forced by
 
 [Decision 021](021-daemon-owns-signal-refresh.md) makes the daemon the only cache writer, which

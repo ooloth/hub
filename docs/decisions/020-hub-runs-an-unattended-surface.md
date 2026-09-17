@@ -6,6 +6,9 @@ date: 2026-09-16
 
 # 020 — Hub runs an unattended surface
 
+_Status: accepted; not yet implemented. No `hub-daemon` crate is a member of the
+Cargo workspace._
+
 ## Forced by
 
 [Decision 009](009-no-scheduled-runs.md) removed every unattended path from hub, for two reasons it

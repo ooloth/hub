@@ -4,9 +4,8 @@
 > The `Task` type and its lifecycle are removed; the signal is the unit of work
 > and an agent session is work done on it. Recorded here for rationale and history.
 
-> For the system as built see [architecture/tasks.md](../architecture/tasks.md)
-> (model) and [architecture/task-dispatch.md](../architecture/task-dispatch.md)
-> (mechanics); for the why see [vision.md](../vision.md). This ADR records the
+> There is no architecture doc for this model, because it is not built and will
+> not be. For the why see [vision.md](../vision.md). This ADR records the
 > original decision and rationale.
 
 ## Addendum (2026-06-04)

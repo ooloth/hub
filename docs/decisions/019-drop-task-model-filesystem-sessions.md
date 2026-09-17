@@ -1,9 +1,17 @@
 # 019 — Drop the task model; filesystem-based session tracking
 
-> **Status: Accepted and implemented (2026-06-20).** This decision supersedes
-> ADRs 011–018 (see "What this supersedes"). The task-model code — the
-> `tasks`/`task_comments` tables, the dispatch tick, fold-back, and the
-> `hub task *` CLI — has been removed.
+> **Status: accepted 2026-06-20; the removals landed, the replacement did not.**
+> This decision supersedes ADRs 011–018 (see "What this supersedes"), and the
+> task-model code is gone: the `tasks`/`task_comments` tables, the dispatch
+> tick, fold-back and the `hub task *` CLI have all been removed.
+>
+> What replaces them is not yet implemented. Nothing writes `~/.hub/sessions/`,
+> `origin.toml`, `prompt.md`, `session-id.txt` or `report.md`, and those names
+> appear in no `.rs` file. `i` still opens a `tmux split-window`
+> (`ui/tui/src/investigations/launch.rs:110`), not the named window described
+> below; [#330](https://github.com/ooloth/hub/issues/330) changes that. Read
+> everything after "What this supersedes" as a design that is accepted and
+> pending, not as a description of the code.
 
 ## Context
 

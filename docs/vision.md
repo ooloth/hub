@@ -173,20 +173,21 @@ means adding files — no central registration.
 
 Current:
 
-| Workflow      | What it tracks                                      |
-| ------------- | --------------------------------------------------- |
-| GitHub PRs    | PRs awaiting my review                              |
-| GitHub issues | Open issues assigned to me or open in watched repos |
-| GitHub CI     | Failing workflow runs on watched repos              |
-| Linear        | Incomplete issues assigned to me                    |
+| Workflow          | What it tracks                                      |
+| ----------------- | --------------------------------------------------- |
+| GitHub PRs        | PRs awaiting my review                              |
+| GitHub issues     | Open issues assigned to me or open in watched repos |
+| GitHub CI         | Failing workflow runs on watched repos              |
+| Linear            | Incomplete issues assigned to me                    |
+| Production errors | Error-level log entries (Loki)                      |
+| GCP logs          | Error-level log entries (Google Cloud Logging)      |
 
 Planned (public repo — some may already exist in hub-private):
 
-| Workflow          | What it tracks                                      |
-| ----------------- | --------------------------------------------------- |
-| Production errors | Error-level log entries (Loki) — first novel signal |
-| Dependabot        | Security alerts on watched repos                    |
-| Home server: disk | Drive usage on media drives                         |
+| Workflow          | What it tracks                   |
+| ----------------- | -------------------------------- |
+| Dependabot        | Security alerts on watched repos |
+| Home server: disk | Drive usage on media drives      |
 
 Private workflows live in hub-private and compile in under
 `#[cfg(feature = "private")]`. They follow the same architecture as public
