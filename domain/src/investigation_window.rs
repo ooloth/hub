@@ -4,18 +4,27 @@ use uuid::Uuid;
 
 /// Longest window name hub will produce. Beyond this the tmux status bar
 /// crowds out everything else.
-const MAX_LEN: usize = 32;
+const MAX_LEN: usize = 40;
 
 /// Budgets for the three segments. They sum, with the two separators, to
 /// exactly `MAX_LEN`, which is what makes the length postcondition in `build`
 /// a check on this code rather than a trap for long external names.
-const MAX_PROJECT: usize = 12;
+///
+/// The project budget is set so that real repository names arrive intact:
+/// `michaeluloth-com` and `advent-of-code-2015` both fit, and shortening is
+/// the rare fallback rather than the common case.
+const MAX_PROJECT: usize = 20;
 const MAX_KIND: usize = 5;
 const MAX_DISCRIMINATOR: usize = 13;
 
-/// Length of the disambiguating hash appended to a truncated name or derived
-/// from an alert's error category.
-const HASH_LEN: usize = 6;
+/// Length of the hash that tells two shortened segments apart. It separates a
+/// small population — segments that share a prefix and are both over budget —
+/// so four characters buys back legibility without risking a clash.
+const TRUNCATION_HASH_LEN: usize = 4;
+
+/// Length of the hash that *is* an alert's identity. Every distinct alert
+/// depends on this one, so it gets a wider space than a truncation tie-break.
+const IDENTITY_HASH_LEN: usize = 6;
 
 /// Substituted for a segment whose input sanitises to nothing, so that
 /// legitimately punctuation-only external data cannot produce an empty name.
@@ -100,8 +109,12 @@ impl InvestigationWindow {
         // as well as the message. The readable environment prefix is
         // decoration, so shortening it cannot make two alerts collide.
         let mut readable = segment(env);
-        readable.truncate(MAX_DISCRIMINATOR - HASH_LEN - 1);
-        let discriminator = format!("{readable}-{}", short_hash(&format!("{env}\u{1}{message}")));
+        readable.truncate(MAX_DISCRIMINATOR - IDENTITY_HASH_LEN - 1);
+        let discriminator = format!(
+            "{}-{}",
+            readable.trim_end_matches('-'),
+            short_hash(&format!("{env}\u{1}{message}"), IDENTITY_HASH_LEN),
+        );
         Self::build(project, source.kind(), &discriminator)
     }
 
@@ -219,21 +232,27 @@ fn repo_name(repo: &str) -> &str {
 /// Segments are ASCII by the time they reach here, so slicing by byte index
 /// cannot split a character.
 fn clamp(seg: &str, max: usize) -> String {
+    assert!(
+        max > TRUNCATION_HASH_LEN + 1,
+        "segment budget {max} leaves no room for a hash"
+    );
     if seg.len() <= max {
         return seg.to_string();
     }
-    let keep = max - HASH_LEN - 1;
-    format!("{}-{}", &seg[..keep], short_hash(seg))
+    let keep = max - TRUNCATION_HASH_LEN - 1;
+    // Trimmed so the kept text cannot end on the separator the hash adds.
+    let prefix = seg[..keep].trim_end_matches('-');
+    format!("{prefix}-{}", short_hash(seg, TRUNCATION_HASH_LEN))
 }
 
 /// Short, stable hash of arbitrary text, for disambiguating names that would
 /// otherwise collide.
-fn short_hash(raw: &str) -> String {
+fn short_hash(raw: &str, len: usize) -> String {
     Uuid::new_v5(&HASH_NAMESPACE, raw.as_bytes())
         .simple()
         .to_string()
         .chars()
-        .take(HASH_LEN)
+        .take(len)
         .collect()
 }
 
@@ -293,6 +312,18 @@ mod tests {
                 InvestigationWindow::alert("api", AlertSource::Loki, "prod", &a),
                 InvestigationWindow::alert("api", AlertSource::Loki, "prod", &b),
             );
+        }
+
+            /// A shortened segment must not leave a separator butting against the
+        /// hash that follows it. The generator is biased towards long,
+        /// separator-heavy names, since those are the only ones that truncate.
+        #[test]
+        fn no_window_name_has_a_doubled_separator(
+            repo in ".*",
+            workflow in "[a-z]{1,4}([ /._-][a-z]{1,4}){0,12}",
+        ) {
+            let name = InvestigationWindow::ci(&repo, &workflow).to_string();
+            prop_assert!(!name.contains("--"), "{} has a doubled separator", name);
         }
 
         /// The same error in two environments is two investigations.
@@ -358,6 +389,35 @@ mod tests {
         let name = InvestigationWindow::pr("ooloth/a-very-long-repository-name", 330).to_string();
         assert!(name.ends_with(":pr:330"), "{name} lost its kind or number");
         assert!(name.len() <= MAX_LEN, "{name} is too long");
+    }
+
+    /// A shortened repository still has to be recognisable at a glance, so the
+    /// disambiguating hash is kept short enough to leave readable characters.
+    #[test]
+    fn a_shortened_repository_stays_recognisable() {
+        let name = InvestigationWindow::pr("ooloth/a-very-long-repository-name", 330).to_string();
+        assert!(
+            name.starts_with("a-very-long-rep"),
+            "{name} is not recognisable"
+        );
+    }
+
+    /// The budget exists so that real repository names are never shortened.
+    #[rstest]
+    #[case("ooloth/michaeluloth.com", "michaeluloth-com:pr:12")]
+    #[case("ooloth/advent-of-code-2015", "advent-of-code-2015:pr:12")]
+    #[case("ooloth/hub-private", "hub-private:pr:12")]
+    #[case("ooloth/config.nvim", "config-nvim:pr:12")]
+    fn real_repository_names_survive_intact(#[case] repo: &str, #[case] expected: &str) {
+        assert_eq!(InvestigationWindow::pr(repo, 12).to_string(), expected);
+    }
+
+    /// The case that surfaced this: the kept prefix ends on a separator, and
+    /// the hash separator would double it.
+    #[test]
+    fn a_prefix_ending_in_a_separator_does_not_double_it() {
+        let name = InvestigationWindow::ci("hub", "build and test everything nightly").to_string();
+        assert!(!name.contains("--"), "{name} has a doubled separator");
     }
 
     /// Truncation must not be able to manufacture a collision.
