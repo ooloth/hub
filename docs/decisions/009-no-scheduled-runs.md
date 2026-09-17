@@ -1,12 +1,21 @@
 # 009 — Hub drops scheduled runs; Tier 3 Execute is human-triggered
 
-> **⚠ Partially reversed by [Decision 012](012-task-model.md).** Scheduled runs
-> are deferred, not abandoned. They will return as recurring tasks — the same
-> `AgentTask` type, same agent polling loop, same TUI monitoring — queued on a
-> cadence rather than promoted manually by a human. The billing concern that
-> motivated this decision remains valid; recurring tasks are human-configured,
-> not self-spawning. The Tier 1/2/3 framing below is replaced by the delegation
-> flywheel described in [vision.md](../vision.md).
+> **⚠ Partially reversed by [Decision 012](012-task-model.md), then reversed
+> again by [Decision 019](019-drop-task-model-filesystem-sessions.md).** 012
+> deferred scheduled runs rather than abandoning them, routing their return
+> through recurring `AgentTask`s. 019 dropped the task model, so that route is
+> gone. The billing concern that motivated this decision remains valid. The
+> Tier 1/2/3 framing below is replaced by the delegation flywheel described in
+> [vision.md](../vision.md).
+
+> **⚠ Amended by [Decision 020](020-hub-runs-an-unattended-surface.md).** Hub
+> runs an unattended surface. Neither reason given below reaches it: it makes
+> no `claude -p` calls, so it incurs none of the per-call cost that concern is
+> about, and it needs the local `hub.toml`, the 1Password CLI and the local
+> cache, which is the access this record names as the line Claude Desktop
+> Routines cannot cross. What stays true is that agents are human-initiated:
+> the unattended surface detects and notifies, and a keypress still starts
+> every investigation.
 
 ## Context
 

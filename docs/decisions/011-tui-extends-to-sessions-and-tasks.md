@@ -5,6 +5,17 @@
 > task/session tracking it introduced is dropped. Session tracking moves to the
 > filesystem (`~/.hub/sessions/`).
 
+> **⚠ Also partially superseded by
+> [Decision 021](021-daemon-owns-signal-refresh.md).** Hub has the daemon this
+> record declined, and it owns signal refresh, so the single-process model the
+> note above preserves now covers only what the TUI itself does. The paragraph
+> below weighing a daemon against "hub's human-initiated philosophy" no longer
+> settles whether hub should have one:
+> [Decision 020](020-hub-runs-an-unattended-surface.md) accepted an unattended
+> surface for detection, leaving investigations human-initiated. What still
+> holds here is the rest of the argument: agent processes live in tmux, and the
+> TUI observes them rather than parenting them.
+
 ## Context
 
 [Decision 008](008-tui-owns-refresh-loop.md) placed the refresh loop in

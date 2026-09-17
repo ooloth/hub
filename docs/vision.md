@@ -200,11 +200,21 @@ project. These prompts and skills are the surface the meta-loop tunes —
 sharpening them is _how_ agent quality compounds. See
 [Decision 006](decisions/006-hub-as-prompt-library.md).
 
-## The two surfaces
+## The three surfaces
 
 **TUI (`hub-tui`)** — the human-facing surface. A Ratatui dashboard with
-auto-refresh and keyboard navigation: read signals, watch investigation
-sessions, review results. This is the primary place to interact with hub.
+keyboard navigation: read signals, watch investigation sessions, review
+results. It renders what the daemon writes and never fetches for itself,
+so a dead daemon shows as a dead daemon rather than a fresh-looking
+screen. See [Decision 022](decisions/022-tui-reads-cache-never-fetches.md).
+This is the primary place to interact with hub.
+
+**Daemon (`hub-daemon`)** — the unattended surface. It polls on an interval
+with no one watching, owns the cache the TUI reads, and notifies when the ball
+lands in my court. It makes no Claude calls; it detects, and
+a keypress still starts every investigation. See
+[Decision 020](decisions/020-hub-runs-an-unattended-surface.md) and
+[Decision 021](decisions/021-daemon-owns-signal-refresh.md).
 
 **CLI (`hub`)** — hub's command-line surface. The task model (task-claiming
 loop, `hub task *` protocol) was removed by
@@ -213,8 +223,8 @@ is a stub; agent-facing session-toolkit subcommands will be added here as the
 filesystem session model is built out. Humans do not use it for triage — that
 is the TUI.
 
-Both surfaces share the same workflows and data layer. The UI is a render
-target, not where logic lives. See
+All three surfaces share the same workflows and data layer. The UI is a
+render target, not where logic lives. See
 [Decision 007](decisions/007-tui-over-web-app.md).
 
 ## What hub is not
@@ -223,8 +233,10 @@ target, not where logic lives. See
   already work; the constraints are a feature. See
   [Decision 007](decisions/007-tui-over-web-app.md).
 - **A team tool** — single-user, single-device, no sharing.
-- **A notification system** — pull, not push. I open hub when I want to
-  triage; it doesn't interrupt me.
+- **A notification firehose** — hub interrupts when the ball lands in my
+  court and stays quiet the rest of the time. Everything else waits for me
+  to open the TUI. See
+  [Decision 020](decisions/020-hub-runs-an-unattended-surface.md).
 - **A passive display** — hub is a place to act, not just observe.
 
 And, specifically, what the flywheel does **not** build:

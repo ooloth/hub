@@ -1,5 +1,14 @@
 # 008 — TUI owns the refresh loop; no separate daemon
 
+> **⚠ Superseded by [Decision 021](021-daemon-owns-signal-refresh.md) and
+> [Decision 022](022-tui-reads-cache-never-fetches.md).** A separate daemon owns
+> the refresh loop and is the only writer of the cache, and the TUI reads it
+> with no fetch path of its own. What the CLI does is untouched: it still
+> fetches live on each invocation, as described below. The condition this record
+> named for revisiting is the one that arrived. Refresh is needed when no TUI is
+> open, in order to notify, which
+> [Decision 020](020-hub-runs-an-unattended-surface.md) decided hub should do.
+
 ## Context
 
 Hub's status data comes from live network calls (GitHub, Linear, private
