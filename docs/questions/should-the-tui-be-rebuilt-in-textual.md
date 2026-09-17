@@ -20,7 +20,7 @@ so the two frameworks differ in what that future costs. That difference is the k
 that decides a choice, as opposed to which framework is more pleasant today.
 
 Answering it wrong in the other direction is expensive too. `ui/tui` is roughly 9,800 lines of the
-workspace's 18,154, and a port takes 483 test functions and 51 snapshot files with it.
+workspace's 18,154, and a port takes 641 tests and 51 snapshot files with it.
 
 ## What would settle it
 
@@ -67,7 +67,7 @@ same discussion and holds regardless of what the spike shows.
   condition cheap; Textual ships the `Markdown` widget, `TextArea` and CSS borders that five
   dependencies currently provide (`pulldown-cmark`, `syntect`, `two-face`, `ansi-to-tui`,
   `tui-textarea`); and Python is where the Claude Agent SDK lives if hub ever drives investigation
-  sessions rather than launching them through tmux. Cost: 483 tests and 51 snapshots do not port
+  sessions rather than launching them through tmux. Cost: 641 tests and 51 snapshots do not port
   mechanically, and the domain newtypes lose compile-time enforcement in exchange for mypy at CI
   time.
 - **C. Not yet.** Strongest case: Decisions 019 through 022 are unbuilt, so the code a port would
@@ -79,8 +79,10 @@ same discussion and holds regardless of what the spike shows.
 _Findings are working evidence, not settled fact. Nothing here binds a decision until it graduates
 into a decision record._
 
-- *Measured* (2026-09-16): the workspace is 18,154 lines of Rust, with 483 test functions and 51
-  `.snap` files.
+- *Measured* (2026-09-16): the workspace is 18,154 lines of Rust. `just test` runs 641 tests,
+  expanded by rstest parametrization from 483 test functions, and there are 51 `.snap` files. All
+  three drift with every commit, so re-derive them rather than trusting the numbers here:
+  `fd -e rs -X cat | wc -l`, `just test`, `fd -e snap | wc -l`.
 - *Measured* (2026-09-16): 16 `render_widget`/`render_stateful_widget` calls exist, in
   `render/mod.rs` (8), `render/pr.rs` (3), `render/unified.rs` (2), and one each in
   `render/detail.rs`, `render/issue.rs` and `render/log.rs`. Ratatui is imported only by files under
