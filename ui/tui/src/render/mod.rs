@@ -536,6 +536,7 @@ mod tests {
     fn investigate_hint_returns_hint_when_actionable() {
         let inv = InvestigateAction::LaunchCi {
             repo: "owner/repo".to_string(),
+            workflow: "CI".to_string(),
             run_url: "https://example.com".to_string(),
         };
         assert_eq!(status_bar::investigate_hint(&inv), " · [i] investigate");

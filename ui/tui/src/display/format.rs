@@ -137,6 +137,7 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
     match item {
         StatusItem::Ci(c) => Some(InvestigationKind::Ci {
             repo: c.repo.to_string(),
+            workflow: c.workflow_name.clone(),
             run_url: c.url.clone(),
         }),
         StatusItem::Issue(i) => Some(InvestigationKind::Issue {

@@ -330,7 +330,11 @@ async fn handle_effect(
 /// Dispatches investigation/launch effects that only need `app` and `config`.
 async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &config::Config) {
     match effect {
-        Effect::LaunchCi { repo, run_url } => handle_launch_ci(app, config, repo, run_url).await,
+        Effect::LaunchCi {
+            repo,
+            workflow,
+            run_url,
+        } => handle_launch_ci(app, config, repo, workflow, run_url).await,
         Effect::LaunchIssue { repo, number } => {
             handle_launch_issue(app, config, repo, number).await;
         }
@@ -406,16 +410,23 @@ async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &con
 }
 
 fn open_pr_diff(repo: &str, number: u64) {
-    let window_name = format!("{repo}#{number}-diff");
+    let window_name = domain::InvestigationWindow::diff(repo, number).to_string();
     let cmd = format!("gh pr diff {number} -R {repo} | delta; read");
     let _ = std::process::Command::new("tmux")
         .args(["new-window", "-n", &window_name, &cmd])
         .spawn();
 }
 
-async fn handle_launch_ci(app: &mut App, config: &config::Config, repo: String, run_url: String) {
+async fn handle_launch_ci(
+    app: &mut App,
+    config: &config::Config,
+    repo: String,
+    workflow: String,
+    run_url: String,
+) {
     if let Err(err) = investigations::launch(
         investigations::ci::config(&repo, &run_url),
+        &domain::InvestigationWindow::ci(&repo, &workflow),
         investigations::WorktreeSpec::EphemeralFresh { repo },
         config,
     )
@@ -428,6 +439,7 @@ async fn handle_launch_ci(app: &mut App, config: &config::Config, repo: String, 
 async fn handle_launch_issue(app: &mut App, config: &config::Config, repo: String, number: u64) {
     if let Err(err) = investigations::launch(
         investigations::issue::config(&repo, number),
+        &domain::InvestigationWindow::issue(&repo, number),
         investigations::WorktreeSpec::EphemeralFresh { repo },
         config,
     )
@@ -447,6 +459,7 @@ async fn handle_launch_pr(
 ) {
     if let Err(err) = investigations::launch(
         investigations::pr::ask_config(number, &repo, author),
+        &domain::InvestigationWindow::pr(&repo, number),
         investigations::WorktreeSpec::PullRequest {
             repo,
             number,
@@ -468,6 +481,7 @@ async fn handle_review_pr(
 ) {
     if let Err(err) = investigations::launch(
         investigations::pr::review_config(target, review),
+        &domain::InvestigationWindow::pr(&target.repo, target.number),
         investigations::WorktreeSpec::PullRequest {
             repo: target.repo.clone(),
             number: target.number,
@@ -505,6 +519,7 @@ async fn handle_launch_gcp(
             &lookback,
             &gcp_project,
         ),
+        &domain::InvestigationWindow::alert(&project, domain::AlertSource::Gcp, &env, &message),
         investigations::WorktreeSpec::Ephemeral { project },
         config,
     )
@@ -528,6 +543,7 @@ async fn handle_launch_loki(
 ) {
     if let Err(err) = investigations::launch(
         investigations::loki::config(&project, &env, &title, &message, &line, &url, &lookback),
+        &domain::InvestigationWindow::alert(&project, domain::AlertSource::Loki, &env, &message),
         investigations::WorktreeSpec::Ephemeral { project },
         config,
     )
@@ -565,7 +581,13 @@ async fn handle_open_in_lazygit(
 async fn handle_launch_media(app: &mut App, config: &config::Config, title: String, error: String) {
     let result = match investigations::media::config(&title, &error, &config.extra_credentials) {
         Ok(cfg) => {
-            investigations::launch(cfg, investigations::WorktreeSpec::CurrentDir, config).await
+            investigations::launch(
+                cfg,
+                &domain::InvestigationWindow::media(&title),
+                investigations::WorktreeSpec::CurrentDir,
+                config,
+            )
+            .await
         }
         Err(e) => Err(e),
     };

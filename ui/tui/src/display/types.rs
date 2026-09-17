@@ -166,6 +166,7 @@ impl SelectedItemKind {
 pub(crate) enum InvestigationKind {
     Ci {
         repo: String,
+        workflow: String,
         run_url: String,
     },
     Issue {

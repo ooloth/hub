@@ -4,6 +4,8 @@
 pub mod ci;
 /// GCP Cloud Logging query configuration and log entry types.
 pub mod gcp;
+/// Deterministic tmux window names for the windows hub opens.
+pub mod investigation_window;
 /// GitHub and Linear issue types and label helpers.
 pub mod issue;
 /// Loki query configuration and log entry types.
@@ -24,6 +26,7 @@ pub use serde_helpers::duration_secs;
 
 pub use ci::*;
 pub use gcp::*;
+pub use investigation_window::*;
 pub use issue::*;
 pub use loki::*;
 pub use pr::*;

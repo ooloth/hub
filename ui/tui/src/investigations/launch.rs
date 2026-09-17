@@ -20,10 +20,8 @@ pub(crate) struct LaunchConfig {
 /// # This enum is for human-interactive investigation sessions only
 ///
 /// `WorktreeSpec` is consumed by `launch()` → `open_in_lazygit` / `open_in_octo`.
-/// It is **not** the dispatch path for agent tasks. Task dispatch (issues #278–#281)
-/// creates task worktrees independently via `workflows::dispatch` — a separate code
-/// path with different location, branch naming, and cleanup logic. Do not add a
-/// `Task` variant here; see `docs/architecture/worktrees.md` for the full picture.
+/// See `docs/architecture/worktrees.md` for how these worktrees are laid out
+/// and cleaned up.
 ///
 /// # Choosing the right variant
 ///
@@ -61,8 +59,14 @@ pub(crate) enum WorktreeSpec {
     CurrentDir,
 }
 
+/// Opens an investigation in its own tmux window.
+///
+/// `window` names the window, and naming it is what makes it addressable
+/// afterwards: several investigations run side by side, each reachable from
+/// tmux's window list, without subdividing the TUI's own pane.
 pub(crate) async fn launch(
     config: LaunchConfig,
+    window: &domain::InvestigationWindow,
     spec: WorktreeSpec,
     hub_config: &config::Config,
 ) -> Result<()> {
@@ -103,12 +107,10 @@ pub(crate) async fn launch(
         task_arg,
     );
 
-    let pane = std::env::var("TMUX_PANE").unwrap_or_default();
+    let window_name = window.to_string();
 
     let mut cmd = std::process::Command::new("tmux");
-    let _ = cmd
-        .args(["split-window", "-h", "-t", &pane, "-c"])
-        .arg(&cwd);
+    let _ = cmd.args(["new-window", "-n", &window_name, "-c"]).arg(&cwd);
     let _ = cmd
         .arg("-e")
         .arg(format!("HUB_SYSTEM_PROMPT={}", config.system_prompt));
@@ -118,10 +120,10 @@ pub(crate) async fn launch(
     }
     let _ = cmd.arg(&command);
 
-    let status = cmd.status().context("failed to start tmux split-window")?;
+    let status = cmd.status().context("failed to start tmux new-window")?;
 
     if !status.success() {
-        bail!("tmux split-window failed with {status}");
+        bail!("tmux new-window failed with {status}");
     }
 
     Ok(())
@@ -146,8 +148,7 @@ pub(crate) async fn open_in_lazygit(
         .await
         .context("Failed to create PR worktree")?;
 
-    let repo_name = repo.split_once('/').map_or(repo, |(_, name)| name);
-    let window_name = format!("{repo_name}#{number}-git");
+    let window_name = domain::InvestigationWindow::lazygit(repo, number).to_string();
 
     let mut cmd = std::process::Command::new("tmux");
     let _ = cmd
@@ -182,8 +183,7 @@ pub(crate) async fn open_in_octo(
         .await
         .context("Failed to create PR worktree")?;
 
-    let repo_name = repo.split_once('/').map_or(repo, |(_, name)| name);
-    let window_name = format!("{repo_name}#{number}");
+    let window_name = domain::InvestigationWindow::octo(repo, number).to_string();
 
     let mut cmd = std::process::Command::new("tmux");
     let _ = cmd

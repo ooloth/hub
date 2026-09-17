@@ -360,6 +360,7 @@ mod tests {
             compute_investigate_action(&app),
             InvestigateAction::LaunchCi {
                 repo: "ooloth/hub".to_string(),
+                workflow: "CI".to_string(),
                 run_url: "https://github.com/ooloth/hub/actions/runs/123".to_string(),
             }
         );

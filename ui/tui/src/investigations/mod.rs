@@ -2,8 +2,9 @@
 //!
 //! This module handles **investigation sessions** — short-lived, interactive Claude Code
 //! sessions launched from TUI signal items (PRs, CI failures, Loki alerts, GitHub issues).
-//! The human presses `i` on a signal item; a `tmux split-window -h` opens in the current
-//! pane so the human and agent share focus immediately.
+//! The human presses `i` on a signal item and a `tmux new-window` opens, named after that
+//! signal by `domain::InvestigationWindow`. The TUI keeps its own window, several
+//! investigations run side by side, and each one is reachable from tmux's window list.
 
 pub(crate) mod ci;
 pub(crate) mod gcp;

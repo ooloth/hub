@@ -286,8 +286,16 @@ impl App {
 
     pub(super) fn handle_investigate(&mut self) -> Vec<Effect> {
         match compute_investigate_action(self) {
-            InvestigateAction::LaunchCi { repo, run_url } => {
-                vec![Effect::LaunchCi { repo, run_url }]
+            InvestigateAction::LaunchCi {
+                repo,
+                workflow,
+                run_url,
+            } => {
+                vec![Effect::LaunchCi {
+                    repo,
+                    workflow,
+                    run_url,
+                }]
             }
             InvestigateAction::LaunchIssue { repo, number } => {
                 vec![Effect::LaunchIssue { repo, number }]
@@ -371,9 +379,15 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
         return InvestigateAction::None;
     };
     match item_investigation(&item) {
-        Some(InvestigationKind::Ci { repo, run_url }) => {
-            InvestigateAction::LaunchCi { repo, run_url }
-        }
+        Some(InvestigationKind::Ci {
+            repo,
+            workflow,
+            run_url,
+        }) => InvestigateAction::LaunchCi {
+            repo,
+            workflow,
+            run_url,
+        },
         Some(InvestigationKind::Issue { repo, number }) => {
             InvestigateAction::LaunchIssue { repo, number }
         }

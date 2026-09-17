@@ -296,6 +296,7 @@ pub(crate) enum InvestigateAction {
     None,
     LaunchCi {
         repo: String,
+        workflow: String,
         run_url: String,
     },
     LaunchIssue {
@@ -397,6 +398,7 @@ pub(crate) enum Effect {
     },
     LaunchCi {
         repo: String,
+        workflow: String,
         run_url: String,
     },
     LaunchIssue {
