@@ -38,8 +38,8 @@ is mutated:
 2. `App::update(action) -> Vec<Effect>` (`state.rs`) — applies the action
    to app state and returns zero or more `Effect` values describing required
    side effects (`OpenUrl`, `LaunchCi`, `Quit`).
-3. The event loop in `main.rs` iterates the effects — opens a URL, spawns
-   a tmux split, or breaks the loop. `Quit` short-circuits any remaining
+3. The event loop in `main.rs` iterates the effects — opens a URL, opens a
+   named tmux window, or breaks the loop. `Quit` short-circuits any remaining
    effects in the same vec.
 
 **Adding a new interactive behavior:**

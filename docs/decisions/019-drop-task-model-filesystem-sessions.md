@@ -1,17 +1,17 @@
 # 019 — Drop the task model; filesystem-based session tracking
 
-> **Status: accepted 2026-06-20; the removals landed, the replacement did not.**
+> **Status: accepted 2026-06-20; the removals and the named investigation window
+> landed, the session records did not.**
 > This decision supersedes ADRs 011–018 (see "What this supersedes"), and the
 > task-model code is gone: the `tasks`/`task_comments` tables, the dispatch
-> tick, fold-back and the `hub task *` CLI have all been removed.
+> tick, fold-back and the `hub task *` CLI have all been removed. `i` opens a
+> named tmux window, built by `domain::InvestigationWindow`.
 >
-> What replaces them is not yet implemented. Nothing writes `~/.hub/sessions/`,
+> The session records are not yet implemented. Nothing writes `~/.hub/sessions/`,
 > `origin.toml`, `prompt.md`, `session-id.txt` or `report.md`, and those names
-> appear in no `.rs` file. `i` still opens a `tmux split-window`
-> (`ui/tui/src/investigations/launch.rs:110`), not the named window described
-> below; [#330](https://github.com/ooloth/hub/issues/330) changes that. Read
-> everything after "What this supersedes" as a design that is accepted and
-> pending, not as a description of the code.
+> appear in no `.rs` file. Read "Filesystem-based session records" and the
+> sections after it as a design that is accepted and pending, not as a
+> description of the code.
 
 ## Context
 
@@ -29,9 +29,9 @@ resumable, reviewable, and mineable:
   signals resolve (PR merged → task done, alert cleared → task done)
 
 The investigation path (`i` key) predates this work and remained separate: it
-creates a worktree, splits the tmux pane, runs Claude with injected context, and
-cleans up on exit. No database record is written. This path was described by users
-as feeling like magic.
+creates a worktree, runs Claude with injected context, and cleans up on exit. No
+database record is written. This path was described by users as feeling like
+magic.
 
 The task model added substantial complexity atop the investigation infrastructure:
 
@@ -96,21 +96,25 @@ throwaway-session keymap (a tmux popup pointed at a read-only scratch workspace)
 a possible future convenience, but ideation is not a current pain point relative to
 detecting and acting on signals, so hub does not model an idea backlog.
 
-### `i` opens a detached named tmux window
+### `i` opens a named tmux window
 
-The `i` keybinding changes from `tmux split-window -h` (attached split, one at a
-time) to `tmux new-window -d -n <session-name>` (detached named window). The
-session name encodes the signal identity in a human-readable form (e.g.
-`hub-pr-ooloth-hub-159`, `hub-ci-ooloth-hub-test-suite`).
+The `i` keybinding opens the investigation in its own tmux window rather than
+splitting the TUI's pane. `domain::InvestigationWindow` builds the name as
+`<project>:<kind>:<discriminator>` — `hub:pr:330`, `hub:ci:test-suite` — with one
+constructor per signal kind, so a pull request and an issue sharing a number
+cannot collide.
 
-**Why:** A detached window enables concurrent sessions on multiple signals — the
-user can press `i` on three signals in sequence and all three run simultaneously.
-The named window is the primary handle: the TUI finds in-progress sessions by
-scanning tmux window names; the user finds them in the tmux status bar.
+**Why:** A window per signal enables concurrent sessions — the user presses `i`
+on three signals in sequence and all three run at once, each reachable from
+tmux's window list instead of competing for the TUI's pane. The name is the
+handle: hub finds a session it already opened by building the same name again,
+and the user finds it in the tmux status bar.
 
-The split-pane model assumed the user watches the session live. Detached windows
-assume the user kicks off work and returns to the TUI. The `a` (attach) action
-in the signal detail pane is how the user checks in on a specific session.
+**The window is attached.** `i` switches the user into the session it opens,
+because pressing `i` is a request to go and look at something. Concurrency does
+not require detaching: the other sessions keep running in their own windows, and
+the user moves between them with ordinary tmux keybindings. The `a` (attach)
+action in the signal detail pane is how the user returns to a specific session.
 
 **Concurrency is self-throttled, not queued.** There is no `ready` backlog, no
 dispatch tick claiming work, and no concurrency cap. The user runs as many sessions
@@ -121,9 +125,10 @@ what they can actually review, which is the real constraint. Hub deliberately do
 the hub boundary — a distinct, time-triggered concept — not as a resurrected task
 backlog.
 
-**What is lost:** The split-pane experience of watching investigation happen
-alongside the TUI. This tradeoff is accepted in exchange for concurrent sessions
-and a consistent model (all sessions are detached, regardless of signal type).
+**What is lost:** The split-pane experience of watching an investigation happen
+alongside the TUI. Reading the session and reading the signal list are separate
+views. This tradeoff is accepted in exchange for concurrent sessions and a
+consistent model (every session gets its own window, regardless of signal type).
 
 ### Filesystem-based session records at `~/.hub/sessions/`
 
@@ -154,9 +159,10 @@ Each session directory contains:
         ...
 ```
 
-The corresponding tmux window name drops the org prefix for brevity: `hub-pr-159`,
-`scripts-ci-test-suite`, `media-alert-oom-foo`. Repo names are unique enough in
-practice that org qualification is unnecessary in the window bar.
+The corresponding tmux window name drops the org prefix for brevity:
+`hub:pr:159`, `scripts:ci:test-suite`. Repo names are unique enough in practice
+that org qualification is unnecessary in the window bar. See
+`domain/src/investigation_window.rs` for the scheme.
 
 The exact naming convention is deferred; the structure above illustrates the
 intent. It must be stable enough for the TUI to reconstruct signal identity from
@@ -189,10 +195,10 @@ with no query benefit at the scale of one user's sessions. File presence is the
 state: report exists or it does not.
 
 **Why `~/.hub/sessions/` and not inside worktrees:** Worktrees are transient.
-Ephemeral worktrees are cleaned up when the split pane closes; PR worktrees are
-cleaned up when the PR closes. Reports must outlive their worktrees to be useful
-as a learning corpus. `~/.hub/sessions/` is permanent by default; cleanup policy
-is deferred.
+Ephemeral worktrees are cleaned up when the investigation session exits; PR
+worktrees are cleaned up when the PR closes. Reports must outlive their
+worktrees to be useful as a learning corpus. `~/.hub/sessions/` is permanent by
+default; cleanup policy is deferred.
 
 ### Session state is binary: in-progress or done
 
@@ -343,8 +349,6 @@ workspace support (parallel worktrees under one session directory) is deferred.
 - Exact directory naming convention (deferred; timestamp-first is agreed,
   full scheme is authoring work)
 - Cleanup policy for `~/.hub/sessions/` directories
-- Whether the `i` key retains a split-pane variant for cases where the user
-  wants to watch the session live
 
 **Resolved during evaluation:**
 - *Agents write files directly; there is no `hub` CLI session-writing helper and no
