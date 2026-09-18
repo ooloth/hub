@@ -2,6 +2,8 @@ use anyhow::{bail, Context, Result};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::tmux::{claim, WindowClaim};
+
 pub(crate) struct LaunchConfig {
     pub(crate) system_prompt: String,
     pub(crate) prompt: String,
@@ -59,20 +61,27 @@ pub(crate) enum WorktreeSpec {
     CurrentDir,
 }
 
-/// Opens an investigation in its own tmux window.
+/// Opens an investigation in its own tmux window, or switches to the window
+/// already investigating this signal.
 ///
 /// `window` names the window, and naming it is what makes it addressable
 /// afterwards: several investigations run side by side, each reachable from
 /// tmux's window list, without subdividing the TUI's own pane.
+///
+/// The claim comes before `resolve_worktree`, and that ordering is load bearing.
+/// `WorktreeSpec::EphemeralFresh` and `Ephemeral` create a worktree whose only
+/// cleanup is appended to the command tmux runs, so one resolved for a launch
+/// that then switches instead would have nothing to remove it.
 pub(crate) async fn launch(
     config: LaunchConfig,
     window: &domain::InvestigationWindow,
     spec: WorktreeSpec,
     hub_config: &config::Config,
 ) -> Result<()> {
-    if std::env::var("TMUX").is_err() {
-        bail!("not in tmux; investigation requires a tmux session");
-    }
+    let vacant = match claim(window, "investigation")? {
+        WindowClaim::Reused => return Ok(()),
+        WindowClaim::Vacant(vacant) => vacant,
+    };
 
     let (cwd, cleanup) = resolve_worktree(spec, hub_config).await?;
 
@@ -107,26 +116,13 @@ pub(crate) async fn launch(
         task_arg,
     );
 
-    let window_name = window.to_string();
+    let mut env = vec![
+        ("HUB_SYSTEM_PROMPT".to_string(), config.system_prompt),
+        ("HUB_TASK_PROMPT".to_string(), prompt),
+    ];
+    env.extend(config.env);
 
-    let mut cmd = std::process::Command::new("tmux");
-    let _ = cmd.args(["new-window", "-n", &window_name, "-c"]).arg(&cwd);
-    let _ = cmd
-        .arg("-e")
-        .arg(format!("HUB_SYSTEM_PROMPT={}", config.system_prompt));
-    let _ = cmd.arg("-e").arg(format!("HUB_TASK_PROMPT={prompt}"));
-    for (k, v) in &config.env {
-        let _ = cmd.arg("-e").arg(format!("{k}={v}"));
-    }
-    let _ = cmd.arg(&command);
-
-    let status = cmd.status().context("failed to start tmux new-window")?;
-
-    if !status.success() {
-        bail!("tmux new-window failed with {status}");
-    }
-
-    Ok(())
+    vacant.open(Some(&cwd), &env, &command)
 }
 
 pub(crate) async fn open_in_lazygit(
@@ -135,9 +131,13 @@ pub(crate) async fn open_in_lazygit(
     head_branch: &str,
     hub_config: &config::Config,
 ) -> Result<()> {
-    if std::env::var("TMUX").is_err() {
-        bail!("not in tmux; opening lazygit requires a tmux session");
-    }
+    let vacant = match claim(
+        &domain::InvestigationWindow::lazygit(repo, number),
+        "opening lazygit",
+    )? {
+        WindowClaim::Reused => return Ok(()),
+        WindowClaim::Vacant(vacant) => vacant,
+    };
 
     let name = project_name(hub_config, repo)?;
     let bare = workflows::fetch::repos_dir().join(name);
@@ -148,20 +148,7 @@ pub(crate) async fn open_in_lazygit(
         .await
         .context("Failed to create PR worktree")?;
 
-    let window_name = domain::InvestigationWindow::lazygit(repo, number).to_string();
-
-    let mut cmd = std::process::Command::new("tmux");
-    let _ = cmd
-        .args(["new-window", "-n", &window_name, "-c"])
-        .arg(&cwd)
-        .arg("lazygit");
-
-    let status = cmd.status().context("failed to start tmux new-window")?;
-    if !status.success() {
-        bail!("tmux new-window failed with {status}");
-    }
-
-    Ok(())
+    vacant.open(Some(&cwd), &[], "lazygit")
 }
 
 pub(crate) async fn open_in_octo(
@@ -170,9 +157,13 @@ pub(crate) async fn open_in_octo(
     head_branch: &str,
     hub_config: &config::Config,
 ) -> Result<()> {
-    if std::env::var("TMUX").is_err() {
-        bail!("not in tmux; opening in neovim requires a tmux session");
-    }
+    let vacant = match claim(
+        &domain::InvestigationWindow::octo(repo, number),
+        "opening in neovim",
+    )? {
+        WindowClaim::Reused => return Ok(()),
+        WindowClaim::Vacant(vacant) => vacant,
+    };
 
     let name = project_name(hub_config, repo)?;
     let bare = workflows::fetch::repos_dir().join(name);
@@ -183,22 +174,11 @@ pub(crate) async fn open_in_octo(
         .await
         .context("Failed to create PR worktree")?;
 
-    let window_name = domain::InvestigationWindow::octo(repo, number).to_string();
-
-    let mut cmd = std::process::Command::new("tmux");
-    let _ = cmd
-        .args(["new-window", "-n", &window_name, "-c"])
-        .arg(&cwd)
-        .arg(format!(
-            "NVIM_APPNAME=nvim-ide nvim +'Octo pr edit {number}'"
-        ));
-
-    let status = cmd.status().context("failed to start tmux new-window")?;
-    if !status.success() {
-        bail!("tmux new-window failed with {status}");
-    }
-
-    Ok(())
+    vacant.open(
+        Some(&cwd),
+        &[],
+        &format!("NVIM_APPNAME=nvim-ide nvim +'Octo pr edit {number}'"),
+    )
 }
 
 async fn resolve_worktree(

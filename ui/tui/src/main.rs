@@ -28,6 +28,7 @@ mod investigations;
 mod markdown;
 mod render;
 mod state;
+mod tmux;
 
 #[cfg(feature = "private")]
 mod private;
@@ -306,7 +307,7 @@ async fn handle_effect(
         Effect::OpenUrl(url) => {
             let _ = open::that_detached(url);
         }
-        Effect::OpenPrDiffInDelta { repo, number } => open_pr_diff(&repo, number),
+        Effect::OpenPrDiffInDelta { repo, number } => open_pr_diff(app, &repo, number),
         Effect::SetIssueLabels {
             repo,
             number,
@@ -409,12 +410,23 @@ async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &con
     }
 }
 
-fn open_pr_diff(repo: &str, number: u64) {
-    let window_name = domain::InvestigationWindow::diff(repo, number).to_string();
+fn open_pr_diff(app: &mut App, repo: &str, number: u64) {
+    if let Err(err) = show_pr_diff(repo, number) {
+        app.ui.flash = Some(err.to_string());
+    }
+}
+
+fn show_pr_diff(repo: &str, number: u64) -> Result<()> {
+    let vacant = match tmux::claim(
+        &domain::InvestigationWindow::diff(repo, number),
+        "opening the diff",
+    )? {
+        tmux::WindowClaim::Reused => return Ok(()),
+        tmux::WindowClaim::Vacant(vacant) => vacant,
+    };
+
     let cmd = format!("gh pr diff {number} -R {repo} | delta; read");
-    let _ = std::process::Command::new("tmux")
-        .args(["new-window", "-n", &window_name, &cmd])
-        .spawn();
+    vacant.open(None, &[], &cmd)
 }
 
 async fn handle_launch_ci(
