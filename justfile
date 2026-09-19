@@ -10,7 +10,7 @@ status:
     cargo run -p hub-cli {{_features}} -- status
 
 check:
-    @python3 scripts/check-lint-inheritance.py
+    @scripts/check-lint-inheritance.py
     taplo fmt
     taplo check
     cargo fmt
