@@ -132,24 +132,56 @@ paths.
 For changes that affect keybindings, navigation between screens,
 subprocess launching, tmux integration, store schema, cache format, or
 domain types the TUI deserializes on startup, snapshots are not sufficient.
-Run the TUI live in tmux and drive the interaction:
+Run the TUI live in tmux and drive the interaction.
 
-1. Start the TUI in tmux.
-2. Drive the changed keybinding or interaction with `tmux send-keys`.
-3. Capture the pane with `tmux capture-pane -p`.
-4. If the change launches another pane, window, browser, shell command, or
-   external process, verify that launch behavior live.
-5. Clean up any tmux panes/windows created during the test.
-6. Report exactly what was observed.
+**Choosing the signal you test against.** Signals come from live APIs, so you
+cannot pick the text of a real one. `just qa-seed` writes a synthetic signal
+into the status cache, backing the database up first and refusing to run twice
+so a forgotten restore cannot cost you the real cache. `just qa-restore` puts it
+back. Always restore, including when a run fails partway.
 
 ```bash
-tmux new-window -n "tui-test" "just tui; read"
-sleep 3                                          # wait for data to load
-tmux send-keys -t "tui-test" "?" ""             # send a keystroke
-sleep 0.5
-tmux capture-pane -t "tui-test" -p              # read the screen
-tmux kill-window -t "tui-test"                  # clean up
+just qa-seed loki                      # or gcp, media-blocked, ci
+just qa-seed media-blocked --text 'whatever you need the agent to see'
+just qa-restore
 ```
+
+The default text is an injection probe: a forged `</untrusted-input>` closing
+tag, an instruction, and a `$(touch /tmp/hub-qa-probe)` that is obvious if it
+ever runs.
+
+**The loop.**
+
+```bash
+cargo build -p hub-tui --features private        # send-keys races a cargo build
+just qa-seed loki
+tmux new-session -d -s qa -x 200 -y 50 -c "$PWD"
+tmux send-keys -t qa:1 "./target/debug/hub-tui" Enter
+sleep 12                                          # wait for the first render
+tmux capture-pane -t qa:1 -p | head -5
+tmux send-keys -t qa:1 "i"
+sleep 12
+tmux list-panes -s -t qa -F '#{window_name} :: #{pane_start_command}'
+```
+
+Then clean up every time: `tmux kill-session -t qa`, `just qa-restore`, remove
+any `investigation-*` worktrees left under `~/.hub/repos/<project>/`, and delete
+`/tmp/hub-supporting-data-*.json`.
+
+**Gotchas that cost time**
+
+- **Windows are 1-indexed here.** `qa:0` fails with `can't find window: 0`.
+- **`capture-pane` shows the shell until the TUI enters the alternate screen.**
+  An empty-looking capture usually means it has not rendered yet, not that it
+  crashed. Poll `tmux display-message -p -t qa:1 '#{alternate_on}'` for `1`.
+- **Startup blocks on a locked 1Password.** `op read` does not fail when the
+  account is signed out, it waits, so the TUI hangs before drawing anything with
+  an `op` child process. Check `op whoami` before concluding the change broke it.
+- **You cannot `echo` inside a launched investigation window** — it is running
+  Claude Code. Read the prompts off the process instead:
+  `ps -p $(tmux display-message -p -t qa:2.0 '#{pane_pid}') -wwE -o command=`.
+- **`#{pane_start_command}` is the exact command tmux was handed**, which is what
+  to assert against when the change affects how an investigation is launched.
 
 **tmux send-keys pitfalls**
 
