@@ -44,4 +44,7 @@ context.
 _Findings are working evidence, not settled fact. Nothing here binds a decision until it
 graduates into a decision record._
 
-...
+- *Reasoned* (2026-09-19): option A is what milestone #327 notifies on. Nothing persists the
+  notified set, so each pass sends the current top N and shrink-in-place falls out with no backfill
+  logic to write. This file closes into the Phase 4 issue that implements notification, per the
+  second exit in [README.md](README.md).

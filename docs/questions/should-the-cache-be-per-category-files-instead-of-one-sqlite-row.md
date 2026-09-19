@@ -38,8 +38,9 @@ category is still every category's data passing through every category's refresh
 This cannot be answered before the cadence question in
 [should-refresh-run-on-a-per-category-schedule.md](should-refresh-run-on-a-per-category-schedule.md)
 is answered. If refresh stays on one global clock, the single-row shape is correct as it stands and
-there is nothing here to decide. Everything below assumes that question resolves toward per-category
-cadence.
+there is nothing here to decide. That cadence question in turn waits on milestone #327 shipping and
+being used, so nothing here can be settled inside that milestone. Everything below assumes that
+question resolves toward per-category cadence.
 
 Given that, two observations settle the shape:
 
@@ -109,3 +110,7 @@ into a decision record._
   2023-08-31. One reason disqualifies it: it trades 150 lines hub owns and understands for an
   unmaintained dependency. Reverses if it resumes releases and hub needs an eviction or expiry
   policy it would otherwise have to write.
+- *Reasoned* (2026-09-19): the daemon in #336 reuses `status_cache::upsert` unchanged, so it becomes
+  a second writer of the single row alongside `ui/tui/src/main.rs`. Option D is what milestone #327
+  ships on. Whichever option eventually wins, the migration rewrites two write sites instead of one.
+  That is the accepted cost of not deciding the shape on an inference about cadence.

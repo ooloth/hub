@@ -44,4 +44,7 @@ context.
 _Findings are working evidence, not settled fact. Nothing here binds a decision until it
 graduates into a decision record._
 
-...
+- *Reasoned* (2026-09-19): milestone #327's Phase 6 ranks the list by time since the ball landed on
+  me, which is option A applied to a better age measure. It does not decide whether importance
+  should outrank age, so this question survives the milestone and the milestone is what produces
+  its evidence.

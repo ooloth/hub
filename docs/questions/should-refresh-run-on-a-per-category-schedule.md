@@ -22,6 +22,11 @@ data for a specific category — not just the intuition that categories differ. 
 PR-notification milestone ships and gets used for a while, whether staleness (rather than "I forgot
 to open it") shows up as an actual complaint.
 
+A second source is observed rather than remembered: how often each category's items actually change
+between passes. That rate, compared per category against the shared interval, says directly which
+categories are over-fetched and which run stale. Milestone #327's one log line per poll pass does
+not carry it, so this evidence costs the daemon a per-category change count it does not write today.
+
 ## Resolves into
 
 `../decisions/` — a new ADR, once there's real evidence a shared interval is the problem rather
@@ -45,4 +50,6 @@ deferred out of that milestone's scope — see the epic issue for the full conte
 _Findings are working evidence, not settled fact. Nothing here binds a decision until it
 graduates into a decision record._
 
-...
+- *Reasoned* (2026-09-19): nothing in milestone #327 depends on this. The daemon in #336 runs one
+  pass over every category and Phase 3.3 loops it on one interval, so the milestone reaches its end
+  state without the answer.
