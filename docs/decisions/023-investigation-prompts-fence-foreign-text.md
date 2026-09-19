@@ -65,10 +65,12 @@ still be obeyed. This reduces how often a foreign instruction is followed. It do
 Impact is untouched. The agent still runs with permissions skipped, so an injection that does
 succeed succeeds completely. Restricting that is a separate decision this record does not make.
 
-The raw log lines Loki and GCP attach as supporting data are written to a temp file unfenced, and
-the prompt tells the agent to read that file. The summary is fenced and the bulk is not.
-
 A log line legitimately containing the string `untrusted-input` has it removed.
+
+The scope of the fence is what hub hands the agent, which is stated as
+[an invariant](../invariants/foreign-text-reaches-an-agent-fenced.md) along with what enforces it.
+Text the agent fetches for itself with `gh` or `Read` is outside it, because hub never touches that
+text and cannot fence it.
 
 ## Revisit when
 

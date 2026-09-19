@@ -1,6 +1,6 @@
 use domain::{InvestigationPrompt, UntrustedText};
 
-use super::LaunchConfig;
+use super::{LaunchConfig, SupportingData};
 
 const PROMPT: &str = include_str!("../../../../prompts/investigations/gcp.md");
 
@@ -40,7 +40,10 @@ pub(crate) fn config(
             .supporting_data_path()
             .instruction(format!("Incident timestamp: {incident_at}."))
             .instruction(format!("Console URL (pre-filtered): {url}")),
-        supporting_data: Some(line.clone()),
+        supporting_data: Some(SupportingData {
+            source: "gcp log lines".to_string(),
+            body: line.clone(),
+        }),
         model: "opus".to_string(),
         allowed_tools: "Bash,Read".to_string(),
         env: vec![],
@@ -98,7 +101,11 @@ mod tests {
         assert!(rendered(&cfg).contains("2024-01-15T10:30:00Z"));
         assert!(rendered(&cfg).contains("/tmp/supporting-data.json"));
         assert_eq!(
-            cfg.supporting_data.as_ref().map(UntrustedText::expose),
+            cfg.supporting_data
+                .as_ref()
+                // expose: asserting the config stored the line unchanged; the
+                // fencing of what reaches the agent is covered in command.rs.
+                .map(|data| data.body.expose()),
             Some(line)
         );
     }

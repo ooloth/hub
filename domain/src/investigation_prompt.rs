@@ -127,6 +127,25 @@ impl InvestigationPrompt {
 }
 
 /// Wraps externally-authored text so it cannot be mistaken for an instruction.
+///
+/// A prompt fences through [`InvestigationPrompt::untrusted`]. This is for the
+/// other way hub hands an agent foreign text: a file it writes and then tells
+/// the agent to read. Both go through the same fence so there is one definition
+/// of what a fence is.
+///
+/// # Panics
+/// Panics if `source` contains a double quote, for the reason given on
+/// [`InvestigationPrompt::untrusted`].
+#[must_use]
+pub fn fenced(source: &str, body: &UntrustedText) -> String {
+    assert!(
+        !source.contains('"'),
+        "untrusted source label must not contain a double quote, got {source}"
+    );
+    fence(source, body.expose())
+}
+
+/// Wraps externally-authored text so it cannot be mistaken for an instruction.
 fn fence(source: &str, body: &str) -> String {
     let body = without_marker(body);
     assert!(

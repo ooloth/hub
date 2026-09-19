@@ -8,6 +8,26 @@ use crate::tmux::{claim, WindowClaim};
 
 use super::command::compose;
 
+/// Foreign text too large for a prompt, handed to the agent as a file.
+///
+/// The file is the second way hub puts text it did not write in front of an
+/// agent, so it is fenced exactly as a prompt segment is. `source` travels with
+/// the body because the file is written by `launch`, which has no idea what
+/// kind of signal produced it.
+pub(crate) struct SupportingData {
+    /// Human-readable provenance, e.g. "loki log lines".
+    pub(crate) source: String,
+    /// The text itself.
+    pub(crate) body: UntrustedText,
+}
+
+impl SupportingData {
+    /// What gets written to the file.
+    pub(crate) fn file_contents(&self) -> String {
+        domain::fenced(&self.source, &self.body)
+    }
+}
+
 pub(crate) struct LaunchConfig {
     pub(crate) system_prompt: String,
     pub(crate) prompt: InvestigationPrompt,
@@ -15,7 +35,7 @@ pub(crate) struct LaunchConfig {
     /// before launch to avoid hitting OS argument-size limits that would occur
     /// if the data were inlined directly in `prompt`. The prompt refers to the
     /// file through a `SupportingDataPath` segment.
-    pub(crate) supporting_data: Option<UntrustedText>,
+    pub(crate) supporting_data: Option<SupportingData>,
     pub(crate) model: String,
     pub(crate) allowed_tools: String,
     pub(crate) env: Vec<(String, String)>,
@@ -96,7 +116,7 @@ pub(crate) async fn launch(
                 .unwrap_or_default()
                 .as_nanos();
             let path = PathBuf::from(format!("/tmp/hub-supporting-data-{nanos}.json"));
-            std::fs::write(&path, data.expose()).with_context(|| {
+            std::fs::write(&path, data.file_contents()).with_context(|| {
                 format!("failed to write supporting data to {}", path.display())
             })?;
             Some(path)

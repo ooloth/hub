@@ -19,4 +19,6 @@ pub(crate) mod pr;
 pub(crate) mod media;
 
 pub(crate) use launch::launch;
-pub(crate) use launch::{open_in_lazygit, open_in_octo, LaunchConfig, WorktreeSpec};
+pub(crate) use launch::{
+    open_in_lazygit, open_in_octo, LaunchConfig, SupportingData, WorktreeSpec,
+};
