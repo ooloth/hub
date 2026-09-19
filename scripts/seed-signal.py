@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = []
+# ///
 """Put one synthetic signal into the status cache so a QA run can press `i` on it.
 
 The TUI renders from a single `status_cache` row, and the signals it shows come
@@ -42,7 +46,15 @@ KINDS = ("loki", "gcp", "media-blocked", "ci")
 
 
 def item(kind: str, text: str, line: str, error: str) -> dict[str, object]:
-    """One `StatusItem`, in the JSON shape `workflows::status` serialises."""
+    """One `StatusItem`, in the JSON shape `workflows::status` serialises.
+
+    These shapes are hand-transcribed from Rust and nothing checks them. The
+    variant names come from `StatusItem` in `workflows/src/status.rs`, and the
+    fields from `LokiEntry` and `GcpEntry` in `domain/src/`, `CiFailure`, and
+    `BlockedItem` in the private workflows. Renaming a field there makes a
+    seeded row fail to deserialize, and the symptom is a TUI that renders
+    nothing during a QA run, so check here when that happens.
+    """
     match kind:
         case "loki":
             return {
