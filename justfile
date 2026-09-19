@@ -11,6 +11,7 @@ status:
 
 check:
     @scripts/check-lint-inheritance.py
+    @scripts/check-script-shape.sh
     taplo fmt
     taplo check
     cargo fmt
