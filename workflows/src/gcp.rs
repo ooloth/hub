@@ -1,6 +1,6 @@
 use anyhow::Result;
 use chrono::Utc;
-use domain::{GcpEntry, GcpEnv, Urgency};
+use domain::{GcpEntry, GcpEnv, UntrustedText, Urgency};
 
 /// Queries GCP Logging for each configured query and returns matching log entries.
 ///
@@ -27,8 +27,8 @@ pub async fn run(env: &GcpEnv) -> Result<Vec<GcpEntry>> {
                 title: query.title.clone(),
                 project: env.project.clone(),
                 env: env.env.clone(),
-                message,
-                line: entry.raw.clone(),
+                message: UntrustedText::new(message),
+                line: UntrustedText::new(entry.raw.clone()),
                 lookback: query.lookback.clone(),
                 age: age_from_entry(entry),
                 urgency: Urgency::High,

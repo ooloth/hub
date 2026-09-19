@@ -2,18 +2,20 @@ use anyhow::{bail, Context, Result};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use domain::{InvestigationPrompt, UntrustedText};
+
 use crate::tmux::{claim, WindowClaim};
 
 use super::command::compose;
 
 pub(crate) struct LaunchConfig {
     pub(crate) system_prompt: String,
-    pub(crate) prompt: String,
+    pub(crate) prompt: InvestigationPrompt,
     /// Large supplemental data the agent should read. Written to a temp file
     /// before launch to avoid hitting OS argument-size limits that would occur
-    /// if the data were inlined directly in `prompt`. The temp file path
-    /// replaces `{SUPPORTING_DATA_PATH}` in `prompt`.
-    pub(crate) supporting_data: Option<String>,
+    /// if the data were inlined directly in `prompt`. The prompt refers to the
+    /// file through a `SupportingDataPath` segment.
+    pub(crate) supporting_data: Option<UntrustedText>,
     pub(crate) model: String,
     pub(crate) allowed_tools: String,
     pub(crate) env: Vec<(String, String)>,
@@ -94,7 +96,7 @@ pub(crate) async fn launch(
                 .unwrap_or_default()
                 .as_nanos();
             let path = PathBuf::from(format!("/tmp/hub-supporting-data-{nanos}.json"));
-            std::fs::write(&path, data).with_context(|| {
+            std::fs::write(&path, data.expose()).with_context(|| {
                 format!("failed to write supporting data to {}", path.display())
             })?;
             Some(path)

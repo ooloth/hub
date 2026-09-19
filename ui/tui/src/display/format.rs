@@ -1,4 +1,4 @@
-use domain::MergeBlocker;
+use domain::{MergeBlocker, UntrustedText};
 use workflows::status::StatusItem;
 
 use super::types::{
@@ -84,15 +84,15 @@ pub(crate) fn log_detail_view_from_item(item: &StatusItem) -> Option<LogDetailVi
             project: g.project.clone(),
             env: g.env.clone(),
             title: g.title.clone(),
-            message: g.message.clone(),
-            lines: vec![LogLine::parse(&g.line)],
+            message: g.message.expose().to_string(),
+            lines: vec![LogLine::parse(g.line.expose())],
         }),
         StatusItem::Loki(l) => Some(LogDetailView::Loki {
             project: l.project.clone(),
             env: l.env.clone(),
             title: l.title.clone(),
-            message: l.message.clone(),
-            lines: vec![LogLine::parse(&l.line)],
+            message: l.message.expose().to_string(),
+            lines: vec![LogLine::parse(l.line.expose())],
         }),
         _ => None,
     }
@@ -107,11 +107,11 @@ pub(crate) fn log_detail_view_from_group(items: &[StatusItem]) -> Option<LogDeta
             project: g.project.clone(),
             env: g.env.clone(),
             title: g.title.clone(),
-            message: g.message.clone(),
+            message: g.message.expose().to_string(),
             lines: items
                 .iter()
                 .filter_map(|i| match i {
-                    StatusItem::Gcp(entry) => Some(LogLine::parse(&entry.line)),
+                    StatusItem::Gcp(entry) => Some(LogLine::parse(entry.line.expose())),
                     _ => None,
                 })
                 .collect(),
@@ -120,11 +120,11 @@ pub(crate) fn log_detail_view_from_group(items: &[StatusItem]) -> Option<LogDeta
             project: l.project.clone(),
             env: l.env.clone(),
             title: l.title.clone(),
-            message: l.message.clone(),
+            message: l.message.expose().to_string(),
             lines: items
                 .iter()
                 .filter_map(|i| match i {
-                    StatusItem::Loki(entry) => Some(LogLine::parse(&entry.line)),
+                    StatusItem::Loki(entry) => Some(LogLine::parse(entry.line.expose())),
                     _ => None,
                 })
                 .collect(),
@@ -157,7 +157,7 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
             env: g.env.clone(),
             title: g.title.clone(),
             message: g.message.clone(),
-            line: lines_to_compact_json(&[LogLine::parse(&g.line)]),
+            line: UntrustedText::new(lines_to_compact_json(&[LogLine::parse(g.line.expose())])),
             url: g.url.clone(),
             lookback: g.lookback.clone(),
             gcp_project: g.gcp_project.clone(),
@@ -167,7 +167,7 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
             env: l.env.clone(),
             title: l.title.clone(),
             message: l.message.clone(),
-            line: lines_to_compact_json(&[LogLine::parse(&l.line)]),
+            line: UntrustedText::new(lines_to_compact_json(&[LogLine::parse(l.line.expose())])),
             url: l.url.clone(),
             lookback: l.lookback.clone(),
         }),
@@ -262,7 +262,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
         },
         StatusItem::Loki(l) => LineParts {
             separator: RowSeparator::Bullet,
-            primary: vec![l.title.clone(), l.message.clone()],
+            primary: vec![l.title.clone(), l.message.expose().to_string()],
             dim_inline: vec![],
             source: Some(format!("{}:{}", l.project, l.env)),
             category: "Loki".to_string(),
@@ -270,7 +270,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
         },
         StatusItem::Gcp(g) => LineParts {
             separator: RowSeparator::Bullet,
-            primary: vec![g.title.clone(), g.message.clone()],
+            primary: vec![g.title.clone(), g.message.expose().to_string()],
             dim_inline: vec![],
             source: Some(format!("{}:{}", g.project, g.env)),
             category: "GCP".to_string(),
@@ -386,13 +386,19 @@ pub(crate) fn group_key(item: &StatusItem) -> Option<GroupKey> {
     if let StatusItem::Gcp(g) = item {
         return Some(GroupKey::new(format!(
             "{} · {} — {}:{}",
-            g.title, g.message, g.project, g.env
+            g.title,
+            g.message.expose(),
+            g.project,
+            g.env
         )));
     }
     if let StatusItem::Loki(l) = item {
         return Some(GroupKey::new(format!(
             "{} · {} — {}:{}",
-            l.title, l.message, l.project, l.env
+            l.title,
+            l.message.expose(),
+            l.project,
+            l.env
         )));
     }
     #[cfg(feature = "private")]

@@ -514,8 +514,8 @@ async fn handle_launch_gcp(
     project: String,
     env: String,
     title: String,
-    message: String,
-    line: String,
+    message: domain::UntrustedText,
+    line: domain::UntrustedText,
     url: String,
     lookback: String,
     gcp_project: String,
@@ -531,7 +531,12 @@ async fn handle_launch_gcp(
             &lookback,
             &gcp_project,
         ),
-        &domain::InvestigationWindow::alert(&project, domain::AlertSource::Gcp, &env, &message),
+        &domain::InvestigationWindow::alert(
+            &project,
+            domain::AlertSource::Gcp,
+            &env,
+            message.expose(),
+        ),
         investigations::WorktreeSpec::Ephemeral { project },
         config,
     )
@@ -548,14 +553,19 @@ async fn handle_launch_loki(
     project: String,
     env: String,
     title: String,
-    message: String,
-    line: String,
+    message: domain::UntrustedText,
+    line: domain::UntrustedText,
     url: String,
     lookback: String,
 ) {
     if let Err(err) = investigations::launch(
         investigations::loki::config(&project, &env, &title, &message, &line, &url, &lookback),
-        &domain::InvestigationWindow::alert(&project, domain::AlertSource::Loki, &env, &message),
+        &domain::InvestigationWindow::alert(
+            &project,
+            domain::AlertSource::Loki,
+            &env,
+            message.expose(),
+        ),
         investigations::WorktreeSpec::Ephemeral { project },
         config,
     )

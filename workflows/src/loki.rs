@@ -1,6 +1,6 @@
 use anyhow::Result;
 use chrono::Utc;
-use domain::{LokiEntry, LokiEnv, Urgency};
+use domain::{LokiEntry, LokiEnv, UntrustedText, Urgency};
 use secrecy::ExposeSecret;
 
 /// Queries Loki for each configured query and returns matching log entries.
@@ -28,8 +28,8 @@ pub async fn run(env: &LokiEnv) -> Result<Vec<LokiEntry>> {
                 title: query.title.clone(),
                 project: env.project.clone(),
                 env: env.env.clone(),
-                message,
-                line: entry.line.clone(),
+                message: UntrustedText::new(message),
+                line: UntrustedText::new(entry.line.clone()),
                 lookback: query.lookback.clone(),
                 age: age_from_entry(entry),
                 urgency: Urgency::High,

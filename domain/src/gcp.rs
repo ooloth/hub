@@ -1,6 +1,8 @@
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
 
+use crate::untrusted::UntrustedText;
+
 use crate::urgency::Urgency;
 
 /// A GCP Cloud Logging query to run for one monitoring scenario.
@@ -43,9 +45,9 @@ pub struct GcpEntry {
     /// Deployment environment this entry came from (e.g. "prod").
     pub env: String,
     /// Display + grouping key extracted from the log payload.
-    pub message: String,
+    pub message: UntrustedText,
     /// Raw JSON log line, passed to investigation agents for context.
-    pub line: String,
+    pub line: UntrustedText,
     /// Lookback window that produced this entry (e.g. "15m").
     pub lookback: String,
     /// How long ago this log entry was emitted.

@@ -2,6 +2,8 @@ use chrono::Duration;
 use secrecy::Secret;
 use serde::{Deserialize, Serialize};
 
+use crate::untrusted::UntrustedText;
+
 use crate::urgency::Urgency;
 
 /// A Loki query to run for one monitoring scenario (e.g. app errors, worker panics).
@@ -47,9 +49,9 @@ pub struct LokiEntry {
     /// Deployment environment this entry came from (e.g. "prod").
     pub env: String,
     /// The `message` stream label — stable error category, used as the grouping key.
-    pub message: String,
+    pub message: UntrustedText,
     /// Raw JSON log line, passed to investigation agents for context.
-    pub line: String,
+    pub line: UntrustedText,
     /// Lookback window that produced this entry (e.g. "15m").
     pub lookback: String,
     /// How long ago this log entry was emitted.

@@ -1,3 +1,5 @@
+use domain::InvestigationPrompt;
+
 use crate::state::{PrAuthor, PrReview, PrReviewTarget};
 
 use super::LaunchConfig;
@@ -11,7 +13,7 @@ use super::LaunchConfig;
 pub(crate) fn ask_config(number: u64, repo: &str, author: PrAuthor) -> LaunchConfig {
     LaunchConfig {
         system_prompt: ask_prompt(number, repo, author),
-        prompt: String::new(),
+        prompt: InvestigationPrompt::new(),
         supporting_data: None,
         model: "opus".to_string(),
         allowed_tools: "Bash,Read,Edit,Write,Glob,Grep".to_string(),
@@ -32,12 +34,12 @@ fn ask_prompt(number: u64, repo: &str, author: PrAuthor) -> String {
 pub(crate) fn review_config(target: &PrReviewTarget, review: PrReview) -> LaunchConfig {
     LaunchConfig {
         system_prompt: review_prompt(target.number, &target.repo, review),
-        prompt: format!(
+        prompt: InvestigationPrompt::new().instruction(format!(
             "{} PR #{} ({})",
             review.slash_command(),
             target.number,
             target.repo
-        ),
+        )),
         supporting_data: None,
         model: "opus".to_string(),
         allowed_tools: "Bash,Read,Edit,Write,Glob,Grep".to_string(),
@@ -85,14 +87,15 @@ mod tests {
         #[case] expected: &str,
     ) {
         let config = review_config(&target(review.author()), review);
-        assert!(config.prompt.starts_with(expected), "{}", config.prompt);
+        let prompt = config.prompt.render(None);
+        assert!(prompt.starts_with(expected), "{prompt}");
     }
 
     #[test]
     fn review_config_prompt_names_the_pr_and_repo() {
         let config = review_config(&target(PrAuthor::Peer), PrReview::ReviewPeer);
-        assert!(config.prompt.contains("#7"));
-        assert!(config.prompt.contains("ooloth/hub"));
+        assert!(config.prompt.render(None).contains("#7"));
+        assert!(config.prompt.render(None).contains("ooloth/hub"));
     }
 
     #[test]

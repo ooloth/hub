@@ -4,6 +4,8 @@
 pub mod ci;
 /// GCP Cloud Logging query configuration and log entry types.
 pub mod gcp;
+/// Investigation prompts, assembled from parts that say where each came from.
+pub mod investigation_prompt;
 /// Deterministic tmux window names for the windows hub opens.
 pub mod investigation_window;
 /// GitHub and Linear issue types and label helpers.
@@ -16,6 +18,8 @@ pub mod pr;
 pub mod serde_helpers;
 /// Claude Code session transcript parsing.
 pub mod session;
+/// Text hub did not write.
+pub mod untrusted;
 /// Urgency ranking used across all signal and task types.
 pub mod urgency;
 
@@ -26,11 +30,13 @@ pub use serde_helpers::duration_secs;
 
 pub use ci::*;
 pub use gcp::*;
+pub use investigation_prompt::*;
 pub use investigation_window::*;
 pub use issue::*;
 pub use loki::*;
 pub use pr::*;
 pub use session::*;
+pub use untrusted::*;
 pub use urgency::*;
 
 #[cfg(test)]

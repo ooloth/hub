@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use domain::UntrustedText;
+
 use workflows::status::StatusItem;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -177,8 +179,8 @@ pub(crate) enum InvestigationKind {
         project: String,
         env: String,
         title: String,
-        message: String,
-        line: String,
+        message: UntrustedText,
+        line: UntrustedText,
         url: String,
         lookback: String,
         gcp_project: String,
@@ -187,8 +189,8 @@ pub(crate) enum InvestigationKind {
         project: String,
         env: String,
         title: String,
-        message: String,
-        line: String,
+        message: UntrustedText,
+        line: UntrustedText,
         url: String,
         lookback: String,
     },

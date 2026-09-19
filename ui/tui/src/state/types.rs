@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use domain::{PrKind, PullRequest};
+use domain::{PrKind, PullRequest, UntrustedText};
 use workflows::status::{StatusItem, StatusReport};
 
 use crate::display::{
@@ -307,8 +307,8 @@ pub(crate) enum InvestigateAction {
         project: String,
         env: String,
         title: String,
-        message: String,
-        line: String,
+        message: UntrustedText,
+        line: UntrustedText,
         url: String,
         lookback: String,
         gcp_project: String,
@@ -317,8 +317,8 @@ pub(crate) enum InvestigateAction {
         project: String,
         env: String,
         title: String,
-        message: String,
-        line: String,
+        message: UntrustedText,
+        line: UntrustedText,
         url: String,
         lookback: String,
     },
@@ -409,8 +409,8 @@ pub(crate) enum Effect {
         project: String,
         env: String,
         title: String,
-        message: String,
-        line: String,
+        message: UntrustedText,
+        line: UntrustedText,
         url: String,
         lookback: String,
         gcp_project: String,
@@ -419,8 +419,8 @@ pub(crate) enum Effect {
         project: String,
         env: String,
         title: String,
-        message: String,
-        line: String,
+        message: UntrustedText,
+        line: UntrustedText,
         url: String,
         lookback: String,
     },

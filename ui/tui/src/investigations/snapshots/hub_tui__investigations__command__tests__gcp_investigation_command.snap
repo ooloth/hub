@@ -5,5 +5,13 @@ expression: "render(&compose(config, cwd(), Some(CLEANUP), Some(data_path())))"
 cwd: /tmp/hub-test-worktree
 env:
   HUB_SYSTEM_PROMPT=<system prompt starting "## Purpose">
-  HUB_TASK_PROMPT=Investigate GCP error in project mapapp (env: internal, gcp_project: my-gcp-project). Title: backend errors. Message: Parser validation error. Log lines (last 15m): /tmp/hub-supporting-data-000.json — read with the Read tool. Incident timestamp: 2026-01-01T00:00:00Z. Console URL (pre-filtered): https://console.cloud.google.com/logs
+  HUB_TASK_PROMPT=Investigate GCP error in project mapapp (env: internal, gcp_project: my-gcp-project). Title: backend errors.
+Message:
+<untrusted-input source="gcp log message">
+Parser validation error
+</untrusted-input>
+Log lines (last 15m), read with the Read tool:
+/tmp/hub-supporting-data-000.json
+Incident timestamp: 2026-01-01T00:00:00Z.
+Console URL (pre-filtered): https://console.cloud.google.com/logs
 shell: claude --dangerously-skip-permissions --model opus --allowedTools 'Bash,Read' --append-system-prompt "$HUB_SYSTEM_PROMPT" "$HUB_TASK_PROMPT"; cd ~ && git -C '/tmp/bare' worktree remove --force '/tmp/wt' 2>/dev/null || true
