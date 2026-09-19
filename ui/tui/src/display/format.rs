@@ -279,7 +279,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
         #[cfg(feature = "private")]
         StatusItem::MediaBlocked(b) => LineParts {
             separator: RowSeparator::Bullet,
-            primary: vec!["Import blocked".to_string(), b.error.clone()],
+            primary: vec!["Import blocked".to_string(), b.error.expose().to_string()],
             dim_inline: vec![],
             source: Some(b.source.clone()),
             category: "Media".to_string(),
@@ -403,7 +403,10 @@ pub(crate) fn group_key(item: &StatusItem) -> Option<GroupKey> {
     }
     #[cfg(feature = "private")]
     if let StatusItem::MediaBlocked(b) = item {
-        return Some(GroupKey::new(format!("Import blocked · {}", b.error)));
+        return Some(GroupKey::new(format!(
+            "Import blocked · {}",
+            b.error.expose()
+        )));
     }
     None
 }

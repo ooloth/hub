@@ -600,12 +600,17 @@ async fn handle_open_in_lazygit(
 }
 
 #[cfg(feature = "private")]
-async fn handle_launch_media(app: &mut App, config: &config::Config, title: String, error: String) {
+async fn handle_launch_media(
+    app: &mut App,
+    config: &config::Config,
+    title: domain::UntrustedText,
+    error: domain::UntrustedText,
+) {
     let result = match investigations::media::config(&title, &error, &config.extra_credentials) {
         Ok(cfg) => {
             investigations::launch(
                 cfg,
-                &domain::InvestigationWindow::media(&title),
+                &domain::InvestigationWindow::media(title.expose()),
                 investigations::WorktreeSpec::CurrentDir,
                 config,
             )

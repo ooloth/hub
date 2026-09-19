@@ -546,8 +546,8 @@ mod tests {
     #[test]
     fn investigate_hint_returns_hint_for_media() {
         let inv = InvestigateAction::LaunchMediaBlocked {
-            title: "Show — S01E01".to_string(),
-            error: "Invalid video file".to_string(),
+            title: domain::UntrustedText::new("Show — S01E01"),
+            error: domain::UntrustedText::new("Invalid video file"),
         };
         assert_eq!(status_bar::investigate_hint(&inv), " · [i] investigate");
     }

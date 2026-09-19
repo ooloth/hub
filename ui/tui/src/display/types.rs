@@ -204,8 +204,8 @@ pub(crate) enum InvestigationKind {
     },
     #[cfg(feature = "private")]
     MediaBlocked {
-        title: String,
-        error: String,
+        title: UntrustedText,
+        error: UntrustedText,
     },
 }
 

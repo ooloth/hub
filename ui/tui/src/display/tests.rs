@@ -9,8 +9,8 @@ fn media_blocked() -> StatusItem {
         source: "Media".to_string(),
         urgency: domain::Urgency::High,
         age: chrono::Duration::zero(),
-        title: "Show — S01E01".to_string(),
-        error: "Invalid video file".to_string(),
+        title: domain::UntrustedText::new("Show — S01E01"),
+        error: domain::UntrustedText::new("Invalid video file"),
         url: "http://media-server/queue".to_string(),
     })
 }

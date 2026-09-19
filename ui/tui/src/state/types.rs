@@ -332,8 +332,8 @@ pub(crate) enum InvestigateAction {
     },
     #[cfg(feature = "private")]
     LaunchMediaBlocked {
-        title: String,
-        error: String,
+        title: UntrustedText,
+        error: UntrustedText,
     },
 }
 
@@ -446,8 +446,8 @@ pub(crate) enum Effect {
     },
     #[cfg(feature = "private")]
     LaunchMediaBlocked {
-        title: String,
-        error: String,
+        title: UntrustedText,
+        error: UntrustedText,
     },
     StartRefresh,
     WriteCache(String),
