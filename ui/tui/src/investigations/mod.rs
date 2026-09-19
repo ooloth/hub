@@ -7,6 +7,7 @@
 //! investigations run side by side, and each one is reachable from tmux's window list.
 
 pub(crate) mod ci;
+pub(crate) mod command;
 pub(crate) mod gcp;
 pub(crate) mod issue;
 pub(crate) mod launch;

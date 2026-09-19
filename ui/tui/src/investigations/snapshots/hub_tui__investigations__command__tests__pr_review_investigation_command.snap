@@ -1,0 +1,9 @@
+---
+source: ui/tui/src/investigations/command.rs
+expression: "render(&compose(config, cwd(), None, None))"
+---
+cwd: /tmp/hub-test-worktree
+env:
+  HUB_SYSTEM_PROMPT=<system prompt starting "PR #7 (ooloth/hub). This is your PR. Identify issues; make no local changes.">
+  HUB_TASK_PROMPT=/review-code PR #7 (ooloth/hub)
+shell: claude --dangerously-skip-permissions --model opus --allowedTools 'Bash,Read,Edit,Write,Glob,Grep' --append-system-prompt "$HUB_SYSTEM_PROMPT" "$HUB_TASK_PROMPT"

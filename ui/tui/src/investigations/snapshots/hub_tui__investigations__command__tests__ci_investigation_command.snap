@@ -1,0 +1,9 @@
+---
+source: ui/tui/src/investigations/command.rs
+expression: "render(&compose(config, cwd(), Some(CLEANUP), None))"
+---
+cwd: /tmp/hub-test-worktree
+env:
+  HUB_SYSTEM_PROMPT=<system prompt starting "## Purpose">
+  HUB_TASK_PROMPT=Investigate the CI failure for repo ooloth/hub. Run URL: https://github.com/ooloth/hub/actions/runs/123
+shell: claude --dangerously-skip-permissions --model opus --allowedTools 'Bash' --append-system-prompt "$HUB_SYSTEM_PROMPT" "$HUB_TASK_PROMPT"; cd ~ && git -C '/tmp/bare' worktree remove --force '/tmp/wt' 2>/dev/null || true

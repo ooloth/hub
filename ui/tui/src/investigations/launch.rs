@@ -4,6 +4,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::tmux::{claim, WindowClaim};
 
+use super::command::compose;
+
 pub(crate) struct LaunchConfig {
     pub(crate) system_prompt: String,
     pub(crate) prompt: String,
@@ -85,44 +87,29 @@ pub(crate) async fn launch(
 
     let (cwd, cleanup) = resolve_worktree(spec, hub_config).await?;
 
-    let prompt = match config.supporting_data {
+    let supporting_data_path = match config.supporting_data {
         Some(ref data) => {
             let nanos = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_nanos();
-            let path = format!("/tmp/hub-supporting-data-{nanos}.json");
-            std::fs::write(&path, data)
-                .with_context(|| format!("failed to write supporting data to {path}"))?;
-            config.prompt.replace("{SUPPORTING_DATA_PATH}", &path)
+            let path = PathBuf::from(format!("/tmp/hub-supporting-data-{nanos}.json"));
+            std::fs::write(&path, data).with_context(|| {
+                format!("failed to write supporting data to {}", path.display())
+            })?;
+            Some(path)
         }
-        None => config.prompt,
+        None => None,
     };
 
-    let task_arg = if prompt.is_empty() {
-        String::new()
-    } else {
-        " \"$HUB_TASK_PROMPT\"".to_string()
-    };
-
-    let cleanup_suffix = cleanup
-        .as_deref()
-        .map(|c| format!("; {c}"))
-        .unwrap_or_default();
-    let command = format!(
-        "claude --dangerously-skip-permissions --model {} --allowedTools '{}' --append-system-prompt \"$HUB_SYSTEM_PROMPT\"{}{cleanup_suffix}",
-        config.model,
-        config.allowed_tools,
-        task_arg,
+    let command = compose(
+        config,
+        &cwd,
+        cleanup.as_deref(),
+        supporting_data_path.as_deref(),
     );
 
-    let mut env = vec![
-        ("HUB_SYSTEM_PROMPT".to_string(), config.system_prompt),
-        ("HUB_TASK_PROMPT".to_string(), prompt),
-    ];
-    env.extend(config.env);
-
-    vacant.open(Some(&cwd), &env, &command)
+    vacant.open(Some(&command.cwd), &command.env, &command.shell)
 }
 
 pub(crate) async fn open_in_lazygit(

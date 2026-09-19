@@ -1,0 +1,9 @@
+---
+source: ui/tui/src/investigations/command.rs
+expression: "render(&compose(config, cwd(), Some(CLEANUP), None))"
+---
+cwd: /tmp/hub-test-worktree
+env:
+  HUB_SYSTEM_PROMPT=<system prompt starting "## Purpose">
+  HUB_TASK_PROMPT=Investigate GitHub issue #42 in repo ooloth/hub
+shell: claude --dangerously-skip-permissions --model opus --allowedTools 'Bash,Read' --append-system-prompt "$HUB_SYSTEM_PROMPT" "$HUB_TASK_PROMPT"; cd ~ && git -C '/tmp/bare' worktree remove --force '/tmp/wt' 2>/dev/null || true
