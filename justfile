@@ -55,7 +55,10 @@ test: _require-nextest
 test-update: _require-nextest
     INSTA_UPDATE=always cargo nextest run {{_features}}
 
-mutants:
+_require-mutants:
+    @cargo mutants --version > /dev/null 2>&1 || (echo "error: cargo-mutants not installed — run: cargo install cargo-mutants --locked" && exit 1)
+
+mutants: _require-mutants
     cargo mutants {{_features}}
 
 lint:
