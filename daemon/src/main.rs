@@ -21,10 +21,12 @@ async fn main() -> Result<()> {
     let config = config::Config::load()
         .await
         .context("failed to load hub config")?;
+    let report = refresh::fetch(&config).await?;
+
+    let outcome = freshness::classify(report);
+
     let conn = store::status_cache::connect().context("failed to open the hub database")?;
     store::status_cache::ensure_table(&conn).context("failed to prepare the status cache")?;
-
-    let outcome = refresh::run(&config).await?;
     cache::apply(&conn, &outcome)?;
 
     match outcome {

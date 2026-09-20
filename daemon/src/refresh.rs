@@ -1,11 +1,14 @@
-//! One refresh: ask every source, decide, cache.
+//! Asking every source for the current state of the queue.
 
 use anyhow::{Context, Result};
 use workflows::status::{StatusParams, StatusReport};
 
-use crate::freshness::{self, RefreshOutcome};
-
 /// Asks every configured source once and merges the answers.
+///
+/// This takes no database handle on purpose. `rusqlite::Connection` is not
+/// `Sync`, so holding one across this await makes the surrounding future
+/// non-`Send` and unspawnable, which the interval loop and the socket server
+/// will both need. Open the connection after the fetch returns.
 ///
 /// # Errors
 /// Returns an error if the refresh cannot be run at all. Individual source
@@ -27,17 +30,4 @@ pub(crate) async fn fetch(config: &config::Config) -> Result<StatusReport> {
     workflows::status::run(params)
         .await
         .context("failed to refresh hub signals")
-}
-
-/// One refresh: ask the sources, then decide whether the answer is worth
-/// caching. Pass the outcome to [`crate::cache::apply`] to act on it.
-///
-/// This deliberately takes no database handle. `rusqlite::Connection` is not
-/// `Sync`, so holding one across the fetch would make this future non-`Send`
-/// and unspawnable, which the interval loop and the socket server both need.
-///
-/// # Errors
-/// Returns an error if the refresh cannot be run at all.
-pub(crate) async fn run(config: &config::Config) -> Result<RefreshOutcome> {
-    Ok(freshness::classify(fetch(config).await?))
 }
