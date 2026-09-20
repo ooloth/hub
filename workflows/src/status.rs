@@ -131,7 +131,9 @@ pub struct StatusParams {
 /// by (urgency ascending, age descending) so the most pressing item is first.
 ///
 /// # Errors
-/// Returns an error if any API call fails.
+/// Returns an error only if the refresh cannot be run at all. A failing source
+/// is not an error: its name is collected into [`StatusReport::errors`] and the
+/// remaining sources still contribute their items.
 pub async fn run(params: StatusParams) -> Result<StatusReport> {
     let github_token = params.github_token.expose_secret();
     let (my_open, review_queue, my_drafts, external, issues, ci_failures, linear_issues) = tokio::join!(

@@ -6,8 +6,9 @@ date: 2026-09-16
 
 # 020 — Hub runs an unattended surface
 
-_Status: accepted; not yet implemented. No `hub-daemon` crate is a member of the
-Cargo workspace._
+_Status: accepted; partly implemented. The `hub-daemon` crate exists and refreshes
+the cache, but it is not yet long-lived and it does not notify: `daemon/src/main.rs`
+runs one refresh and exits, and nothing calls `terminal-notifier` or `osascript`._
 
 ## Forced by
 

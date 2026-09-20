@@ -2,6 +2,7 @@
   members = [
     "clients",
     "config",
+    "daemon",
     "domain",
     "store",
     "ui/cli",

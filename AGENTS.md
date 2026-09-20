@@ -8,10 +8,11 @@ If `../hub-private/CLAUDE.md` exists, read it before writing or editing any file
 
 Hub is a personal command center that aggregates signals from multiple sources — GitHub PRs, CI status, Loki alerts, Linear issues, and more via the `private` feature — into a single urgency-ranked terminal view, and delegates action on those signals to agents via filesystem-based investigation sessions.
 
-Its two binaries serve two distinct audiences:
+Its three binaries serve three distinct audiences:
 
 - **`hub-tui`** (Ratatui dashboard) — the **human-facing surface**. Read signals, launch investigation sessions, watch session progress, review results.
 - **`hub`** (CLI) — the **agent's toolkit** (stub). The task subcommand (`hub task *`) was removed with the task model (ADR 019). Future agent-facing subcommands will be added here as the filesystem session model is built out.
+- **`hub-daemon`** — the **unattended surface** (ADR 020). Refreshes the signal cache with nobody present. Today it runs one refresh and exits; looping, health reporting, credential retry, launchd and notifications are the rest of the [#327](https://github.com/ooloth/hub/issues/327) milestone.
 
 The core value is cross-domain triage plus agent delegation: signals from different systems are ranked together in one list, and any signal can be investigated by pressing `i` to launch a Claude Code session with injected context. That session opens in its own tmux window, named after the signal by `domain::InvestigationWindow`, so several investigations run side by side and each stays reachable from tmux's window list.
 
@@ -41,6 +42,7 @@ implies is sequence, not blocking.
 ```
 clients/     # external API wrappers — one file (or subdirectory) per external service
 config/      # reads hub.toml and resolves credentials into typed domain structs
+daemon/      # hub-daemon binary — refreshes the cache with nobody present
 domain/      # types + pure logic; no I/O; no imports from other hub crates
 store/       # local SQLite reads/writes
 workflows/   # orchestrated operations; the "what hub does"
@@ -51,17 +53,22 @@ scripts/     # dev/ops scripts; not part of the binary
 docs/        # architecture, decisions, playbooks
 ```
 
+`daemon/` sits beside `ui/` rather than inside it because `ui/` means user
+interface and the daemon has no user. Both are entry points: they bootstrap
+config, wire deps, and call workflows. Decision 020 settles that the daemon
+is its own binary; the directory is the only part this repo chose.
+
 Import direction (never import rightward's left neighbor):
 
 ```
-ui/ → config/              → domain/
-   → workflows/ → clients/ → domain/
-                → store/   → domain/
+ui/     → config/               → domain/
+daemon/ → workflows/ → clients/ → domain/
+                     → store/   → domain/
 ```
 
-`config/` is a direct dependency of `ui/cli` and `ui/tui`. Config values
-are passed as function arguments into workflows and clients — those crates
-do not depend on `config/` directly.
+`config/` is a direct dependency of `ui/cli`, `ui/tui` and `daemon/`. Config
+values are passed as function arguments into workflows and clients — those
+crates do not depend on `config/` directly.
 
 ## Stack
 
@@ -104,6 +111,7 @@ just test    # run all tests
 just build   # build all crates
 just cli     # run the CLI
 just tui     # run the TUI
+just daemon  # run one refresh with nobody present, then exit
 ```
 
 ## Verifying TUI changes

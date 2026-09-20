@@ -871,6 +871,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "hub-daemon"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "config",
+ "domain",
+ "rstest 0.25.0",
+ "rusqlite",
+ "serde_json",
+ "store",
+ "tokio",
+ "workflows",
+]
+
+[[package]]
 name = "hub-tui"
 version = "0.1.0"
 dependencies = [

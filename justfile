@@ -31,6 +31,10 @@ cli:
 tui:
     cargo run -p hub-tui {{_features}}
 
+# run one refresh with nobody present, then exit
+daemon:
+    cargo run -p hub-daemon {{_features}}
+
 db:
     uvx visidata "~/.hub/hub.db"
 
