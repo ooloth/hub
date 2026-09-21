@@ -18,6 +18,21 @@ an interval with nobody present. A fingerprint prompt has no one to answer it, a
 nobody will answer is not resilience. Worse than failing: with the account signed out, `op read`
 blocks rather than erroring, so the caller hangs with nothing on screen.
 
+An unlocked vault is not sufficient either. `op read` reaches `my.1password.com` on every
+resolution even when the desktop app's CLI integration is doing the authorising, so a daemon on a
+machine with no connectivity fails before it reaches any source. That is a second, independent way
+credentials go missing, and it behaves differently from the first: a lock makes `op read` wait for
+a prompt, while an unreachable service makes it return an error promptly. A retry policy tuned for
+one is wrong for the other.
+
+Both modes fail earlier than the refresh does. `Config::load` resolves every reference before the
+first fetch, so neither surfaces as a failed source inside a `StatusReport`, and the invariant that
+[a refresh reaching no source never replaces the
+cache](../invariants/a-refresh-that-reached-no-source-never-replaces-the-cache.md) does not cover
+them, because no refresh happened. Whatever the health record in Phase 3.4 reports has to tell a
+locked vault, an unreachable vault and a dead source apart, or a four-second network blip reads as
+"credentials unavailable".
+
 The consequence lands exactly on what [#327](https://github.com/ooloth/hub/issues/327) exists to
 fix. A daemon that stops when the vault locks stops sending notifications, and a notification that
 does not arrive is indistinguishable from nothing having happened. The failure is silent by
@@ -45,11 +60,16 @@ nobody here has checked:
   lives so that it is not itself the unprotected secret.
 - Whether a launchd agent can read a macOS Keychain item non-interactively, and whether that
   survives a reboot, an OS update, and a rebuild of the binary that owns the ACL.
+- Whether each candidate resolves without reaching a remote service, and if it does reach one, what
+  the daemon does during an outage. This discriminates between the options in a way the others do
+  not: an option resolving locally keeps a pass running through a network blip, and an option
+  resolving remotely loses every pass the blip covers, including passes whose sources were fine.
 
 Then the smallest spike that produces an observation: provision the narrowest candidate that clears
 those facts, run the daemon across a reboot and across several hours with nobody touching the
-machine, and confirm it never prompts and never blocks. Reading about non-interactive auth does not
-settle whether this particular daemon stays running.
+machine, and confirm it never prompts and never blocks. Cut connectivity for part of that window,
+since an unreachable credential service is the failure mode most likely to occur in ordinary use.
+Reading about non-interactive auth does not settle whether this particular daemon stays running.
 
 One input is already available and should be gathered while filing: the exact list of items hub
 needs, since "scope it to hub's credentials" is only actionable against a list.
@@ -78,19 +98,27 @@ daemon.
   case: no new credential exists anywhere, so nothing widens. It is also the honest baseline, and
   every other option has to beat it rather than merely differ from it. Cost: notifications stop
   silently, which is the failure #327 exists to remove, so this option defeats the milestone it sits
-  inside.
+  inside. It also keeps both failure modes rather than one, since it stays network-dependent.
 - **B. A scoped non-interactive 1Password credential.** Strongest case: keeps one vendor, one
   provisioning story and the existing `op://` reference shape, so `hub.toml` may not change at all.
   Cost: unknown until the scoping and tier facts are established, and the token has to live
-  somewhere that is not itself a plaintext secret on disk.
+  somewhere that is not itself a plaintext secret on disk. It removes the unlock prompt but is
+  expected to keep the network dependency, since a service account authenticates against 1Password
+  rather than the local app — *Unverified*, and worth checking early, because it decides whether
+  this option fixes one failure mode or both.
 - **C. macOS Keychain with an ACL for the daemon binary.** Strongest case: an OS-managed store, no
-  second vendor, and access bound to a specific binary rather than to anyone who can read a file.
-  Cost: unknown whether non-interactive reads survive reboots and binary rebuilds, and it is
-  macOS-only, which forecloses running the daemon anywhere else.
+  second vendor, access bound to a specific binary rather than to anyone who can read a file, and
+  resolution stays on the machine, so a pass survives an outage that would stop B. Cost: unknown
+  whether non-interactive reads survive reboots and binary rebuilds, and it is macOS-only, which
+  forecloses running the daemon anywhere else.
 - **D. A provisioned file or launchd environment entry.** Strongest case: simplest possible, depends
-  on nothing, and works identically everywhere. Cost: a plaintext secret protected only by file
-  permissions, which `~/.agents/standards/security.md` treats as one mistake away from failing, and
-  it is the option that most directly contradicts the constraint above.
+  on nothing, works identically everywhere, and resolves locally. Cost: a plaintext secret protected
+  only by file permissions, which `~/.agents/standards/security.md` treats as one mistake away from
+  failing, and it is the option that most directly contradicts the constraint above.
+
+The network axis does not pick a winner on its own, and it should not be allowed to: it favours C
+and D, and D is the option the security constraint most directly rules out. What it does is stop B
+being scored as though it removes the whole problem when it may only remove the prompt.
 
 ## Findings
 
@@ -101,6 +129,16 @@ into a record.
   read` blocks instead of returning an error. A `hub-tui` process spawned an `op` child and hung
   before reaching the alternate screen, showing nothing, until the account was signed in. *Measured*,
   2026-09-19.
+- `op read` reaches `my.1password.com` on every resolution, with the desktop app's CLI integration
+  enabled and the vault unlocked. Running `hub-daemon` with egress pointed at a closed port failed
+  at config load with `could not read secret 'op://...': error initializing client: Get
+  "https://my.1password.com/api/v2/account/keysets?...": proxyconnect tcp: dial tcp 127.0.0.1:1:
+  connect: connection refused`. The integration removes the interactive unlock; it does not make
+  resolution local. *Measured*, 2026-09-19.
+- `op whoami` is not a test of whether credentials are obtainable. With the CLI integration enabled
+  it reports "account is not signed in" while `op read` succeeds, because the integration authorises
+  individual reads rather than creating a CLI session. Diagnosing availability by running `op
+  whoami` reads as a signed-out vault when nothing is wrong. *Measured*, 2026-09-19.
 - The daemon's credential needs are not a subset of the TUI's. `workflows/src/status.rs:127` and
   `:206` carry `extra_credentials` into the private workflows during a fetch pass, so a daemon
   running that pass needs the same set as the TUI. *Measured*, read from the source 2026-09-19.
