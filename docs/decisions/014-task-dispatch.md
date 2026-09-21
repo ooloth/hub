@@ -2,10 +2,10 @@
 
 > **⚠ Partially superseded by [Decision 019](019-drop-task-model-filesystem-sessions.md) (accepted).**
 > What survives is the `~/.hub/` data home: bare clones under `~/.hub/repos/`
-> with per-branch worktrees, and the database at `~/.hub/hub.db`. The
-> `TASK-XXXX` keying went with the task model, so there is no
-> `~/.hub/workspaces/`. The dispatch tick, task lifecycle, stall detection and
-> `hub task *` CLI are dropped.
+> with per-branch worktrees, and the database, whose path is set by
+> [Decision 024](024-hub-state-is-per-profile.md). The `TASK-XXXX` keying went
+> with the task model, so there is no `~/.hub/workspaces/`. The dispatch tick,
+> task lifecycle, stall detection and `hub task *` CLI are dropped.
 
 > For the worktree mechanics as built see
 > [architecture/worktrees.md](../architecture/worktrees.md) and
