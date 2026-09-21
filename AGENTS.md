@@ -182,9 +182,20 @@ any `investigation-*` worktrees left under `~/.hub/repos/<project>/`, and delete
 - **`capture-pane` shows the shell until the TUI enters the alternate screen.**
   An empty-looking capture usually means it has not rendered yet, not that it
   crashed. Poll `tmux display-message -p -t qa:1 '#{alternate_on}'` for `1`.
-- **Startup blocks on a locked 1Password.** `op read` does not fail when the
-  account is signed out, it waits, so the TUI hangs before drawing anything with
-  an `op` child process. Check `op whoami` before concluding the change broke it.
+- **`op whoami` is not the credentials check.** It reports the CLI session,
+  which says `account is not signed in` on a working machine, because the
+  1Password desktop app's CLI integration authorises each `op read` on its own
+  instead of creating a session. A signed-out `op whoami` is never a reason to
+  skip running hub. See
+  [the credentials question](docs/questions/how-should-an-unattended-daemon-obtain-credentials.md).
+- **Running hub interrupts the user, repeatedly.** `op read` raises a prompt on
+  the 1Password desktop app that a human answers with a fingerprint, and
+  `Config::load` resolves every `op://` reference in `hub.toml` before the first
+  fetch, so one run costs several prompts rather than one. Say before triggering
+  a run that loads config, and batch those runs instead of scattering them.
+- **A hang with nothing on screen means the desktop app is not running.** In
+  that state `op read` blocks rather than prompting, so the process waits with
+  no output. That is the symptom to diagnose on, not anything `op whoami` says.
 - **You cannot `echo` inside a launched investigation window** — it is running
   Claude Code. Read the prompts off the process instead:
   `ps -p $(tmux display-message -p -t qa:2.0 '#{pane_pid}') -wwE -o command=`.

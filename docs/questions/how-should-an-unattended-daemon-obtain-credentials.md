@@ -139,6 +139,21 @@ into a record.
   it reports "account is not signed in" while `op read` succeeds, because the integration authorises
   individual reads rather than creating a CLI session. Diagnosing availability by running `op
   whoami` reads as a signed-out vault when nothing is wrong. *Measured*, 2026-09-19.
+- Two states behave differently and are easy to conflate. With the desktop app **running** and the
+  CLI integration enabled, `op read` raises a biometric prompt, the account holder approves it, and
+  resolution succeeds. With the app **not running**, `op read` blocks with no prompt to answer and
+  the caller hangs. Only the second is the hang described above. *Measured*, 2026-09-21: `just
+  daemon` completed `refresh=ok profile=dev items=1136 failed_sources=0` after a fingerprint
+  approval, while `op whoami` reported "account is not signed in" both immediately before and
+  immediately after that run.
+- Approval is per read, not per process. One `Config::load` raises several prompts rather than one,
+  because it resolves every `op://` reference in `hub.toml` before the first fetch. *Reported* by
+  the account holder, 2026-09-21, who sees "lots of prompts, not one per window"; the exact count
+  per run has not been measured.
+- Together those sharpen the cost of option A. "The daemon stops when the vault locks" understates
+  it: the daemon stops whenever nobody is present to answer a prompt, and a polling daemon would
+  raise a burst of them on every pass rather than one. A is therefore not a quiet baseline that
+  merely misses notifications — running it attended is itself disruptive.
 - The daemon's credential needs are not a subset of the TUI's. `workflows/src/status.rs:127` and
   `:206` carry `extra_credentials` into the private workflows during a fetch pass, so a daemon
   running that pass needs the same set as the TUI. *Measured*, read from the source 2026-09-19.
