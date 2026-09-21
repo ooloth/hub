@@ -14,9 +14,9 @@ present ([Decision 020](../docs/decisions/020-hub-runs-an-unattended-surface.md)
 ## What it does today
 
 One refresh, then exit. Everything else in [#327](https://github.com/ooloth/hub/issues/327) is a
-later phase: looping and the single-instance guard (3.3), `HUB_HOME` isolation (3.2), the health
-record (3.4), credential retry (3.5), launchd and log files (3.6), notifications (Phase 4), and the
-socket the TUI will read (Phase 5).
+later phase: looping and the single-instance guard (3.3), the health record (3.4), credential
+retry (3.5), launchd and log files (3.6), notifications (Phase 4), and the socket the TUI will read
+(Phase 5).
 
 ## Files
 
@@ -71,15 +71,15 @@ refresh, which is still written.
 daemon ran, and there is only ever one row.
 
 ```bash
-sqlite3 ~/.hub/hub.db "SELECT schema_version, refreshed_at, length(payload) FROM status_cache WHERE id=1;"
-sqlite3 ~/.hub/hub.db "SELECT count(*) FROM status_cache;"   # always 1
+sqlite3 ~/.hub/dev/hub.db "SELECT schema_version, refreshed_at, length(payload) FROM status_cache WHERE id=1;"
+sqlite3 ~/.hub/dev/hub.db "SELECT count(*) FROM status_cache;"   # always 1
 ```
 
 **What it fetched.** Useful for confirming the private sources resolved, since those need the
 `op://` credentials:
 
 ```bash
-sqlite3 ~/.hub/hub.db "SELECT payload FROM status_cache WHERE id=1;" | python3 -c "
+sqlite3 ~/.hub/dev/hub.db "SELECT payload FROM status_cache WHERE id=1;" | python3 -c "
 import json,sys,collections
 r = json.load(sys.stdin)
 for k,v in collections.Counter(list(i)[0] for i in r['items']).most_common(): print(f'{v:6d}  {k}')
@@ -91,9 +91,9 @@ print('errors:', r['errors'])
 Unchanged means the TUI fetched nothing of its own.
 
 ```bash
-sqlite3 ~/.hub/hub.db "SELECT refreshed_at FROM status_cache WHERE id=1;"
+sqlite3 ~/.hub/dev/hub.db "SELECT refreshed_at FROM status_cache WHERE id=1;"
 just tui        # look, then q
-sqlite3 ~/.hub/hub.db "SELECT refreshed_at FROM status_cache WHERE id=1;"
+sqlite3 ~/.hub/dev/hub.db "SELECT refreshed_at FROM status_cache WHERE id=1;"
 ```
 
 **A failed refresh leaves the cache alone.** Point egress at a dead port, exempting 1Password so
@@ -115,9 +115,10 @@ cargo run -q -p hub-daemon --features private >/dev/null 2>&1; echo $?
 
 ## Gotchas that cost time
 
-- **There is no dev sandbox yet.** `HUB_HOME` arrives in Phase 3.2, so every run above mutates the
-  live `~/.hub/hub.db`. Recoverable, since the next successful run repopulates it, but
-  `cp ~/.hub/hub.db /tmp/hub.db.backup` first if the current contents matter.
+- **Everything above runs against the `dev` profile**, because `just` exports `HUB_PROFILE=dev`
+  and `cargo run` inherits it from the recipe. The installed hub's database at
+  `~/.hub/default/hub.db` is untouched. To look at that one instead, set the variable for the
+  invocation: `HUB_PROFILE=default just daemon`.
 - **The TUI refetches if the cache is older than 30 minutes** (`REFRESH_INTERVAL_SECS`,
   `../ui/tui/src/main.rs`), and it is still a second cache writer until Phase 5. Check the daemon's
   work within that window, or the TUI will overwrite the row and it will look like the daemon did

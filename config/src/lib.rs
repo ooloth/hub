@@ -7,4 +7,7 @@ pub mod toml;
 /// Resolved, credential-injected configuration used at runtime.
 pub mod resolved;
 
+/// Reads `HUB_PROFILE` from the environment.
+pub mod profile;
+
 pub use resolved::Config;

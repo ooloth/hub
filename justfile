@@ -6,6 +6,13 @@ default:
 # Without it, only the public integrations defined in `hub` are shown.
 _features := if path_exists("clients/src/private") == "true" { "--features private" } else { "" }
 
+# Every recipe that runs hub from source uses the `dev` profile, so development
+# never writes the database the installed hub reads. Override per invocation
+# with `HUB_PROFILE=default just tui`. The installed binaries get `default` by
+# not having this set — a login shell does not export it and launchd never
+# inherits one. See docs/decisions/024-hub-state-is-per-profile.md
+export HUB_PROFILE := env_var_or_default("HUB_PROFILE", "dev")
+
 status:
     cargo run -p hub-cli {{_features}} -- status
 
@@ -37,7 +44,8 @@ daemon:
     cargo run -p hub-daemon {{_features}}
 
 db:
-    uvx visidata "~/.hub/hub.db"
+    @echo "opening ~/.hub/$HUB_PROFILE/hub.db"
+    uvx visidata ~/.hub/"$HUB_PROFILE"/hub.db
 
 # seed one synthetic signal into the status cache for manual QA (KIND: loki, gcp, media-blocked, ci)
 qa-seed KIND *ARGS:

@@ -14,6 +14,8 @@ pub mod issue;
 pub mod loki;
 /// Pull request types and repository slug newtype.
 pub mod pr;
+/// Which set of hub's own state a process reads and writes.
+pub mod profile;
 /// Serde helpers for non-standard wire formats (e.g. duration as seconds).
 pub mod serde_helpers;
 /// Claude Code session transcript parsing.
@@ -35,6 +37,7 @@ pub use investigation_window::*;
 pub use issue::*;
 pub use loki::*;
 pub use pr::*;
+pub use profile::*;
 pub use session::*;
 pub use untrusted::*;
 pub use urgency::*;

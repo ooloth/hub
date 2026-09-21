@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
+use domain::profile::Profile;
 use rusqlite::{params, Connection};
 use std::path::{Path, PathBuf};
 
@@ -14,15 +15,31 @@ pub struct CachedStatus {
     pub payload: String,
 }
 
+/// Opens the database belonging to `profile`, creating its directory if absent.
+///
 /// # Errors
-/// Returns an error if the database directory cannot be created or the database file cannot be opened.
-pub fn connect() -> Result<Connection> {
-    let path = db_path()?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create db directory: {}", parent.display()))?;
+/// Returns an error if the home directory cannot be resolved, the profile
+/// directory cannot be created, or the database file cannot be opened.
+pub fn connect(profile: Profile) -> Result<Connection> {
+    let home = dirs::home_dir().context("failed to resolve home directory")?;
+    connect_in(&home, profile, &legacy_db_paths(&home))
+}
+
+/// The body of `connect`, with both ambient paths passed in so a test can point
+/// a whole profile tree at a tempdir instead of the real home directory.
+fn connect_in(home: &Path, profile: Profile, legacy: &[PathBuf]) -> Result<Connection> {
+    let path = db_path(home, profile);
+    let dir = path.parent().context("db path has no parent directory")?;
+    std::fs::create_dir_all(dir)
+        .with_context(|| format!("failed to create db directory: {}", dir.display()))?;
+    // Only the default profile inherits a database from an older layout.
+    // Migrating into `dev` would copy the real cache into the sandbox, which is
+    // the collision the profile exists to prevent.
+    if profile == Profile::Default {
+        for source in legacy {
+            maybe_migrate(source, &path)?;
+        }
     }
-    maybe_migrate(&legacy_db_path(), &path)?;
     let conn = Connection::open(&path)
         .with_context(|| format!("failed to open db at {}", path.display()))?;
     apply_pragmas(&conn).context("failed to configure connection pragmas")?;
@@ -30,22 +47,32 @@ pub fn connect() -> Result<Connection> {
     Ok(conn)
 }
 
-fn db_path() -> Result<PathBuf> {
-    dirs::home_dir()
-        .context("failed to resolve home directory")
-        .map(|h| h.join(".hub").join("hub.db"))
+fn db_path(home: &Path, profile: Profile) -> PathBuf {
+    profile.dir(home).join("hub.db")
 }
 
-fn legacy_db_path() -> PathBuf {
-    dirs::data_local_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("hub")
-        .join("hub.db")
+/// Where a database may be inherited from, newest layout first.
+///
+/// `~/.hub/hub.db` is where the database sat before profiles existed;
+/// `data_local_dir()` is where it sat before that. `maybe_migrate` is a no-op
+/// once the destination exists, so trying them in order takes the newest.
+fn legacy_db_paths(home: &Path) -> Vec<PathBuf> {
+    vec![
+        home.join(".hub").join("hub.db"),
+        dirs::data_local_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("hub")
+            .join("hub.db"),
+    ]
 }
 
 /// Copies `legacy` to `new` via VACUUM INTO (WAL-safe) on first run after the path move.
 /// No-op when legacy is absent or new already exists.
 fn maybe_migrate(legacy: &Path, new: &Path) -> Result<()> {
+    assert_ne!(
+        legacy, new,
+        "a migration's source and destination must differ"
+    );
     if !legacy.exists() || new.exists() {
         return Ok(());
     }
@@ -270,11 +297,82 @@ mod tests {
     }
 
     #[test]
-    fn db_path_ends_with_dot_hub_hub_db() {
-        let path = db_path().unwrap();
+    fn db_path_puts_each_profile_in_its_own_directory() {
+        let home = Path::new("/home/x");
+        assert_eq!(
+            db_path(home, Profile::Default),
+            PathBuf::from("/home/x/.hub/default/hub.db")
+        );
+        assert_eq!(
+            db_path(home, Profile::Dev),
+            PathBuf::from("/home/x/.hub/dev/hub.db")
+        );
+    }
+
+    /// The pre-profile database path under a test's `home`.
+    ///
+    /// Tests name their migration sources rather than calling `legacy_db_paths`,
+    /// which reaches `dirs::data_local_dir()` and would pull the real machine's
+    /// old database into a tempdir.
+    fn pre_profile_db(home: &Path) -> PathBuf {
+        home.join(".hub").join("hub.db")
+    }
+
+    /// Seeds the pre-profile database at `<home>/.hub/hub.db` with one row.
+    fn seed_pre_profile_db(home: &Path, payload: &str) -> PathBuf {
+        let legacy = pre_profile_db(home);
+        std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+        let src = Connection::open(&legacy).unwrap();
+        ensure_table(&src).unwrap();
+        upsert(&src, payload, 7).unwrap();
+        drop(src);
+        legacy
+    }
+
+    #[test]
+    fn the_default_profile_inherits_the_pre_profile_database() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let legacy = seed_pre_profile_db(home, r#"{"items":[42]}"#);
+
+        let conn = connect_in(home, Profile::Default, &[legacy]).unwrap();
+
+        let cached = read(&conn).unwrap().expect("default must inherit the row");
+        assert_eq!(cached.payload, r#"{"items":[42]}"#);
+    }
+
+    #[test]
+    fn the_dev_profile_does_not_inherit_the_pre_profile_database() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let legacy = seed_pre_profile_db(home, r#"{"items":[42]}"#);
+
+        let conn = connect_in(home, Profile::Dev, &[legacy.clone()]).unwrap();
+        ensure_table(&conn).unwrap();
+
         assert!(
-            path.ends_with(".hub/hub.db"),
-            "expected path ending in .hub/hub.db, got {path:?}"
+            read(&conn).unwrap().is_none(),
+            "dev must start empty, not with a copy of the real cache"
+        );
+        assert!(legacy.exists(), "the source must be left where it was");
+    }
+
+    #[test]
+    fn two_profiles_do_not_share_a_database() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let legacy = [pre_profile_db(home)];
+
+        let dev = connect_in(home, Profile::Dev, &legacy).unwrap();
+        ensure_table(&dev).unwrap();
+        upsert(&dev, r#"{"items":["written by dev"]}"#, 1).unwrap();
+
+        let default = connect_in(home, Profile::Default, &legacy).unwrap();
+        ensure_table(&default).unwrap();
+
+        assert!(
+            read(&default).unwrap().is_none(),
+            "a write through one profile must not be visible through the other"
         );
     }
 

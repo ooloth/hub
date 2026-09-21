@@ -82,8 +82,13 @@ impl Drop for TerminalSession {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Before Config::load, which resolves credentials through `op read` and
+    // blocks while 1Password is locked. A mistyped HUB_PROFILE should refuse
+    // immediately rather than after that wait.
+    let profile = config::profile::from_env()?;
+
     let config = config::Config::load().await?;
-    let conn = store::status_cache::connect()?;
+    let conn = store::status_cache::connect(profile)?;
     store::status_cache::ensure_table(&conn)?;
 
     let (initial_items, initial_updated, start_refresh) =
