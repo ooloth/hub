@@ -116,9 +116,17 @@ just daemon  # run one refresh with nobody present, then exit
 
 ## Verifying TUI changes
 
-TUI verification has two tiers depending on what changed.
+**Every change that alters what the TUI shows or how it behaves is driven live
+in tmux before it is reported as working.** That includes rendering and layout
+changes, not only interaction ones. The point of the live run is to find
+behaviour the tests did not predict, so it happens even when every test and
+every snapshot is green — especially then.
 
-**Tier 1 — snapshot tests (rendering and layout changes)**
+A live run resolves credentials through `op read`, which raises 1Password
+prompts the user answers with a fingerprint. That is normal and expected, and
+it is never a reason to skip a run, defer one, or ask permission first.
+
+**Snapshots — necessary, never sufficient**
 
 Full-screen `insta` snapshots cover all major screen states (see
 `ui/tui/README.md` for the full list and conventions). If a rendering
@@ -135,12 +143,17 @@ When adding a new screen state or item type, add a snapshot for it —
 don't rely on the existing snapshots to catch regressions in new code
 paths.
 
-**Tier 2 — tmux E2E (interaction and behavior changes)**
+What a snapshot cannot show is anything outside the buffer this code
+produces: the real terminal's width and wrapping, real signal text, the
+startup path, timing, and how the screen behaves once keys arrive. Those need
+the live run.
 
-For changes that affect keybindings, navigation between screens,
-subprocess launching, tmux integration, store schema, cache format, or
-domain types the TUI deserializes on startup, snapshots are not sufficient.
-Run the TUI live in tmux and drive the interaction.
+**Driving it live**
+
+Run the TUI in tmux, drive the interaction, and read the screen back. Look
+past the thing you changed: check the rows either side of it, resize the
+window, move the selection, open and close a detail pane. Report what you
+observed, not that it rendered.
 
 **Choosing the signal you test against.** Signals come from live APIs, so you
 cannot pick the text of a real one. `just qa-seed` writes a synthetic signal
@@ -188,11 +201,10 @@ any `investigation-*` worktrees left under `~/.hub/repos/<project>/`, and delete
   instead of creating a session. A signed-out `op whoami` is never a reason to
   skip running hub. See
   [the credentials question](docs/questions/how-should-an-unattended-daemon-obtain-credentials.md).
-- **Running hub interrupts the user, repeatedly.** `op read` raises a prompt on
-  the 1Password desktop app that a human answers with a fingerprint, and
-  `Config::load` resolves every `op://` reference in `hub.toml` before the first
-  fetch, so one run costs several prompts rather than one. Say before triggering
-  a run that loads config, and batch those runs instead of scattering them.
+- **`op read` raises 1Password prompts, and that is normal.** `Config::load`
+  resolves every `op://` reference in `hub.toml` before the first fetch, so one
+  run raises several prompts, each answered with a fingerprint. Expect them.
+  They are never a reason to skip a live run or to ask before starting one.
 - **A hang with nothing on screen means the desktop app is not running.** In
   that state `op read` blocks rather than prompting, so the process waits with
   no output. That is the symptom to diagnose on, not anything `op whoami` says.
