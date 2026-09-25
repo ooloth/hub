@@ -25,6 +25,10 @@ pub(crate) struct DataState {
 pub(crate) struct App {
     pub(crate) ui: UiState,
     pub(crate) data: DataState,
+    /// Which set of hub's state this process reads and writes. Fixed at startup,
+    /// so it sits beside `ui` and `data` rather than inside either: `UiState`
+    /// changes with input and `DataState` is what the cache produced.
+    pub(crate) profile: domain::profile::Profile,
 }
 
 impl App {

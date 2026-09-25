@@ -2,6 +2,7 @@
 number: 024
 status: accepted
 date: 2026-09-20
+amended: 2026-09-24
 ---
 
 # 024 — Hub state is per-profile under `~/.hub/<profile>`
@@ -95,3 +96,40 @@ the observation that reopens this.
 - [x] vision.md — says nothing about where hub stores state; nothing to change.
 - [x] [014](014-task-dispatch.md) — its superseded banner names `~/.hub/hub.db` as the surviving
       data home; the banner now points here for the path.
+
+## Addendum (2026-09-24) — the set of profiles is closed
+
+`HUB_PROFILE` names one of exactly two profiles, `default` and `dev`. Hub owns both directories and
+creates each on demand, so there is no third profile to name and no mechanism for making one.
+`domain::profile::Profile` is an enum of those two variants rather than a validated path segment.
+
+Three parts of this record change.
+
+**A typo is rejected, not absorbed.** The risk section above describes an unrecognised name
+creating an empty profile, and says validation cannot tell a typo from a new profile because they
+are the same input. With a closed set they are no longer the same input: there are no new profiles,
+so every unrecognised name is a typo and `Profile::parse` refuses it naming both valid values.
+`config::profile::from_env` runs before `Config::load` in both binaries, so the refusal arrives
+before anything waits on credentials.
+
+**Path traversal stops being possible rather than guarded against.** The decision above reaches for
+a single path segment to constrain what a variable can hold. An enum goes further: the segment
+joined in `Profile::dir` is a compile-time literal, so no externally-supplied text reaches a path
+join at all.
+
+**The status bar catches one direction, not both.** The risk section says the TUI naming its profile
+makes a half-isolated run visible in the first frame. The bar names the profile only when it is not
+`default`, so it catches an installed run that inherited an exported `HUB_PROFILE=dev`, and it does
+not catch a source run that bypassed `just` and landed on `default`. That second case was accepted
+knowingly: a TUI on `default` fetches real data from real sources and writes the real cache, which
+is what the installed TUI does anyway, so the isolation is lost but the data is not. Naming
+`default` on every installed run would cost a permanent prefix and could not signal risk anyway,
+because the value that indicates danger is also the normal one.
+
+The exception that remains uncovered is synthetic data. `just qa-seed` writes forged
+injection-probe text, and seeding it into `default` would put attack-shaped content into the cache
+the installed TUI renders. That is prevented by the seeding script refusing the `default` profile
+outright, not by the status bar.
+
+**Revisit when**, in addition to the condition above: a third profile is wanted at all. Adding a
+variant is a one-line change, which is what makes the closed set cheap to hold and cheap to reverse.

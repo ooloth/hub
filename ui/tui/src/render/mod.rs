@@ -104,11 +104,21 @@ fn render_content(frame: &mut ratatui::Frame, app: &mut App, content_area: ratat
 }
 
 fn render_status_bar(frame: &mut ratatui::Frame, app: &App, bar_area: ratatui::layout::Rect) {
-    let right_status =
-        status_bar::right_status_text(&app.data.refresh_state, app.data.last_updated, Utc::now());
+    let right_status = status_bar::right_status_text(
+        app.profile,
+        &app.data.refresh_state,
+        app.data.last_updated,
+        Utc::now(),
+    );
 
+    // The left side takes whatever space is left, so a narrow terminal truncates
+    // it mid-word right up against this block. A blank column keeps the two from
+    // reading as one word — `[i] investigate` cut to `[i] in` beside `dev` says
+    // `indev`. Only the profile prefix claims the column, so screens without one
+    // render exactly as they did before.
+    let gap = usize::from(app.profile != domain::profile::Profile::default());
     let right_width =
-        u16::try_from(Span::raw(right_status.as_str()).width() + 1).unwrap_or(u16::MAX);
+        u16::try_from(Span::raw(right_status.as_str()).width() + 1 + gap).unwrap_or(u16::MAX);
 
     let [bar_left, bar_right] =
         Layout::horizontal([Constraint::Min(0), Constraint::Length(right_width)]).areas(bar_area);
@@ -116,7 +126,7 @@ fn render_status_bar(frame: &mut ratatui::Frame, app: &App, bar_area: ratatui::l
     render_status_bar_left(frame, app, bar_left);
 
     frame.render_widget(
-        Paragraph::new(format!("{right_status} ")).style(dim()),
+        Paragraph::new(format!("{:gap$}{right_status} ", "")).style(dim()),
         bar_right,
     );
 }
@@ -205,6 +215,7 @@ mod tests {
         App, DataState, DetailMode, InvestigateAction, RefreshState, Screen, SubmenuState, UiState,
     };
     use chrono::Utc;
+    use domain::profile::Profile;
     use proptest::proptest;
     use ratatui::backend::TestBackend;
     use ratatui::style::Color;
@@ -552,11 +563,54 @@ mod tests {
         assert_eq!(status_bar::investigate_hint(&inv), " · [i] investigate");
     }
 
+    #[rstest::rstest]
+    #[case::default_profile(Profile::Default, "refreshing…")]
+    #[case::dev_profile(Profile::Dev, "dev · refreshing…")]
+    fn right_status_names_only_a_non_default_profile(
+        #[case] profile: Profile,
+        #[case] expected: &str,
+    ) {
+        let now = Utc::now();
+        assert_eq!(
+            status_bar::right_status_text(profile, &RefreshState::InProgress, None, now),
+            expected
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::default_profile(Profile::Default, "updated just now")]
+    #[case::dev_profile(Profile::Dev, "dev · updated just now")]
+    fn right_status_leads_with_the_profile(#[case] profile: Profile, #[case] expected: &str) {
+        let now = Utc::now();
+        let last_updated = now - chrono::Duration::seconds(30);
+        assert_eq!(
+            status_bar::right_status_text(profile, &RefreshState::Idle, Some(last_updated), now),
+            expected
+        );
+    }
+
+    /// A fresh profile sits in this state until its first refresh, which is
+    /// exactly when knowing the profile matters. The default profile keeps
+    /// rendering nothing, as it does with no profile feature at all.
+    #[rstest::rstest]
+    #[case::default_profile(Profile::Default, "")]
+    #[case::dev_profile(Profile::Dev, "dev")]
+    fn right_status_with_no_timestamp_still_names_a_non_default_profile(
+        #[case] profile: Profile,
+        #[case] expected: &str,
+    ) {
+        let now = Utc::now();
+        assert_eq!(
+            status_bar::right_status_text(profile, &RefreshState::Idle, None, now),
+            expected
+        );
+    }
+
     #[test]
     fn right_status_in_progress() {
         let now = Utc::now();
         assert_eq!(
-            status_bar::right_status_text(&RefreshState::InProgress, None, now),
+            status_bar::right_status_text(Profile::Default, &RefreshState::InProgress, None, now),
             "refreshing…"
         );
     }
@@ -566,6 +620,7 @@ mod tests {
         let now = Utc::now();
         assert_eq!(
             status_bar::right_status_text(
+                Profile::Default,
                 &RefreshState::Failed("network error".to_string()),
                 None,
                 now
@@ -578,7 +633,7 @@ mod tests {
     fn right_status_idle_no_timestamp_is_empty() {
         let now = Utc::now();
         assert_eq!(
-            status_bar::right_status_text(&RefreshState::Idle, None, now),
+            status_bar::right_status_text(Profile::Default, &RefreshState::Idle, None, now),
             ""
         );
     }
@@ -588,7 +643,12 @@ mod tests {
         let now = Utc::now();
         let last_updated = now - chrono::Duration::seconds(30);
         assert_eq!(
-            status_bar::right_status_text(&RefreshState::Idle, Some(last_updated), now),
+            status_bar::right_status_text(
+                Profile::Default,
+                &RefreshState::Idle,
+                Some(last_updated),
+                now
+            ),
             "updated just now"
         );
     }
@@ -598,7 +658,12 @@ mod tests {
         let now = Utc::now();
         let last_updated = now - chrono::Duration::minutes(5);
         assert_eq!(
-            status_bar::right_status_text(&RefreshState::Idle, Some(last_updated), now),
+            status_bar::right_status_text(
+                Profile::Default,
+                &RefreshState::Idle,
+                Some(last_updated),
+                now
+            ),
             "updated 5m ago"
         );
     }
@@ -608,6 +673,7 @@ mod tests {
         let now = Utc::now();
         assert_eq!(
             status_bar::right_status_text(
+                Profile::Default,
                 &RefreshState::Partial(vec!["media".to_string()]),
                 None,
                 now
@@ -622,6 +688,7 @@ mod tests {
         let last_updated = now - chrono::Duration::seconds(10);
         assert_eq!(
             status_bar::right_status_text(
+                Profile::Default,
                 &RefreshState::Partial(vec!["media".to_string()]),
                 Some(last_updated),
                 now
@@ -636,6 +703,7 @@ mod tests {
         let last_updated = now - chrono::Duration::minutes(2);
         assert_eq!(
             status_bar::right_status_text(
+                Profile::Default,
                 &RefreshState::Partial(vec!["media".to_string(), "linear issues".to_string()]),
                 Some(last_updated),
                 now
@@ -654,6 +722,24 @@ mod tests {
     fn full_screen_unified_list_empty() {
         // U1: No items — just the "All" border with an empty body and status bar.
         let mut app = unified_list_app(vec![]);
+        let buf = draw(&mut app, 80, 15);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    /// The only snapshot rendering a non-default profile. Every other one is
+    /// built from `App::default()`, so they all render `Profile::Default`,
+    /// which by design adds nothing to the bar — leaving this the sole snapshot
+    /// guarding the profile's appearance.
+    ///
+    /// The refresh state is idle with no timestamp, so the bar shows `dev`
+    /// alone. `dev · updated Nm ago` cannot be snapshotted, because `render`
+    /// reads `Utc::now()` itself; the parameterised tests above cover it.
+    #[test]
+    fn full_screen_unified_list_dev_profile() {
+        let mut app = App {
+            profile: Profile::Dev,
+            ..unified_list_app(vec![DisplayItem::Single(pr())])
+        };
         let buf = draw(&mut app, 80, 15);
         insta::assert_snapshot!(screen_text(&buf));
     }

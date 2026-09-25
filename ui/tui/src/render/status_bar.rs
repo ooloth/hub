@@ -3,6 +3,7 @@ use crate::state::{
     compute_investigate_action, App, DetailMode, InvestigateAction, RefreshState, Screen,
 };
 use chrono::Utc;
+use domain::profile::Profile;
 
 pub(crate) fn position_label(screen: &Screen) -> String {
     match screen {
@@ -96,7 +97,32 @@ pub(crate) fn status_bar_left(app: &App) -> String {
     }
 }
 
+/// The right-hand status text, led by the profile when it is not the default
+/// one.
+///
+/// The default profile is left unnamed: it is what every installed run uses, so
+/// naming it would grow this block on every run without telling anyone
+/// anything. `mod.rs` sizes the right-hand area from this string and gives the
+/// left side `Constraint::Min(0)`, so every character here costs a character of
+/// keybinding hints on a narrow terminal.
 pub(crate) fn right_status_text(
+    profile: Profile,
+    state: &RefreshState,
+    last_updated: Option<chrono::DateTime<Utc>>,
+    now: chrono::DateTime<Utc>,
+) -> String {
+    let status = refresh_status_text(state, last_updated, now);
+    if profile == Profile::Default {
+        return status;
+    }
+    if status.is_empty() {
+        return profile.to_string();
+    }
+    format!("{profile} · {status}")
+}
+
+/// What the refresh is doing, with no profile in it.
+fn refresh_status_text(
     state: &RefreshState,
     last_updated: Option<chrono::DateTime<Utc>>,
     now: chrono::DateTime<Utc>,

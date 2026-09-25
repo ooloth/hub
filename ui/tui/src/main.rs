@@ -108,6 +108,7 @@ async fn main() -> Result<()> {
     let initial_display = build_unified(initial_items.clone(), &initial_filter);
 
     let mut app = App {
+        profile,
         data: DataState {
             raw_items: initial_items,
             refresh_state: if start_refresh {
