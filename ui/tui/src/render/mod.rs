@@ -731,6 +731,12 @@ mod tests {
     /// which by design adds nothing to the bar — leaving this the sole snapshot
     /// guarding the profile's appearance.
     ///
+    /// Wide enough that the keybinding hints do not truncate, so the bar reads
+    /// as it is meant to and this snapshot only churns when the profile's
+    /// appearance actually changes. The narrow case is pinned by
+    /// `status_bar_keeps_a_gap_before_the_profile_when_hints_truncate`, which
+    /// states the invariant instead of picturing it.
+    ///
     /// The refresh state is idle with no timestamp, so the bar shows `dev`
     /// alone. `dev · updated Nm ago` cannot be snapshotted, because `render`
     /// reads `Utc::now()` itself; the parameterised tests above cover it.
@@ -740,8 +746,31 @@ mod tests {
             profile: Profile::Dev,
             ..unified_list_app(vec![DisplayItem::Single(pr())])
         };
-        let buf = draw(&mut app, 80, 15);
+        let buf = draw(&mut app, 120, 15);
         insta::assert_snapshot!(screen_text(&buf));
+    }
+
+    /// A narrow terminal truncates the keybinding hints against the right-hand
+    /// block. Without a blank column between them the two read as one word:
+    /// `[i] investigate` cut to `[i] in` beside `dev` says `indev`.
+    #[test]
+    fn status_bar_keeps_a_gap_before_the_profile_when_hints_truncate() {
+        let mut app = App {
+            profile: Profile::Dev,
+            ..unified_list_app(vec![DisplayItem::Single(pr())])
+        };
+        let buf = draw(&mut app, 80, 15);
+        let text = screen_text(&buf);
+        let bar = text.lines().last().expect("a rendered screen has rows");
+
+        assert!(
+            bar.contains(" dev"),
+            "the profile must keep a blank column before it: {bar:?}"
+        );
+        assert!(
+            !bar.contains("indev"),
+            "the hints must not run into the profile: {bar:?}"
+        );
     }
 
     #[test]
