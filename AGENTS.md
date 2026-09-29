@@ -164,16 +164,16 @@ live.
 
 ```bash
 cargo build -p hub-tui --features private        # send-keys races a cargo build
-tmux -L agent new-session -d -s qa -x 200 -y 50 -c "$PWD"
-tmux -L agent send-keys -t qa:1 "just tui" Enter
+tmux new-session -d -s qa -x 200 -y 50 -c "$PWD"
+tmux send-keys -t qa:1 "just tui" Enter
 sleep 12                                          # wait for the first render
-tmux -L agent capture-pane -t qa:1 -p
-tmux -L agent send-keys -t qa:1 "i"
+tmux capture-pane -t qa:1 -p
+tmux send-keys -t qa:1 "i"
 sleep 12
-tmux -L agent list-panes -s -t qa -F '#{window_name} :: #{pane_start_command}'
+tmux list-panes -s -t qa -F '#{window_name} :: #{pane_start_command}'
 ```
 
-Then clean up every time: `tmux -L agent kill-session -t qa`, remove any
+Then clean up every time: `tmux kill-session -t qa`, remove any
 `investigation-*` worktrees left under `~/.hub/repos/<project>/`, and delete
 `/tmp/hub-supporting-data-*.json`.
 
@@ -182,7 +182,7 @@ Then clean up every time: `tmux -L agent kill-session -t qa`, remove any
 - **Windows are 1-indexed here.** `qa:0` fails with `can't find window: 0`.
 - **`capture-pane` shows the shell until the TUI enters the alternate screen.**
   An empty-looking capture usually means it has not rendered yet, not that it
-  crashed. Poll `tmux -L agent display-message -p -t qa:1 '#{alternate_on}'` for `1`.
+  crashed. Poll `tmux display-message -p -t qa:1 '#{alternate_on}'` for `1`.
 - **`op whoami` is not the credentials check.** It reports the CLI session,
   which says `account is not signed in` on a working machine, because the
   1Password desktop app's CLI integration authorises each `op read` on its own
@@ -198,7 +198,7 @@ Then clean up every time: `tmux -L agent kill-session -t qa`, remove any
   no output. That is the symptom to diagnose on, not anything `op whoami` says.
 - **You cannot `echo` inside a launched investigation window** — it is running
   Claude Code. Read the prompts off the process instead:
-  `ps -p $(tmux -L agent display-message -p -t qa:2.0 '#{pane_pid}') -wwE -o command=`.
+  `ps -p $(tmux display-message -p -t qa:2.0 '#{pane_pid}') -wwE -o command=`.
 - **`#{pane_start_command}` is the exact command tmux was handed**, which is what
   to assert against when the change affects how an investigation is launched.
 
