@@ -2,7 +2,7 @@
 number: 024
 status: accepted
 date: 2026-09-20
-amended: 2026-09-24
+amended: 2026-09-28
 ---
 
 # 024 — Hub state is per-profile under `~/.hub/<profile>`
@@ -126,10 +126,10 @@ is what the installed TUI does anyway, so the isolation is lost but the data is 
 `default` on every installed run would cost a permanent prefix and could not signal risk anyway,
 because the value that indicates danger is also the normal one.
 
-The exception that remains uncovered is synthetic data. `just qa-seed` writes forged
-injection-probe text, and seeding it into `default` would put attack-shaped content into the cache
-the installed TUI renders. That is prevented by the seeding script refusing the `default` profile
-outright, not by the status bar.
+Hub has no tool that writes synthetic signals. Any tool added to do so refuses the `default`
+profile, because synthetic signals are often attack-shaped test text, and writing them into
+`default` puts that text into the cache the installed TUI renders, with no warning in the status
+bar.
 
 **Revisit when**, in addition to the condition above: a third profile is wanted at all. Adding a
 variant is a one-line change, which is what makes the closed set cheap to hold and cheap to reverse.

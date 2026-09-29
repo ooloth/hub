@@ -47,14 +47,6 @@ db:
     @echo "opening ~/.hub/$HUB_PROFILE/hub.db"
     uvx visidata ~/.hub/"$HUB_PROFILE"/hub.db
 
-# seed one synthetic signal into the status cache for manual QA (KIND: loki, gcp, media-blocked, ci)
-qa-seed KIND *ARGS:
-    scripts/seed-signal.py {{ KIND }} {{ ARGS }}
-
-# put the real status cache back after qa-seed
-qa-restore:
-    scripts/seed-signal.py --restore
-
 _require-nextest:
     @cargo nextest --version > /dev/null 2>&1 || (echo "error: cargo-nextest not installed — run: cargo install cargo-nextest --locked" && exit 1)
 
