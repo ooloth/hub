@@ -165,7 +165,7 @@ live.
 ```bash
 cargo build -p hub-tui --features private        # send-keys races a cargo build
 tmux -L agent new-session -d -s qa -x 200 -y 50 -c "$PWD"
-tmux -L agent send-keys -t qa:1 "./target/debug/hub-tui" Enter
+tmux -L agent send-keys -t qa:1 "just tui" Enter
 sleep 12                                          # wait for the first render
 tmux -L agent capture-pane -t qa:1 -p
 tmux -L agent send-keys -t qa:1 "i"
