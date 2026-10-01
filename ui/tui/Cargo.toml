@@ -42,8 +42,12 @@
   secrecy = "0.8"
   serde_json = "1"
   store = { path = "../../store" }
+  # Only parsing and the pure-Rust regex engine. Syntaxes and the theme come from two-face's
+  # embedded sets, so hub never calls the plist and YAML loaders `default-fancy` adds, and those
+  # loaders pull in crates with security advisories.
   syntect = { version = "5", default-features = false, features = [
-    "default-fancy",
+    "parsing",
+    "regex-fancy",
   ] }
   tokio = { version = "1", features = ["full"] }
   tui-textarea = { version = "0.7", features = ["crossterm"] }

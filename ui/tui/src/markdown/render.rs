@@ -531,15 +531,34 @@ mod tests {
         );
     }
 
+    fn distinct_foregrounds<'a>(
+        lines: impl IntoIterator<Item = &'a Line<'a>>,
+    ) -> std::collections::HashSet<ratatui::style::Color> {
+        lines
+            .into_iter()
+            .flat_map(|l| l.spans.iter())
+            .filter_map(|s| s.style.fg)
+            .collect()
+    }
+
+    // Two colours, not one: a single uniform style is what an unhighlighted block gets too.
     #[test]
-    fn known_language_fence_produces_styled_spans() {
+    fn known_language_fence_colours_its_tokens() {
         let text = from_str("```rust\nlet x = 1;\n```\n");
+        let colours = distinct_foregrounds(&text.lines);
         assert!(
-            text.lines
-                .iter()
-                .flat_map(|l| l.spans.iter())
-                .any(|s| s.style != Style::default()),
-            "expected styled spans for rust fence"
+            colours.len() >= 2,
+            "expected rust tokens in at least two colours, got {colours:?}"
+        );
+    }
+
+    #[test]
+    fn json_highlighting_colours_its_tokens() {
+        let lines = highlight_json("{\"level\": \"error\", \"count\": 3}\n");
+        let colours = distinct_foregrounds(&lines);
+        assert!(
+            colours.len() >= 2,
+            "expected json tokens in at least two colours, got {colours:?}"
         );
     }
 }
