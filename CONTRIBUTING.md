@@ -7,11 +7,11 @@
 - [1Password CLI](https://developer.1password.com/docs/cli) — `brew install 1password-cli`
 - [taplo](https://taplo.tamasfe.dev) — `brew install taplo` (TOML formatter and schema validator)
 - [prek](https://github.com/j178/prek) — `brew install prek` (git hook manager)
-- [cargo-nextest](https://nexte.st) — `cargo install cargo-nextest --locked` (test runner used by `just test`)
-- [cargo-audit](https://github.com/rustsec/rustsec/tree/main/cargo-audit) and
-  [cargo-deny](https://github.com/EmbarkStudios/cargo-deny) —
-  `cargo install cargo-audit cargo-deny --locked` (advisory and dependency checks the pre-push hook
-  runs)
+
+`just setup` installs the rest: [cargo-nextest](https://nexte.st), the test runner `just test`
+uses; [cargo-audit](https://github.com/rustsec/rustsec/tree/main/cargo-audit) and
+[cargo-deny](https://github.com/EmbarkStudios/cargo-deny), which the pre-push hook runs; and the
+pre-commit and pre-push hooks themselves.
 
 ## Setup
 
@@ -26,7 +26,7 @@ workflows only (e.g. GitHub PRs). The `private` feature is silently skipped.
 git clone <repo> && cd hub
 cp hub.toml.example hub.toml
 # edit hub.toml — fill in [credentials] with your 1Password references or plain values
-prek install
+just setup
 just check
 ```
 
@@ -43,7 +43,7 @@ file with a symlink into the private repo, and adds private workflow code.
 ```bash
 git clone git@github.com:ooloth/hub-private.git ../hub-private
 just setup-private <device>   # e.g. just setup-private home-laptop
-prek install
+just setup
 just check
 ```
 

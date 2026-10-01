@@ -75,6 +75,11 @@ fmt:
 clean:
     cargo clean
 
+# install the cargo tools the checks and hooks run, then the git hooks (run once per clone)
+setup:
+    cargo install cargo-nextest cargo-audit cargo-deny --locked
+    prek install
+
 # wire hub-private into this repo (run once per device after cloning hub-private)
 # DEVICE must match a file in hub-private/devices/<device>.toml
 setup-private DEVICE HUB_PRIVATE_PATH="../hub-private":
