@@ -42,6 +42,7 @@ file with a symlink into the private repo, and adds private workflow code.
 
 ```bash
 git clone git@github.com:ooloth/hub-private.git ../hub-private
+(cd ../hub-private && prek install)   # hub-private's own pre-commit hook
 just setup-private <device>   # e.g. just setup-private home-laptop
 just setup
 just check
