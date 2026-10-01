@@ -1,6 +1,9 @@
 # See: https://prek.j178.dev/configuration/
-# Run `prek install` once after cloning to wire up the git hook.
+# Run `prek install` once after cloning to wire up the git hooks.
 # Run `just check` to autofix whatever prek flags.
+
+# Without pre-push here, `prek install` skips the hooks staged for pre-push below.
+default_install_hook_types = ["pre-commit", "pre-push"]
 
 [[repos]]
   hooks = [

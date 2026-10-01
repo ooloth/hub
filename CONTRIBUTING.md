@@ -22,7 +22,7 @@ workflows only (e.g. GitHub PRs). The `private` feature is silently skipped.
 git clone <repo> && cd hub
 cp hub.toml.example hub.toml
 # edit hub.toml — fill in [credentials] with your 1Password references or plain values
-prek install --hook-type pre-commit --hook-type pre-push   # pre-push runs cargo audit, deny and test
+prek install
 just check
 ```
 
@@ -39,7 +39,7 @@ file with a symlink into the private repo, and adds private workflow code.
 ```bash
 git clone git@github.com:ooloth/hub-private.git ../hub-private
 just setup-private <device>   # e.g. just setup-private home-laptop
-prek install --hook-type pre-commit --hook-type pre-push
+prek install
 just check
 ```
 
