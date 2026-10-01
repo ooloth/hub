@@ -8,6 +8,10 @@
 - [taplo](https://taplo.tamasfe.dev) — `brew install taplo` (TOML formatter and schema validator)
 - [prek](https://github.com/j178/prek) — `brew install prek` (git hook manager)
 - [cargo-nextest](https://nexte.st) — `cargo install cargo-nextest --locked` (test runner used by `just test`)
+- [cargo-audit](https://github.com/rustsec/rustsec/tree/main/cargo-audit) and
+  [cargo-deny](https://github.com/EmbarkStudios/cargo-deny) —
+  `cargo install cargo-audit cargo-deny --locked` (advisory and dependency checks the pre-push hook
+  runs)
 
 ## Setup
 
