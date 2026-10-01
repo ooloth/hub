@@ -9,5 +9,4 @@ workflows/src/private
 ui/cli/src/private
 ui/tui/src/private
 ui/tui/src/investigations/media.rs
-prompts/media-investigate.md
 .trekker/

@@ -61,17 +61,6 @@ link() {
   fi
 }
 
-stub() {
-  local path="$1"
-  local content="$2"
-  if [[ -L "$path" || -e "$path" ]]; then
-    echo "already exists: $path"
-  else
-    printf '%s\n' "$content" > "$path"
-    echo "stubbed: $path"
-  fi
-}
-
 link "$HUB_PRIVATE/clients/src"      "$HUB_ROOT/clients/src/private"
 link "$HUB_PRIVATE/workflows/src"    "$HUB_ROOT/workflows/src/private"
 link "$HUB_PRIVATE/ui/cli/src"       "$HUB_ROOT/ui/cli/src/private"
@@ -80,26 +69,11 @@ if [[ -z "$WORKTREE" ]]; then
   link "$DEVICE_CONFIG"              "$HUB_ROOT/hub.toml"
 fi
 
-# Device-specific investigation modules: home-laptop gets the real symlink;
-# all other devices get a stub so the file exists for compilation and cargo fmt.
+# Device-specific investigation modules: only home-laptop links the real one. Every
+# other device compiles the tracked stub beside it, selected by the `media` feature.
+# See docs/invariants/hub-builds-with-and-without-each-private-module.md
 if [[ "$DEVICE" == "home-laptop" ]]; then
   link "$HUB_PRIVATE/ui/tui/src/investigations/media.rs" "$HUB_ROOT/ui/tui/src/investigations/media.rs"
-  link "$HUB_PRIVATE/prompts/media-investigate.md" "$HUB_ROOT/prompts/media-investigate.md"
-else
-  stub "$HUB_ROOT/ui/tui/src/investigations/media.rs" \
-    'use anyhow::Result;
-use secrecy::Secret;
-use std::collections::HashMap;
-
-use super::LaunchConfig;
-
-pub(crate) fn config(
-    _title: &str,
-    _error: &str,
-    _credentials: &HashMap<String, Secret<String>>,
-) -> Result<LaunchConfig> {
-    unreachable!("media investigation not available on this device")
-}'
 fi
 
 if [[ -z "$WORKTREE" ]]; then

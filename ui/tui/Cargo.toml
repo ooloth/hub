@@ -8,6 +8,11 @@
   path = "src/main.rs"
 
 [features]
+  # Home-laptop only: compiles the real `investigations::media` from hub-private.
+  # Without it, `private` builds use `investigations/media_stub.rs`. The justfile
+  # turns it on when the hub-private symlink exists.
+  # See docs/invariants/hub-builds-with-and-without-each-private-module.md
+  media = ["private"]
   private = ["workflows/private"]
 
 [dependencies]

@@ -13,9 +13,16 @@ pub(crate) mod issue;
 pub(crate) mod launch;
 pub(crate) mod loki;
 pub(crate) mod pr;
-// Device-specific: home-laptop only via hub-private symlink; setup-private creates
-// a stub on other devices so the file always exists when private is enabled.
+// Device-specific: the real module is a hub-private symlink present only where the
+// `media` feature is on. Every other `private` build compiles the stub, which keeps
+// the same signature. See docs/invariants/hub-builds-with-and-without-each-private-module.md
+//
+// Keep both paths in `cfg_attr`. rustfmt then formats whichever file exists and skips a
+// missing `media.rs`, where a plain `#[cfg] mod media;` makes it fail on every device
+// without the symlink.
 #[cfg(feature = "private")]
+#[cfg_attr(feature = "media", path = "media.rs")]
+#[cfg_attr(not(feature = "media"), path = "media_stub.rs")]
 pub(crate) mod media;
 
 pub(crate) use launch::launch;

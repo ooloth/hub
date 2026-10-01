@@ -4,6 +4,10 @@
 
 If `../hub-private/CLAUDE.md` exists, read it before writing or editing any files — it lists terms that must never appear in committed hub files.
 
+Every change must build on devices with and without each hub-private module, not only on the
+device it was written on. `just lint` checks every configuration the checkout can build. See
+[the invariant](docs/invariants/hub-builds-with-and-without-each-private-module.md).
+
 ## What This Is
 
 Hub is a personal command center that aggregates signals from multiple sources — GitHub PRs, CI status, Loki alerts, Linear issues, and more via the `private` feature — into a single urgency-ranked terminal view, and delegates action on those signals to agents via filesystem-based investigation sessions.

@@ -4,7 +4,9 @@ default:
 # auto-enable private integrations when symlinks are in place
 # The `private` feature enables the private workflow integrations defined in `hub-private`.
 # Without it, only the public integrations defined in `hub` are shown.
-_features := if path_exists("clients/src/private") == "true" { "--features private" } else { "" }
+# The `media` feature compiles the home laptop's media investigation module, which only
+# exists where `just setup-private home-laptop` linked it.
+_features := if path_exists("ui/tui/src/investigations/media.rs") == "true" { "--features private,hub-tui/media" } else if path_exists("clients/src/private") == "true" { "--features private" } else { "" }
 
 # Every recipe that runs hub from source uses the `dev` profile, so development
 # never writes the database the installed hub reads. Override per invocation
@@ -24,7 +26,7 @@ check:
     taplo check
     cargo fmt
     cargo clippy --fix --allow-dirty --allow-staged {{_features}} -- -D warnings
-    cargo clippy {{_features}} -- -D warnings
+    @just lint
 
 build:
     cargo build {{_features}}
@@ -62,8 +64,9 @@ _require-mutants:
 mutants: _require-mutants
     cargo mutants {{_features}}
 
+# clippy with warnings as errors, in every private-module configuration this checkout can build
 lint:
-    cargo clippy {{_features}}
+    @scripts/check-private-configurations.sh
 
 fmt:
     cargo fmt

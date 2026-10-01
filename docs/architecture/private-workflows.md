@@ -32,53 +32,30 @@ hub/ui/tui/src/private       →  hub-private/ui/tui/src/
 hub/hub.toml                 →  hub-private/devices/<device>.toml
 ```
 
-It also creates individual file symlinks for private investigation modules:
+On the home laptop it also links the one device-specific investigation module:
 
 ```
 hub/ui/tui/src/investigations/media.rs  →  hub-private/ui/tui/src/investigations/media.rs
 ```
 
-Private investigation prompts follow the same individual-file pattern:
-prompt files that reference internal endpoints or queries live in
-`hub-private/prompts/` and are symlinked individually into
-`hub/prompts/`.
+The prompt that module loads is a symlink tracked in hub,
+`hub/prompts/investigations/media.md → ../../../hub-private/prompts/media-investigate.md`.
+Git stores only the target path, so the prompt text stays in hub-private, and the link resolves
+wherever hub-private is checked out beside hub.
 
-When adding a new private investigation module, add corresponding entries to
-`scripts/setup-private.sh` and `.gitignore`.
+**A device-specific module has a tracked stub, selected by a cargo feature.** The `media` feature
+on `hub-tui` compiles the real `media.rs`. Every other `private` build compiles
+`investigations/media_stub.rs`, which has the same signature and returns an error saying the
+investigation is not available on this device. `investigations/mod.rs` names both paths in
+`cfg_attr`, so rustfmt formats whichever exists and does not fail when `media.rs` is absent.
 
-**Device-specific modules require a stub on every other device.** The `private`
-feature is enabled on every machine with hub-private, so `#[cfg(feature = "private")]`
-alone is not sufficient — the file must also exist on every machine where that
-feature is active, or the compiler (and `cargo fmt`) will error.
+The stub has to keep matching the real signature, and `just lint` checks that by compiling every
+configuration the checkout can build. See
+[the invariant](../invariants/hub-builds-with-and-without-each-private-module.md).
 
-The pattern in `scripts/setup-private.sh`:
-
-```bash
-if [[ "$DEVICE" == "home-laptop" ]]; then
-  link "$HUB_PRIVATE/ui/tui/src/investigations/media.rs" \
-       "$HUB_ROOT/ui/tui/src/investigations/media.rs"
-else
-  stub "$HUB_ROOT/ui/tui/src/investigations/media.rs" \
-    'use anyhow::Result;
-use secrecy::Secret;
-use std::collections::HashMap;
-
-use super::LaunchConfig;
-
-pub(crate) fn config(
-    _title: &str,
-    _error: &str,
-    _credentials: &HashMap<String, Secret<String>>,
-) -> Result<LaunchConfig> {
-    unreachable!("media investigation not available on this device")
-}'
-fi
-```
-
-The stub implements the same API as the real module so compilation succeeds
-on all devices. The `unreachable!()` body is never reached on machines where
-the investigation is not configured. CI creates an empty stub (sufficient for
-`cargo fmt --check`; CI never compiles with `--features private`).
+When adding a new device-specific module, add its link to `scripts/setup-private.sh` and
+`.gitignore`, a feature to select it, a tracked stub, and a pass to
+`scripts/check-private-configurations.sh`.
 
 All of these are gitignored in hub, so none of the symlinks are ever committed
 to the public repo.
@@ -104,9 +81,8 @@ The `private` feature is declared in `clients/Cargo.toml` and `workflows/Cargo.t
 When the symlinks exist, the justfile detects them and passes `--features private`
 automatically to every `cargo` invocation. You never need to remember to pass it.
 
-```just
-_features := if path_exists("clients/src/private") == "true" { "--features private" } else { "" }
-```
+The same detection adds `hub-tui/media` when the home laptop's `media.rs` link exists. See
+`_features` in the justfile.
 
 All four crates gate their `private` module behind the feature:
 
