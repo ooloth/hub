@@ -146,6 +146,14 @@ into a record.
   daemon` completed `refresh=ok profile=dev items=1136 failed_sources=0` after a fingerprint
   approval, while `op whoami` reported "account is not signed in" both immediately before and
   immediately after that run.
+- With the app **not running** (only the browser extension was), `op read` failed within a second
+  with `connecting to desktop app: 1Password CLI couldn't connect to the 1Password desktop app`
+  rather than blocking. With the app **open and locked**, `op read` raised a Touch ID prompt, and
+  once it was approved `hub-daemon` completed `refresh=ok profile=dev items=1065
+  failed_sources=1` in 7.8 seconds. `op` was 2.34.0 both times, the same version as the 2026-09-21
+  finding above. *Measured*, 2026-10-02. This contradicts that finding's account of the
+  not-running state, and neither state tested here reproduces its hang. What produced the hang,
+  and what a locked app does when nobody answers the prompt, are unmeasured.
 - Approval is per read, not per process. One `Config::load` raises several prompts rather than one,
   because it resolves every `op://` reference in `hub.toml` before the first fetch. *Reported* by
   the account holder, 2026-09-21, who sees "lots of prompts, not one per window"; the exact count
