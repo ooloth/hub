@@ -50,8 +50,8 @@ is for: it seeds a row, applies a failed refresh over it, and asserts the payloa
 and `refreshed_at` are all unchanged.
 
 What that misses: a new file under `daemon/src/` calling `store::status_cache::upsert` on its own
-bypasses both mechanisms. Nothing greps for that today. `scripts/check-domain-is-pure.sh` is the
-model for the tripwire that would close it.
+bypasses both mechanisms. Nothing greps for that today. The `domain_reads_no_ambient_state` test in
+`scripts/src/repo_state/domain_purity.rs` is the model for the tripwire that would close it.
 
 **The TUI does not uphold this and is outside its scope.** `ui/tui/src/main.rs` is still a second
 cache writer and writes every report unconditionally, including a total outage.

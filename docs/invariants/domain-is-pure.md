@@ -36,10 +36,11 @@ ordinary and common. What is forbidden is fetching one.
 compile. There is no gap here and no check is needed.
 
 **The ambient-state half has no compiler check**, because `std` is always in scope. That is what
-`scripts/check-domain-is-pure.sh` is for: `prek` runs it on every commit and it fails if anything
-under `domain/src/` matches the known ways in.
+the `domain_reads_no_ambient_state` test in `scripts/src/repo_state/domain_purity.rs` is for:
+`just test` runs it before every push and in CI, and it fails if any line under `domain/src/` names
+one of the known ways in.
 
-What that script misses: it matches names, not meaning. A clock reached through a future dependency
+What that test misses: it matches names, not meaning. A clock reached through a future dependency
 that spells the call differently, or an indirect call through a helper, walks straight past it. It
 is a tripwire against the obvious reintroduction rather than a proof, and the honest reading is that
 the compiler covers the half that can be covered totally while this half cannot be.

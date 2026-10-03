@@ -90,6 +90,6 @@ installed.
 
 - [x] questions/README.md — no open question closes into this record.
 - [x] vision.md — says nothing about hub's tooling; nothing to change.
-- [ ] `AGENTS.md` — the Project Structure entry for `scripts/` names the crate when it is created.
-- [ ] `scripts/README.md` — describes the crate when it is created.
+- [x] `AGENTS.md` — the Project Structure entry for `scripts/` names the crate when it is created.
+- [x] `scripts/README.md` — describes the crate when it is created.
 - [x] `scripts/check-script-shape.sh` — deleted with the last Python script.

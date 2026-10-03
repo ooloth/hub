@@ -47,8 +47,9 @@ No output means allowed. A refusal prints the hook's deny JSON with the reason.
 - `src/main.rs` — the subcommands
 - `src/repo_state/` — checks over the repository's own state, compiled only for tests:
   `crate_readmes` (every workspace member has a non-empty README), `lint_inheritance` (every
-  member's manifest sets `[lints] workspace = true`) and `workspace` (the member list, from
-  `cargo metadata`). Run them alone with `cargo nextest run -p scripts -E 'test(repo_state)'`
+  member's manifest sets `[lints] workspace = true`), `domain_purity` (nothing under `domain/src`
+  names a way of reading ambient state) and `workspace` (the member list, from `cargo metadata`).
+  Run them alone with `cargo nextest run -p scripts -E 'test(repo_state)'`
 - `src/gh_post_guard/` — the guard, one concept per file: `banned_terms`, `shell_words`,
   `publishing_call`, `body_source`, `scanned_text`, `verdict`, `hook_io`, and `respond`, which
   joins them

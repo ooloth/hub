@@ -64,7 +64,7 @@ impl WorkspaceMember {
 }
 
 /// The root of hub's repository: the directory above this crate.
-fn repo_root() -> PathBuf {
+pub(crate) fn repo_root() -> PathBuf {
     let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     crate_dir.parent().unwrap_or(crate_dir).to_path_buf()
 }

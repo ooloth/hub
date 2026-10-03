@@ -2,6 +2,8 @@
 
 /// Every workspace member has a README.
 mod crate_readmes;
+/// `domain/` reads no ambient state.
+mod domain_purity;
 /// Every workspace member inherits the workspace lints.
 mod lint_inheritance;
 /// The workspace's members, as cargo sees them.
