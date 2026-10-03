@@ -5,6 +5,8 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 
 mod gh_post_guard;
+#[cfg(test)]
+mod repo_state;
 
 /// Hub's dev and ops tooling.
 #[derive(Parser)]
