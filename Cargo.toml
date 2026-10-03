@@ -4,6 +4,7 @@
     "config",
     "daemon",
     "domain",
+    "scripts",
     "store",
     "ui/cli",
     "ui/tui",

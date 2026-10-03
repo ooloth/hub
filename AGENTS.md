@@ -53,7 +53,7 @@ workflows/   # orchestrated operations; the "what hub does"
 ui/
   cli/       # hub binary — bootstraps config, wires deps, calls workflows
   tui/       # hub-tui binary
-scripts/     # dev/ops scripts; not part of the binary
+scripts/     # the `scripts` crate: dev/ops tooling, ships in no binary (Decision 025)
 docs/        # architecture, decisions, playbooks
 ```
 
