@@ -7,9 +7,6 @@ amended: 2026-09-28
 
 # 024 — Hub state is per-profile under `~/.hub/<profile>`
 
-_Status: accepted; not yet implemented. `store::status_cache::db_path` resolves
-`~/.hub/hub.db` with no profile in it (`store/src/status_cache.rs:33-37`)._
-
 ## Forced by
 
 [Decision 020](020-hub-runs-an-unattended-surface.md) gives hub a long-lived process, and Phase 3.6

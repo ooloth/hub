@@ -38,8 +38,9 @@ itself the most important thing on the screen: it means notifications stopped.
   above with a switch on it, and a switch does not change what the code path does when it is on.
   The motivation does not survive either: per #327's plan of record a dev TUI fails by colliding
   with the installed instance's socket, database and logs, not for want of a fetch path, and
-  resolving all three from `HUB_HOME` is what fixes it. Reverses if a case appears where the TUI
-  has to run somewhere no daemon can.
+  keeping all three under one per-profile directory
+  ([Decision 024](024-hub-state-is-per-profile.md)) is what fixes it. Reverses if a case appears
+  where the TUI has to run somewhere no daemon can.
 
 ## Risk
 

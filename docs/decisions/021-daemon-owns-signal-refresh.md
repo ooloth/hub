@@ -39,8 +39,9 @@ no reason to disturb.
 - **launchd invoking a one-shot process once per interval, instead of a long-lived one** — because
   a process that exits after each pass is not there to be asked anything between passes. The TUI
   has two things to ask it, both in #327's plan of record: whether the daemon is alive, and to
-  refresh now. The plan answers them with a Unix socket at `$HUB_HOME/hub.sock`, and a process that
-  exists for a few seconds an hour has nothing to bind it to. Reverses if the TUI stops needing to
+  refresh now. The plan answers them with a Unix socket at `~/.hub/<profile>/hub.sock`
+  ([Decision 024](024-hub-state-is-per-profile.md)), and a process that exists for a few seconds
+  an hour has nothing to bind it to. Reverses if the TUI stops needing to
   talk to the daemon at all.
 - **Not yet: leave 008 in place and have the daemon notify from whatever the TUI last wrote** —
   because the TUI may not have run for days, so the notification would describe a queue that has
