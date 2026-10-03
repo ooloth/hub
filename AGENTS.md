@@ -197,9 +197,15 @@ Then clean up every time: `tmux kill-session -t qa`, remove any
   resolves every `op://` reference in `hub.toml` before the first fetch, so one
   run raises several prompts, each answered with a fingerprint. Expect them.
   They are never a reason to skip a live run or to ask before starting one.
-- **A hang with nothing on screen means the desktop app is not running.** In
-  that state `op read` blocks rather than prompting, so the process waits with
-  no output. That is the symptom to diagnose on, not anything `op whoami` says.
+- **`couldn't connect to the 1Password desktop app` means the app is not
+  running.** `op read` fails within a second with that message, before any
+  fetch starts. Start the app and run again. The first run after starting it
+  can fail the same way while the app finishes launching (observed 2026-10-02).
+- **A hang with nothing on screen is a different state.** `op read` is waiting
+  on something nobody has answered. A 2026-09-21 measurement attributed this to
+  the app not running, which a 2026-10-02 run contradicts. The cause is open in
+  `docs/questions/how-should-an-unattended-daemon-obtain-credentials.md`.
+  Diagnose on this symptom, not on anything `op whoami` says.
 - **You cannot `echo` inside a launched investigation window** — it is running
   Claude Code. Read the prompts off the process instead:
   `ps -p $(tmux display-message -p -t qa:2.0 '#{pane_pid}') -wwE -o command=`.
