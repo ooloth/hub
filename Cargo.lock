@@ -1998,7 +1998,6 @@ dependencies = [
  "rstest 0.25.0",
  "serde",
  "serde_json",
- "shlex",
  "tempfile",
  "toml",
 ]

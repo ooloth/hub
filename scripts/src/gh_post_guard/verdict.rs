@@ -212,6 +212,18 @@ mod tests {
     }
 
     #[test]
+    fn a_single_quoted_title_with_code_formatting_is_allowed() {
+        let dir = workdir_with("body.md", "nothing banned here");
+
+        let verdict = verdict_in(
+            &dir,
+            "gh issue create -t 'The tests fail when `daemon/` writes the cache' --body-file body.md",
+        );
+
+        assert_eq!(verdict, Verdict::Allow);
+    }
+
+    #[test]
     fn a_clean_post_is_allowed() {
         let dir = workdir_with("body.md", "nothing banned here");
 

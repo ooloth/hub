@@ -2,6 +2,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use super::publishing_call::{PublishKind, PublishingCall};
+use super::shell_words::Word;
 
 /// Where a publishing call would read text from, beyond the command line itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,7 +39,7 @@ impl fmt::Display for UnreadableReason {
         match self {
             Self::ShellExpansion => write!(
                 f,
-                "it uses shell expansion, which the guard sees unexpanded; write the path literally"
+                "it uses shell expansion, which the guard sees unexpanded; write it literally"
             ),
             Self::StdinWithoutHeredoc => write!(
                 f,
@@ -62,14 +63,20 @@ impl BodySource {
         cwd: &Path,
         home: Option<&Path>,
     ) -> Vec<Self> {
-        let resolve = |arg: &str| resolve(arg, has_heredoc, cwd, home);
+        let resolve = |value: Value<'_>| resolve(value, has_heredoc, cwd, home);
         let mut sources = Vec::new();
-        let mut args = call.args.iter().map(String::as_str).peekable();
+        let mut args = call.args.iter().map(Value::from).peekable();
 
         while let Some(arg) = args.next() {
-            let (flag, joined) = match arg.split_once('=') {
-                Some((flag, value)) if flag.starts_with("--") => (flag, Some(value)),
-                _ => (arg, None),
+            let (flag, joined) = match arg.text.split_once('=') {
+                Some((flag, value)) if flag.starts_with("--") => (
+                    flag,
+                    Some(Value {
+                        text: value,
+                        expands: arg.expands,
+                    }),
+                ),
+                _ => (arg.text, None),
             };
             match (call.kind, flag) {
                 (PublishKind::Api, "-F" | "--field") => {
@@ -93,7 +100,7 @@ impl BodySource {
                 // `pr review --comment` is a switch and `issue close --comment` takes text,
                 // so the next word is text only when it is not another flag.
                 (_, "-c" | "--comment") => {
-                    let text = joined.or_else(|| args.next_if(|next| !next.starts_with('-')));
+                    let text = joined.or_else(|| args.next_if(|next| !next.text.starts_with('-')));
                     if let Some(text) = text {
                         sources.extend(expansion(text));
                     }
@@ -113,7 +120,7 @@ impl BodySource {
                 (PublishKind::Gist, positional)
                     if !positional.starts_with('-') || positional == "-" =>
                 {
-                    sources.push(resolve(positional));
+                    sources.push(resolve(arg));
                 }
                 _ => {}
             }
@@ -122,8 +129,25 @@ impl BodySource {
     }
 }
 
+/// An argument's text, and whether the shell would expand it.
+#[derive(Clone, Copy)]
+struct Value<'a> {
+    text: &'a str,
+    expands: bool,
+}
+
+impl<'a> From<&'a Word> for Value<'a> {
+    fn from(word: &'a Word) -> Self {
+        Self {
+            text: &word.text,
+            expands: word.expands,
+        }
+    }
+}
+
 /// Where a path argument points, or why it cannot be read.
-fn resolve(arg: &str, has_heredoc: bool, cwd: &Path, home: Option<&Path>) -> BodySource {
+fn resolve(value: Value<'_>, has_heredoc: bool, cwd: &Path, home: Option<&Path>) -> BodySource {
+    let arg = value.text;
     let unreadable = |why| BodySource::Unreadable {
         arg: arg.to_string(),
         why,
@@ -135,7 +159,7 @@ fn resolve(arg: &str, has_heredoc: bool, cwd: &Path, home: Option<&Path>) -> Bod
             unreadable(UnreadableReason::StdinWithoutHeredoc)
         };
     }
-    if expands(arg) {
+    if value.expands {
         return unreadable(UnreadableReason::ShellExpansion);
     }
     match (arg.strip_prefix("~/"), home) {
@@ -148,19 +172,22 @@ fn resolve(arg: &str, has_heredoc: bool, cwd: &Path, home: Option<&Path>) -> Bod
 
 /// A `gh api -F key=value` field: `@path` reads a file, and anything else is inline text.
 fn api_field(
-    field: &str,
+    field: Value<'_>,
     has_heredoc: bool,
     cwd: &Path,
     home: Option<&Path>,
 ) -> Option<BodySource> {
-    if expands(field) {
+    if field.expands {
         return expansion(field);
     }
-    let (_, value) = field.split_once('=')?;
-    let path = value.strip_prefix('@')?;
+    let (_, value) = field.text.split_once('=')?;
+    let path = Value {
+        text: value.strip_prefix('@')?,
+        expands: false,
+    };
     Some(match resolve(path, has_heredoc, cwd, home) {
         BodySource::Unreadable { why, .. } => BodySource::Unreadable {
-            arg: field.to_string(),
+            arg: field.text.to_string(),
             why,
         },
         readable => readable,
@@ -168,15 +195,11 @@ fn api_field(
 }
 
 /// Inline text is scanned with the command, unless the shell would replace it first.
-fn expansion(text: &str) -> Option<BodySource> {
-    expands(text).then(|| BodySource::Unreadable {
-        arg: text.to_string(),
+fn expansion(value: Value<'_>) -> Option<BodySource> {
+    value.expands.then(|| BodySource::Unreadable {
+        arg: value.text.to_string(),
         why: UnreadableReason::ShellExpansion,
     })
-}
-
-fn expands(text: &str) -> bool {
-    text.contains('$') || text.contains('`')
 }
 
 #[cfg(test)]
@@ -236,6 +259,8 @@ mod tests {
     #[case::backticks("gh issue comment 1 -b \"`cat x`\"", "`cat x`")]
     #[case::other_users_home("gh issue comment 1 --body-file ~other/b.md", "~other/b.md")]
     #[case::api_field_variable("gh api repos/o/r/issues -f body=$BODY", "body=$BODY")]
+    #[case::double_quoted_variable(r#"gh issue comment 1 -b "hi $USER""#, "hi $USER")]
+    #[case::mixed_quoting("gh issue comment 1 -b 'a'\"$B\"", "a$B")]
     fn a_body_the_shell_would_expand_is_unreadable(#[case] command: &str, #[case] arg: &str) {
         assert_eq!(
             sources(command),
@@ -266,6 +291,10 @@ mod tests {
     #[case::title("gh pr create -t title -b body")]
     #[case::api_plain_field("gh api repos/o/r/issues -f title=plain -F number=3")]
     #[case::issue_number_variable("gh issue comment $N -b body")]
+    #[case::single_quoted_backticks("gh issue create -t 'fix `daemon/` and $HOME' -b body")]
+    #[case::single_quoted_api_field("gh api repos/o/r/issues -f 'title=costs $5 in `code`'")]
+    #[case::escaped_dollar("gh issue comment 1 -b price\\$5")]
+    #[case::escaped_inside_double_quotes(r#"gh issue comment 1 -b "costs \$5 and \`x\`""#)]
     fn inline_text_is_left_to_the_command_scan(#[case] command: &str) {
         assert!(sources(command).is_empty());
     }

@@ -1,4 +1,4 @@
-use super::shell_words::ShellWords;
+use super::shell_words::{ShellWords, Word};
 
 /// The kinds of `gh` call that publish text. Each reads its body from different flags.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,7 +24,7 @@ pub(crate) enum PublishKind {
 pub(crate) struct PublishingCall {
     pub(crate) kind: PublishKind,
     /// Every word after the subcommand, up to the next shell operator.
-    pub(crate) args: Vec<String>,
+    pub(crate) args: Vec<Word>,
 }
 
 impl PublishingCall {
@@ -32,11 +32,11 @@ impl PublishingCall {
     pub(crate) fn find_all(words: &ShellWords) -> Vec<Self> {
         let mut calls = Vec::new();
         let mut rest = words.words.as_slice();
-        while let Some(start) = rest.iter().position(|word| is_gh(word)) {
+        while let Some(start) = rest.iter().position(is_gh) {
             let after_gh = rest.get(start + 1..).unwrap_or_default();
             let end = after_gh
                 .iter()
-                .position(|word| is_operator(word))
+                .position(is_operator)
                 .unwrap_or(after_gh.len());
             let (invocation, remaining) = after_gh.split_at(end);
             calls.extend(classify(invocation));
@@ -46,17 +46,21 @@ impl PublishingCall {
     }
 }
 
-fn is_gh(word: &str) -> bool {
-    word == "gh" || word.ends_with("/gh")
+fn is_gh(word: &Word) -> bool {
+    word.text == "gh" || word.text.ends_with("/gh")
 }
 
-fn is_operator(word: &str) -> bool {
-    matches!(word, "&&" | "||" | "|" | ";" | "&" | "(" | ")")
+fn is_operator(word: &Word) -> bool {
+    !word.quoted
+        && matches!(
+            word.text.as_str(),
+            "&&" | "||" | "|" | ";" | "&" | "(" | ")"
+        )
 }
 
 /// The publishing call `gh <invocation>` makes, if it makes one.
-fn classify(invocation: &[String]) -> Option<PublishingCall> {
-    let group = invocation.first()?.as_str();
+fn classify(invocation: &[Word]) -> Option<PublishingCall> {
+    let group = invocation.first()?.text.as_str();
     if group == "api" {
         let args = invocation.get(1..).unwrap_or_default().to_vec();
         return api_publishes(&args).then_some(PublishingCall {
@@ -64,7 +68,7 @@ fn classify(invocation: &[String]) -> Option<PublishingCall> {
             args,
         });
     }
-    let action = invocation.get(1)?.as_str();
+    let action = invocation.get(1)?.text.as_str();
     let kind = match (group, action) {
         (
             "issue" | "pr",
@@ -85,14 +89,13 @@ fn classify(invocation: &[String]) -> Option<PublishingCall> {
 
 /// Whether `gh api` with these arguments sends anything. An explicit method decides;
 /// otherwise `gh api` sends a POST exactly when it is given fields or an input body.
-fn api_publishes(args: &[String]) -> bool {
+fn api_publishes(args: &[Word]) -> bool {
     let mut method: Option<String> = None;
     let mut has_body = false;
-    let mut words = args.iter();
+    let mut words = args.iter().map(|word| word.text.as_str());
     while let Some(arg) = words.next() {
-        let arg = arg.as_str();
         if arg == "-X" || arg == "--method" {
-            method = words.next().cloned();
+            method = words.next().map(str::to_string);
         } else if let Some(value) = arg.strip_prefix("--method=") {
             method = Some(value.to_string());
         } else if let Some(value) = arg.strip_prefix("-X") {
@@ -157,6 +160,7 @@ mod tests {
     #[case::api_explicit_get("gh api -X GET search/issues -f q=alpha")]
     #[case::gh_inside_a_quoted_message("git commit -m 'gh issue comment'")]
     #[case::not_gh("cargo build")]
+    #[case::in_a_comment("echo hi # gh issue comment 1 -b x")]
     fn a_read_is_not_a_publishing_call(#[case] command: &str) {
         assert!(kinds(command).is_empty());
     }
@@ -168,7 +172,30 @@ mod tests {
         );
 
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls.first().unwrap().args, vec!["1", "-b", "body"]);
+        let texts: Vec<&str> = calls
+            .first()
+            .unwrap()
+            .args
+            .iter()
+            .map(|w| w.text.as_str())
+            .collect();
+        assert_eq!(texts, vec!["1", "-b", "body"]);
+    }
+
+    #[test]
+    fn a_quoted_operator_is_text_not_the_end_of_the_call() {
+        let calls = PublishingCall::find_all(
+            &ShellWords::split("gh issue comment 1 -b ';' --body-file b.md").unwrap(),
+        );
+
+        let texts: Vec<&str> = calls
+            .first()
+            .unwrap()
+            .args
+            .iter()
+            .map(|w| w.text.as_str())
+            .collect();
+        assert_eq!(texts, vec!["1", "-b", ";", "--body-file", "b.md"]);
     }
 
     #[test]
