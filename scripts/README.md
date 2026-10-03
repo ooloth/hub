@@ -4,8 +4,7 @@ Hub's own dev and ops tooling. Not part of any binary hub ships.
 
 [Decision 025](../docs/decisions/025-hub-tooling-is-rust-in-the-scripts-crate.md) puts all of it
 in this crate. Checks over the repository's own state are `#[test]` functions, so `just test` runs
-them. Tools that act at a particular moment are subcommands of the `scripts` binary. The shell and
-Python files still here are waiting to be ported, one per change.
+them. Tools that act at a particular moment are subcommands of the `scripts` binary.
 
 **Lives here:** repository checks, Claude Code hooks, local setup, device bootstrapping, one-off
 data tasks.
@@ -25,6 +24,10 @@ Not imported by anything.
 - `lint-configurations` — what `just lint` runs. Clippy with `-D warnings` once per configuration
   whose sources this checkout has: without hub-private always, then with each linked module. Runs
   them all, then names the failures. hub-private's pre-commit check calls it too.
+- `setup-private <device> [hub-private path]` — what `just setup-private` runs. Links
+  hub-private's sources and the device's config into this checkout. Safe to rerun: an existing
+  link is left alone, a link pointing at another checkout is reported and left alone, and anything
+  that is not a symlink stops the setup untouched.
 
 ## Running it
 
@@ -61,5 +64,6 @@ No output means allowed. A refusal prints the hook's deny JSON with the reason.
 - `src/staged_terms.rs` — the pre-commit check
 - `src/lint_configurations.rs` — the configuration lint
 - `src/repo_root.rs` — the checkout this binary was built from
+- `src/setup_private.rs` — the device setup
 - `src/gh_post_guard/` — the guard, one concept per file: `shell_words`, `publishing_call`,
   `body_source`, `verdict`, `hook_io`, and `respond`, which joins them

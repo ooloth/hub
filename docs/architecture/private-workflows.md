@@ -53,7 +53,7 @@ The stub has to keep matching the real signature, and `just lint` checks that by
 configuration the checkout can build. See
 [the invariant](../invariants/hub-builds-with-and-without-each-private-module.md).
 
-When adding a new device-specific module, add its link to `scripts/setup-private.sh` and
+When adding a new device-specific module, add its link to `scripts/src/setup_private.rs` and
 `.gitignore`, a feature to select it, a tracked stub, and a configuration in
 `scripts/src/lint_configurations.rs`.
 

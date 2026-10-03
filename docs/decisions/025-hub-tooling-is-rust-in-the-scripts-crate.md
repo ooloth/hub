@@ -6,9 +6,6 @@ date: 2026-10-02
 
 # 025 — Hub's own tooling is Rust, in the `scripts` crate
 
-_Status: accepted; not yet implemented. `scripts/` holds five bash and two Python scripts and no
-`Cargo.toml`._
-
 ## Forced by
 
 `scripts/` holds seven tools, 360 lines in all: five in bash and two as `uv` single-file Python

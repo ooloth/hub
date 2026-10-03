@@ -15,6 +15,8 @@ mod repo_root;
 mod repo_state;
 /// Text gathered for scanning, and where it came from.
 mod scanned_text;
+/// Linking hub-private into this checkout.
+mod setup_private;
 /// The commit-time check of staged content.
 mod staged_terms;
 
@@ -48,6 +50,17 @@ enum Command {
     ///
     /// Runs every configuration even after one fails, then names the failures.
     LintConfigurations,
+    /// Link hub-private's sources and a device's config into this checkout.
+    ///
+    /// Safe to rerun: an existing link is left alone, a link pointing at another checkout is
+    /// reported and left alone, and anything that is not a symlink stops the setup untouched.
+    SetupPrivate {
+        /// The device, matching hub-private/devices/<device>.toml. Omit it to list them.
+        device: Option<String>,
+        /// The hub-private checkout, relative to this one.
+        #[arg(default_value = "../hub-private")]
+        hub_private: PathBuf,
+    },
 }
 
 fn main() -> ExitCode {
@@ -55,5 +68,9 @@ fn main() -> ExitCode {
         Command::GuardGhPosts { banned_terms } => gh_post_guard::run(&banned_terms),
         Command::CheckStagedTerms => staged_terms::run(),
         Command::LintConfigurations => lint_configurations::run(),
+        Command::SetupPrivate {
+            device,
+            hub_private,
+        } => setup_private::run(device.as_deref(), &hub_private),
     }
 }

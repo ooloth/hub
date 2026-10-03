@@ -80,4 +80,4 @@ setup:
 # wire hub-private into this repo (run once per device after cloning hub-private)
 # DEVICE must match a file in hub-private/devices/<device>.toml
 setup-private DEVICE HUB_PRIVATE_PATH="../hub-private":
-    bash scripts/setup-private.sh {{DEVICE}} {{HUB_PRIVATE_PATH}}
+    cargo run -q -p scripts -- setup-private {{DEVICE}} {{HUB_PRIVATE_PATH}}
