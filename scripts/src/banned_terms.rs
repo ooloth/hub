@@ -3,7 +3,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 
-use super::scanned_text::{ScannedText, TextOrigin};
+use crate::scanned_text::{ScannedText, TextOrigin};
 
 /// One term that must never appear in anything posted to hub's public GitHub.
 ///

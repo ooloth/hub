@@ -19,6 +19,9 @@ Not imported by anything.
   `scripts/blocked-terms.txt`: in the command text, a heredoc, or a body file. Also refuses a body
   it cannot read, such as a path behind `$VAR`. Allows everything when the list does not exist,
   which is every checkout without hub-private beside it.
+- `check-staged-terms` — the pre-commit check prek runs. Refuses a commit whose staged content
+  holds a term from hub-private's list, naming each file and term. Reads the git index, not the
+  working copy, and finds the list beside the main checkout, so it works in worktrees too.
 
 ## Running it
 
@@ -50,6 +53,8 @@ No output means allowed. A refusal prints the hook's deny JSON with the reason.
   member's manifest sets `[lints] workspace = true`), `domain_purity` (nothing under `domain/src`
   names a way of reading ambient state) and `workspace` (the member list, from `cargo metadata`).
   Run them alone with `cargo nextest run -p scripts -E 'test(repo_state)'`
-- `src/gh_post_guard/` — the guard, one concept per file: `banned_terms`, `shell_words`,
-  `publishing_call`, `body_source`, `scanned_text`, `verdict`, `hook_io`, and `respond`, which
-  joins them
+- `src/banned_terms.rs`, `src/scanned_text.rs` — the one matching rule the guard and the
+  pre-commit check share
+- `src/staged_terms.rs` — the pre-commit check
+- `src/gh_post_guard/` — the guard, one concept per file: `shell_words`, `publishing_call`,
+  `body_source`, `verdict`, `hook_io`, and `respond`, which joins them

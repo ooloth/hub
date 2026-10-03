@@ -1,11 +1,11 @@
 use std::fmt;
 use std::path::Path;
 
-use super::banned_terms::{BannedTerms, Hit};
 use super::body_source::{BodySource, UnreadableReason};
 use super::publishing_call::PublishingCall;
-use super::scanned_text::{ScannedText, TextOrigin};
 use super::shell_words::ShellWords;
+use crate::banned_terms::{BannedTerms, Hit};
+use crate::scanned_text::{ScannedText, TextOrigin};
 
 /// The largest body file the guard reads. A real comment body is a few kilobytes.
 pub(crate) const MAX_BODY_BYTES: u64 = 1024 * 1024;
@@ -145,8 +145,8 @@ mod tests {
     use rstest::rstest;
     use tempfile::TempDir;
 
-    use super::super::scanned_text::TextOrigin;
     use super::*;
+    use crate::scanned_text::TextOrigin;
 
     fn terms() -> BannedTerms {
         BannedTerms::parse("alpha")

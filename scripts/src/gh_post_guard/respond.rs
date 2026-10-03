@@ -2,9 +2,9 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use super::banned_terms::{self, TermList};
 use super::hook_io::{deny_output, HookInput};
 use super::verdict::{decide, DenyReason, Verdict};
+use crate::banned_terms::{self, TermList};
 
 /// Runs the guard as a hook: the list from `banned_terms`, the request from stdin, any
 /// refusal to stdout. Always exits 0, because the JSON on stdout is the decision.
@@ -49,8 +49,8 @@ pub(crate) fn respond(stdin: &str, list: &TermList, home: Option<&Path>) -> Opti
 
 #[cfg(test)]
 mod tests {
-    use super::super::banned_terms::BannedTerms;
     use super::*;
+    use crate::banned_terms::BannedTerms;
 
     fn present() -> TermList {
         TermList::Present(BannedTerms::parse("alpha"))

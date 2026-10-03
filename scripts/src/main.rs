@@ -4,9 +4,15 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
+/// The terms banned from hub, and finding them in text.
+mod banned_terms;
 mod gh_post_guard;
 #[cfg(test)]
 mod repo_state;
+/// Text gathered for scanning, and where it came from.
+mod scanned_text;
+/// The commit-time check of staged content.
+mod staged_terms;
 
 /// Hub's dev and ops tooling.
 #[derive(Parser)]
@@ -28,10 +34,16 @@ enum Command {
         #[arg(long)]
         banned_terms: PathBuf,
     },
+    /// Pre-commit check: refuse a commit whose staged content holds a banned term.
+    ///
+    /// Reads the staged content of the repository in the current directory, including from a
+    /// worktree, and finds the list beside the main checkout. Passes when there is no list.
+    CheckStagedTerms,
 }
 
 fn main() -> ExitCode {
     match Cli::parse().command {
         Command::GuardGhPosts { banned_terms } => gh_post_guard::run(&banned_terms),
+        Command::CheckStagedTerms => staged_terms::run(),
     }
 }
