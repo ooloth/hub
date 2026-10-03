@@ -6,6 +6,8 @@ pub mod gcp;
 pub(crate) mod git;
 /// Loki log query and entry parsing.
 pub mod loki;
+/// Asking every source at once, each within a time limit.
+pub mod sources;
 /// Unified status fetch across all configured signal sources.
 pub mod status;
 

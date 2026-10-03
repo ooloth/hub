@@ -3262,6 +3262,7 @@ dependencies = [
  "chrono",
  "clients",
  "domain",
+ "futures",
  "insta",
  "rstest 0.25.0",
  "secrecy",

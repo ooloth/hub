@@ -26,7 +26,7 @@ pub struct LogEntry {
 /// output cannot be parsed as JSON log entries.
 pub async fn entries(gcp_project: &str, filter: &str, lookback: &str) -> Result<Vec<LogEntry>> {
     let args = gcloud_args(gcp_project, filter, lookback);
-    let output = tokio::process::Command::new("gcloud")
+    let output = killed_on_drop("gcloud")
         .args(&args)
         .output()
         .await
@@ -39,6 +39,16 @@ pub async fn entries(gcp_project: &str, filter: &str, lookback: &str) -> Result<
 
     let json = String::from_utf8_lossy(&output.stdout);
     parse_entries(&json)
+}
+
+/// A command whose process is killed when the future running it is dropped.
+///
+/// A refresh gives up on a source after a time limit by dropping its future. Without this, a
+/// `gcloud` that never answers would keep running after every pass that gave up on it.
+fn killed_on_drop(program: &str) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new(program);
+    let _ = command.kill_on_drop(true);
+    command
 }
 
 fn gcloud_args(gcp_project: &str, filter: &str, lookback: &str) -> Vec<String> {
@@ -112,6 +122,49 @@ fn parse_entries(json: &str) -> Result<Vec<LogEntry>> {
 mod tests {
     use super::*;
     use rstest::rstest;
+
+    #[tokio::test]
+    async fn a_process_given_up_on_is_killed() {
+        let dir = std::env::temp_dir().join(format!("hub-killed-on-drop-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pid_file = dir.join("pid");
+        let script = format!("echo $$ > {}; exec sleep 30", pid_file.display());
+
+        let given_up = tokio::time::timeout(
+            std::time::Duration::from_millis(500),
+            killed_on_drop("sh").args(["-c", &script]).output(),
+        )
+        .await;
+        assert!(
+            given_up.is_err(),
+            "sleep 30 should not finish within the limit"
+        );
+
+        let pid = std::fs::read_to_string(&pid_file)
+            .unwrap()
+            .trim()
+            .to_string();
+        // Running means present and not a zombie: a killed process stays listed as `Z` until
+        // something reaps it, and is no longer running.
+        let mut alive = true;
+        for _ in 0..50 {
+            let output = std::process::Command::new("ps")
+                .args(["-o", "stat=", "-p", &pid])
+                .output()
+                .unwrap();
+            let state = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            alive = !state.is_empty() && !state.starts_with('Z');
+            if !alive {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(
+            !alive,
+            "process {pid} was still running after its future was dropped"
+        );
+    }
 
     #[rstest]
     #[case("my-project", "severity>=ERROR", "1h", vec![
