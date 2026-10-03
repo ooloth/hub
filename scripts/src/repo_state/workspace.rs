@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
+
+use crate::repo_root::repo_root;
 use serde::Deserialize;
 
 /// A crate in hub's workspace, as `cargo metadata` reports it.
@@ -61,12 +63,6 @@ impl WorkspaceMember {
         let json = String::from_utf8(output.stdout).context("cargo metadata printed non-UTF-8")?;
         Self::all_from(&json)
     }
-}
-
-/// The root of hub's repository: the directory above this crate.
-pub(crate) fn repo_root() -> PathBuf {
-    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    crate_dir.parent().unwrap_or(crate_dir).to_path_buf()
 }
 
 /// The part of `cargo metadata` output this module reads.

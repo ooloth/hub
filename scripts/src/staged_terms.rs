@@ -246,6 +246,21 @@ mod tests {
     }
 
     #[test]
+    fn a_staged_symlink_is_scanned_as_its_target_path_not_the_file_it_points_at() {
+        let repo = Checkouts::new();
+        let private = repo.parent.path().join("hub-private/notes.md");
+        std::fs::write(&private, "alpha").unwrap();
+        std::os::unix::fs::symlink(&private, repo.hub().join("linked.md")).unwrap();
+        git(&repo.hub(), &["add", "linked.md"]);
+        repo.stage("copied.md", "alpha");
+
+        assert_eq!(
+            found_paths(&check(&repo.hub()).unwrap()),
+            vec![PathBuf::from("copied.md")]
+        );
+    }
+
+    #[test]
     fn a_worktree_finds_the_list_beside_the_main_checkout() {
         let repo = Checkouts::new();
         repo.stage("readme.md", "start");

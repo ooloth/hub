@@ -63,7 +63,7 @@ mutants: _require-mutants
 
 # clippy with warnings as errors, in every private-module configuration this checkout can build
 lint:
-    @scripts/check-private-configurations.sh
+    @cargo run -q -p scripts -- lint-configurations
 
 fmt:
     cargo fmt

@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
-use super::workspace::repo_root;
+use crate::repo_root::repo_root;
 
 /// The known ways code reaches the environment, the filesystem, a process, a clock or a
 /// random source. Names, not meaning: see docs/invariants/domain-is-pure.md for what this misses.

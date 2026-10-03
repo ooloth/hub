@@ -28,17 +28,17 @@ made on one laptop therefore fails to compile on the other.
   `mod` declaration sits behind the feature that enables it.
 - A shared signature that names a private service. It is public in hub through the stub and the
   call site. The generic `Media*` vocabulary is what hub uses instead.
-- A device-specific module added without a feature to select it, a tracked stub, and a pass in
-  `scripts/check-private-configurations.sh`.
+- A device-specific module added without a feature to select it, a tracked stub, and a
+  configuration in `scripts/src/lint_configurations.rs`.
 
 ## How it is enforced
 
-`scripts/check-private-configurations.sh` runs clippy with `-D warnings` once for each
-configuration whose sources are present in the checkout. It always builds without hub-private. It
-builds `--features private` when `clients/src/private` exists. It builds `-p hub-tui --features
-media` when `ui/tui/src/investigations/media.rs` exists. `just lint` runs it, `just check` runs
-`just lint`, and prek runs `just lint` before every commit. When it fails, it names the
-configurations that failed and points here.
+`scripts lint-configurations` (`scripts/src/lint_configurations.rs`) runs clippy with
+`-D warnings` once for each configuration whose sources are present in the checkout. It always
+builds without hub-private. It builds `--features private` when `clients/src/private` exists. It
+builds `-p hub-tui --features media` when `ui/tui/src/investigations/media.rs` exists. `just lint`
+runs it, `just check` runs `just lint`, and prek runs `just lint` before every commit. When it
+fails, it names the configurations that failed and points here.
 
 Public CI checks only the first configuration, because it has no hub-private.
 

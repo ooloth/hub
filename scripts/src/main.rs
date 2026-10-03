@@ -7,6 +7,10 @@ use clap::{Parser, Subcommand};
 /// The terms banned from hub, and finding them in text.
 mod banned_terms;
 mod gh_post_guard;
+/// Clippy in every configuration the checkout can build.
+mod lint_configurations;
+/// Where the checkout this binary was built from lives.
+mod repo_root;
 #[cfg(test)]
 mod repo_state;
 /// Text gathered for scanning, and where it came from.
@@ -39,11 +43,17 @@ enum Command {
     /// Reads the staged content of the repository in the current directory, including from a
     /// worktree, and finds the list beside the main checkout. Passes when there is no list.
     CheckStagedTerms,
+    /// Clippy with `-D warnings` in every configuration this checkout can build: always
+    /// without hub-private, and with each hub-private module whose sources are linked in.
+    ///
+    /// Runs every configuration even after one fails, then names the failures.
+    LintConfigurations,
 }
 
 fn main() -> ExitCode {
     match Cli::parse().command {
         Command::GuardGhPosts { banned_terms } => gh_post_guard::run(&banned_terms),
         Command::CheckStagedTerms => staged_terms::run(),
+        Command::LintConfigurations => lint_configurations::run(),
     }
 }

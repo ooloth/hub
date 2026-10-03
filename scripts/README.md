@@ -22,6 +22,9 @@ Not imported by anything.
 - `check-staged-terms` — the pre-commit check prek runs. Refuses a commit whose staged content
   holds a term from hub-private's list, naming each file and term. Reads the git index, not the
   working copy, and finds the list beside the main checkout, so it works in worktrees too.
+- `lint-configurations` — what `just lint` runs. Clippy with `-D warnings` once per configuration
+  whose sources this checkout has: without hub-private always, then with each linked module. Runs
+  them all, then names the failures. hub-private's pre-commit check calls it too.
 
 ## Running it
 
@@ -56,5 +59,7 @@ No output means allowed. A refusal prints the hook's deny JSON with the reason.
 - `src/banned_terms.rs`, `src/scanned_text.rs` — the one matching rule the guard and the
   pre-commit check share
 - `src/staged_terms.rs` — the pre-commit check
+- `src/lint_configurations.rs` — the configuration lint
+- `src/repo_root.rs` — the checkout this binary was built from
 - `src/gh_post_guard/` — the guard, one concept per file: `shell_words`, `publishing_call`,
   `body_source`, `verdict`, `hook_io`, and `respond`, which joins them

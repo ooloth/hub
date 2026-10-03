@@ -54,8 +54,8 @@ configuration the checkout can build. See
 [the invariant](../invariants/hub-builds-with-and-without-each-private-module.md).
 
 When adding a new device-specific module, add its link to `scripts/setup-private.sh` and
-`.gitignore`, a feature to select it, a tracked stub, and a pass to
-`scripts/check-private-configurations.sh`.
+`.gitignore`, a feature to select it, a tracked stub, and a configuration in
+`scripts/src/lint_configurations.rs`.
 
 All of these are gitignored in hub, so none of the symlinks are ever committed
 to the public repo.
