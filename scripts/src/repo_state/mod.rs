@@ -2,5 +2,7 @@
 
 /// Every workspace member has a README.
 mod crate_readmes;
+/// Every workspace member inherits the workspace lints.
+mod lint_inheritance;
 /// The workspace's members, as cargo sees them.
 mod workspace;
