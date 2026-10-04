@@ -6,9 +6,9 @@ date: 2026-09-16
 
 # 020 — Hub runs an unattended surface
 
-_Status: accepted; partly implemented. The `hub-daemon` crate exists and refreshes
-the cache, but it is not yet long-lived and it does not notify: `daemon/src/main.rs`
-runs one refresh and exits, and nothing calls `terminal-notifier` or `osascript`._
+_Status: accepted; partly implemented. `hub-daemon` is long-lived and refreshes the
+cache on an interval, but it does not notify: nothing calls `terminal-notifier` or
+`osascript`._
 
 ## Forced by
 

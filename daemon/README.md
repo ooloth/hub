@@ -13,14 +13,20 @@ present ([Decision 020](../docs/decisions/020-hub-runs-an-unattended-surface.md)
 
 ## What it does today
 
-One refresh, then exit. Everything else in [#327](https://github.com/ooloth/hub/issues/327) is a
-later phase: looping and the single-instance guard (3.3), the health record (3.4), credential
-retry (3.5), launchd and log files (3.6), notifications (Phase 4), and the socket the TUI will read
-(Phase 5).
+A pass at startup, then one every 15 minutes (`--interval` changes it), each logged as one line.
+One daemon per profile: a second refuses, naming the first. `--once` runs a single pass and exits.
+Everything else in [#327](https://github.com/ooloth/hub/issues/327) is a later phase: the health
+record (3.4), credential retry (3.5), launchd and log files (3.6), notifications (Phase 4), and the
+socket the TUI will read (Phase 5).
 
 ## Files
 
-- `main.rs` — parses flags, then performs every I/O call in sequence: load config, fetch, write
+- `main.rs` — parses flags, takes the lock, loads config once, then runs passes. Every I/O call is
+  here, including each pass's fetch and write
+- `instance_lock.rs` — one daemon per profile: the `flock` on `~/.hub/<profile>/daemon.lock`
+- `schedule.rs` — `every`, which runs a pass now and then once per period, never catching up
+- `pass.rs` — `PassReport` and `PassOutcome`, the per-pass log line, and what `--once` exits with.
+  Pure
 - `refresh.rs` — `fetch`, which asks all sources once and merges the answers. The network edge
 - `freshness.rs` — `RefreshOutcome`, `FreshStatus`, `classify`. Pure; no I/O; all the unit tests
 - `cache.rs` — `write` and `apply`. The SQLite edge
@@ -41,7 +47,7 @@ A refresh is cached unless it came back with nothing **and** a source failed:
 - items, no failures → written
 - items, some failures → written (partial)
 - nothing, no failures → written (the queue genuinely drained, and the cache has to say so)
-- nothing, some failures → refused, exit 1, previous row untouched
+- nothing, some failures → refused, previous row untouched, logged as `outcome=unchanged`
 
 The conjunction matters in both directions. See
 [the invariant](../docs/invariants/a-refresh-that-reached-no-source-never-replaces-the-cache.md)
@@ -50,20 +56,23 @@ for what enforces it and what the enforcement misses.
 ## Running it
 
 ```bash
-just daemon
+just daemon                    # a pass now, then every 15 minutes, until stopped
+just daemon --interval 20s     # the same, every 20 seconds
+just daemon --once             # one pass, then exit
 ```
 
-Expect a fingerprint prompt if 1Password has not been touched recently — three `op://` references
-resolve before anything else happens.
+Expect fingerprint prompts at startup if 1Password has not been touched recently: every `op://`
+reference resolves once, before the first pass, and later passes reuse them.
 
-Success prints one line to stdout and exits 0:
+Each pass prints one line to stdout:
 
 ```
-hub-daemon refresh=ok items=1136 failed_sources=0 schema_version=18
+hub-daemon pass at=2026-10-03T23:15:55Z pid=4242 profile=dev outcome=partial duration_ms=6412 items=1066 failed_sources=1 failed="private workflows"
 ```
 
-`failed_sources` is the number to read. Zero means every source answered; non-zero means a partial
-refresh, which is still written.
+`outcome` is the field to read: `ok` (every source answered, written), `partial` (written, with the
+sources in `failed` missing), `unchanged` (every source failed, so the cache kept its row) or
+`failed` (the pass itself failed, with `error`). `pid` changes when the daemon restarts.
 
 ## Observing it work
 
@@ -102,15 +111,17 @@ credentials still resolve:
 ```bash
 NO_PROXY=my.1password.com,.1password.com,1password.com \
 HTTPS_PROXY=http://127.0.0.1:1 HTTP_PROXY=http://127.0.0.1:1 \
-cargo run -p hub-daemon --features private; echo "exit $?"
+cargo run -p hub-daemon --features private -- --once; echo "exit $?"
 ```
 
-Expect exit 1, every failed source named on stderr, and `refreshed_at` untouched.
+Expect `outcome=unchanged` naming every failed source, exit 1, and `refreshed_at` untouched. Without
+`--once` the same line repeats each pass and the daemon keeps running.
 
-**Exit codes**, which Phase 3.6 will key off: 0 wrote, 1 did not.
+**Exit codes with `--once`**: 0 wrote, 1 did not. A second daemon for the same profile also exits 1,
+naming the running one.
 
 ```bash
-cargo run -q -p hub-daemon --features private >/dev/null 2>&1; echo $?
+cargo run -q -p hub-daemon --features private -- --once >/dev/null 2>&1; echo $?
 ```
 
 ## Gotchas that cost time

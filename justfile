@@ -7,6 +7,9 @@ default:
 # The `media` feature compiles the home laptop's media investigation module, which only
 # exists where `just setup-private home-laptop` linked it.
 _features := if path_exists("ui/tui/src/investigations/media.rs") == "true" { "--features private,hub-tui/media" } else if path_exists("clients/src/private") == "true" { "--features private" } else { "" }
+# hub-daemon has `private` but not `media`, and cargo refuses another package's feature when
+# building one package with -p, so the daemon gets only the part of _features it has.
+_daemon_features := if path_exists("clients/src/private") == "true" { "--features private" } else { "" }
 
 # Every recipe that runs hub from source uses the `dev` profile, so development
 # never writes the database the installed hub reads. Override per invocation
@@ -38,9 +41,10 @@ cli:
 tui:
     cargo run -p hub-tui {{_features}}
 
-# run one refresh with nobody present, then exit
-daemon:
-    cargo run -p hub-daemon {{_features}}
+# refresh the cache with nobody present, every 15 minutes. `just daemon --once` runs one
+# pass and exits; `just daemon --interval 20s` changes the period
+daemon *ARGS:
+    cargo run -p hub-daemon {{_daemon_features}} -- {{ARGS}}
 
 db:
     @echo "opening ~/.hub/$HUB_PROFILE/hub.db"

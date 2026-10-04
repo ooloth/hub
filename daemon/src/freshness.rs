@@ -32,9 +32,9 @@ impl FreshStatus {
         self.0.items.len()
     }
 
-    /// How many sources failed during the refresh.
-    pub(crate) const fn failed_source_count(&self) -> usize {
-        self.0.errors.len()
+    /// The sources that failed during the refresh while others answered.
+    pub(crate) fn failed_sources(&self) -> Vec<String> {
+        self.0.errors.clone()
     }
 
     /// The JSON payload to store, in the shape the TUI reads.
@@ -120,7 +120,7 @@ mod tests {
         match outcome {
             RefreshOutcome::Refreshed(fresh) => {
                 assert_eq!(fresh.item_count(), 2);
-                assert_eq!(fresh.failed_source_count(), 1);
+                assert_eq!(fresh.failed_sources().len(), 1);
             }
             RefreshOutcome::NothingRefreshed { .. } => {
                 panic!("a refresh that reached a source must be cached")
