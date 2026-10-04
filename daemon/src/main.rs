@@ -1,9 +1,10 @@
 //! Hub daemon — refreshes hub's signal cache with nobody present.
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use clap::Parser;
 
 mod cache;
 mod freshness;
+mod instance_lock;
 mod refresh;
 
 /// Hub daemon binary.
@@ -22,6 +23,17 @@ async fn main() -> Result<()> {
     // blocks while 1Password is locked. A mistyped HUB_PROFILE should refuse
     // immediately rather than after that wait.
     let profile = config::profile::from_env()?;
+
+    // Also before Config::load: a second daemon for this profile refuses before raising any
+    // 1Password prompt. Bound for the life of the process, because dropping it releases it.
+    let home = std::env::home_dir().context("failed to resolve home directory")?;
+    let lock_path = profile.dir(&home).join("daemon.lock");
+    let _instance = match instance_lock::InstanceLock::acquire(&lock_path)? {
+        instance_lock::Acquired::Held(lock) => lock,
+        instance_lock::Acquired::HeldElsewhere { path, pid } => {
+            bail!(instance_lock::refusal(profile.as_str(), &path, pid))
+        }
+    };
 
     let config = config::Config::load()
         .await
