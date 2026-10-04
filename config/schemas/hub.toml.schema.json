@@ -151,12 +151,7 @@
       "required": ["name"],
       "additionalProperties": false,
       "properties": {
-        "name": { "const": "github-issues" },
-        "exclude_labels": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Exclude issues carrying any of these labels — e.g. 'wontfix', 'duplicate'."
-        }
+        "name": { "const": "github-issues" }
       }
     },
     "workflow_github_prs": {
