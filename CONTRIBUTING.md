@@ -27,8 +27,12 @@ git clone <repo> && cd hub
 cp hub.toml.example hub.toml
 # edit hub.toml — fill in [credentials] with your 1Password references or plain values
 just setup
+just build
 just check
 ```
+
+`just build` produces the `scripts` binary that the Claude Code hook guarding `gh` posts runs. The
+hook refuses `gh` calls until that binary exists.
 
 `hub.toml` lives as a plain local file in the repo root, gitignored.
 
@@ -45,8 +49,12 @@ git clone git@github.com:ooloth/hub-private.git ../hub-private
 (cd ../hub-private && prek install)   # hub-private's own pre-commit hook
 just setup-private <device>   # e.g. just setup-private home-laptop
 just setup
+just build
 just check
 ```
+
+`just build` produces the `scripts` binary that the Claude Code hook guarding `gh` posts runs. The
+hook refuses `gh` calls until that binary exists.
 
 `<device>` must match a file in `hub-private/devices/<device>.toml`. That file
 controls which workflows are active on this machine — work workflows won't
@@ -59,14 +67,19 @@ for the full model, how to add new devices, and how to add new private workflows
 
 ```bash
 just check              # fmt + lint (autofixes where possible)
-just status             # run the CLI status command
+just tui                # run the TUI
+just daemon             # refresh every 15 minutes with nobody present (--once for one pass)
+just db                 # open the profile's SQLite database in visidata
 ```
+
+Every recipe uses the `dev` profile, so it reads and writes `~/.hub/dev/`. `HUB_PROFILE=default
+just tui` reaches the installed hub's state instead.
 
 ## Common tasks
 
 ```bash
 just fmt                # format code
-just lint               # run clippy
+just lint               # clippy in every configuration this checkout can build
 just test               # run all tests
 just build              # build all crates
 ```

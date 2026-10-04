@@ -53,6 +53,7 @@ workflows/   # orchestrated operations; the "what hub does"
 ui/
   cli/       # hub binary — bootstraps config, wires deps, calls workflows
   tui/       # hub-tui binary
+prompts/     # investigation prompts loaded by the TUI
 scripts/     # the `scripts` crate: dev/ops tooling, ships in no binary (Decision 025)
 docs/        # architecture, decisions, playbooks
 ```
@@ -118,6 +119,12 @@ just tui     # run the TUI
 just daemon  # refresh every 15 minutes with nobody present (--once for one pass)
 ```
 
+Every `just` recipe uses the `dev` profile (`~/.hub/dev/hub.db`). `HUB_PROFILE=default just …`
+reaches the installed hub's state.
+
+A Claude Code hook guards `gh` posts against hub-private's banned terms. It runs the built
+`scripts` binary, so it needs `just build` once per checkout (see `scripts/README.md`).
+
 ## Verifying TUI changes
 
 **Every change that alters what the TUI shows or how it behaves is driven live
@@ -167,7 +174,7 @@ live.
 **The loop.**
 
 ```bash
-cargo build -p hub-tui --features private        # send-keys races a cargo build
+just build                                        # send-keys races a cargo build
 tmux new-session -d -s qa -x 200 -y 50 -c "$PWD"
 tmux send-keys -t qa:1 "just tui" Enter
 sleep 12                                          # wait for the first render
@@ -251,12 +258,15 @@ builds it.
 | `docs/architecture/worktrees.md`         | PR investigation worktrees — read before touching `fetch.rs`                                                      |
 | `docs/architecture/secrets.md`           | 1Password → op read → Secret<String> model                                                                        |
 | `docs/architecture/private-workflows.md` | Two-repo model for private workflows                                                                              |
+| `docs/questions/`                        | Open design questions, one per file                                                                               |
 | `docs/decisions/`                        | ADRs (rationale). Unbuilt ones say so under the title — see the note above          |
 | `docs/invariants/`                       | What must always hold, and the check that holds it up. No exceptions, unlike a standard |
 | `clients/README.md`                      | reqwest pattern for HTTP clients                                                                                  |
 | `store/README.md`                        | rusqlite pattern, db path, Connection threading notes                                                             |
 | `ui/cli/README.md`                       | clap derive API for CLI commands                                                                                  |
 | `ui/tui/README.md`                       | TUI architecture, cache/schema version, keybindings                                                               |
+| `daemon/README.md`                       | The unattended refresh surface: what lives in `daemon/` and its rules                                             |
+| `scripts/README.md`                      | The `scripts` crate: repository checks, Claude Code hooks, local setup                                            |
 
 ### Playbooks
 

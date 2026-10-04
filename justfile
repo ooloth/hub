@@ -18,9 +18,6 @@ _daemon_features := if path_exists("clients/src/private") == "true" { "--feature
 # inherits one. See docs/decisions/024-hub-state-is-per-profile.md
 export HUB_PROFILE := env_var_or_default("HUB_PROFILE", "dev")
 
-status:
-    cargo run -p hub-cli {{_features}} -- status
-
 check:
     taplo fmt
     taplo check
@@ -36,7 +33,7 @@ install:
     cargo install --path ui/tui {{_features}}
 
 cli:
-    cargo run -p hub-cli {{_features}}
+    cargo run -p hub-cli
 
 tui:
     cargo run -p hub-tui {{_features}}
