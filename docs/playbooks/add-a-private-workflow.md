@@ -27,8 +27,9 @@ Create `hub-private/workflows/src/<workflow-name>.rs` and add
 
 `hub-private/workflows/src/status.rs` is the entry point that hub calls. Add a
 branch to `run()` that checks for your workflow name in `workflow_names` and calls
-your workflow, populating the relevant field on `PrivateStatusData` (add the field
-if it doesn't exist yet).
+your workflow. On success, push the resulting `StatusItem` variants into the `items` of the
+`PrivateStatusResult` that `run()` returns. On failure, push the source's name into its
+`failed_sources`, which the refresh reports in `StatusReport::errors`.
 
 ## 4. Add variants to the public StatusItem enum
 
@@ -43,13 +44,11 @@ MyNewItem(crate::private::status::MyNewItem),
 Also add match arms for `urgency()` and `age()` on the new variants. This is
 required for the new items to be sorted into the unified ranked list.
 
-## 5. Add CLI rendering
+## 5. Add TUI display
 
-Add (or extend) `hub-private/ui/cli/src/status.rs` to render the new field. The
-public hub binary calls `crate::private::status::render(&report.private)` — your
-renderer reads from `PrivateStatusData` and prints lines to stdout.
-
-Add a corresponding renderer in `hub-private/ui/tui/src/` for any TUI-specific display logic.
+Add the new variants to the matches on `StatusItem` in `ui/tui/src/display/` (see step 4 of
+[Add a Workflow](add-a-workflow.md)). Put any display logic specific to the private items in
+`hub-private/ui/tui/src/`. The TUI is the only surface that renders items.
 
 ## 6. Add credentials to hub.toml
 
@@ -68,13 +67,15 @@ name = "your-workflow-name"
 ```
 
 `[[monitor.workflow]]` is for integrations (like media servers) that aren't tied to
-a specific code project. Use `[[project.workflow]]` inside a `[[project]]` block for
-integrations that are scoped to a repo.
+a specific code project. Its `name` is a free string, so a new name needs no change to
+hub's config. Use `[[project.workflow]]` inside a `[[project]]` block for integrations
+that are scoped to a repo. Those names are a closed set, the `WorkflowConfig` variants in
+`config/src/toml.rs`, and an unknown one fails `Config::load`.
 
 ## 8. Verify
 
 ```bash
 just check
 just test
-just status
+just tui
 ```

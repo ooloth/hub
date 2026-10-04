@@ -47,7 +47,6 @@ name = "github-ci"
 # [[project.workflow]]
 # name = "github-issues"
 # assigned_only = true
-# exclude_labels = ["wontfix", "duplicate"]
 #
 # [[project.workflow]]
 # name = "github-ci"
@@ -67,9 +66,11 @@ name = "github-ci"
 # exclude_users = ["bot@my-org.com"]
 #
 # [[project.environment.workflow]]
-# name = "user-activity-gcp"
-# include_users = ["alice@my-org.com"]
-# exclude_users = ["bot@my-org.com"]
+# name = "gcp-logs"
+# title = "app errors"                         # required; shown in the TUI
+# query = 'severity>=ERROR'                    # required; Cloud Logging filter
+# lookback = "1h"                              # default: 1h
+# message_field = "message"                    # default: message
 #
 # [[project.environment]]
 # env = "dev"
@@ -80,7 +81,7 @@ name = "github-ci"
 #
 # [[project.environment.workflow]]
 # name = "loki-logs"
-# title = "app errors"                         # required; shown in hub status
+# title = "app errors"                         # required; shown in the TUI
 # query = '{app="my-app"} | logfmt | level="error"'  # complete LogQL expression
 # lookback = "1h"                              # default: 1h
 # error_threshold = 10                         # default: 10

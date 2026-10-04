@@ -30,7 +30,6 @@ name = "github-prs"
 
 [[project.workflow]]
 name = "github-issues"
-exclude_labels = ["wontfix"]
 ```
 
 ## 3. Add environments (if the project is deployed)
@@ -43,11 +42,12 @@ blocks. Each environment carries the platform context its workflows need:
 env = "prod"
 gcp_project = "my-org-prod"
 gcp_region = "us-central1"
-service = "my-app"
 
 [[project.environment.workflow]]
-name = "user-activity-gcp"
-exclude_users = ["bot@my-org.com"]
+name = "gcp-logs"
+title = "app errors"
+query = 'severity>=ERROR'
+lookback = "1h"
 ```
 
 Repeat for each environment (dev, uat, prod, etc.).
@@ -55,8 +55,11 @@ Repeat for each environment (dev, uat, prod, etc.).
 ## 4. Ensure required credentials are in hub.toml
 
 Each workflow documents which credential key it reads. Check the `[credentials]`
-table in your `hub.toml` (or `hub-private/devices/<device>.toml`). If a required
-credential is missing, the workflow produces no items — it doesn't error.
+table in your `hub.toml` (or `hub-private/devices/<device>.toml`).
+`github_token` and `github_username` are required: if either is missing or empty,
+`Config::load` fails. `linear_token` and `loki_token` are optional. Without
+`linear_token` there are no Linear items, and without `loki_token` Loki queries are
+sent without an auth token.
 
 ## Notes
 
@@ -69,5 +72,5 @@ credential is missing, the workflow produces no items — it doesn't error.
 
 ## Done when
 
-`just check` passes and `just cli` (or `just tui`) shows the project's
+`just check` passes and `just tui` shows the project's
 workflow items alongside existing projects.

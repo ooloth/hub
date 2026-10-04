@@ -27,10 +27,11 @@ and return `anyhow::Result<Vec<YourDomainType>>`.
 
 ## 2. Add domain types (if needed)
 
-Add any new structs the workflow operates on to `domain/src/lib.rs`. Keep
-them pure — no I/O, no imports from other hub crates.
+Put each new concept in its own `domain/src/<concept>.rs`, declared and re-exported in
+`domain/src/lib.rs` (which holds only module declarations and re-exports). Keep the types
+pure — no I/O, no imports from other hub crates.
 
-Each domain type that surfaces items in `hub status` needs two standard fields:
+Each domain type that surfaces items in the status list needs two standard fields:
 `urgency: domain::Urgency` and `age: chrono::Duration`. These drive the
 unified sort order (`urgency` ascending, then `age` descending within a tier).
 
@@ -41,32 +42,36 @@ unified sort order (`urgency` ascending, then `age` descending within a tier).
 
 Expose a `pub async fn run(...)` that calls client functions and returns a
 typed result. Credentials and config are passed as parameters; the caller
-(CLI / TUI) is responsible for loading them.
+(the TUI or the daemon) is responsible for loading them.
 
 Assign `urgency` on each item using rules the workflow owns — the workflow is
 the right place to encode domain knowledge like "a CI failure is always High"
 or "an issue assigned to me is Medium". Use `domain::Urgency::{Critical, High,
 Medium, Low}`.
 
-**Error handling:** return `Err` if the upstream API is completely unavailable
-(network error, auth failure). The status orchestrator propagates the error and
-hub surfaces it to the user. Do not silently return an empty vec when credentials
-are missing — that looks identical to "no items", which hides the problem.
-If a workflow calls multiple APIs and one fails, propagate the first error
-rather than returning partial results; partial data in a unified ranked list
-is harder to reason about than a clear error.
+**Error handling:** return `Err` when the workflow fails (network error, auth failure). Do
+not swallow the error or return an empty vec in its place: that looks identical to "no items",
+which hides the problem. The refresh asks each source separately, so a source that returns
+`Err` or runs past `SOURCE_TIMEOUT` is named in `StatusReport::errors` and the other
+sources keep their items. A list with items from some sources and a failed name from
+another is a normal result.
 
-## 4. Wire into hub status
+## 4. Wire into the status pipeline
 
-Workflows that surface items in `hub status` plug into the unified pipeline —
-they don't get their own CLI command.
+Workflows that surface items plug into the unified status pipeline in
+`workflows/src/status.rs`. They don't get their own CLI command.
 
-1. Add one or more variants for your item type(s) to the `StatusItem` enum in
-   `workflows/src/status.rs`
-2. In `workflows::status::run`, call your new workflow and push its items into
-   the shared `Vec<StatusItem>` using those variants
-3. Add a match arm for each new variant in `render_line` in
-   `ui/cli/src/commands/status.rs` that prints `[tier]  <formatted fields>`
+1. Add one or more variants for your item type(s) to the `StatusItem` enum, and an arm for
+   each in `StatusItem::urgency()` and `StatusItem::age()`
+2. Add a `Source` to `sources()` that calls your workflow and wraps its items in those
+   variants. Its name is what `StatusReport::errors` reports when the source fails
+3. Add an arm for each new variant to the matches on `StatusItem` in `ui/tui/src/display/`:
+   `item_line`, `item_urgency` and `item_category` in `format.rs`, plus `item_url`,
+   `item_investigation` and the log detail functions where the item has a link, an
+   investigation or log lines
+
+The compiler reports the matches that lack an arm, except where a `_` arm hides them
+(`SelectedItemKind::from_item` in `display/types.rs` is one).
 
 ## 5. Register in the Rust config
 
@@ -112,5 +117,4 @@ See [Add a Private Workflow](add-a-private-workflow.md) and [Private Workflows](
 ## Done when
 
 `just check` and `just test` pass, and adding the workflow name to `hub.toml`
-causes `just cli` (or `just tui`) to display the workflow's items in the
-status output.
+causes `just tui` to display the workflow's items in the status list.
