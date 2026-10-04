@@ -63,30 +63,30 @@ impl BodySource {
         cwd: &Path,
         home: Option<&Path>,
     ) -> Vec<Self> {
-        let resolve = |value: Value<'_>| resolve(value, has_heredoc, cwd, home);
+        let resolve = |word: &Word| resolve(word, has_heredoc, cwd, home);
         let mut sources = Vec::new();
-        let mut args = call.args.iter().map(Value::from).peekable();
+        let mut args = call.args.iter().cloned().peekable();
 
         while let Some(arg) = args.next() {
             let (flag, joined) = match arg.text.split_once('=') {
                 Some((flag, value)) if flag.starts_with("--") => (
                     flag,
-                    Some(Value {
-                        text: value,
-                        expands: arg.expands,
+                    Some(Word {
+                        text: value.to_string(),
+                        ..arg.clone()
                     }),
                 ),
-                _ => (arg.text, None),
+                _ => (arg.text.as_str(), None),
             };
             match (call.kind, flag) {
                 (PublishKind::Api, "-F" | "--field") => {
                     if let Some(field) = joined.or_else(|| args.next()) {
-                        sources.extend(api_field(field, has_heredoc, cwd, home));
+                        sources.extend(api_field(&field, has_heredoc, cwd, home));
                     }
                 }
                 (PublishKind::Api, "-f" | "--raw-field") => {
                     if let Some(field) = joined.or_else(|| args.next()) {
-                        sources.extend(expansion(field));
+                        sources.extend(expansion(&field));
                     }
                 }
                 (PublishKind::Api, "--input")
@@ -94,7 +94,7 @@ impl BodySource {
                 | (PublishKind::Release, "-F" | "--notes-file")
                 | (PublishKind::GistEdit, "-a" | "--add") => {
                     if let Some(path) = joined.or_else(|| args.next()) {
-                        sources.push(resolve(path));
+                        sources.push(resolve(&path));
                     }
                 }
                 // `pr review --comment` is a switch and `issue close --comment` takes text,
@@ -102,7 +102,7 @@ impl BodySource {
                 (_, "-c" | "--comment") => {
                     let text = joined.or_else(|| args.next_if(|next| !next.text.starts_with('-')));
                     if let Some(text) = text {
-                        sources.extend(expansion(text));
+                        sources.extend(expansion(&text));
                     }
                 }
                 (
@@ -111,7 +111,7 @@ impl BodySource {
                     | "--description",
                 ) => {
                     if let Some(text) = joined.or_else(|| args.next()) {
-                        sources.extend(expansion(text));
+                        sources.extend(expansion(&text));
                     }
                 }
                 (PublishKind::Gist, "-f" | "--filename") => {
@@ -120,7 +120,7 @@ impl BodySource {
                 (PublishKind::Gist, positional)
                     if !positional.starts_with('-') || positional == "-" =>
                 {
-                    sources.push(resolve(arg));
+                    sources.push(resolve(&arg));
                 }
                 _ => {}
             }
@@ -129,25 +129,9 @@ impl BodySource {
     }
 }
 
-/// An argument's text, and whether the shell would expand it.
-#[derive(Clone, Copy)]
-struct Value<'a> {
-    text: &'a str,
-    expands: bool,
-}
-
-impl<'a> From<&'a Word> for Value<'a> {
-    fn from(word: &'a Word) -> Self {
-        Self {
-            text: &word.text,
-            expands: word.expands,
-        }
-    }
-}
-
 /// Where a path argument points, or why it cannot be read.
-fn resolve(value: Value<'_>, has_heredoc: bool, cwd: &Path, home: Option<&Path>) -> BodySource {
-    let arg = value.text;
+fn resolve(word: &Word, has_heredoc: bool, cwd: &Path, home: Option<&Path>) -> BodySource {
+    let arg = word.text.as_str();
     let unreadable = |why| BodySource::Unreadable {
         arg: arg.to_string(),
         why,
@@ -159,7 +143,7 @@ fn resolve(value: Value<'_>, has_heredoc: bool, cwd: &Path, home: Option<&Path>)
             unreadable(UnreadableReason::StdinWithoutHeredoc)
         };
     }
-    if value.expands {
+    if word.expands {
         return unreadable(UnreadableReason::ShellExpansion);
     }
     match (arg.strip_prefix("~/"), home) {
@@ -172,7 +156,7 @@ fn resolve(value: Value<'_>, has_heredoc: bool, cwd: &Path, home: Option<&Path>)
 
 /// A `gh api -F key=value` field: `@path` reads a file, and anything else is inline text.
 fn api_field(
-    field: Value<'_>,
+    field: &Word,
     has_heredoc: bool,
     cwd: &Path,
     home: Option<&Path>,
@@ -181,13 +165,14 @@ fn api_field(
         return expansion(field);
     }
     let (_, value) = field.text.split_once('=')?;
-    let path = Value {
-        text: value.strip_prefix('@')?,
+    let path = Word {
+        text: value.strip_prefix('@')?.to_string(),
         expands: false,
+        quoted: false,
     };
-    Some(match resolve(path, has_heredoc, cwd, home) {
+    Some(match resolve(&path, has_heredoc, cwd, home) {
         BodySource::Unreadable { why, .. } => BodySource::Unreadable {
-            arg: field.text.to_string(),
+            arg: field.text.clone(),
             why,
         },
         readable => readable,
@@ -195,9 +180,9 @@ fn api_field(
 }
 
 /// Inline text is scanned with the command, unless the shell would replace it first.
-fn expansion(value: Value<'_>) -> Option<BodySource> {
-    value.expands.then(|| BodySource::Unreadable {
-        arg: value.text.to_string(),
+fn expansion(word: &Word) -> Option<BodySource> {
+    word.expands.then(|| BodySource::Unreadable {
+        arg: word.text.clone(),
         why: UnreadableReason::ShellExpansion,
     })
 }
