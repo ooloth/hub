@@ -11,8 +11,8 @@ want to name publicly (e.g. confidential work stuff) — those live in a separat
   hub/               ← public repo (this one)
   hub-private/       ← private companion repo
     clients/src/     ← private API clients
-    workflows/src/   ← private workflows + PrivateStatusData types
-    ui/cli/src/      ← private CLI rendering logic
+    workflows/src/   ← private workflows + the status types they return
+    ui/cli/src/      ← linked by setup, consumed by nothing
     ui/tui/src/      ← private TUI rendering logic
     prompts/         ← private investigation prompts
     devices/         ← per-device configuration
@@ -27,7 +27,7 @@ want to name publicly (e.g. confidential work stuff) — those live in a separat
 ```
 hub/clients/src/private      →  hub-private/clients/src/
 hub/workflows/src/private    →  hub-private/workflows/src/
-hub/ui/cli/src/private       →  hub-private/ui/cli/src/
+hub/ui/cli/src/private       →  hub-private/ui/cli/src/   (nothing consumes this link)
 hub/ui/tui/src/private       →  hub-private/ui/tui/src/
 hub/hub.toml                 →  hub-private/devices/<device>.toml
 ```
@@ -77,33 +77,36 @@ reads what it needs.
 
 ## Cargo Feature Flag
 
-The `private` feature is declared in `clients/Cargo.toml` and `workflows/Cargo.toml`.
+The `private` feature is declared in `clients`, `workflows`, `ui/tui` and `daemon`. `workflows`
+enables `clients/private`, and `ui/tui` and `daemon` enable `workflows/private`. `ui/cli` has no
+`private` feature.
 When the symlinks exist, the justfile detects them and passes `--features private`
 automatically to every `cargo` invocation. You never need to remember to pass it.
 
 The same detection adds `hub-tui/media` when the home laptop's `media.rs` link exists. See
 `_features` in the justfile.
 
-All four crates gate their `private` module behind the feature:
+`clients`, `workflows` and `ui/tui` gate a `private` module behind the feature:
 
 ```rust
 // clients/src/lib.rs and workflows/src/lib.rs
 #[cfg(feature = "private")]
 pub mod private;
 
-// ui/cli/src/main.rs and ui/tui/src/main.rs
+// ui/tui/src/main.rs
 #[cfg(feature = "private")]
 mod private;
 ```
 
 `hub-private/clients/src/` is the `private` module for `clients`; it re-exports individual
-clients as sub-modules. Same pattern for `workflows`, `ui/cli`, and `ui/tui`.
+clients as sub-modules. Same pattern for `workflows` and `ui/tui`. `daemon` has no `private`
+module; it enables the feature on `workflows`.
 
-The rich domain types for private integrations (e.g. `PrivateStatusData`) live in
-`hub-private/workflows/src/status.rs`. Hub's public crate only sees `PrivateStatusData`
-as an opaque struct — it never imports integration-specific names. The CLI and TUI
-rendering logic that knows the concrete fields lives in `hub-private/ui/cli/src/`
-and `hub-private/ui/tui/src/` respectively.
+The rich domain types for private integrations live in `hub-private/workflows/src/status.rs`.
+Its `run` returns `PrivateStatusResult { items, failed_sources }`, defined in
+`workflows/src/status.rs`. `items` are `StatusItem`s and `failed_sources` names the private
+sources that failed, so hub's public code never holds integration-specific source names. The TUI
+rendering logic that knows the concrete fields of those items lives in `hub-private/ui/tui/src/`.
 
 ## Playbooks
 

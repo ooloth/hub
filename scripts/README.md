@@ -24,10 +24,11 @@ Not imported by anything.
 - `lint-configurations` — what `just lint` runs. Clippy with `-D warnings` once per configuration
   whose sources this checkout has: without hub-private always, then with each linked module. Runs
   them all, then names the failures. hub-private's pre-commit check calls it too.
-- `setup-private <device> [hub-private path]` — what `just setup-private` runs. Links
-  hub-private's sources and the device's config into this checkout. Safe to rerun: an existing
-  link is left alone, a link pointing at another checkout is reported and left alone, and anything
-  that is not a symlink stops the setup untouched.
+- `setup-private <device> [hub-private path]` — what `just setup-private` runs. Omitting the device
+  lists the devices hub-private has configs for and links nothing. Links hub-private's sources and
+  the device's config into this checkout. Safe to rerun: an existing link is left alone, a link
+  pointing at another checkout is reported and left alone, and anything that is not a symlink stops
+  the setup untouched.
 
 ## Running it
 

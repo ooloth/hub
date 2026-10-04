@@ -10,7 +10,8 @@ Humans do not use this CLI directly. `hub-tui` is the human-facing surface.
 
 ## CLI (clap)
 
-Use the derive API. Annotate structs; don't use the builder.
+Use the derive API. Annotate structs; don't use the builder. The binary has no subcommands today
+(`struct Cli {}`), so this example is the pattern to follow when one is added, not the current code.
 
 ```rust
 use clap::{Parser, Subcommand};

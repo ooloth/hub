@@ -28,19 +28,20 @@ socket the TUI will read (Phase 5).
 - `pass.rs` — `PassReport` and `PassOutcome`, the per-pass log line, and what `--once` exits with.
   Pure
 - `refresh.rs` — `fetch`, which asks all sources once and merges the answers. The network edge
-- `freshness.rs` — `RefreshOutcome`, `FreshStatus`, `classify`. Pure; no I/O; all the unit tests
+- `freshness.rs` — `RefreshOutcome`, `FreshStatus`, `classify`. Pure; no I/O
 - `cache.rs` — `write` and `apply`. The SQLite edge
 
 `refresh::fetch` takes no database handle on purpose: `rusqlite::Connection` is not `Sync`, so
 holding one across the fetch would make the surrounding future non-`Send` and unspawnable, which
-the interval loop and the socket server will both need.
+the interval loop (`schedule::every`) needs and the socket server will.
 
 ## The rule that makes this more than a wrapper
 
 `workflows::status::run` returns `Ok` whether or not anything answered. A failing source goes
 into `StatusReport::errors` and the rest still contribute items, so a total outage produces a
 well-formed report with an empty item list, and writing that over a populated cache is silent
-data loss.
+data loss. A source that does not answer within 60 seconds (`SOURCE_TIMEOUT`,
+`workflows/src/status.rs`) is named as failed like any other, and the others still contribute.
 
 A refresh is cached unless it came back with nothing **and** a source failed:
 

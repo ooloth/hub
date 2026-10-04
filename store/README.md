@@ -40,9 +40,9 @@ conn.execute("INSERT INTO items (title) VALUES (?1)", [&title])?;
 let count: i64 = conn.query_row("SELECT COUNT(*) FROM items", [], |r| r.get(0))?;
 ```
 
-`rusqlite::Connection` is not `Send` — it cannot be moved across tokio task
-boundaries. You can use it freely within a single task (including an async
-`#[tokio::main]` function). The TUI pattern is correct: keep the connection
+`rusqlite::Connection` is `Send` but not `Sync`. A connection can move into one task, but a
+reference to it cannot be shared across tasks, and holding a reference across an `.await` in a
+spawned future makes that future non-`Send`. The TUI pattern is correct: keep the connection
 in the main task and send results over an `mpsc` channel from spawned tasks.
 
 Upgrade to `sqlx` if async DB access becomes necessary.

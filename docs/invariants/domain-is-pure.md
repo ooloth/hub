@@ -14,7 +14,7 @@ graph into a cycle and the rule into a slogan.
 
 Purity is the other half of the same idea. A domain type that reads a clock or a file behaves
 differently depending on when and where it is constructed, so it cannot be built identically in a
-test, in the TUI, in a workflow, and in a daemon that does not exist yet. Being safe to depend on
+test, in the TUI, in a workflow, and in the daemon. Being safe to depend on
 from everywhere is the whole reason the crate exists.
 
 ## What it forbids
@@ -31,9 +31,9 @@ ordinary and common. What is forbidden is fetching one.
 
 ## How it is enforced
 
-**The crate half is enforced by the compiler, totally.** `domain/Cargo.toml` declares only `chrono`,
-`secrecy`, `serde`, `serde_json` and `uuid`, so a `use workflows::…` inside `domain/` does not
-compile. There is no gap here and no check is needed.
+**The crate half is enforced by the compiler, totally.** `domain/Cargo.toml` declares only `anyhow`,
+`chrono`, `secrecy`, `serde`, `serde_json` and `uuid`, so a `use workflows::…` inside `domain/` does
+not compile. There is no gap here and no check is needed.
 
 **The ambient-state half has no compiler check**, because `std` is always in scope. That is what
 the `domain_reads_no_ambient_state` test in `scripts/src/repo_state/domain_purity.rs` is for:

@@ -1,6 +1,6 @@
 # prompts/
 
-System prompts for hub's two agent session types.
+System prompts for hub's agent sessions. Only investigations exist.
 
 ## investigations/
 
@@ -10,6 +10,9 @@ watching — and run with a restricted tool set (`--allowedTools`).
 
 Each file covers one signal kind: `ci.md`, `gcp.md`, `issue.md`, `loki.md`,
 `media.md`.
+
+`investigations/media.md` is a symlink into hub-private
+(`prompts/media-investigate.md`), so it does not resolve without hub-private checked out beside hub.
 
 ## These prompts are the tuning surface
 

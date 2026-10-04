@@ -30,14 +30,17 @@ prioritized view with agentic capabilities built in:
   reinventing its interface; see [Decision 007](docs/decisions/007-tui-over-web-app.md)
 - **Extensible** — adding a new workflow follows a short, documented playbook spanning
   `clients/`, `workflows/`, and `config/`; see [add a workflow](docs/playbooks/add-a-workflow.md)
-- **Local-only** — no server, no cloud sync; each device has its own SQLite database and
+- **Local-only** — no server, no cloud sync; each profile has its own SQLite database
+  (`~/.hub/<profile>/hub.db`, [Decision 024](docs/decisions/024-hub-state-is-per-profile.md)) and
   runs independently
-- **Rust** — two binaries: `hub` (CLI) and `hub-tui` (Ratatui dashboard); not a web app
+- **Rust** — three binaries: `hub` (CLI), `hub-tui` (Ratatui dashboard) and `hub-daemon`
+  (refreshes the cache with nobody present); not a web app
 
 ## Docs
 
 - [Vision](docs/vision.md) — what this is, why, and where it's going
 - [Decisions](docs/decisions/) — architectural decisions and their rationale
+- [Daemon](daemon/README.md) — `hub-daemon`, the unattended refresh
 - [Conventions](CLAUDE.md#rust-conventions) — Rust patterns used throughout
 - [Playbooks](docs/playbooks/) — step-by-step guides for common tasks
 - [Contributing](CONTRIBUTING.md) — setup and development instructions
