@@ -90,7 +90,7 @@ crates do not depend on `config/` directly.
 
 ### Rust Conventions
 
-See `~/.claude/references/rust.md` and `~/.claude/references/type-design.md`.
+See `~/.agents/standards/rust.md` and `~/.agents/standards/type-design.md`.
 
 Hard rules for agents:
 
