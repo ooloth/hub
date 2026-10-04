@@ -148,7 +148,7 @@ pub(crate) async fn open_in_lazygit(
         WindowClaim::Vacant(vacant) => vacant,
     };
 
-    let name = project_name(hub_config, repo)?;
+    let name = project_name(&hub_config.projects, repo)?;
     let bare = workflows::fetch::repos_dir().join(name);
     if !bare.exists() {
         bail!("repo not synced; open the TUI to fetch it");
@@ -174,7 +174,7 @@ pub(crate) async fn open_in_octo(
         WindowClaim::Vacant(vacant) => vacant,
     };
 
-    let name = project_name(hub_config, repo)?;
+    let name = project_name(&hub_config.projects, repo)?;
     let bare = workflows::fetch::repos_dir().join(name);
     if !bare.exists() {
         bail!("repo not synced; open the TUI to fetch it");
@@ -196,7 +196,7 @@ async fn resolve_worktree(
 ) -> Result<(PathBuf, Option<String>)> {
     match spec {
         WorktreeSpec::EphemeralFresh { repo } => {
-            let name = project_name(hub_config, &repo)?;
+            let name = project_name(&hub_config.projects, &repo)?;
             let bare = workflows::fetch::repos_dir().join(name);
             if !bare.exists() {
                 bail!("repo not synced; open the TUI to fetch it");
@@ -216,7 +216,7 @@ async fn resolve_worktree(
             number,
             head_branch,
         } => {
-            let name = project_name(hub_config, &repo)?;
+            let name = project_name(&hub_config.projects, &repo)?;
             let bare = workflows::fetch::repos_dir().join(name);
             if !bare.exists() {
                 bail!("repo not synced; open the TUI to fetch it");
@@ -249,11 +249,43 @@ async fn resolve_worktree(
     }
 }
 
-fn project_name<'a>(hub_config: &'a config::Config, repo: &str) -> Result<&'a str> {
-    hub_config
-        .projects
+/// The configured name of the project whose repo is `repo`.
+fn project_name(projects: &[config::toml::Project], repo: &str) -> Result<String> {
+    projects
         .iter()
         .find(|p| p.repo == repo)
-        .map(|p| p.name.as_str())
+        .map(|p| p.name.clone())
         .ok_or_else(|| anyhow::anyhow!("No project found for {repo}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn project(name: &str, repo: &str) -> config::toml::Project {
+        config::toml::Project {
+            name: name.to_string(),
+            repo: repo.to_string(),
+            workflow: vec![],
+            environment: vec![],
+        }
+    }
+
+    #[test]
+    fn a_configured_repo_has_its_project_name() {
+        let projects = [project("hub", "ooloth/hub"), project("site", "ooloth/site")];
+
+        assert_eq!(project_name(&projects, "ooloth/site").unwrap(), "site");
+    }
+
+    #[test]
+    fn an_unconfigured_repo_is_an_error_naming_the_repo() {
+        let projects = [project("hub", "ooloth/hub")];
+
+        let error = project_name(&projects, "ooloth/other")
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("ooloth/other"), "{error}");
+    }
 }
