@@ -5,8 +5,9 @@
 > sync. A signal's own lifecycle encodes done-ness (the row disappears when it
 > resolves). Recorded here for rationale and history.
 
-_Status: accepted; not yet implemented. Recorded ahead of the build so the
-work lands the right shape. See [vision.md](../vision.md) for the why._
+_Status: superseded by [Decision 019](019-drop-task-model-filesystem-sessions.md); not to be
+built. Recorded ahead of the build so the work lands the right shape. See
+[vision.md](../vision.md) for the why._
 
 ## Context
 

@@ -32,18 +32,19 @@ Two observations decide it:
 
 1. **Whether the hand-drawn chrome comes free.** There are two places hub patches the terminal
    buffer directly because Ratatui has no widget for them: the `├` and `┤` stitching where an
-   urgency divider meets the list border (`ui/tui/src/render/unified.rs:235`), and the `┬`-capped,
-   `┴`-footed column divider in the PR detail pane (`ui/tui/src/render/pr.rs:169`). Textual styles
-   borders with CSS. If both come out of a stylesheet, the claim that the framework costs real work
-   holds. If they need the same hand-drawing, it does not.
+   urgency divider meets the list border (in `render_unified`, `ui/tui/src/render/unified.rs`), and
+   the `┬`-capped, `┴`-footed column divider in the PR detail pane (in `render_pr_detail`,
+   `ui/tui/src/render/pr.rs`). Textual styles borders with CSS. If both come out of a stylesheet,
+   the claim that the framework costs real work holds. If they need the same hand-drawing, it does
+   not.
 2. **What the snapshot workflow costs.** Textual's snapshots are SVG; insta's are plain text
    buffers. None of the existing ones port, so every one has to be regenerated and eyeballed. The
    spike is where that stops being a guess.
 
-Sequencing matters more than the spike's result. Decisions 019 through 022 are accepted and unbuilt:
-the daemon does not exist, and the TUI still fetches and writes its own cache. A spike run before
-they land measures code whose shape is about to change, and a port started before they land ports it
-twice.
+Sequencing matters more than the spike's result. Decisions 021 and 022 are not fully built: the
+daemon exists and writes the cache, but the TUI still fetches and writes its own cache until
+Phase 5 of [#327](https://github.com/ooloth/hub/issues/327). A spike run before that lands measures
+code whose shape is about to change, and a port started before it lands ports it twice.
 
 ## Resolves into
 
@@ -70,9 +71,10 @@ same discussion and holds regardless of what the spike shows.
   sessions rather than launching them through tmux. Cost: 641 tests and 51 snapshots do not port
   mechanically, and the domain newtypes lose compile-time enforcement in exchange for mypy at CI
   time.
-- **C. Not yet.** Strongest case: Decisions 019 through 022 are unbuilt, so the code a port would
-  carry is not settled, and neither the spike nor the port measures anything durable until it is.
-  Cost: none today, beyond the question staying open.
+- **C. Not yet.** Strongest case: Decisions 021 and 022 are not fully built (the TUI still fetches
+  and writes the cache), so the code a port would carry is not settled, and neither the spike nor
+  the port measures anything durable until it is. Cost: none today, beyond the question staying
+  open.
 
 ## Findings
 
@@ -102,3 +104,8 @@ into a decision record._
   `render/issue.rs`; not independently checked.
 - *Unverified*: Textualize's standing as a company. A search on 2026-09-16 settled nothing either
   way, so the release cadence above is the only health signal recorded here.
+- *Measured* (2026-10-03, read from the source): the 2026-09-16 premise "the daemon does not exist"
+  does not hold today. `hub-daemon` (`daemon/src/main.rs`) runs a pass at startup and then every
+  `--interval`, and writes the cache. The TUI half of Decision 021 is still unbuilt:
+  `ui/tui/src/main.rs` still runs its own refresh and calls `store::status_cache::upsert`. The line
+  and test counts in the first finding above are from 2026-09-16 and are not current.

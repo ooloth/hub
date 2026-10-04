@@ -13,7 +13,7 @@ amended: 2026-09-28
 of [#327](https://github.com/ooloth/hub/issues/327) puts it under launchd. From that point a daemon
 writes the cache on an interval with nobody present, while development runs the same binaries from
 source against the same files. `store::status_cache::db_path` resolves one path for both
-(`store/src/status_cache.rs:33-37`).
+(`db_path` in `store/src/status_cache.rs`).
 
 What the two share, measured on this machine 2026-09-20:
 
@@ -23,7 +23,8 @@ What the two share, measured on this machine 2026-09-20:
 `just qa-seed` already works around the sharing. It copies the database aside, refuses to run
 twice, and needs `qa-restore` afterwards including when a run fails partway
 (`scripts/seed-signal.py`). A daemon polling on an interval overwrites a seeded row before a QA run
-finishes, so that workaround stops working at Phase 3.3 rather than degrading.
+finishes, so that workaround stops working at Phase 3.3 rather than degrading. Both `just qa-seed`
+and `scripts/seed-signal.py` were removed later, in commit ad87c22.
 
 ## Decision
 
@@ -44,7 +45,7 @@ developer's shell exports. The TUI names its profile in the status bar, so a run
 half of itself shows that in the first frame instead of never.
 
 The existing database moves to `~/.hub/default/hub.db` through `maybe_migrate`
-(`store/src/status_cache.rs:48`), the same mechanism that carried the last path move.
+(in `store/src/status_cache.rs`), the same mechanism that carried the last path move.
 
 ## Rejected
 
@@ -78,7 +79,7 @@ credentials and spends real rate limit.
 shell hands it to the installed binary as well. The status bar makes that visible and nothing
 prevents it.
 
-`store/src/status_cache.rs` ends up carrying two migrations. Retiring `legacy_db_path` is separate
+`store/src/status_cache.rs` ends up carrying two migrations. Retiring `legacy_db_paths` is separate
 work this record does not schedule.
 
 ## Revisit when

@@ -3,7 +3,9 @@
 > **⚠ Superseded by [Decision 021](021-daemon-owns-signal-refresh.md) and
 > [Decision 022](022-tui-reads-cache-never-fetches.md).** A separate daemon owns
 > the refresh loop and is the only writer of the cache, and the TUI reads it
-> with no fetch path of its own. What the CLI does is untouched: it still
+> with no fetch path of its own. (The daemon exists and refreshes the cache, but the TUI still
+> has its own refresh and writes the cache too, until Phase 5 of
+> [#327](https://github.com/ooloth/hub/issues/327).) What the CLI does is untouched: it still
 > fetches live on each invocation, as described below. The condition this record
 > named for revisiting is the one that arrived. Refresh is needed when no TUI is
 > open, in order to notify, which

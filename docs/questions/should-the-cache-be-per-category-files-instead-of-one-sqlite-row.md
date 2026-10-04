@@ -8,11 +8,10 @@ resolves_into: decision
 
 ## Why it matters
 
-The cache is one row. `store/src/status_cache.rs:83` creates a single table whose primary key is
-always written as the literal `1`, holding one `schema_version`, one `refreshed_at`, and one
-`payload` that is the whole serialized `StatusReport`. Every read is
-`SELECT ... FROM status_cache WHERE id = 1` (`:129`). Every write is an upsert on the same key
-(`:99`).
+The cache is one row. `ensure_table` in `store/src/status_cache.rs` creates a single table whose
+primary key is always written as the literal `1`, holding one `schema_version`, one `refreshed_at`,
+and one `payload` that is the whole serialized `StatusReport`. Every read is `SELECT ... FROM
+status_cache WHERE id = 1` (`read`). Every write is an upsert on the same key (`upsert`).
 
 That shape assumes one refresh produces the whole world at one instant. Fetching each signal type on
 its own cadence breaks the assumption in three places:
@@ -21,17 +20,18 @@ its own cadence breaks the assumption in three places:
   single `refreshed_at`, and [Decision 022](../decisions/022-tui-reads-cache-never-fetches.md)
   makes saying how old the data is a requirement rather than a nicety. With per-category cadence,
   there is no single honest value to put there.
-- **A per-category write has to rewrite everything.** `StatusReport` is
-  `{ items: Vec<StatusItem>, errors: Vec<String> }` (`workflows/src/status.rs:87`) and `items` is
-  flat, with no category partition. Refreshing one category means reading the blob, filtering that
-  category's items out, splicing new ones in, and writing the whole thing back. That is a
-  read-modify-write over every other category's data on every refresh of any one of them.
+- **A per-category write has to rewrite everything.** `StatusReport` is `{ items: Vec<StatusItem>,
+  errors: Vec<String> }` (`StatusReport` in `workflows/src/status.rs`) and `items` is flat, with no
+  category partition. Refreshing one category means reading the blob, filtering that category's
+  items out, splicing new ones in, and writing the whole thing back. That is a read-modify-write
+  over every other category's data on every refresh of any one of them.
 - **`errors` has the same problem.** A per-category refresh cannot clear only its own failure
   entries, because nothing in the list says which category produced which string.
 
-[Decision 021](../decisions/021-daemon-owns-signal-refresh.md) makes the daemon the only writer,
-which removes the cross-process race but not the coupling: one writer rewriting the whole blob per
-category is still every category's data passing through every category's refresh.
+[Decision 021](../decisions/021-daemon-owns-signal-refresh.md) makes the daemon the only writer once
+the TUI stops writing (it still does today), which removes the cross-process race but not the
+coupling: one writer rewriting the whole blob per category is still every category's data passing
+through every category's refresh.
 
 ## What would settle it
 
@@ -70,10 +70,13 @@ the cache's shape is independent of the language it is written in.
 ## Options
 
 - **A. Keep one SQLite row.** Strongest case: 150 lines that already work, with WAL and a 5000ms
-  `busy_timeout` set (`store/src/status_cache.rs:71`) and covered by tests that assert the pragmas
-  and that a second writer blocks rather than failing (`:216`, `:228`, `:238`). A reader always sees
-  a consistent snapshot. Cost: no independent per-category write, and one `refreshed_at` for data of
-  mixed age.
+  `busy_timeout` set (`apply_pragmas` in `store/src/status_cache.rs`) and covered by tests that
+  assert the pragmas and that a second writer blocks rather than failing
+  (`apply_pragmas_enables_wal_on_file_backed_connection`,
+  `apply_pragmas_sets_busy_timeout_to_5000ms`,
+  `second_writer_waits_for_open_write_transaction_instead_of_failing_immediately`). A reader always
+  sees a consistent snapshot. Cost: no independent per-category write, and one `refreshed_at` for
+  data of mixed age.
 - **B. One SQLite row per category.** `id` becomes a category key instead of the literal `1`, and
   each row carries its own `refreshed_at`. Strongest case: the smallest change that fixes both
   problems, keeping WAL, `busy_timeout` and the option of a transaction across rows when a reader
@@ -92,19 +95,21 @@ the cache's shape is independent of the language it is written in.
 _Findings are working evidence, not settled fact. Nothing here binds a decision until it graduates
 into a decision record._
 
-- *Measured* (2026-09-16): the store is one table and one row. `CREATE TABLE` at
-  `store/src/status_cache.rs:83`, the only read at `:129`, the only write at `:99`. No index, no
+- *Measured* (2026-09-16): the store is one table and one row. `CREATE TABLE` in
+  `ensure_table`, the only read in `read`, the only write in `upsert`, all in
+  `store/src/status_cache.rs`. No index, no
   second table, no join, no `ORDER BY`, no query that returns more than one row.
 - *Measured* (2026-09-16): `StatusReport` is `{ items: Vec<StatusItem>, errors: Vec<String> }`
-  (`workflows/src/status.rs:87`). `StatusItem` is an enum over PR, issue, CI, Linear, Loki and GCP
-  variants plus private media variants, so a category is recoverable from an item but is not a key
-  anything is stored under.
-- *Sourced*: freshness is computed in Rust, not SQL. `read_if_fresh` compares
-  `Utc::now() - refreshed_at` against a `max_age` argument (`store/src/status_cache.rs:118`), so a
+  (`StatusReport` in `workflows/src/status.rs`). `StatusItem` is an enum over PR, issue, CI, Linear,
+  Loki and GCP variants plus private media variants, so a category is recoverable from an item but
+  is not a key anything is stored under.
+- *Sourced*: freshness is computed in Rust, not SQL. `read_if_fresh` compares `Utc::now() -
+  refreshed_at` against a `max_age` argument (`read_if_fresh` in `store/src/status_cache.rs`), so a
   move away from SQL loses no query capability that is in use.
 - *Sourced*: schema changes are handled by discard, not migration. `SCHEMA_VERSION` is an integer
-  constant (`workflows/src/status.rs:9`, currently 18); a caller comparing it against the stored
-  value drops the row and refetches on mismatch (`ui/tui/src/main.rs:91`). Any option here inherits
+  constant (`SCHEMA_VERSION` in `workflows/src/status.rs`, currently 18); a caller comparing it
+  against the stored value drops the row and refetches on mismatch (the `schema_version` check in
+  `ui/tui/src/main.rs`). Any option here inherits
   that mechanism rather than needing a new one.
 - *Measured* (2026-09-16): diskcache is not a candidate. Its last release on PyPI is 5.6.3, uploaded
   2023-08-31. One reason disqualifies it: it trades 150 lines hub owns and understands for an
@@ -114,3 +119,7 @@ into a decision record._
   a second writer of the single row alongside `ui/tui/src/main.rs`. Option D is what milestone #327
   ships on. Whichever option eventually wins, the migration rewrites two write sites instead of one.
   That is the accepted cost of not deciding the shape on an inference about cadence.
+- *Measured* (2026-10-03, read from the source): the 2026-09-19 inference is now fact. The daemon
+  writes through `store::status_cache::upsert` unchanged (`write` in `daemon/src/cache.rs`), and
+  `ui/tui/src/main.rs` still calls `upsert` as well, so the single row has two writers until Phase 5
+  of [#327](https://github.com/ooloth/hub/issues/327). The table is still one row keyed `id = 1`.

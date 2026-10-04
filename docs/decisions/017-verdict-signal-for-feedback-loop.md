@@ -5,7 +5,8 @@
 > reconstructed post-hoc from the session transcript + GitHub state, not stored
 > as a typed DB field. Mechanism deferred with mining.
 
-_Status: accepted; not yet implemented. Recorded ahead of the build. See
+_Status: superseded by [Decision 019](019-drop-task-model-filesystem-sessions.md); not to be
+built. Recorded ahead of the build. See
 [vision.md](../vision.md) for the why and [Decision 016](016-tasks-fold-back-into-signals.md)
 for the typed link this depends on._
 

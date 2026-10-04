@@ -5,7 +5,8 @@
 > (`prompt.md`, `report.md`, transcripts), not a task-based corpus. Mechanism and
 > timing deferred.
 
-_Status: accepted; not yet implemented. Recorded ahead of the build. See
+_Status: superseded by [Decision 019](019-drop-task-model-filesystem-sessions.md); not to be
+built. Recorded ahead of the build. See
 [vision.md](../vision.md) for the why._
 
 ## Context

@@ -8,7 +8,8 @@ resolves_into: decision
 
 ## Why it matters
 
-Today `REFRESH_INTERVAL_SECS` (`ui/tui/src/main.rs:35`) is a single 30-minute timer for every
+Today `REFRESH_INTERVAL_SECS` (in `ui/tui/src/main.rs`) is a single 30-minute timer for the TUI,
+and `hub-daemon` has its own single `--interval` (default 15 minutes). Each is one clock for every
 signal category. Some categories plausibly need fresher data than others (a PR reply probably
 matters sooner than a CI failure that's already been open for a day), and running everything on
 one clock means either over-fetching the categories that don't need it or under-fetching the ones
@@ -53,3 +54,8 @@ graduates into a decision record._
 - *Reasoned* (2026-09-19): nothing in milestone #327 depends on this. The daemon in #336 runs one
   pass over every category and Phase 3.3 loops it on one interval, so the milestone reaches its end
   state without the answer.
+- *Measured* (2026-10-03, read from the source): both refresh clocks are global. The TUI uses
+  `REFRESH_INTERVAL_SECS` (30 minutes) in `ui/tui/src/main.rs`. The daemon loops one pass over every
+  category on `--interval` (default 15 minutes) in `daemon/src/main.rs`. The 2026-09-19 finding that
+  Phase 3.3 loops one pass on one interval is now built. Each source is bounded by the 60-second
+  `SOURCE_TIMEOUT` in `workflows/src/status.rs`, which is a time limit, not a schedule.

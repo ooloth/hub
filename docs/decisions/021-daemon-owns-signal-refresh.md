@@ -6,8 +6,10 @@ date: 2026-09-16
 
 # 021 — The daemon owns signal refresh and is the only cache writer
 
-_Status: accepted; not yet implemented. `ui/tui/src/main.rs` still drives the
-refresh interval and calls `store::status_cache::upsert`._
+_Status: accepted; partly implemented. The daemon half is built: `hub-daemon` refreshes on an
+interval and writes the cache. The TUI half is not: `ui/tui/src/main.rs` still drives its own
+refresh interval and calls `store::status_cache::upsert`, so the daemon is not yet the only
+writer. That half is Phase 5 of [#327](https://github.com/ooloth/hub/issues/327)._
 
 ## Forced by
 

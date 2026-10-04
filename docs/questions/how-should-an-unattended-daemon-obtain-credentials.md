@@ -34,9 +34,10 @@ locked vault, an unreachable vault and a dead source apart, or a four-second net
 "credentials unavailable".
 
 The consequence lands exactly on what [#327](https://github.com/ooloth/hub/issues/327) exists to
-fix. A daemon that stops when the vault locks stops sending notifications, and a notification that
-does not arrive is indistinguishable from nothing having happened. The failure is silent by
-construction.
+fix. A daemon that cannot obtain its credentials at startup never runs a pass, and one whose
+credential expires while it runs fails every pass after that. Either way no notifications arrive,
+and a notification that does not arrive is indistinguishable from nothing having happened. The
+failure is silent by construction.
 
 The counter-constraint is what makes this a question rather than a task. Whatever replaces the
 interactive unlock is a standing credential on a machine that runs unattended, so it widens what a
@@ -44,11 +45,11 @@ compromise of that machine reaches. A model that grants hub's daemon broad acces
 vault trades an ergonomic problem for a materially worse security one.
 
 Scoping is the whole difficulty, and it is not small: the daemon needs the full set hub uses, not a
-subset. `workflows/src/status.rs:206` passes `extra_credentials` into the private workflows, so the
-daemon's fetch pass touches the GitHub token, the Linear token, the Loki token and every private
-credential. There is no version of this where the daemon gets by with less than hub's whole
-credential set, which means the isolation has to come from what that set is stored beside rather
-than from asking for fewer of them.
+subset. `StatusParams::extra_credentials` in `workflows/src/status.rs` is passed into the private
+workflows, so the daemon's fetch pass touches the GitHub token, the Linear token, the Loki token and
+every private credential. There is no version of this where the daemon gets by with less than hub's
+whole credential set, which means the isolation has to come from what that set is stored beside
+rather than from asking for fewer of them.
 
 ## What would settle it
 
@@ -62,8 +63,10 @@ nobody here has checked:
   survives a reboot, an OS update, and a rebuild of the binary that owns the ACL.
 - Whether each candidate resolves without reaching a remote service, and if it does reach one, what
   the daemon does during an outage. This discriminates between the options in a way the others do
-  not: an option resolving locally keeps a pass running through a network blip, and an option
-  resolving remotely loses every pass the blip covers, including passes whose sources were fine.
+  not: an option resolving locally lets the daemon start without network access, and an option
+  resolving remotely cannot start through an outage, including one that would not have stopped any
+  source. Credentials are resolved once at startup, so this matters at startup, restart and reboot
+  and not on every pass (see the 2026-10-03 finding).
 
 Then the smallest spike that produces an observation: provision the narrowest candidate that clears
 those facts, run the daemon across a reboot and across several hours with nobody touching the
@@ -94,11 +97,12 @@ daemon.
 
 ## Options
 
-- **A. Keep the interactive model and accept that the daemon stops when the vault locks.** Strongest
+- **A. Keep the interactive model and accept that the daemon cannot start unattended.** Strongest
   case: no new credential exists anywhere, so nothing widens. It is also the honest baseline, and
-  every other option has to beat it rather than merely differ from it. Cost: notifications stop
-  silently, which is the failure #327 exists to remove, so this option defeats the milestone it sits
-  inside. It also keeps both failure modes rather than one, since it stays network-dependent.
+  every other option has to beat it rather than merely differ from it. Cost: after a restart or
+  reboot nothing runs until someone answers the prompts, so notifications stop silently, which is
+  the failure #327 exists to remove, so this option defeats the milestone it sits inside. It also
+  keeps both failure modes rather than one, since it stays network-dependent.
 - **B. A scoped non-interactive 1Password credential.** Strongest case: keeps one vendor, one
   provisioning story and the existing `op://` reference shape, so `hub.toml` may not change at all.
   Cost: unknown until the scoping and tier facts are established, and the token has to live
@@ -162,8 +166,8 @@ into a record.
   it: the daemon stops whenever nobody is present to answer a prompt, and a polling daemon would
   raise a burst of them on every pass rather than one. A is therefore not a quiet baseline that
   merely misses notifications — running it attended is itself disruptive.
-- The daemon's credential needs are not a subset of the TUI's. `workflows/src/status.rs:127` and
-  `:206` carry `extra_credentials` into the private workflows during a fetch pass, so a daemon
+- The daemon's credential needs are not a subset of the TUI's. `StatusParams::extra_credentials` in
+  `workflows/src/status.rs` carries them into the private workflows during a fetch pass, so a daemon
   running that pass needs the same set as the TUI. *Measured*, read from the source 2026-09-19.
 - `Config` resolves every credential at startup rather than lazily, per
   `~/.agents/standards/rust.md`, which is why an unavailable vault blocks the process rather than
@@ -172,3 +176,14 @@ into a record.
   what they can be scoped to, what tier they need, or how the token is meant to be stored.
 - A launchd agent can hold a Keychain ACL permitting non-interactive reads. *Unverified*: stated
   from general recollection, with nothing checked and no attempt made.
+- Credentials are resolved once per daemon process, not once per pass. `hub-daemon` calls
+  `Config::load` once in `daemon/src/main.rs`, before either the `--once` pass or the
+  `schedule::every` loop, and every pass reuses that `Config`, so no pass calls `op read`. This
+  supersedes the 2026-09-21 reading above that a polling daemon raises a burst of prompts on every
+  pass, and the unattended daemon's unlock problem moves from each pass to each start. Prompts, and
+  network access to 1Password, matter at startup, restart and reboot. The open risks are therefore
+  two: a daemon started while nobody is present (a launch at login or boot), and a credential that
+  expires or is revoked while the daemon runs, which no pass can refresh because none re-reads it.
+  The 60-second `SOURCE_TIMEOUT` in `workflows/src/status.rs` bounds each source in a pass, not
+  credential resolution at startup. *Measured*, read from the source 2026-10-03; not observed by
+  running a daemon across a restart.
