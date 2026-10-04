@@ -80,7 +80,7 @@ pub(crate) fn refusal(profile: &str, path: &Path, pid: Option<u32>) -> String {
         |pid| {
             format!(
                 "hub-daemon is already running for profile {profile} (pid {pid}, lock {lock}). \
-                 Stop it with: kill {pid}"
+                 Stop it with: /bin/kill {pid}"
             )
         },
     )
@@ -175,7 +175,10 @@ mod tests {
             message.contains("/home/me/.hub/dev/daemon.lock"),
             "{message}"
         );
-        assert!(message.contains("kill 4242"), "{message}");
+        assert!(
+            message.contains("Stop it with: /bin/kill 4242"),
+            "{message}"
+        );
     }
 
     #[test]
