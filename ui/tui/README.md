@@ -1,8 +1,8 @@
 # ui/tui
 
 The `hub-tui` binary — the **human-facing surface for hub**. This is where you
-read urgency-ranked signals, create tasks to delegate work to agents, monitor
-running agent sessions, and approve or reject completed work.
+read urgency-ranked signals, open them in the browser, and launch agent investigation sessions
+in their own tmux windows.
 
 Agents do not interact with the TUI — they use the `hub` CLI toolkit.
 
@@ -22,9 +22,9 @@ The event loop runs on tokio and multiplexes three sources with `tokio::select!`
 - `mpsc::Receiver<Result<StatusReport>>` — results from background fetches
 
 Background fetches run in spawned tokio tasks and send results back over the
-channel. The `rusqlite::Connection` stays in the main task (it is not `Send`);
-tasks return a typed `StatusReport`, and the main task serializes and upserts
-it.
+channel. The `rusqlite::Connection` stays in the main task (it is `Send` but not `Sync`, so
+tasks cannot share it); tasks return a typed `StatusReport`, and the main task serializes and
+upserts it.
 
 ## State machine
 
@@ -58,18 +58,15 @@ is mutated:
 Render functions take `&mut Frame` and cannot be unit tested in isolation.
 Decision logic is extracted into pure helper functions that can be:
 
-- `status_bar_left(app)` (`render/mod.rs`) — computes the left status bar
+- `status_bar_left(app)` (`render/status_bar.rs`) — computes the left status bar
   string from the current view state and selected item
-- `hint_for_category_item(item)` (`render/category.rs`) — returns the
-  action hint text for the selected item in a category list (wraps
-  `item_hint` from `display.rs` and adds Group-specific handling)
 
-Visual constants live in `render/mod.rs` and are accessed by submodules
-via `super::`:
+Visual constants live in `render/theme.rs` (`urgency_color` and `urgency_style` are in
+`render/shared.rs`) and are accessed by submodules via `super::`:
 
 | Constant/function  | Value                        | Used for                        |
 | ------------------ | ---------------------------- | ------------------------------- |
-| `FOCUS_COLOR`      | `Color::Green`               | focused borders and titles      |
+| `FOCUS_COLOR`      | `Color::Rgb(203, 166, 247)`  | focused borders and titles      |
 | `SELECTION_BG`     | `Color::Rgb(41, 45, 62)`     | list selection background       |
 | `dim()`            | `Modifier::DIM`              | secondary and unfocused text    |
 | `list_highlight()` | `SELECTION_BG` + `BOLD`      | stateful list widget highlight  |
@@ -108,12 +105,15 @@ The test suite keeps one full-screen snapshot per major screen state:
 | `full_screen_unified_list_mixed_urgency` | urgency divider between tiers |
 | `full_screen_unified_list_group_selected` | group row with "↩ to expand" hint |
 | `full_screen_unified_list_pr_selected` | PR item selected with open + investigate hints, "2/2" position |
-| `full_screen_unified_list_category_filter` | green border + category label in title |
-| `full_screen_unified_list_committed_query` | green border + query text in title |
+| `full_screen_unified_list_empty_filter_result` | category filter with no matching items, empty body |
+| `full_screen_unified_list_category_filter` | focus-colour border + category label in title |
+| `full_screen_unified_list_committed_query` | focus-colour border + query text in title |
 | `full_screen_unified_list_query_input` | yellow border while query is being typed |
 | `full_screen_unified_list_narrow_terminal` | 40-col terminal, text wrapping |
 | `full_screen_unified_list_scrolled` | 15 items, last selected, scroll offset visible |
 | `full_screen_unified_list_help_popup` | keybind popup overlaid on list |
+| `full_screen_unified_list_dev_profile` | `dev` profile label at the right of the status bar |
+| `full_screen_merging_pr` | merge confirmation prompt over the PR body |
 | `full_screen_detail_view_first_selected` | group expanded, first item selected |
 | `full_screen_detail_view_last_selected` | group expanded, last item selected |
 
@@ -199,10 +199,14 @@ cannot drift apart because there is only one table.
 
 ## Cache and schema version
 
-The cache is a single SQLite row (see `store::status`). `SCHEMA_VERSION` is a
+The cache is a single SQLite row (see `store::status_cache`). `SCHEMA_VERSION` is a
 constant in `workflows::status`. When the TUI reads a cached row, it checks
 `schema_version == SCHEMA_VERSION` before deserializing. A mismatch triggers a
 live fetch, discarding the stale row.
+
+Today both the TUI (its own refresh, every `REFRESH_INTERVAL_SECS`) and `hub-daemon` write this
+same row. Phase 5 of [#327](https://github.com/ooloth/hub/issues/327) removes the TUI's fetch
+(Decision 022), leaving the daemon as the only writer.
 
 **Bump `SCHEMA_VERSION` whenever `StatusReport` or any nested type changes in
 a way that would break deserialization of a cached row.** Forgetting to bump
@@ -236,12 +240,9 @@ One screen (`UnifiedList`) with an optional split detail pane. `Enter` opens the
 | Esc        | close split detail pane (if open), otherwise clear filter |
 | i          | investigate (auto-routes by item type)          |
 | o          | open URL in browser                             |
-| N          | open blank task creation form                   |
-| s          | open task status submenu (task or badged signal) |
 | p          | filter to PRs                                   |
 | O          | filter to issues                                |
 | e          | filter to errors                                |
-| t          | filter to tasks                                 |
 | a          | clear filter                                    |
 | /          | start query filter                              |
 | r          | refresh                                         |
@@ -254,13 +255,20 @@ One screen (`UnifiedList`) with an optional split detail pane. `Enter` opens the
 | ---------- | ----------------------------------------------- |
 | J          | scroll detail down                              |
 | K          | scroll detail up                                |
-| Tab        | toggle between signal detail and session detail |
 | Esc        | close split detail pane                         |
 | v          | open review picker (PR only; see PR sessions)   |
 | m          | merge PR (PR only)                              |
-| d          | open PR diff submenu (PR only)                  |
+| d          | open PR submenu (PR only; see below)            |
 | a          | approve for agent (issue only; otherwise clears filter)         |
-| s          | open task status submenu (task or badged signal) |
+
+**PR submenu** — keys after `d` on a PR in the detail pane
+
+| Key        | Action                                          |
+| ---------- | ----------------------------------------------- |
+| d          | show the PR diff in delta, in its own tmux window |
+| l          | open the PR in lazygit                          |
+| o          | open the PR in octo                             |
+| Esc / other| dismiss the submenu, keep the detail pane open  |
 
 ## Terminal cleanup
 
