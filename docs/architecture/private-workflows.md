@@ -12,7 +12,6 @@ want to name publicly (e.g. confidential work stuff) — those live in a separat
   hub-private/       ← private companion repo
     clients/src/     ← private API clients
     workflows/src/   ← private workflows + the status types they return
-    ui/cli/src/      ← linked by setup, consumed by nothing
     ui/tui/src/      ← private TUI rendering logic
     prompts/         ← private investigation prompts
     devices/         ← per-device configuration
@@ -27,7 +26,6 @@ want to name publicly (e.g. confidential work stuff) — those live in a separat
 ```
 hub/clients/src/private      →  hub-private/clients/src/
 hub/workflows/src/private    →  hub-private/workflows/src/
-hub/ui/cli/src/private       →  hub-private/ui/cli/src/   (nothing consumes this link)
 hub/ui/tui/src/private       →  hub-private/ui/tui/src/
 hub/hub.toml                 →  hub-private/devices/<device>.toml
 ```

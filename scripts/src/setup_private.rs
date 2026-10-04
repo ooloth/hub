@@ -122,7 +122,6 @@ pub(crate) fn plan(hub_root: &Path, hub_private: &Path, device: &Device) -> Vec<
     let mut links = vec![
         source("clients/src"),
         source("workflows/src"),
-        source("ui/cli/src"),
         source("ui/tui/src"),
         Link {
             target: device.config.clone(),
@@ -294,13 +293,26 @@ mod tests {
                     &private.join("workflows/src"),
                     &hub.join("workflows/src/private")
                 ),
-                link(&private.join("ui/cli/src"), &hub.join("ui/cli/src/private")),
                 link(&private.join("ui/tui/src"), &hub.join("ui/tui/src/private")),
                 link(
                     &private.join("devices/work-laptop.toml"),
                     &hub.join("hub.toml")
                 ),
             ]
+        );
+    }
+
+    #[test]
+    fn nothing_is_linked_into_the_cli_which_has_no_private_module() {
+        let (_dir, hub, private) = checkouts(&["work-laptop"]);
+
+        let links = plan(&hub, &private, &device(&private, "work-laptop"));
+
+        assert!(
+            links
+                .iter()
+                .all(|link| !link.at.starts_with(hub.join("ui/cli"))),
+            "{links:?}"
         );
     }
 
@@ -317,7 +329,7 @@ mod tests {
                 &hub.join("ui/tui/src/investigations/media.rs"),
             ))
         );
-        assert_eq!(links.len(), 6);
+        assert_eq!(links.len(), 5);
     }
 
     #[test]
