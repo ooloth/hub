@@ -7,6 +7,8 @@
 - [1Password CLI](https://developer.1password.com/docs/cli) — `brew install 1password-cli`
 - [taplo](https://taplo.tamasfe.dev) — `brew install taplo` (TOML formatter and schema validator)
 - [prek](https://github.com/j178/prek) — `brew install prek` (git hook manager)
+- [terminal-notifier](https://github.com/julienXX/terminal-notifier) — `brew install terminal-notifier`
+  (posts the daemon's notifications; see [Allowing notifications](#allowing-notifications))
 
 `just setup` installs the rest: [cargo-nextest](https://nexte.st), the test runner `just test`
 uses; [cargo-audit](https://github.com/rustsec/rustsec/tree/main/cargo-audit) and
@@ -62,6 +64,30 @@ activate on the home laptop if they're not listed there.
 
 See [docs/architecture/private-workflows.md](docs/architecture/private-workflows.md)
 for the full model, how to add new devices, and how to add new private workflows.
+
+## Allowing notifications
+
+macOS shows terminal-notifier's notifications only once it has been granted permission, and a
+refused notification fails with `Notifications are not allowed for this application`. To grant
+it:
+
+1. Send one notification and approve the prompt macOS shows:
+
+   ```bash
+   terminal-notifier -title hub -message "permission check"
+   ```
+
+2. In System Settings › Notifications › terminal-notifier, turn on Allow Notifications and set
+   the style to Banners.
+3. Run `terminal-notifier -diagnose`. It reports the permission and the alert style, and lists
+   anything still in the way under "Problems found".
+
+When step 1 is refused without a prompt and terminal-notifier has no entry in System Settings ›
+Notifications, copy the app into `~/Applications` so System Settings lists it, then do step 2:
+
+```bash
+cp -R "$(brew --prefix terminal-notifier)/terminal-notifier.app" ~/Applications/
+```
 
 ## Running
 
