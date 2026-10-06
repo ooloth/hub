@@ -28,8 +28,10 @@ Create `hub-private/workflows/src/<workflow-name>.rs` and add
 `hub-private/workflows/src/status.rs` is the entry point that hub calls. Add a
 branch to `run()` that checks for your workflow name in `workflow_names` and calls
 your workflow. On success, push the resulting `StatusItem` variants into the `items` of the
-`PrivateStatusResult` that `run()` returns. On failure, push the source's name into its
-`failed_sources`, which the refresh reports in `StatusReport::errors`.
+`PrivateStatusResult` that `run()` returns. On failure, push
+`SourceError::new("<source name>", error)` into its `failures`, keeping the error rather than
+dropping it. The refresh names the source in `StatusReport::errors` and reports why it failed
+in `Refresh::failures`, redacted of every credential.
 
 ## 4. Add variants to the public StatusItem enum
 

@@ -105,8 +105,8 @@ async fn run_pass(config: &config::Config, profile: Profile) -> pass::PassReport
 }
 
 async fn refresh_cache(config: &config::Config, profile: Profile) -> Result<pass::PassOutcome> {
-    let report = refresh::fetch(config).await?;
-    let refreshed = freshness::classify(report);
+    let refresh = refresh::fetch(config).await?;
+    let refreshed = freshness::classify(refresh);
 
     // Opened after the fetch returns. See refresh::fetch.
     let conn = store::status_cache::connect(profile).context("failed to open the hub database")?;
@@ -116,11 +116,11 @@ async fn refresh_cache(config: &config::Config, profile: Profile) -> Result<pass
     Ok(match refreshed {
         RefreshOutcome::Refreshed(fresh) => pass::PassOutcome::Wrote {
             items: fresh.item_count(),
-            failed: fresh.failed_sources(),
+            failed: fresh.failures(),
         },
-        RefreshOutcome::NothingRefreshed { failed_sources } => pass::PassOutcome::Unchanged {
-            failed: failed_sources,
-        },
+        RefreshOutcome::NothingRefreshed { failures } => {
+            pass::PassOutcome::Unchanged { failed: failures }
+        }
     })
 }
 

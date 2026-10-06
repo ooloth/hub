@@ -165,7 +165,13 @@ fn spawn_fetch(config: &config::Config, tx: mpsc::Sender<Result<StatusReport>>) 
     };
 
     drop(tokio::spawn(async move {
-        let _ = tx.send(workflows::status::run(params).await).await;
+        let _ = tx
+            .send(
+                workflows::status::run(params)
+                    .await
+                    .map(|refresh| refresh.report),
+            )
+            .await;
     }));
 }
 
@@ -212,7 +218,13 @@ fn request_refresh(
         let tx = tx.clone();
         drop(tokio::spawn(async move {
             tokio::time::sleep(d).await;
-            let _ = tx.send(workflows::status::run(params).await).await;
+            let _ = tx
+                .send(
+                    workflows::status::run(params)
+                        .await
+                        .map(|refresh| refresh.report),
+                )
+                .await;
             if let Some(projects) = git_params {
                 if let Err(e) = workflows::fetch::run(&projects).await {
                     eprintln!("hub fetch: {e}");

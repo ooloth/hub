@@ -38,10 +38,11 @@ the interval loop (`schedule::every`) needs and the socket server will.
 ## The rule that makes this more than a wrapper
 
 `workflows::status::run` returns `Ok` whether or not anything answered. A failing source goes
-into `StatusReport::errors` and the rest still contribute items, so a total outage produces a
-well-formed report with an empty item list, and writing that over a populated cache is silent
-data loss. A source that does not answer within 60 seconds (`SOURCE_TIMEOUT`,
-`workflows/src/status.rs`) is named as failed like any other, and the others still contribute.
+into `Refresh::failures` with its reason and is named in `StatusReport::errors`, while the rest
+still contribute items. So a total outage produces a well-formed report with an empty item list,
+and writing that over a populated cache is silent data loss. A source that does not answer within
+60 seconds (`SOURCE_TIMEOUT`, `workflows/src/status.rs`) is reported as failed like any other, and
+the others still contribute.
 
 A refresh is cached unless it came back with nothing **and** a source failed:
 

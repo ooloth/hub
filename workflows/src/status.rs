@@ -6,7 +6,9 @@ use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::time::Duration;
 
-use crate::sources::{gather, Source, SourceAnswer};
+use crate::known_secrets::KnownSecrets;
+use crate::source_failure::SourceFailure;
+use crate::sources::{gather, Gathered, Source, SourceAnswer};
 
 /// The longest a refresh waits for any one source.
 ///
@@ -101,14 +103,26 @@ pub struct StatusReport {
     pub errors: Vec<String>,
 }
 
+/// One refresh: the report the cache stores, and why each failed source failed.
+///
+/// The reasons travel beside the report rather than inside it, so the cached payload keeps its
+/// shape. `report.errors` names the same sources as `failures`, in the same order.
+#[derive(Debug)]
+pub struct Refresh {
+    /// What the cache stores.
+    pub report: StatusReport,
+    /// Each source that failed, with its reason redacted of every credential.
+    pub failures: Vec<SourceFailure>,
+}
+
 /// Returned by the private workflow runner so source names come from data, not hub source code.
 #[cfg(feature = "private")]
 #[derive(Debug)]
-pub struct PrivateStatusResult {
+pub(crate) struct PrivateStatusResult {
     /// Items collected from private sources.
-    pub items: Vec<StatusItem>,
-    /// Names of private sources that failed.
-    pub failed_sources: Vec<String>,
+    pub(crate) items: Vec<StatusItem>,
+    /// Private sources that failed, with the error each failed with.
+    pub(crate) failures: Vec<crate::sources::SourceError>,
 }
 
 /// All credentials and configuration needed for a full status refresh.
@@ -141,17 +155,42 @@ pub struct StatusParams {
 /// item is first.
 ///
 /// # Errors
-/// Never in practice: a source that fails or runs out of time is not an error. Its name is
-/// collected into [`StatusReport::errors`] and the remaining sources still contribute.
-pub async fn run(params: StatusParams) -> Result<StatusReport> {
+/// Never in practice: a source that fails or runs out of time is not an error. It is collected
+/// into [`Refresh::failures`] with its reason, and the remaining sources still contribute.
+pub async fn run(params: StatusParams) -> Result<Refresh> {
+    // Before the sources take the credentials.
+    let secrets = known_secrets(&params);
     let gathered = gather(sources(params), SOURCE_TIMEOUT).await;
-    let mut items = gathered.items;
+    Ok(refresh_from(gathered, &secrets))
+}
+
+/// Every credential a refresh is given.
+fn known_secrets(params: &StatusParams) -> KnownSecrets {
+    let tokens = std::iter::once(&params.github_token)
+        .chain(params.linear_token.as_ref())
+        .chain(params.loki_envs.iter().filter_map(|env| env.token.as_ref()))
+        .chain(params.extra_credentials.values());
+    KnownSecrets::new(tokens.map(|secret| secret.expose_secret().clone()))
+}
+
+/// The refresh `gathered` amounts to: its items deduplicated and ranked, and each failure's
+/// reason redacted of `secrets`.
+fn refresh_from(gathered: Gathered, secrets: &KnownSecrets) -> Refresh {
+    let Gathered { mut items, errors } = gathered;
     dedupe_prs(&mut items);
     items.sort_by_key(|i| (i.urgency(), Reverse(i.age())));
-    Ok(StatusReport {
-        items,
-        errors: gathered.failed,
-    })
+    let failures: Vec<SourceFailure> = errors
+        .iter()
+        .map(|failed| SourceFailure::new(failed.source.clone(), &failed.error, secrets))
+        .collect();
+    let errors = failures
+        .iter()
+        .map(|failure| failure.source().to_string())
+        .collect();
+    Refresh {
+        report: StatusReport { items, errors },
+        failures,
+    }
 }
 
 /// Every source a refresh asks, named as its failure would be reported, in report order.
@@ -240,7 +279,7 @@ fn sources(params: StatusParams) -> Vec<Source> {
         let result = crate::private::status::run(private_workflow_names, &extra_credentials).await;
         Ok(SourceAnswer {
             items: result.items,
-            failed: result.failed_sources,
+            failed: result.failures,
         })
     }));
     #[cfg(not(feature = "private"))]
@@ -321,6 +360,66 @@ mod tests {
         #[cfg(feature = "private")]
         expected.push("private workflows");
         assert_eq!(names, expected);
+    }
+
+    fn failed(source: &str, error: &str) -> crate::sources::SourceError {
+        crate::sources::SourceError::new(source, anyhow::anyhow!(error.to_string()))
+    }
+
+    #[test]
+    fn the_report_names_the_failed_sources_in_the_order_they_failed() {
+        let gathered = Gathered {
+            items: vec![],
+            errors: vec![
+                failed("github issues", "401"),
+                failed("linear issues", "timeout"),
+            ],
+        };
+
+        let refresh = refresh_from(gathered, &KnownSecrets::new(Vec::new()));
+
+        let failed_sources: Vec<&str> =
+            refresh.failures.iter().map(SourceFailure::source).collect();
+        assert_eq!(refresh.report.errors, failed_sources);
+        assert_eq!(
+            refresh.report.errors,
+            vec!["github issues", "linear issues"]
+        );
+    }
+
+    #[test]
+    fn every_credential_a_refresh_is_given_is_redacted_from_failure_reasons() {
+        let mut params = params();
+        params.github_token = Secret::new("ghp-token-value".to_string());
+        params.linear_token = Some(Secret::new("lin-token-value".to_string()));
+        if let Some(env) = params.loki_envs.first_mut() {
+            env.token = Some(Secret::new("loki-token-value".to_string()));
+        }
+        let _ = params.extra_credentials.insert(
+            "service_url".to_string(),
+            Secret::new("https://media.internal:8989".to_string()),
+        );
+        let gathered = Gathered {
+            items: vec![],
+            errors: vec![failed(
+                "every source",
+                "sent ghp-token-value lin-token-value loki-token-value to media.internal",
+            )],
+        };
+
+        let refresh = refresh_from(gathered, &known_secrets(&params));
+
+        let reason = refresh
+            .failures
+            .first()
+            .unwrap()
+            .reason()
+            .as_str()
+            .to_string();
+        assert_eq!(
+            reason,
+            "sent [redacted] [redacted] [redacted] to [redacted]"
+        );
     }
 
     fn pr(number: u64, title: &str) -> StatusItem {

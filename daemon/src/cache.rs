@@ -35,7 +35,9 @@ pub(crate) fn apply(conn: &Connection, outcome: &RefreshOutcome) -> Result<()> {
 mod tests {
     use super::*;
     use crate::freshness::classify;
-    use workflows::status::{StatusItem, StatusReport};
+    use workflows::known_secrets::KnownSecrets;
+    use workflows::source_failure::SourceFailure;
+    use workflows::status::{Refresh, StatusItem, StatusReport};
 
     fn in_memory() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -56,18 +58,34 @@ mod tests {
         })
     }
 
+    fn refresh(items: usize, failed: &[&str]) -> Refresh {
+        let failures: Vec<SourceFailure> = failed
+            .iter()
+            .map(|source| {
+                SourceFailure::new(
+                    *source,
+                    &anyhow::anyhow!("down"),
+                    &KnownSecrets::new(Vec::new()),
+                )
+            })
+            .collect();
+        Refresh {
+            report: StatusReport {
+                items: (0..items).map(|_| ci_failure()).collect(),
+                errors: failed.iter().map(|source| (*source).to_string()).collect(),
+            },
+            failures,
+        }
+    }
+
     fn refreshed(items: usize, failed_sources: usize) -> RefreshOutcome {
-        classify(StatusReport {
-            items: (0..items).map(|_| ci_failure()).collect(),
-            errors: (0..failed_sources).map(|i| format!("source {i}")).collect(),
-        })
+        let names: Vec<String> = (0..failed_sources).map(|i| format!("source {i}")).collect();
+        let failed: Vec<&str> = names.iter().map(String::as_str).collect();
+        classify(refresh(items, &failed))
     }
 
     fn nothing_refreshed() -> RefreshOutcome {
-        classify(StatusReport {
-            items: vec![],
-            errors: vec!["github prs".to_string()],
-        })
+        classify(refresh(0, &["github prs"]))
     }
 
     #[test]

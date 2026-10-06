@@ -3,14 +3,18 @@ use std::fmt;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
+use workflows::source_failure::SourceFailure;
 
 /// What a pass did with the cache.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PassOutcome {
-    /// The cache was replaced. `failed` names sources that failed while others answered.
-    Wrote { items: usize, failed: Vec<String> },
+    /// The cache was replaced. `failed` holds the sources that failed while others answered.
+    Wrote {
+        items: usize,
+        failed: Vec<SourceFailure>,
+    },
     /// Every source failed, so the cache kept what it had.
-    Unchanged { failed: Vec<String> },
+    Unchanged { failed: Vec<SourceFailure> },
     /// The pass itself failed, for example writing the cache.
     Failed { error: String },
 }
@@ -69,12 +73,16 @@ impl fmt::Display for PassReport {
     }
 }
 
-/// Appends the failed sources' names, when there are any.
-fn write_failed(f: &mut fmt::Formatter<'_>, failed: &[String]) -> fmt::Result {
+/// Appends each failed source with its reason, when there are any.
+fn write_failed(f: &mut fmt::Formatter<'_>, failed: &[SourceFailure]) -> fmt::Result {
     if failed.is_empty() {
         return Ok(());
     }
-    write!(f, " failed=\"{}\"", one_line(&failed.join(",")))
+    let failures: Vec<String> = failed
+        .iter()
+        .map(|failure| format!("{}: {}", failure.source(), failure.reason()))
+        .collect();
+    write!(f, " failed=\"{}\"", one_line(&failures.join("; ")))
 }
 
 /// Text made safe to sit inside one double-quoted value on one line.
@@ -91,6 +99,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use workflows::known_secrets::KnownSecrets;
 
     fn report(outcome: PassOutcome) -> PassReport {
         PassReport {
@@ -102,8 +111,18 @@ mod tests {
         }
     }
 
-    fn names(names: &[&str]) -> Vec<String> {
-        names.iter().map(|name| (*name).to_string()).collect()
+    /// Sources that failed, each as `(name, error)`.
+    fn failed(failures: &[(&str, &str)]) -> Vec<SourceFailure> {
+        failures
+            .iter()
+            .map(|(source, error)| {
+                SourceFailure::new(
+                    *source,
+                    &anyhow::anyhow!((*error).to_string()),
+                    &KnownSecrets::new(Vec::new()),
+                )
+            })
+            .collect()
     }
 
     #[rstest]
@@ -112,12 +131,18 @@ mod tests {
         "outcome=ok duration_ms=6412 items=1066 failed_sources=0"
     )]
     #[case::partial(
-        PassOutcome::Wrote { items: 1066, failed: names(&["private workflows", "loki (app · prod)"]) },
-        "outcome=partial duration_ms=6412 items=1066 failed_sources=2 failed=\"private workflows,loki (app · prod)\""
+        PassOutcome::Wrote {
+            items: 1066,
+            failed: failed(&[
+                ("private workflows", "connection refused"),
+                ("loki (app · prod)", "did not answer within 60s"),
+            ]),
+        },
+        "outcome=partial duration_ms=6412 items=1066 failed_sources=2 failed=\"private workflows: connection refused; loki (app · prod): did not answer within 60s\""
     )]
     #[case::unchanged(
-        PassOutcome::Unchanged { failed: names(&["github issues"]) },
-        "outcome=unchanged duration_ms=6412 failed_sources=1 failed=\"github issues\""
+        PassOutcome::Unchanged { failed: failed(&[("github issues", "failed to reach GitHub API: dns error")]) },
+        "outcome=unchanged duration_ms=6412 failed_sources=1 failed=\"github issues: failed to reach GitHub API: dns error\""
     )]
     #[case::failed(
         PassOutcome::Failed { error: "database is locked".to_string() },

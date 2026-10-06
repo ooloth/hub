@@ -101,9 +101,11 @@ clients as sub-modules. Same pattern for `workflows` and `ui/tui`. `daemon` has 
 module; it enables the feature on `workflows`.
 
 The rich domain types for private integrations live in `hub-private/workflows/src/status.rs`.
-Its `run` returns `PrivateStatusResult { items, failed_sources }`, defined in
-`workflows/src/status.rs`. `items` are `StatusItem`s and `failed_sources` names the private
-sources that failed, so hub's public code never holds integration-specific source names. The TUI
+Its `run` returns `PrivateStatusResult { items, failures }`, defined in
+`workflows/src/status.rs`. `items` are `StatusItem`s and `failures` holds a `SourceError` for each
+private source that failed, naming it and carrying its error, so hub's public code never holds
+integration-specific source names. hub redacts each error into a reason before it leaves
+`workflows`, the same as for hub's own sources. The TUI
 rendering logic that knows the concrete fields of those items lives in `hub-private/ui/tui/src/`.
 
 ## Playbooks

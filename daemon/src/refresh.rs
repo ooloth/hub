@@ -1,7 +1,7 @@
 //! Asking every source for the current state of the queue.
 
 use anyhow::{Context, Result};
-use workflows::status::{StatusParams, StatusReport};
+use workflows::status::{Refresh, StatusParams};
 
 /// Asks every configured source once and merges the answers.
 ///
@@ -12,8 +12,8 @@ use workflows::status::{StatusParams, StatusReport};
 ///
 /// # Errors
 /// Returns an error if the refresh cannot be run at all. Individual source
-/// failures are collected into `StatusReport::errors` instead.
-pub(crate) async fn fetch(config: &config::Config) -> Result<StatusReport> {
+/// failures are collected into `Refresh::failures` instead.
+pub(crate) async fn fetch(config: &config::Config) -> Result<Refresh> {
     let params = StatusParams {
         github_token: config.github_token.clone(),
         github_username: config.github_username.clone(),

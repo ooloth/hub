@@ -1,7 +1,8 @@
 //! Whether a refresh came back with anything worth caching.
 
 use anyhow::{Context, Result};
-use workflows::status::StatusReport;
+use workflows::source_failure::SourceFailure;
+use workflows::status::Refresh;
 
 /// What one refresh came back with.
 #[derive(Debug)]
@@ -13,8 +14,8 @@ pub(crate) enum RefreshOutcome {
     /// Every source failed. Nothing came back, so the cache keeps the row it
     /// already has rather than losing what was last known.
     NothingRefreshed {
-        /// The sources that failed, named for the error message.
-        failed_sources: Vec<String>,
+        /// The sources that failed, and why.
+        failures: Vec<SourceFailure>,
     },
 }
 
@@ -24,17 +25,17 @@ pub(crate) enum RefreshOutcome {
 /// The field is private and [`classify`] is the only constructor, so a refresh
 /// that came back with nothing cannot reach [`crate::cache::write`].
 #[derive(Debug)]
-pub(crate) struct FreshStatus(StatusReport);
+pub(crate) struct FreshStatus(Refresh);
 
 impl FreshStatus {
     /// How many signals the refresh came back with.
     pub(crate) const fn item_count(&self) -> usize {
-        self.0.items.len()
+        self.0.report.items.len()
     }
 
-    /// The sources that failed during the refresh while others answered.
-    pub(crate) fn failed_sources(&self) -> Vec<String> {
-        self.0.errors.clone()
+    /// The sources that failed during the refresh while others answered, and why.
+    pub(crate) fn failures(&self) -> Vec<SourceFailure> {
+        self.0.failures.clone()
     }
 
     /// The JSON payload to store, in the shape the TUI reads.
@@ -42,7 +43,7 @@ impl FreshStatus {
     /// # Errors
     /// Returns an error if the report cannot be serialized.
     pub(crate) fn payload(&self) -> Result<String> {
-        serde_json::to_string(&self.0).context("failed to serialize the status report")
+        serde_json::to_string(&self.0.report).context("failed to serialize the status report")
     }
 }
 
@@ -51,20 +52,21 @@ impl FreshStatus {
 /// An empty report with no failures is a real answer: the queue drained, and
 /// the cache has to say so. An empty report with failures is not an answer at
 /// all, and writing it would discard what was last known.
-pub(crate) fn classify(report: StatusReport) -> RefreshOutcome {
-    if report.items.is_empty() && !report.errors.is_empty() {
+pub(crate) fn classify(refresh: Refresh) -> RefreshOutcome {
+    if refresh.report.items.is_empty() && !refresh.failures.is_empty() {
         RefreshOutcome::NothingRefreshed {
-            failed_sources: report.errors,
+            failures: refresh.failures,
         }
     } else {
-        RefreshOutcome::Refreshed(FreshStatus(report))
+        RefreshOutcome::Refreshed(FreshStatus(refresh))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use workflows::status::StatusItem;
+    use workflows::known_secrets::KnownSecrets;
+    use workflows::status::{StatusItem, StatusReport};
 
     fn ci_failure() -> StatusItem {
         StatusItem::Ci(domain::CiFailure {
@@ -79,10 +81,22 @@ mod tests {
         })
     }
 
-    fn report(items: usize, failed_sources: usize) -> StatusReport {
-        StatusReport {
-            items: (0..items).map(|_| ci_failure()).collect(),
-            errors: (0..failed_sources).map(|i| format!("source {i}")).collect(),
+    fn report(items: usize, failed_sources: usize) -> Refresh {
+        let failures: Vec<SourceFailure> = (0..failed_sources)
+            .map(|i| {
+                SourceFailure::new(
+                    format!("source {i}"),
+                    &anyhow::anyhow!("down"),
+                    &KnownSecrets::new(Vec::new()),
+                )
+            })
+            .collect();
+        Refresh {
+            report: StatusReport {
+                items: (0..items).map(|_| ci_failure()).collect(),
+                errors: failures.iter().map(|f| f.source().to_string()).collect(),
+            },
+            failures,
         }
     }
 
@@ -104,8 +118,9 @@ mod tests {
         let outcome = classify(report(0, 2));
 
         match outcome {
-            RefreshOutcome::NothingRefreshed { failed_sources } => {
-                assert_eq!(failed_sources, vec!["source 0", "source 1"]);
+            RefreshOutcome::NothingRefreshed { failures } => {
+                let sources: Vec<&str> = failures.iter().map(SourceFailure::source).collect();
+                assert_eq!(sources, vec!["source 0", "source 1"]);
             }
             RefreshOutcome::Refreshed(_) => {
                 panic!("a refresh that reached no source must not be cached")
@@ -120,7 +135,7 @@ mod tests {
         match outcome {
             RefreshOutcome::Refreshed(fresh) => {
                 assert_eq!(fresh.item_count(), 2);
-                assert_eq!(fresh.failed_sources().len(), 1);
+                assert_eq!(fresh.failures().len(), 1);
             }
             RefreshOutcome::NothingRefreshed { .. } => {
                 panic!("a refresh that reached a source must be cached")

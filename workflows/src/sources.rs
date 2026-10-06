@@ -10,27 +10,49 @@ use crate::status::StatusItem;
 
 /// What one source came back with.
 #[derive(Debug, Default)]
-pub struct SourceAnswer {
+pub(crate) struct SourceAnswer {
     /// The signals it found.
-    pub items: Vec<StatusItem>,
+    pub(crate) items: Vec<StatusItem>,
     /// Sources inside it that failed, for a source that runs several (the private workflows).
-    pub failed: Vec<String>,
+    pub(crate) failed: Vec<SourceError>,
+}
+
+/// A source that failed, with the error it failed with.
+///
+/// The error is as the source raised it, so it can hold a credential. It is redacted into a
+/// [`crate::source_failure::SourceFailure`] before it leaves this crate.
+#[derive(Debug)]
+pub(crate) struct SourceError {
+    /// The source's name, as the report names it.
+    pub(crate) source: String,
+    /// What it failed with.
+    pub(crate) error: anyhow::Error,
+}
+
+impl SourceError {
+    /// `source` failed with `error`.
+    pub(crate) fn new(source: impl Into<String>, error: anyhow::Error) -> Self {
+        Self {
+            source: source.into(),
+            error,
+        }
+    }
 }
 
 /// A source's pending answer.
-pub type Fetch = Pin<Box<dyn Future<Output = Result<SourceAnswer>> + Send>>;
+pub(crate) type Fetch = Pin<Box<dyn Future<Output = Result<SourceAnswer>> + Send>>;
 
 /// One place a refresh asks for signals, named as a failure would be reported.
-pub struct Source {
+pub(crate) struct Source {
     /// The name reported when this source fails or runs out of time.
-    pub name: String,
+    pub(crate) name: String,
     /// The pending answer.
-    pub fetch: Fetch,
+    pub(crate) fetch: Fetch,
 }
 
 impl Source {
     /// A source called `name` whose answer comes from `fetch`.
-    pub fn new(
+    pub(crate) fn new(
         name: impl Into<String>,
         fetch: impl Future<Output = Result<SourceAnswer>> + Send + 'static,
     ) -> Self {
@@ -49,17 +71,17 @@ impl std::fmt::Debug for Source {
     }
 }
 
-/// Every answer that arrived, and every source that failed or ran out of time, by name.
+/// Every answer that arrived, and every source that failed or ran out of time.
 #[derive(Debug, Default)]
-pub struct Gathered {
+pub(crate) struct Gathered {
     /// Signals from every source that answered, in source order.
-    pub items: Vec<StatusItem>,
-    /// Names of sources that failed or ran out of time, in source order.
-    pub failed: Vec<String>,
+    pub(crate) items: Vec<StatusItem>,
+    /// Sources that failed or ran out of time, with what they failed with, in source order.
+    pub(crate) errors: Vec<SourceError>,
 }
 
 /// Asks every source at once and waits at most `limit` for each.
-pub async fn gather(sources: Vec<Source>, limit: Duration) -> Gathered {
+pub(crate) async fn gather(sources: Vec<Source>, limit: Duration) -> Gathered {
     let names: Vec<String> = sources.iter().map(|source| source.name.clone()).collect();
     let answers = futures::future::join_all(
         sources
@@ -68,14 +90,20 @@ pub async fn gather(sources: Vec<Source>, limit: Duration) -> Gathered {
     )
     .await;
 
+    // Pairing by position would silently drop a source if the two lists ever differed.
+    assert_eq!(names.len(), answers.len(), "every source has an answer");
     let mut gathered = Gathered::default();
     for (name, answer) in names.into_iter().zip(answers) {
         match answer {
             Ok(Ok(answer)) => {
                 gathered.items.extend(answer.items);
-                gathered.failed.extend(answer.failed);
+                gathered.errors.extend(answer.failed);
             }
-            Ok(Err(_)) | Err(_) => gathered.failed.push(name),
+            Ok(Err(error)) => gathered.errors.push(SourceError::new(name, error)),
+            Err(_elapsed) => gathered.errors.push(SourceError::new(
+                name,
+                anyhow::anyhow!("did not answer within {}s", limit.as_secs()),
+            )),
         }
     }
     gathered
@@ -110,6 +138,15 @@ mod tests {
             .collect()
     }
 
+    /// Each failure as `source: reason`, the reason being the whole error chain.
+    fn failures(gathered: &Gathered) -> Vec<String> {
+        gathered
+            .errors
+            .iter()
+            .map(|failure| format!("{}: {:#}", failure.source, failure.error))
+            .collect()
+    }
+
     fn answering(name: &str, after: Duration, workflow: &str) -> Source {
         let item = ci_failure(workflow);
         Source::new(name, async move {
@@ -132,21 +169,26 @@ mod tests {
         let gathered = gather(sources, LIMIT).await;
 
         assert_eq!(workflows(&gathered.items), vec!["from quick"]);
-        assert_eq!(gathered.failed, vec!["hung"]);
+        assert_eq!(failures(&gathered), vec!["hung: did not answer within 60s"]);
         assert_eq!(started.elapsed(), LIMIT);
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_source_that_errors_is_named_and_the_others_are_kept() {
+    async fn a_source_that_errors_is_reported_with_its_whole_error_chain() {
         let sources = vec![
             answering("first", Duration::ZERO, "from first"),
-            Source::new("broken", async { Err(anyhow::anyhow!("401")) }),
+            Source::new("broken", async {
+                Err(anyhow::anyhow!("401 Unauthorized").context("failed to reach GitHub API"))
+            }),
         ];
 
         let gathered = gather(sources, LIMIT).await;
 
         assert_eq!(workflows(&gathered.items), vec!["from first"]);
-        assert_eq!(gathered.failed, vec!["broken"]);
+        assert_eq!(
+            failures(&gathered),
+            vec!["broken: failed to reach GitHub API: 401 Unauthorized"]
+        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -164,19 +206,25 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn failures_a_source_reports_itself_come_through_in_order() {
+    async fn failures_a_source_reports_itself_come_through_with_their_reasons_in_order() {
         let sources = vec![
             Source::new("broken", async { Err(anyhow::anyhow!("down")) }),
             Source::new("private workflows", async {
                 Ok(SourceAnswer {
                     items: vec![],
-                    failed: vec!["inner source".to_string()],
+                    failed: vec![SourceError::new(
+                        "inner source",
+                        anyhow::anyhow!("connection refused"),
+                    )],
                 })
             }),
         ];
 
         let gathered = gather(sources, LIMIT).await;
 
-        assert_eq!(gathered.failed, vec!["broken", "inner source"]);
+        assert_eq!(
+            failures(&gathered),
+            vec!["broken: down", "inner source: connection refused"]
+        );
     }
 }
