@@ -28,6 +28,11 @@ its own cadence breaks the assumption in three places:
 - **`errors` has the same problem.** A per-category refresh cannot clear only its own failure
   entries, because nothing in the list says which category produced which string.
 
+The assumption also breaks without per-category cadence. A refresh where some sources fail still
+writes the one row, and the row then holds only the sources that answered. A source that times out
+loses its last answer until a later pass reaches it, and every reader of the row, the notifications
+in #327 included, sees fewer items than are waiting.
+
 [Decision 021](../decisions/021-daemon-owns-signal-refresh.md) makes the daemon the only writer once
 the TUI stops writing (it still does today), which removes the cross-process race but not the
 coupling: one writer rewriting the whole blob per category is still every category's data passing
@@ -35,14 +40,25 @@ through every category's refresh.
 
 ## What would settle it
 
-This cannot be answered before the cadence question in
-[should-refresh-run-on-a-per-category-schedule.md](should-refresh-run-on-a-per-category-schedule.md)
-is answered. If refresh stays on one global clock, the single-row shape is correct as it stands and
-there is nothing here to decide. That cadence question in turn waits on milestone #327 shipping and
-being used, so nothing here can be settled inside that milestone. Everything below assumes that
-question resolves toward per-category cadence.
+Two things can make the single-row shape wrong, and each is settled on its own.
 
-Given that, two observations settle the shape:
+The first is per-category cadence. It cannot be answered before the cadence question in
+[should-refresh-run-on-a-per-category-schedule.md](should-refresh-run-on-a-per-category-schedule.md)
+is answered, and that question waits on milestone #327 shipping and being used, so it cannot be
+settled inside that milestone. If refresh stays on one global clock, cadence gives no reason to
+change the shape.
+
+The second does not wait on cadence. A partial pass replaces the row without the failed sources'
+items (see the 2026-10-05 findings). Two things settle whether that forces a new shape:
+
+1. **Whether a failed source's last answer should stay in the list.** Keeping it shows items that
+   may be out of date. Dropping it hides items that may still be waiting. That is a product
+   question, and if the answer is to drop them, the current shape already does that.
+2. **How often a pass is partial.** The daemon logs `outcome=partial` and the failed sources on
+   every pass, so a week of its log measures this. A partial pass once a month is a different claim
+   from one every few passes.
+
+If either reason calls for a new shape, two observations settle which one:
 
 1. **The size and frequency of a whole-blob rewrite at realistic signal counts.** Serialize a
    populated `StatusReport` and measure it, then measure the upsert against the daemon's intended
@@ -123,3 +139,15 @@ into a decision record._
   writes through `store::status_cache::upsert` unchanged (`write` in `daemon/src/cache.rs`), and
   `ui/tui/src/main.rs` still calls `upsert` as well, so the single row has two writers until Phase 5
   of [#327](https://github.com/ooloth/hub/issues/327). The table is still one row keyed `id = 1`.
+- *Measured* (2026-10-05, read from the source): a pass where some sources fail still replaces the
+  whole row, without the failed sources' items. `classify` in `daemon/src/freshness.rs` returns
+  `Refreshed` whenever any item came back, and `write` in `daemon/src/cache.rs` upserts that report
+  as the payload. If `github prs awaiting review` times out while other sources answer, those PRs
+  leave the cached list until a later pass reaches that source. The TUI's partial banner names the
+  source, and the health record in [#341](https://github.com/ooloth/hub/issues/341) will too, but
+  the items are gone either way.
+- *Reasoned* (2026-10-05): this does not depend on per-category cadence. On one global clock a
+  partial pass still drops a source's last answer, and the Phase 4 notifications in
+  [#327](https://github.com/ooloth/hub/issues/327) read this row, so a partial pass notifies about
+  fewer PRs than are waiting. Options B and C keep a failed source's last answer by writing only the
+  sources that answered. Option A can keep it only by merging the previous payload on every write.
