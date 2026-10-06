@@ -171,6 +171,17 @@ run covers whichever signals exist at the time. When the change concerns a kind
 of signal that has none right now, the report says that path went unobserved
 live.
 
+**Seeing how hub behaves when sources fail.** `just sources-unreachable <recipe>`
+runs any recipe with every source refused, as a network failure would refuse it,
+while 1Password still answers: `just sources-unreachable daemon --once`, or
+`just sources-unreachable tui`. It points the proxy variables at a closed local
+port and exempts 1Password's domains, so it does not cut 1Password, DNS, or
+anything that ignores proxy variables, such as `git` over SSH. The GitHub sources
+and the private workflows have been seen to fail through it; Linear, Loki and GCP
+have not been tried. A TUI refresh through it currently empties the cache
+([#343](https://github.com/ooloth/hub/issues/343)), so run `just daemon --once`
+afterwards to refill it.
+
 **The loop.**
 
 ```bash

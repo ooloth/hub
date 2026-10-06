@@ -43,6 +43,19 @@ tui:
 daemon *ARGS:
     cargo run -p hub-daemon {{_daemon_features}} -- {{ARGS}}
 
+# a proxy address nothing listens on, so every request sent through it is refused
+_unreachable_proxy := "http://127.0.0.1:9"
+# 1Password's domains, which go around that proxy so `op read` still resolves credentials
+_credential_hosts := ".1password.com,.1password.ca,.1password.eu,.1passwordservices.com,.1passwordusercontent.com"
+
+# e.g. `just sources-unreachable daemon --once` or `just sources-unreachable tui`
+# run another recipe with every source hub asks unreachable and 1Password still reachable
+sources-unreachable +ARGS:
+    HTTPS_PROXY={{_unreachable_proxy}} HTTP_PROXY={{_unreachable_proxy}} \
+    https_proxy={{_unreachable_proxy}} http_proxy={{_unreachable_proxy}} \
+    NO_PROXY={{_credential_hosts}} no_proxy={{_credential_hosts}} \
+    {{just_executable()}} --justfile {{justfile()}} {{ARGS}}
+
 db:
     @echo "opening ~/.hub/$HUB_PROFILE/hub.db"
     uvx visidata ~/.hub/"$HUB_PROFILE"/hub.db
