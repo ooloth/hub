@@ -22,24 +22,28 @@ The core value is cross-domain triage plus agent delegation: signals from differ
 
 See [README.md](README.md) for the full feature list and value proposition.
 
-## Active milestone
+## Current milestone
 
-Work in flight is tracked in the GitHub milestone **Granular PR queue notifications**, epic
-[#327](https://github.com/ooloth/hub/issues/327). Before starting anything in it, read the epic's
-plan of record:
+The current milestone is the open GitHub milestone with at least one closed issue. If two
+qualify, the `M1:` / `M2:` prefix in their titles orders them. The `next` skill finds it and ranks
+it against everything else in the tracker.
+
+Each phase issue's parent is the milestone's epic. Before starting anything in the milestone, read
+the epic's plan of record:
 
 ```bash
-gh issue view 327 --comments
+gh issue view <phase> --json parent       # finds the epic
+gh issue view <epic> --comments
 ```
 
-The plan lives in a **comment**. `gh issue view 327` on its own prints the body and stops, and the
-body predates the plan on several points, so reading it alone gives you a superseded design. The
-comment carries the settled architecture, the measured spike findings, and the full phase sequence.
+The plan lives in a **comment**. `gh issue view <epic>` on its own prints the body and stops, and
+the body can predate the plan, so reading it alone can give you a superseded design. The comment
+carries the settled architecture, the measured spike findings, and the full phase sequence.
 
 **The title numbering is the work order.** Issues are titled `Phase N.M — ...`; take them in that
-order. Hard dependencies are recorded separately as GitHub `blockedBy` relationships, readable only
-via GraphQL, and there is currently exactly one (#331 needs #330). Everything else the numbering
-implies is sequence, not blocking.
+order. Hard dependencies are recorded separately as GitHub `blockedBy` relationships, which
+`gh issue view N --json blockedBy` prints. Everything else the numbering implies is sequence, not
+blocking.
 
 ## Project Structure
 
