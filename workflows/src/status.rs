@@ -258,13 +258,15 @@ fn sources(params: StatusParams) -> Vec<Source> {
         Ok(answer(failures.into_iter().map(StatusItem::Ci)))
     }));
 
-    sources.push(Source::new("linear issues", async move {
-        let issues = match linear_token {
-            Some(token) => clients::linear::issues(token.expose_secret()).await?,
-            None => vec![],
-        };
-        Ok(answer(issues.into_iter().map(StatusItem::Linear)))
-    }));
+    // Without a token Linear is not configured, so it is not asked. Asking would count an empty
+    // answer as Linear having answered, and an outage of every other source would then read as a
+    // partial refresh.
+    if let Some(token) = linear_token {
+        sources.push(Source::new("linear issues", async move {
+            let issues = clients::linear::issues(token.expose_secret()).await?;
+            Ok(answer(issues.into_iter().map(StatusItem::Linear)))
+        }));
+    }
 
     for env in loki_envs {
         let name = format!("loki ({} · {})", env.project, env.env);
@@ -360,13 +362,28 @@ mod tests {
             "github my draft prs",
             "github external prs",
             "github ci failures",
-            "linear issues",
             "loki (app · prod)",
             "gcp (api · staging)",
         ];
         #[cfg(feature = "private")]
         expected.push("private workflows");
         assert_eq!(names, expected);
+    }
+
+    #[test]
+    fn linear_is_asked_only_when_a_linear_token_is_configured() {
+        let mut params = params();
+        params.linear_token = Some(Secret::new("lin-token-value".to_string()));
+
+        let names: Vec<String> = sources(params)
+            .into_iter()
+            .map(|source| source.name)
+            .collect();
+
+        assert!(
+            names.iter().any(|name| name == "linear issues"),
+            "{names:?}"
+        );
     }
 
     fn failed(source: &str, error: &str) -> crate::sources::SourceError {
