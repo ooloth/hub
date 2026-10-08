@@ -5,7 +5,7 @@ expression: "render(&compose(config, cwd(), Some(CLEANUP), Some(data_path())))"
 cwd: /tmp/hub-test-worktree
 env:
   HUB_SYSTEM_PROMPT=<system prompt starting "## Purpose">
-  HUB_TASK_PROMPT=Investigate GCP error in project mapapp (env: internal, gcp_project: my-gcp-project). Title: backend errors.
+  HUB_TASK_PROMPT=Investigate GCP error in project web-app (env: internal, gcp_project: my-gcp-project). Title: backend errors.
 Message:
 <untrusted-input source="gcp log message">
 Parser validation error

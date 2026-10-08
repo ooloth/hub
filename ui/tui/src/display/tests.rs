@@ -133,7 +133,7 @@ fn loki() -> StatusItem {
 fn gcp() -> StatusItem {
     StatusItem::Gcp(domain::GcpEntry {
         title: "errors".to_string(),
-        project: "mapapp".to_string(),
+        project: "web-app".to_string(),
         env: "neuro".to_string(),
         message: domain::UntrustedText::new("something broke"),
         line: domain::UntrustedText::new("{}"),
@@ -141,7 +141,7 @@ fn gcp() -> StatusItem {
         age: chrono::Duration::zero(),
         urgency: domain::Urgency::High,
         url: "https://console.cloud.google.com/logs/query".to_string(),
-        gcp_project: "mapapp-prod-abc123".to_string(),
+        gcp_project: "web-app-prod-abc123".to_string(),
     })
 }
 
@@ -303,7 +303,7 @@ fn group_key_gcp_returns_key() {
     assert_eq!(
         group_key(&gcp()),
         Some(GroupKey::new(
-            "errors · something broke — mapapp:neuro".to_string()
+            "errors · something broke — web-app:neuro".to_string()
         ))
     );
 }

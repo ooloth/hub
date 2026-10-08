@@ -5,7 +5,7 @@ expression: "render(&compose(config, cwd(), Some(CLEANUP), Some(data_path())))"
 cwd: /tmp/hub-test-worktree
 env:
   HUB_SYSTEM_PROMPT=<system prompt starting "## Purpose">
-  HUB_TASK_PROMPT=Investigate Loki error in project mapapp (env: internal). Title: backend errors.
+  HUB_TASK_PROMPT=Investigate Loki error in project web-app (env: internal). Title: backend errors.
 Message:
 <untrusted-input source="loki log message">
 </>

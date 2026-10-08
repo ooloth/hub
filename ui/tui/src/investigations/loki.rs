@@ -52,7 +52,7 @@ mod tests {
     #[test]
     fn loki_investigation_system_prompt_contains_skill_content() {
         let cfg = config(
-            "mapapp",
+            "web-app",
             "internal",
             "backend errors",
             &UntrustedText::new("Parser validation error"),
@@ -68,7 +68,7 @@ mod tests {
     fn loki_investigation_prompt_contains_all_context() {
         let line = r#"[{"message":"Parser validation error"}]"#;
         let cfg = config(
-            "mapapp",
+            "web-app",
             "internal",
             "backend errors",
             &UntrustedText::new("Parser validation error"),
@@ -76,7 +76,7 @@ mod tests {
             "https://grafana.example.com/explore",
             "15m",
         );
-        assert!(rendered(&cfg).contains("mapapp"));
+        assert!(rendered(&cfg).contains("web-app"));
         assert!(rendered(&cfg).contains("internal"));
         assert!(rendered(&cfg).contains("Parser validation error"));
         assert!(rendered(&cfg).contains("15m"));

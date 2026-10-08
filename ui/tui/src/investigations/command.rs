@@ -264,7 +264,7 @@ mod tests {
     #[test]
     fn supporting_data_is_fenced_in_the_file_the_agent_reads() {
         let config = loki::config(
-            "mapapp",
+            "web-app",
             "internal",
             "backend errors",
             &UntrustedText::new("Parser validation error"),
@@ -423,7 +423,7 @@ mod tests {
     #[test]
     fn loki_investigation_command() {
         let config = loki::config(
-            "mapapp",
+            "web-app",
             "internal",
             "backend errors",
             &UntrustedText::new("Parser validation error"),
@@ -445,7 +445,7 @@ mod tests {
     #[test]
     fn loki_investigation_command_with_a_hostile_message() {
         let config = loki::config(
-            "mapapp",
+            "web-app",
             "internal",
             "backend errors",
             &UntrustedText::new(
@@ -466,7 +466,7 @@ mod tests {
     #[test]
     fn gcp_investigation_command() {
         let config = gcp::config(
-            "mapapp",
+            "web-app",
             "internal",
             "backend errors",
             &UntrustedText::new("Parser validation error"),

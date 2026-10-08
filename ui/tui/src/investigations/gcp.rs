@@ -66,14 +66,14 @@ mod tests {
     #[test]
     fn gcp_investigation_system_prompt_contains_skill_content() {
         let cfg = config(
-            "mapapp",
+            "web-app",
             "neuro",
             "errors",
             &UntrustedText::new("something broke"),
             &UntrustedText::new("{}"),
             "",
             "1h",
-            "mapapp-prod-abc123",
+            "web-app-prod-abc123",
         );
         assert!(cfg.system_prompt.contains("## Purpose"));
         assert!(!cfg.system_prompt.starts_with("---"));
@@ -83,21 +83,21 @@ mod tests {
     fn gcp_investigation_prompt_contains_all_context() {
         let line = r#"[{"message":"something broke","timestamp":"2024-01-15T10:30:00Z"}]"#;
         let cfg = config(
-            "mapapp",
+            "web-app",
             "neuro",
             "errors",
             &UntrustedText::new("something broke"),
             &UntrustedText::new(line),
             "https://console.cloud.google.com/logs/query",
             "1h",
-            "mapapp-prod-abc123",
+            "web-app-prod-abc123",
         );
-        assert!(rendered(&cfg).contains("mapapp"));
+        assert!(rendered(&cfg).contains("web-app"));
         assert!(rendered(&cfg).contains("neuro"));
         assert!(rendered(&cfg).contains("something broke"));
         assert!(rendered(&cfg).contains("1h"));
         assert!(rendered(&cfg).contains("console.cloud.google.com"));
-        assert!(rendered(&cfg).contains("mapapp-prod-abc123"));
+        assert!(rendered(&cfg).contains("web-app-prod-abc123"));
         assert!(rendered(&cfg).contains("2024-01-15T10:30:00Z"));
         assert!(rendered(&cfg).contains("/tmp/supporting-data.json"));
         assert_eq!(
@@ -113,14 +113,14 @@ mod tests {
     #[test]
     fn gcp_investigation_incident_at_empty_when_no_timestamp() {
         let cfg = config(
-            "mapapp",
+            "web-app",
             "neuro",
             "errors",
             &UntrustedText::new("something broke"),
             &UntrustedText::new(r#"[{"message":"no timestamp here"}]"#),
             "",
             "1h",
-            "mapapp-prod-abc123",
+            "web-app-prod-abc123",
         );
         assert!(rendered(&cfg).contains("Incident timestamp: ."));
     }

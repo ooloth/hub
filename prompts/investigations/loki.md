@@ -9,7 +9,7 @@ Diagnoses a Loki application error by finding where it originates in the codebas
 ## Context
 
 Launched from the hub TUI with:
-- `project` — project name (e.g. "mapapp")
+- `project` — project name (e.g. "web-app")
 - `env` — environment (e.g. "prod", "internal")
 - `title` — error category (e.g. "MemoryError")
 - `message` — stable error label (e.g. "OOM killed")

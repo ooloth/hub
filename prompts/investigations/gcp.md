@@ -10,7 +10,7 @@ Diagnoses a GCP Cloud Logging error by finding where it originates in the codeba
 
 Launched from the hub TUI with:
 
-- `project` — hub project name (e.g. "dash-phenoapp-v2")
+- `project` — hub project name (e.g. "api-service")
 - `env` — environment (e.g. "neuro", "prod")
 - `gcp_project` — GCP cloud project ID (e.g. "rp006-prod-49a893d8"); use this as `--project` in `gcloud` commands and as the `project=` param in GCP Console URLs
 - `title` — error category (e.g. "errors")

@@ -544,7 +544,7 @@ mod tests {
     fn gcp_item() -> StatusItem {
         StatusItem::Gcp(domain::GcpEntry {
             title: "errors".to_string(),
-            project: "mapapp".to_string(),
+            project: "web-app".to_string(),
             env: "neuro".to_string(),
             message: domain::UntrustedText::new("something broke"),
             line: domain::UntrustedText::new(r#"{"message":"something broke"}"#),
@@ -552,7 +552,7 @@ mod tests {
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::High,
             url: "https://console.cloud.google.com/logs/query".to_string(),
-            gcp_project: "mapapp-prod-abc123".to_string(),
+            gcp_project: "web-app-prod-abc123".to_string(),
         })
     }
 
