@@ -151,3 +151,6 @@ into a decision record._
   [#327](https://github.com/ooloth/hub/issues/327) read this row, so a partial pass notifies about
   fewer PRs than are waiting. Options B and C keep a failed source's last answer by writing only the
   sources that answered. Option A can keep it only by merging the previous payload on every write.
+- *Reasoned* (2026-10-08): the daemon's health record does not depend on this question.
+  [Decision 026](../decisions/026-daemon-health-is-one-row-in-its-own-table.md) puts it in a table
+  of its own, so neither the single-row shape nor a per-category one has to carry it.
