@@ -6,9 +6,10 @@ use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::time::Duration;
 
-use crate::known_secrets::KnownSecrets;
-use crate::source_failure::SourceFailure;
 use crate::sources::{gather, Gathered, Source, SourceAnswer};
+use domain::known_secrets::KnownSecrets;
+use domain::source_failure::SourceFailure;
+use domain::source_outcomes::SourceOutcomes;
 
 /// The longest a refresh waits for any one source.
 ///
@@ -106,13 +107,13 @@ pub struct StatusReport {
 /// One refresh: the report the cache stores, and why each failed source failed.
 ///
 /// The reasons travel beside the report rather than inside it, so the cached payload keeps its
-/// shape. `report.errors` names the same sources as `failures`, in the same order.
+/// shape. `report.errors` names the same sources as `sources.failed()`, in the same order.
 #[derive(Debug)]
 pub struct Refresh {
     /// What the cache stores.
     pub report: StatusReport,
-    /// Each source that failed, with its reason redacted of every credential.
-    pub failures: Vec<SourceFailure>,
+    /// Which sources answered, and each that failed with its reason redacted of every credential.
+    pub sources: SourceOutcomes,
 }
 
 /// Returned by the private workflow runner so source names come from data, not hub source code.
@@ -121,6 +122,8 @@ pub struct Refresh {
 pub(crate) struct PrivateStatusResult {
     /// Items collected from private sources.
     pub(crate) items: Vec<StatusItem>,
+    /// Private sources that answered.
+    pub(crate) answered: Vec<String>,
     /// Private sources that failed, with the error each failed with.
     pub(crate) failures: Vec<crate::sources::SourceError>,
 }
@@ -156,7 +159,7 @@ pub struct StatusParams {
 ///
 /// # Errors
 /// Never in practice: a source that fails or runs out of time is not an error. It is collected
-/// into [`Refresh::failures`] with its reason, and the remaining sources still contribute.
+/// into [`Refresh::sources`] with its reason, and the remaining sources still contribute.
 pub async fn run(params: StatusParams) -> Result<Refresh> {
     // Before the sources take the credentials.
     let secrets = known_secrets(&params);
@@ -164,8 +167,10 @@ pub async fn run(params: StatusParams) -> Result<Refresh> {
     Ok(refresh_from(gathered, &secrets))
 }
 
-/// Every credential a refresh is given.
-fn known_secrets(params: &StatusParams) -> KnownSecrets {
+/// Every credential a refresh is given, which is everything a failure reason, a source's or the
+/// whole pass's, must not contain.
+#[must_use]
+pub fn known_secrets(params: &StatusParams) -> KnownSecrets {
     let tokens = std::iter::once(&params.github_token)
         .chain(params.linear_token.as_ref())
         .chain(params.loki_envs.iter().filter_map(|env| env.token.as_ref()))
@@ -176,7 +181,11 @@ fn known_secrets(params: &StatusParams) -> KnownSecrets {
 /// The refresh `gathered` amounts to: its items deduplicated and ranked, and each failure's
 /// reason redacted of `secrets`.
 fn refresh_from(gathered: Gathered, secrets: &KnownSecrets) -> Refresh {
-    let Gathered { mut items, errors } = gathered;
+    let Gathered {
+        mut items,
+        answered,
+        errors,
+    } = gathered;
     dedupe_prs(&mut items);
     items.sort_by_key(|i| (i.urgency(), Reverse(i.age())));
     let failures: Vec<SourceFailure> = errors
@@ -189,7 +198,7 @@ fn refresh_from(gathered: Gathered, secrets: &KnownSecrets) -> Refresh {
         .collect();
     Refresh {
         report: StatusReport { items, errors },
-        failures,
+        sources: SourceOutcomes::new(answered, failures),
     }
 }
 
@@ -277,8 +286,9 @@ fn sources(params: StatusParams) -> Vec<Source> {
     #[cfg(feature = "private")]
     sources.push(Source::new("private workflows", async move {
         let result = crate::private::status::run(private_workflow_names, &extra_credentials).await;
-        Ok(SourceAnswer {
+        Ok(SourceAnswer::Several {
             items: result.items,
+            answered: result.answered,
             failed: result.failures,
         })
     }));
@@ -288,12 +298,9 @@ fn sources(params: StatusParams) -> Vec<Source> {
     sources
 }
 
-/// An answer holding `items` and no failures of its own.
+/// A source's own answer, holding `items`.
 fn answer(items: impl IntoIterator<Item = StatusItem>) -> SourceAnswer {
-    SourceAnswer {
-        items: items.into_iter().collect(),
-        failed: vec![],
-    }
+    SourceAnswer::Own(items.into_iter().collect())
 }
 
 /// Keeps the first occurrence of each pull request. A PR can match several queries
@@ -370,6 +377,7 @@ mod tests {
     fn the_report_names_the_failed_sources_in_the_order_they_failed() {
         let gathered = Gathered {
             items: vec![],
+            answered: vec![],
             errors: vec![
                 failed("github issues", "401"),
                 failed("linear issues", "timeout"),
@@ -378,13 +386,34 @@ mod tests {
 
         let refresh = refresh_from(gathered, &KnownSecrets::new(Vec::new()));
 
-        let failed_sources: Vec<&str> =
-            refresh.failures.iter().map(SourceFailure::source).collect();
+        let failed_sources: Vec<&str> = refresh
+            .sources
+            .failed()
+            .iter()
+            .map(SourceFailure::source)
+            .collect();
         assert_eq!(refresh.report.errors, failed_sources);
         assert_eq!(
             refresh.report.errors,
             vec!["github issues", "linear issues"]
         );
+    }
+
+    #[test]
+    fn the_refresh_names_the_sources_that_answered_beside_those_that_failed() {
+        let gathered = Gathered {
+            items: vec![],
+            answered: vec!["github issues".to_string(), "loki (app · prod)".to_string()],
+            errors: vec![failed("linear issues", "timeout")],
+        };
+
+        let refresh = refresh_from(gathered, &KnownSecrets::new(Vec::new()));
+
+        assert_eq!(
+            refresh.sources.answered(),
+            ["github issues", "loki (app · prod)"]
+        );
+        assert_eq!(refresh.report.errors, vec!["linear issues"]);
     }
 
     #[test]
@@ -401,6 +430,7 @@ mod tests {
         );
         let gathered = Gathered {
             items: vec![],
+            answered: vec![],
             errors: vec![failed(
                 "every source",
                 "sent ghp-token-value lin-token-value loki-token-value to media.internal",
@@ -410,7 +440,8 @@ mod tests {
         let refresh = refresh_from(gathered, &known_secrets(&params));
 
         let reason = refresh
-            .failures
+            .sources
+            .failed()
             .first()
             .unwrap()
             .reason()

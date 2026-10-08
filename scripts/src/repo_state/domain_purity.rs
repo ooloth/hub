@@ -51,7 +51,7 @@ impl AmbientRead {
 ///
 /// # Errors
 /// Returns an error when a directory cannot be read.
-fn rust_files_under(dir: &Path) -> Result<Vec<PathBuf>> {
+pub(super) fn rust_files_under(dir: &Path) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     let mut pending = vec![dir.to_path_buf()];
     while let Some(current) = pending.pop() {

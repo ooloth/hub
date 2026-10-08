@@ -16,7 +16,7 @@ Its three binaries serve three distinct audiences:
 
 - **`hub-tui`** (Ratatui dashboard) — the **human-facing surface**. Read signals, launch investigation sessions, watch session progress, review results.
 - **`hub`** (CLI) — the **agent's toolkit** (stub). The task subcommand (`hub task *`) was removed with the task model (ADR 019). Future agent-facing subcommands will be added here as the filesystem session model is built out.
-- **`hub-daemon`** — the **unattended surface** (ADR 020). Refreshes the signal cache with nobody present. It refreshes every 15 minutes (`--interval`), one daemon per profile, and `--once` runs a single pass; health reporting, credential retry, launchd and notifications are the rest of the [#327](https://github.com/ooloth/hub/issues/327) milestone.
+- **`hub-daemon`** — the **unattended surface** (ADR 020). Refreshes the signal cache with nobody present. It refreshes every 15 minutes (`--interval`), one daemon per profile, and `--once` runs a single pass. Each pass is recorded in a health record in the profile's database. Launchd, credentials with nobody present, notifications and showing health in the TUI are the rest of the [#327](https://github.com/ooloth/hub/issues/327) milestone.
 
 The core value is cross-domain triage plus agent delegation: signals from different systems are ranked together in one list, and any signal can be investigated by pressing `i` to launch a Claude Code session with injected context. That session opens in its own tmux window, named after the signal by `domain::InvestigationWindow`, so several investigations run side by side and each stays reachable from tmux's window list.
 

@@ -2,6 +2,8 @@
 
 /// CI failure signals from GitHub Actions.
 pub mod ci;
+/// One refresh pass of the daemon, as it is logged and recorded.
+pub mod daemon_pass;
 /// GCP Cloud Logging query configuration and log entry types.
 pub mod gcp;
 /// Investigation prompts, assembled from parts that say where each came from.
@@ -10,8 +12,12 @@ pub mod investigation_prompt;
 pub mod investigation_window;
 /// GitHub and Linear issue types and label helpers.
 pub mod issue;
+/// The credential values a failure reason must never contain.
+pub mod known_secrets;
 /// Loki query configuration and log entry types.
 pub mod loki;
+/// Why a whole refresh pass failed, in a form safe to log and store.
+pub mod pass_failure;
 /// Pull request types and repository slug newtype.
 pub mod pr;
 /// Which set of hub's own state a process reads and writes.
@@ -20,6 +26,10 @@ pub mod profile;
 pub mod serde_helpers;
 /// Claude Code session transcript parsing.
 pub mod session;
+/// A source that failed during a refresh, and why, in a form safe to log and store.
+pub mod source_failure;
+/// Which sources a refresh heard from, and which failed.
+pub mod source_outcomes;
 /// Text hub did not write.
 pub mod untrusted;
 /// Urgency ranking used across all signal and task types.

@@ -32,7 +32,7 @@ ordinary and common. What is forbidden is fetching one.
 ## How it is enforced
 
 **The crate half is enforced by the compiler, totally.** `domain/Cargo.toml` declares only `anyhow`,
-`chrono`, `secrecy`, `serde`, `serde_json` and `uuid`, so a `use workflows::…` inside `domain/` does
+`chrono`, `secrecy`, `serde`, `serde_json`, `url` and `uuid`, so a `use workflows::…` inside `domain/` does
 not compile. There is no gap here and no check is needed.
 
 **The ambient-state half has no compiler check**, because `std` is always in scope. That is what

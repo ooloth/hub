@@ -9,6 +9,14 @@ Local SQLite access. Reads and writes domain entities to the local database.
 
 **Lives here:** queries, inserts, upserts, migrations, connection setup.
 
+## Tables
+
+- `status_cache` (`status_cache.rs`): one row holding the serialized status payload the TUI reads.
+- `daemon_health` (`daemon_health.rs`): one row describing the daemon's last pass. `record` writes
+  it in the same transaction as the payload when the pass replaced it, and it is the table's only
+  writer, which `only_the_store_names_the_daemon_health_table` in `scripts/` checks. See
+  [Decision 026](../docs/decisions/026-daemon-health-is-one-row-in-its-own-table.md).
+
 ## Database path
 
 `store::status_cache::connect(profile)` uses `~/.hub/<profile>/hub.db`. The profile comes

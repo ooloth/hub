@@ -2,6 +2,8 @@
 
 /// Every workspace member has a README.
 mod crate_readmes;
+/// Only the store names the daemon health table.
+mod daemon_health_writer;
 /// No superseded decision is listed as a design to build.
 mod decision_status;
 /// `domain/` reads no ambient state.

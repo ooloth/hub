@@ -42,7 +42,7 @@ impl SourceFailure {
     }
 }
 
-/// Why a source failed: its error chain, outermost context first, on one line, at most
+/// Why a source or a pass failed: its error chain, outermost context first, on one line, at most
 /// [`REASON_LIMIT`] characters, with every known secret replaced.
 ///
 /// The only constructor redacts, so a reason that holds a known secret cannot be made.
@@ -54,7 +54,8 @@ impl FailureReason {
     /// joined as anyhow joins them; the whole cut to [`REASON_LIMIT`] from the middle.
     ///
     /// Redaction comes before every cut, so a cut cannot leave the start of a secret behind.
-    fn redacted(error: &anyhow::Error, secrets: &KnownSecrets, source: &str) -> Self {
+    /// `source` names what failed, for the assertions' messages.
+    pub(crate) fn redacted(error: &anyhow::Error, secrets: &KnownSecrets, source: &str) -> Self {
         let links: Vec<String> = error
             .chain()
             .map(|link| keep_start(&secrets.redact(&on_one_line(&link.to_string())), LINK_LIMIT))
@@ -218,24 +219,73 @@ mod tests {
 
     proptest! {
         #[test]
-        fn no_known_secret_survives_into_a_reason(
-            secret in "[a-zA-Z0-9.*+?()|^$-]{4,24}",
-            contained in 1_usize..4,
-            before in "[ -~\n]{0,40}",
-            between in "[ -~\n]{0,40}",
-            after in "[ -~\n]{0,40}",
-        ) {
-            let shorter: String = secret.chars().take(contained).collect();
-            let secrets = KnownSecrets::new(vec![secret.clone(), shorter]);
-            let error = Err::<(), _>(anyhow!("{before}{secret}\n{between}{secret}{after}"))
-                .context(format!("failed to reach {secret}"))
-                .unwrap_err();
+        fn no_known_secret_survives_into_a_reason(hidden in hidden_secrets::strategy()) {
+            let text = reason(&hidden.error(), &hidden.secrets());
 
-            let text = reason(&error, &secrets);
-
-            for piece in text.split(REDACTED) {
-                prop_assert!(!piece.contains(secret.as_str()), "{} in {}", secret, text);
-            }
+            prop_assert!(hidden.survives_in(&text).is_none(), "{:?} in {}", hidden.secret, text);
         }
+    }
+}
+
+/// Secrets hidden throughout a multi-line error chain, including one secret inside another and
+/// secrets made of regex metacharacters, for checking that a reason keeps none of them.
+#[cfg(test)]
+pub(crate) mod hidden_secrets {
+    use anyhow::{anyhow, Context};
+    use proptest::prelude::*;
+
+    use crate::known_secrets::{KnownSecrets, REDACTED};
+
+    /// A secret, a shorter one inside it, and the text around where the error repeats it.
+    #[derive(Debug, Clone)]
+    pub(crate) struct HiddenSecrets {
+        pub(crate) secret: String,
+        shorter: String,
+        before: String,
+        between: String,
+        after: String,
+    }
+
+    impl HiddenSecrets {
+        /// Both secrets, as redaction knows them.
+        pub(crate) fn secrets(&self) -> KnownSecrets {
+            KnownSecrets::new(vec![self.secret.clone(), self.shorter.clone()])
+        }
+
+        /// An error chain that repeats the secret across lines and in its outer context.
+        pub(crate) fn error(&self) -> anyhow::Error {
+            let (secret, before, between, after) =
+                (&self.secret, &self.before, &self.between, &self.after);
+            Err::<(), _>(anyhow!("{before}{secret}\n{between}{secret}{after}"))
+                .context(format!("failed to reach {secret}"))
+                .unwrap_err()
+        }
+
+        /// The part of `text` outside the redaction markers that still holds the secret, if any.
+        pub(crate) fn survives_in(&self, text: &str) -> Option<String> {
+            text.split(REDACTED)
+                .find(|piece| piece.contains(self.secret.as_str()))
+                .map(str::to_string)
+        }
+    }
+
+    pub(crate) fn strategy() -> impl Strategy<Value = HiddenSecrets> {
+        (
+            "[a-zA-Z0-9.*+?()|^$-]{4,24}",
+            1_usize..4,
+            "[ -~\n]{0,40}",
+            "[ -~\n]{0,40}",
+            "[ -~\n]{0,40}",
+        )
+            .prop_map(|(secret, contained, before, between, after)| {
+                let shorter: String = secret.chars().take(contained).collect();
+                HiddenSecrets {
+                    secret,
+                    shorter,
+                    before,
+                    between,
+                    after,
+                }
+            })
     }
 }

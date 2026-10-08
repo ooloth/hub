@@ -4,9 +4,12 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
+use domain::daemon_pass::{Pass, PassOutcome};
+use domain::known_secrets::KnownSecrets;
+use domain::pass_failure::PassFailure;
 use domain::profile::Profile;
 
-use crate::freshness::RefreshOutcome;
+use crate::freshness::{FreshPayload, RefreshOutcome};
 use clap::Parser;
 
 mod cache;
@@ -83,45 +86,64 @@ async fn main() -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Runs one pass: asks every source, then replaces the cache if any source answered.
+/// Runs one pass: asks every source, replaces the cache if anything came back, and records the
+/// pass in the health record either way.
 ///
 /// Never returns an error. Whatever happens is recorded in the report, so a pass that goes wrong
 /// cannot end the loop that called it.
 async fn run_pass(config: &config::Config, profile: Profile) -> pass::PassReport {
-    let at = Utc::now();
+    let started_at = Utc::now();
     let started = std::time::Instant::now();
-    let outcome = refresh_cache(config, profile)
-        .await
-        .unwrap_or_else(|error| pass::PassOutcome::Failed {
-            error: format!("{error:#}"),
-        });
-    pass::PassReport {
-        at,
-        pid: std::process::id(),
-        profile: profile.as_str().to_string(),
+    let params = refresh::params(config);
+    // Before the refresh takes the credentials, so a failure of the whole pass is redacted too.
+    let secrets = workflows::status::known_secrets(&params);
+    let (outcome, payload) = match refresh::fetch(params).await {
+        Ok(refresh) => settle(freshness::classify(refresh), &secrets),
+        Err(error) => (
+            PassOutcome::Failed {
+                failure: PassFailure::new(&error, &secrets),
+            },
+            None,
+        ),
+    };
+    let pass = Pass {
+        started_at,
         duration: started.elapsed(),
+        pid: std::process::id(),
         outcome,
+    };
+    // Opened after the fetch returns. See refresh::fetch.
+    let recording = cache::record(|| cache::open(profile), &pass, payload.as_ref(), &secrets);
+    pass::PassReport {
+        profile: profile.as_str().to_string(),
+        pass,
+        recording,
     }
 }
 
-async fn refresh_cache(config: &config::Config, profile: Profile) -> Result<pass::PassOutcome> {
-    let refresh = refresh::fetch(config).await?;
-    let refreshed = freshness::classify(refresh);
-
-    // Opened after the fetch returns. See refresh::fetch.
-    let conn = store::status_cache::connect(profile).context("failed to open the hub database")?;
-    store::status_cache::ensure_table(&conn).context("failed to prepare the status cache")?;
-    cache::apply(&conn, &refreshed)?;
-
-    Ok(match refreshed {
-        RefreshOutcome::Refreshed(fresh) => pass::PassOutcome::Wrote {
-            items: fresh.item_count(),
-            failed: fresh.failures(),
+/// What a refresh means for the pass, and the payload to write when it replaces the cache.
+fn settle(
+    refreshed: RefreshOutcome,
+    secrets: &KnownSecrets,
+) -> (PassOutcome, Option<FreshPayload>) {
+    match refreshed {
+        RefreshOutcome::Refreshed(fresh) => match fresh.payload() {
+            Ok(payload) => (
+                PassOutcome::Wrote {
+                    items: fresh.item_count(),
+                    sources: fresh.sources(),
+                },
+                Some(payload),
+            ),
+            Err(error) => (
+                PassOutcome::Failed {
+                    failure: PassFailure::new(&error, secrets),
+                },
+                None,
+            ),
         },
-        RefreshOutcome::NothingRefreshed { failures } => {
-            pass::PassOutcome::Unchanged { failed: failures }
-        }
-    })
+        RefreshOutcome::NothingRefreshed { sources } => (PassOutcome::Kept { sources }, None),
+    }
 }
 
 #[cfg(test)]
@@ -166,5 +188,69 @@ mod tests {
     #[test]
     fn once_alone_is_accepted() {
         assert!(parse(&["--once"]).unwrap().once);
+    }
+
+    fn refresh(items: usize, answered: &[&str], failed: &[&str]) -> workflows::status::Refresh {
+        let no_secrets = KnownSecrets::new(Vec::new());
+        let failures: Vec<domain::source_failure::SourceFailure> = failed
+            .iter()
+            .map(|name| {
+                domain::source_failure::SourceFailure::new(
+                    *name,
+                    &anyhow::anyhow!("down"),
+                    &no_secrets,
+                )
+            })
+            .collect();
+        workflows::status::Refresh {
+            report: workflows::status::StatusReport {
+                items: (0..items)
+                    .map(|_| {
+                        workflows::status::StatusItem::Ci(domain::CiFailure {
+                            repo: domain::RepoSlug::new("owner", "repo"),
+                            workflow_name: "CI".to_string(),
+                            job_name: None,
+                            step_name: None,
+                            error: None,
+                            age: chrono::Duration::zero(),
+                            urgency: domain::Urgency::High,
+                            url: "https://github.com/owner/repo/actions/runs/1".to_string(),
+                        })
+                    })
+                    .collect(),
+                errors: failed.iter().map(|name| (*name).to_string()).collect(),
+            },
+            sources: domain::source_outcomes::SourceOutcomes::new(
+                answered.iter().map(|name| (*name).to_string()).collect(),
+                failures,
+            ),
+        }
+    }
+
+    #[test]
+    fn a_refresh_worth_caching_becomes_a_pass_that_wrote_it_with_its_payload() {
+        let refreshed = freshness::classify(refresh(2, &["a"], &["b"]));
+
+        let (outcome, payload) = settle(refreshed, &KnownSecrets::new(Vec::new()));
+
+        assert!(
+            matches!(&outcome, PassOutcome::Wrote { items: 2, sources }
+                if sources.answered() == ["a"] && sources.failed().len() == 1),
+            "{outcome:?}"
+        );
+        assert!(payload.is_some());
+    }
+
+    #[test]
+    fn a_refresh_not_worth_caching_becomes_a_pass_that_kept_the_payload_with_none() {
+        let refreshed = freshness::classify(refresh(0, &[], &["a"]));
+
+        let (outcome, payload) = settle(refreshed, &KnownSecrets::new(Vec::new()));
+
+        assert!(
+            matches!(&outcome, PassOutcome::Kept { sources } if sources.failed().len() == 1),
+            "{outcome:?}"
+        );
+        assert!(payload.is_none());
     }
 }

@@ -9,18 +9,30 @@ use anyhow::Result;
 use crate::status::StatusItem;
 
 /// What one source came back with.
-#[derive(Debug, Default)]
-pub(crate) struct SourceAnswer {
-    /// The signals it found.
-    pub(crate) items: Vec<StatusItem>,
-    /// Sources inside it that failed, for a source that runs several (the private workflows).
-    pub(crate) failed: Vec<SourceError>,
+#[derive(Debug)]
+pub(crate) enum SourceAnswer {
+    /// The source answered for itself, with the signals it found.
+    Own(Vec<StatusItem>),
+    /// The source runs several sources inside it (the private workflows), each of which answered
+    /// or failed on its own. The source itself is named in neither list.
+    #[cfg_attr(
+        all(not(feature = "private"), not(test)),
+        expect(dead_code, reason = "only the private workflows run several sources")
+    )]
+    Several {
+        /// The signals from the sources inside it that answered.
+        items: Vec<StatusItem>,
+        /// The sources inside it that answered.
+        answered: Vec<String>,
+        /// The sources inside it that failed, with what each failed with.
+        failed: Vec<SourceError>,
+    },
 }
 
 /// A source that failed, with the error it failed with.
 ///
 /// The error is as the source raised it, so it can hold a credential. It is redacted into a
-/// [`crate::source_failure::SourceFailure`] before it leaves this crate.
+/// [`domain::source_failure::SourceFailure`] before it leaves this crate.
 #[derive(Debug)]
 pub(crate) struct SourceError {
     /// The source's name, as the report names it.
@@ -76,6 +88,8 @@ impl std::fmt::Debug for Source {
 pub(crate) struct Gathered {
     /// Signals from every source that answered, in source order.
     pub(crate) items: Vec<StatusItem>,
+    /// Sources that answered, in source order.
+    pub(crate) answered: Vec<String>,
     /// Sources that failed or ran out of time, with what they failed with, in source order.
     pub(crate) errors: Vec<SourceError>,
 }
@@ -95,9 +109,18 @@ pub(crate) async fn gather(sources: Vec<Source>, limit: Duration) -> Gathered {
     let mut gathered = Gathered::default();
     for (name, answer) in names.into_iter().zip(answers) {
         match answer {
-            Ok(Ok(answer)) => {
-                gathered.items.extend(answer.items);
-                gathered.errors.extend(answer.failed);
+            Ok(Ok(SourceAnswer::Own(items))) => {
+                gathered.items.extend(items);
+                gathered.answered.push(name);
+            }
+            Ok(Ok(SourceAnswer::Several {
+                items,
+                answered,
+                failed,
+            })) => {
+                gathered.items.extend(items);
+                gathered.answered.extend(answered);
+                gathered.errors.extend(failed);
             }
             Ok(Err(error)) => gathered.errors.push(SourceError::new(name, error)),
             Err(_elapsed) => gathered.errors.push(SourceError::new(
@@ -151,10 +174,7 @@ mod tests {
         let item = ci_failure(workflow);
         Source::new(name, async move {
             tokio::time::sleep(after).await;
-            Ok(SourceAnswer {
-                items: vec![item],
-                failed: vec![],
-            })
+            Ok(SourceAnswer::Own(vec![item]))
         })
     }
 
@@ -210,8 +230,9 @@ mod tests {
         let sources = vec![
             Source::new("broken", async { Err(anyhow::anyhow!("down")) }),
             Source::new("private workflows", async {
-                Ok(SourceAnswer {
+                Ok(SourceAnswer::Several {
                     items: vec![],
+                    answered: vec![],
                     failed: vec![SourceError::new(
                         "inner source",
                         anyhow::anyhow!("connection refused"),
@@ -226,5 +247,35 @@ mod tests {
             failures(&gathered),
             vec!["broken: down", "inner source: connection refused"]
         );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn each_source_that_answers_is_named_as_answered_and_no_other() {
+        let sources = vec![
+            answering("quick", Duration::ZERO, "from quick"),
+            Source::new("broken", async { Err(anyhow::anyhow!("down")) }),
+            Source::new("hung", std::future::pending()),
+            Source::new("empty", async { Ok(SourceAnswer::Own(vec![])) }),
+        ];
+
+        let gathered = gather(sources, LIMIT).await;
+
+        assert_eq!(gathered.answered, vec!["quick", "empty"]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_source_running_several_names_the_ones_inside_it_that_answered_not_itself() {
+        let sources = vec![Source::new("private workflows", async {
+            Ok(SourceAnswer::Several {
+                items: vec![],
+                answered: vec!["inner one".to_string()],
+                failed: vec![SourceError::new("inner two", anyhow::anyhow!("down"))],
+            })
+        })];
+
+        let gathered = gather(sources, LIMIT).await;
+
+        assert_eq!(gathered.answered, vec!["inner one"]);
+        assert_eq!(failures(&gathered), vec!["inner two: down"]);
     }
 }

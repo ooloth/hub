@@ -6,9 +6,6 @@ date: 2026-10-08
 
 # 026 — The daemon's health is one row in its own table in the profile database
 
-_Status: accepted; not yet implemented. No `daemon_health` table exists in `store/src/`;
-[#341](https://github.com/ooloth/hub/issues/341) builds it._
-
 ## Forced by
 
 - [#341](https://github.com/ooloth/hub/issues/341)'s Ideal state: the daemon records the outcome of

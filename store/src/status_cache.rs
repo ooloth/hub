@@ -15,6 +15,16 @@ pub struct CachedStatus {
     pub payload: String,
 }
 
+/// A serialized status report ready to replace the cache row, and the schema version it was
+/// serialized under.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Payload {
+    /// The serialized TUI status payload (JSON).
+    pub json: String,
+    /// The schema version in effect when it was serialized.
+    pub schema_version: i32,
+}
+
 /// Opens the database belonging to `profile`, creating its directory if absent.
 ///
 /// # Errors

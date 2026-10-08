@@ -29,8 +29,9 @@ indistinguishable from a quiet morning.
   and equally wrong: a queue that genuinely drained is a real answer, and refusing to record it
   leaves the cache asserting stale work that no longer exists. The condition is a conjunction for
   this reason.
-- Calling `store::status_cache::upsert` from anywhere in `daemon/` other than `daemon/src/cache.rs`,
-  which is the only place that has checked.
+- Calling `store::status_cache::upsert` from anywhere in `daemon/`, or
+  `store::daemon_health::record` from anywhere in `daemon/` other than `daemon/src/cache.rs`, which
+  is the only place that has checked.
 
 What it permits: writing a partial refresh, where some sources failed and others answered. The
 report carries the failed source names, `RefreshState::Partial` renders them, and the items that
@@ -39,15 +40,16 @@ did arrive are real.
 ## How it is enforced
 
 **The construction path is enforced by the compiler, totally.** `daemon::freshness::FreshStatus`
-wraps the report in a private field, `classify` is its only constructor, and `cache::write` accepts
-nothing else. There is no way to hand a total-outage report to the writer, and no check is needed
-for that path.
+wraps the report in a private field and `classify` is its only constructor. A payload reaches
+`cache::record` only as a `FreshPayload`, whose only constructor is `FreshStatus::payload`. There is
+no way to hand a total-outage report to the writer, and no check is needed for that path.
 
-**The branch is covered by a test, not the compiler.** `cache::apply` chooses whether to write, and
-nothing stops a future edit from calling `upsert` directly in the `NothingRefreshed` arm. That is
-what `a_refresh_that_reached_no_source_leaves_the_previous_row_untouched` in `daemon/src/cache.rs`
-is for: it seeds a row, applies a failed refresh over it, and asserts the payload, schema version
-and `refreshed_at` are all unchanged.
+**The branch is covered by a test, not the compiler.** `settle` in `daemon/src/main.rs` turns a
+`NothingRefreshed` into a pass with no payload, and nothing stops a future edit from passing one
+anyway. That is what `a_refresh_that_reached_no_source_leaves_the_previous_row_untouched` in
+`daemon/src/cache.rs` is for: it records a pass that wrote a payload, records one where every
+source failed after it, and asserts the payload, schema version and `refreshed_at` are all
+unchanged while the health record moved on.
 
 What that misses: a new file under `daemon/src/` calling `store::status_cache::upsert` on its own
 bypasses both mechanisms. Nothing greps for that today. The `domain_reads_no_ambient_state` test in

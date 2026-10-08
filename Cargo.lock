@@ -487,6 +487,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "url",
  "uuid",
 ]
 
@@ -874,6 +875,7 @@ dependencies = [
  "humantime",
  "rstest 0.25.0",
  "rusqlite",
+ "secrecy",
  "serde_json",
  "store",
  "tempfile",
@@ -3274,7 +3276,6 @@ dependencies = [
  "store",
  "tempfile",
  "tokio",
- "url",
  "uuid",
 ]
 

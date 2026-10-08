@@ -9,15 +9,16 @@ present ([Decision 020](../docs/decisions/020-hub-runs-an-unattended-surface.md)
 - Sits beside `ui/` rather than inside it, because `ui/` means user interface and this has no user
 - Every I/O call is written in `main`; nothing below it opens a socket or a database on its own
 
-**Lives here:** the refresh sequence, the rule for when a refresh may replace the cache, the write.
+**Lives here:** the refresh sequence, the rule for when a refresh may replace the cache, and
+recording each pass: the payload when it replaced it, and the health record always.
 
 ## What it does today
 
-A pass at startup, then one every 15 minutes (`--interval` changes it), each logged as one line.
-One daemon per profile: a second refuses, naming the first. `--once` runs a single pass and exits.
-Everything else in [#327](https://github.com/ooloth/hub/issues/327) is a later phase: the health
-record (3.4), credential retry (3.5), launchd and log files (3.6), notifications (Phase 4), and the
-socket the TUI will read (Phase 5).
+A pass at startup, then one every 15 minutes (`--interval` changes it), each logged as one line and
+recorded in the health record. One daemon per profile: a second refuses, naming the first. `--once`
+runs a single pass and exits. Everything else in [#327](https://github.com/ooloth/hub/issues/327) is
+a later phase: launchd and log files (3.5), credentials with nobody present (3.6), notifications
+(Phase 4), and the socket the TUI will read, which is also where health is first shown (Phase 5).
 
 ## Files
 
@@ -25,11 +26,13 @@ socket the TUI will read (Phase 5).
   here, including each pass's fetch and write
 - `instance_lock.rs` — one daemon per profile: the `flock` on `~/.hub/<profile>/daemon.lock`
 - `schedule.rs` — `every`, which runs a pass now and then once per period, never catching up
-- `pass.rs` — `PassReport` and `PassOutcome`, the per-pass log line, and what `--once` exits with.
-  Pure
-- `refresh.rs` — `fetch`, which asks all sources once and merges the answers. The network edge
-- `freshness.rs` — `RefreshOutcome`, `FreshStatus`, `classify`. Pure; no I/O
-- `cache.rs` — `write` and `apply`. The SQLite edge
+- `pass.rs` — `PassReport`, the per-pass log line, and what `--once` exits with. Pure. The pass
+  itself, `domain::daemon_pass::Pass`, lives in `domain/` so the store can record it
+- `refresh.rs` — `params` and `fetch`, which asks all sources once and merges the answers. The
+  network edge
+- `freshness.rs` — `RefreshOutcome`, `FreshStatus`, `FreshPayload`, `classify`. Pure; no I/O
+- `cache.rs` — `open` and `record`, which writes the pass and its payload in one transaction and
+  falls back to recording the pass as failed. The SQLite edge
 
 `refresh::fetch` takes no database handle on purpose: `rusqlite::Connection` is not `Sync`, so
 holding one across the fetch would make the surrounding future non-`Send` and unspawnable, which
@@ -38,7 +41,7 @@ the interval loop (`schedule::every`) needs and the socket server will.
 ## The rule that makes this more than a wrapper
 
 `workflows::status::run` returns `Ok` whether or not anything answered. A failing source goes
-into `Refresh::failures` with its reason and is named in `StatusReport::errors`, while the rest
+into `Refresh::sources` with its reason and is named in `StatusReport::errors`, while the rest
 still contribute items. So a total outage produces a well-formed report with an empty item list,
 and writing that over a populated cache is silent data loss. A source that does not answer within
 60 seconds (`SOURCE_TIMEOUT`, `workflows/src/status.rs`) is reported as failed like any other, and
@@ -49,7 +52,8 @@ A refresh is cached unless it came back with nothing **and** a source failed:
 - items, no failures → written
 - items, some failures → written (partial)
 - nothing, no failures → written (the queue genuinely drained, and the cache has to say so)
-- nothing, some failures → refused, previous row untouched, logged as `outcome=unchanged`
+- nothing, some failures → refused, previous row untouched, logged as `payload=kept` with
+  `outcome=no_source_answered`, or `outcome=partial` when some sources answered with nothing
 
 The conjunction matters in both directions. See
 [the invariant](../docs/invariants/a-refresh-that-reached-no-source-never-replaces-the-cache.md)
@@ -69,12 +73,18 @@ reference resolves once, before the first pass, and later passes reuse them.
 Each pass prints one line to stdout:
 
 ```
-hub-daemon pass at=2026-10-03T23:15:55Z pid=4242 profile=dev outcome=partial duration_ms=6412 items=1066 failed_sources=1 failed="private workflows"
+hub-daemon pass at=2026-10-03T23:15:55Z pid=4242 profile=dev outcome=partial payload=written duration_ms=6412 items=1066 answered=9 failed_sources=1 failed="private workflows: connection refused"
 ```
 
-`outcome` is the field to read: `ok` (every source answered, written), `partial` (written, with the
-sources in `failed` missing), `unchanged` (every source failed, so the cache kept its row) or
-`failed` (the pass itself failed, with `error`). `pid` changes when the daemon restarts.
+`outcome` says how far the pass reached: `ok` (every source answered), `partial` (some failed, at
+least one answered), `no_source_answered` (every source failed) or `pass_failed` (the pass itself
+failed, with `error`). `payload` says whether the cache was replaced: `written`, or `kept` when
+nothing that answered had any signals and something failed. `pid` changes when the daemon
+restarts.
+
+When the database refuses the write, the line ends with `recorded=as_failed record_error="..."`:
+the pass was recorded as `pass_failed` instead, health only. When it refuses that too, the line
+ends with `recorded=no`, both errors, and the health record keeps its previous pass.
 
 ## Observing it work
 
@@ -84,6 +94,13 @@ daemon ran, and there is only ever one row.
 ```bash
 sqlite3 ~/.hub/dev/hub.db "SELECT schema_version, refreshed_at, length(payload) FROM status_cache WHERE id=1;"
 sqlite3 ~/.hub/dev/hub.db "SELECT count(*) FROM status_cache;"   # always 1
+```
+
+**What it recorded about the pass.** The health record is one row, rewritten every pass, and
+`started_at` moves on even when the payload is kept.
+
+```bash
+sqlite3 -line ~/.hub/dev/hub.db "SELECT * FROM daemon_health;"
 ```
 
 **What it fetched.** Useful for confirming the private sources resolved, since those need the
@@ -116,7 +133,8 @@ HTTPS_PROXY=http://127.0.0.1:1 HTTP_PROXY=http://127.0.0.1:1 \
 cargo run -p hub-daemon --features private -- --once; echo "exit $?"
 ```
 
-Expect `outcome=unchanged` naming every failed source, exit 1, and `refreshed_at` untouched. Without
+Expect `outcome=no_source_answered payload=kept` naming every failed source, exit 1,
+`refreshed_at` untouched, and the health record's `started_at` moved to this pass. Without
 `--once` the same line repeats each pass and the daemon keeps running.
 
 **Exit codes with `--once`**: 0 wrote, 1 did not. A second daemon for the same profile also exits 1,
