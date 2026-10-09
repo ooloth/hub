@@ -1,8 +1,8 @@
 # Should investigations run with permissions skipped?
 
-Every investigation hub launches runs `claude --dangerously-skip-permissions`, built in
-`ui/tui/src/investigations/command.rs`. The only scoping is the per-type `--allowedTools` string,
-and the narrowest of those is `Bash`, which is not a restriction.
+Every investigation hub launches runs `claude --permission-mode auto`, built in
+`ui/tui/src/investigations/command.rs`. The only scoping beyond auto mode's classifier is the
+per-type `--allowedTools` string, and the narrowest of those is `Bash`, which is not a restriction.
 
 ## Why it matters
 
@@ -66,6 +66,12 @@ changes what happens after an injection succeeds rather than how often one does.
 that is the point of the spike. An approval prompt in an unwatched tmux window may be strictly worse
 than no prompt, because the session looks running and is not.
 
+**Run in auto mode.** Strongest case: a classifier reviews each action that no allow rule covers,
+so a session neither stops for routine approvals nor runs unscreened, and it works where an
+organisation bans bypass mode. Cost: the classifier is a model judging intent, so it reduces how
+often a harmful action runs rather than preventing it, and whether it screens commands an
+`--allowedTools` entry already permits is unverified.
+
 **Not yet.** Strongest case: nothing in the next milestone needs the answer, and deciding now means
 deciding without whatever Phases 3 to 6 teach about how hub behaves unattended. Cost: the exposure
 stays, and the longer investigations are launched this way the more the ergonomic is assumed.
@@ -80,6 +86,14 @@ Nothing here is settled until it graduates into a decision record.
 - A prompt-injection attempt in a Loki message and in a media blocked-import title both reached the
   agent inert and fenced, with no shell execution. *Measured*, by injecting rows into the status
   cache and reading the launched process's environment on 2026-09-19.
+- Where an organisation bans bypass mode, `--dangerously-skip-permissions` does not take effect
+  and the session runs in default mode. A PR review investigation stopped at `Use skill "use-gh"?`
+  with `Skill` absent from its `--allowedTools`, and the window gave no sign it was waiting.
+  *Measured*, by reading the investigation's tmux pane and process command on 2026-10-09.
+- That stalled window is a first answer to the spike: an approval prompt blocks the session
+  silently, and nothing in the TUI shows it. *Measured*, same session.
+- Investigations moved to `--permission-mode auto` as an interim setting while this question
+  stays open. *Measured* once the live run above passes.
 - Delimiter-based prompt defences reduce injection success rates without eliminating them.
   *Unverified*: stated from general knowledge of the literature, with no benchmark run against this
   fence or citation checked.

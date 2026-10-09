@@ -89,7 +89,7 @@ pub(crate) fn compose(
     };
     let cleanup_suffix = cleanup.map(|c| format!("; {c}")).unwrap_or_default();
     let shell = format!(
-        "claude --dangerously-skip-permissions --model {} --allowedTools '{}' --append-system-prompt \"$HUB_SYSTEM_PROMPT\"{task_arg}{cleanup_suffix}",
+        "claude --permission-mode auto --model {} --allowedTools '{}' --append-system-prompt \"$HUB_SYSTEM_PROMPT\"{task_arg}{cleanup_suffix}",
         config.model, config.allowed_tools,
     );
 
@@ -183,6 +183,23 @@ mod tests {
             None,
         );
         assert!(command.shell.ends_with(" \"$HUB_TASK_PROMPT\""));
+    }
+
+    /// Organisations can ban bypass mode, and a banned flag drops the session
+    /// into default mode, where it waits on approvals nobody is watching for.
+    #[test]
+    fn investigations_run_in_auto_mode_and_never_bypass_permissions() {
+        let command = compose(plain(InvestigationPrompt::new()), cwd(), None, None);
+        assert!(
+            command.shell.contains(" --permission-mode auto "),
+            "shell did not request auto mode: {}",
+            command.shell
+        );
+        assert!(
+            !command.shell.contains("--dangerously-skip-permissions"),
+            "shell requested bypass mode: {}",
+            command.shell
+        );
     }
 
     /// The property the whole issue rests on: signal text travels in the

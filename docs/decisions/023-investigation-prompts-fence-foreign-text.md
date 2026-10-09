@@ -18,8 +18,9 @@ routinely contain imperatives: run this migration, clear that cache, try this fl
 cannot tell those from its own instructions may act on them, and acting on them is usually wrong
 even when nobody is attacking anything.
 
-Investigations run `claude --dangerously-skip-permissions` (`ui/tui/src/investigations/command.rs`),
-so there is no second gate behind the prompt.
+Investigations run `claude --permission-mode auto` (`ui/tui/src/investigations/command.rs`), so
+the only gate behind the prompt is auto mode's classifier, which judges intent and can be
+persuaded like the agent can.
 
 ## Decision
 
@@ -62,8 +63,11 @@ The enforced half is narrow and the requested half is the half that decides outc
 persuasive injection inside the fence, one claiming to be an operator override for instance, can
 still be obeyed. This reduces how often a foreign instruction is followed. It does not prevent it.
 
-Impact is untouched. The agent still runs with permissions skipped, so an injection that does
-succeed succeeds completely. Restricting that is a separate decision this record does not make.
+Impact is untouched by this decision. An injection that persuades the agent must also get past
+auto mode's classifier, which reduces how often a harmful action runs without preventing it.
+Restricting what a successful injection reaches is a separate decision this record does not make;
+it is open in
+[the permissions question](../questions/should-investigations-run-with-permissions-skipped.md).
 
 A log line legitimately containing the string `untrusted-input` has it removed.
 
