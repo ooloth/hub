@@ -127,6 +127,7 @@ pub(crate) async fn launch(
     let command = compose(
         config,
         &cwd,
+        &hub_config.investigation_mcp_servers,
         cleanup.as_deref(),
         supporting_data_path.as_deref(),
     );

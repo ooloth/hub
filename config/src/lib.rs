@@ -4,6 +4,9 @@
 /// Raw TOML types that mirror the structure of `hub.toml`.
 pub mod toml;
 
+/// The `[investigation]` section: what every investigation on this device receives.
+pub mod investigation;
+
 /// Resolved, credential-injected configuration used at runtime.
 pub mod resolved;
 

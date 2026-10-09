@@ -6,6 +6,8 @@ pub mod ci;
 pub mod daemon_pass;
 /// GCP Cloud Logging query configuration and log entry types.
 pub mod gcp;
+/// The MCP servers an investigation may use, chosen per device.
+pub mod investigation_mcp_servers;
 /// Investigation prompts, assembled from parts that say where each came from.
 pub mod investigation_prompt;
 /// Deterministic tmux window names for the windows hub opens.
@@ -42,6 +44,7 @@ pub use serde_helpers::duration_secs;
 
 pub use ci::*;
 pub use gcp::*;
+pub use investigation_mcp_servers::*;
 pub use investigation_prompt::*;
 pub use investigation_window::*;
 pub use issue::*;

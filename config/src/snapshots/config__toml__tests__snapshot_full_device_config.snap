@@ -85,4 +85,11 @@ HubToml {
             ],
         },
     ),
+    investigation: InvestigationToml {
+        mcp_servers: {
+            "atlassian-rovo": Http {
+                url: "https://mcp.atlassian.com/v1/mcp",
+            },
+        },
+    },
 }

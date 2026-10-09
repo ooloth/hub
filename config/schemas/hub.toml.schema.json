@@ -37,9 +37,34 @@
     },
     "monitor": {
       "$ref": "#/definitions/monitor"
+    },
+    "investigation": {
+      "$ref": "#/definitions/investigation"
     }
   },
   "definitions": {
+    "investigation": {
+      "type": "object",
+      "description": "What every investigation launched on this device receives.",
+      "additionalProperties": false,
+      "properties": {
+        "mcp_servers": {
+          "type": "object",
+          "description": "MCP servers investigations may use, keyed by the name Claude Code lists each under. Investigations ignore every other MCP config, including the investigated repository's .mcp.json. Absent means none.",
+          "propertyNames": { "pattern": "^[A-Za-z0-9_-]+$" },
+          "additionalProperties": { "$ref": "#/definitions/mcp_server" }
+        }
+      }
+    },
+    "mcp_server": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "url"],
+      "properties": {
+        "type": { "const": "http", "description": "How the server is reached. Only http is supported." },
+        "url": { "type": "string", "pattern": "^https?://", "description": "The server's http or https URL." }
+      }
+    },
     "project": {
       "type": "object",
       "description": "A codebase and its associated workflows and environments.",

@@ -6,6 +6,7 @@
 //! path arrive as arguments rather than being computed, which is what lets a
 //! test pin the whole invocation.
 
+use domain::InvestigationMcpServers;
 use std::path::{Path, PathBuf};
 
 use super::LaunchConfig;
@@ -48,6 +49,7 @@ pub(crate) struct InvestigationCommand {
 pub(crate) fn compose(
     config: LaunchConfig,
     cwd: &Path,
+    mcp_servers: &InvestigationMcpServers,
     cleanup: Option<&str>,
     supporting_data_path: Option<&Path>,
 ) -> InvestigationCommand {
@@ -74,6 +76,18 @@ pub(crate) fn compose(
     ];
     env.extend(config.env);
 
+    // `--mcp-config` takes every argument up to the next flag, so it is never
+    // placed where a positional argument follows it.
+    let mcp_config_arg = if mcp_servers.is_empty() {
+        String::new()
+    } else {
+        env.push((
+            "HUB_MCP_CONFIG".to_string(),
+            mcp_servers.claude_mcp_config(),
+        ));
+        " --mcp-config \"$HUB_MCP_CONFIG\"".to_string()
+    };
+
     for (key, _) in &env {
         assert!(!key.is_empty(), "tmux environment key must not be empty");
         assert!(
@@ -89,7 +103,7 @@ pub(crate) fn compose(
     };
     let cleanup_suffix = cleanup.map(|c| format!("; {c}")).unwrap_or_default();
     let shell = format!(
-        "claude --permission-mode auto --model {} --allowedTools '{}' --append-system-prompt \"$HUB_SYSTEM_PROMPT\"{task_arg}{cleanup_suffix}",
+        "claude --permission-mode auto --strict-mcp-config{mcp_config_arg} --model {} --allowedTools '{}' --append-system-prompt \"$HUB_SYSTEM_PROMPT\"{task_arg}{cleanup_suffix}",
         config.model, config.allowed_tools,
     );
 
@@ -105,11 +119,23 @@ mod tests {
     use super::{compose, InvestigationCommand, UNTRUSTED_INPUT_GUIDANCE};
     use crate::investigations::{ci, gcp, issue, loki, pr, LaunchConfig};
     use crate::state::{PrAuthor, PrReview, PrReviewTarget};
-    use domain::{InvestigationPrompt, UntrustedText};
+    use domain::{InvestigationMcpServers, InvestigationPrompt, McpServer, UntrustedText};
+    use std::collections::BTreeMap;
     use std::path::Path;
 
     fn cwd() -> &'static Path {
         Path::new("/tmp/hub-test-worktree")
+    }
+
+    fn no_mcp_servers() -> InvestigationMcpServers {
+        InvestigationMcpServers::default()
+    }
+
+    fn atlassian() -> InvestigationMcpServers {
+        InvestigationMcpServers::new(BTreeMap::from([(
+            "atlassian-rovo".parse().unwrap(),
+            McpServer::http("https://mcp.atlassian.com/v1/mcp").unwrap(),
+        )]))
     }
 
     fn data_path() -> &'static Path {
@@ -166,7 +192,13 @@ mod tests {
 
     #[test]
     fn an_empty_task_prompt_produces_no_positional_argument() {
-        let command = compose(plain(InvestigationPrompt::new()), cwd(), None, None);
+        let command = compose(
+            plain(InvestigationPrompt::new()),
+            cwd(),
+            &no_mcp_servers(),
+            None,
+            None,
+        );
         assert!(
             !command.shell.contains("$HUB_TASK_PROMPT"),
             "shell referenced an empty task prompt: {}",
@@ -179,6 +211,7 @@ mod tests {
         let command = compose(
             plain(InvestigationPrompt::new().instruction("Investigate this")),
             cwd(),
+            &no_mcp_servers(),
             None,
             None,
         );
@@ -189,7 +222,13 @@ mod tests {
     /// into default mode, where it waits on approvals nobody is watching for.
     #[test]
     fn investigations_run_in_auto_mode_and_never_bypass_permissions() {
-        let command = compose(plain(InvestigationPrompt::new()), cwd(), None, None);
+        let command = compose(
+            plain(InvestigationPrompt::new()),
+            cwd(),
+            &no_mcp_servers(),
+            None,
+            None,
+        );
         assert!(
             command.shell.contains(" --permission-mode auto "),
             "shell did not request auto mode: {}",
@@ -198,6 +237,65 @@ mod tests {
         assert!(
             !command.shell.contains("--dangerously-skip-permissions"),
             "shell requested bypass mode: {}",
+            command.shell
+        );
+    }
+
+    /// A repository's `.mcp.json` is written by whoever wrote the repository,
+    /// and approving it would run their commands, so no investigation reads it.
+    #[test]
+    fn investigations_ignore_every_mcp_config_hub_did_not_pass() {
+        for servers in [no_mcp_servers(), atlassian()] {
+            let command = compose(
+                plain(InvestigationPrompt::new()),
+                cwd(),
+                &servers,
+                None,
+                None,
+            );
+            assert!(
+                command.shell.contains(" --strict-mcp-config "),
+                "shell did not ignore other MCP config: {}",
+                command.shell
+            );
+        }
+    }
+
+    #[test]
+    fn a_device_with_no_mcp_servers_passes_none() {
+        let command = compose(
+            plain(InvestigationPrompt::new()),
+            cwd(),
+            &no_mcp_servers(),
+            None,
+            None,
+        );
+        assert!(!command.shell.contains("--mcp-config"), "{}", command.shell);
+        assert!(
+            !command.env.iter().any(|(key, _)| key == "HUB_MCP_CONFIG"),
+            "{:?}",
+            command.env
+        );
+    }
+
+    /// The JSON travels in the environment for the same reason the prompts
+    /// do: nothing in it is ever shell syntax.
+    #[test]
+    fn a_device_with_mcp_servers_passes_them_through_the_environment() {
+        let command = compose(
+            plain(InvestigationPrompt::new().instruction("Investigate this")),
+            cwd(),
+            &atlassian(),
+            None,
+            None,
+        );
+        assert_eq!(
+            env_value(&command, "HUB_MCP_CONFIG"),
+            atlassian().claude_mcp_config()
+        );
+        assert!(
+            command.shell.contains(" --mcp-config \"$HUB_MCP_CONFIG\" --"),
+            "--mcp-config must be followed by another flag, or it takes the next argument as a config too: {}",
             command.shell
         );
     }
@@ -213,6 +311,7 @@ mod tests {
                     .untrusted("loki log message", &UntrustedText::new(hostile)),
             ),
             cwd(),
+            &no_mcp_servers(),
             None,
             None,
         );
@@ -234,6 +333,7 @@ mod tests {
                     .untrusted("loki log message", &UntrustedText::new("OOM killed")),
             ),
             cwd(),
+            &no_mcp_servers(),
             None,
             None,
         );
@@ -250,6 +350,7 @@ mod tests {
         let command = compose(
             plain(InvestigationPrompt::new().instruction("Investigate this")),
             cwd(),
+            &no_mcp_servers(),
             None,
             None,
         );
@@ -265,6 +366,7 @@ mod tests {
                     .supporting_data_path(),
             ),
             cwd(),
+            &no_mcp_servers(),
             None,
             Some(data_path()),
         );
@@ -310,6 +412,7 @@ mod tests {
         let command = compose(
             plain(InvestigationPrompt::new().instruction("Investigate")),
             cwd(),
+            &no_mcp_servers(),
             Some(CLEANUP),
             None,
         );
@@ -320,7 +423,7 @@ mod tests {
     fn config_environment_is_passed_through_alongside_the_prompts() {
         let mut config = plain(InvestigationPrompt::new().instruction("Investigate"));
         config.env = vec![("SOME_URL".to_string(), "https://example.com".to_string())];
-        let command = compose(config, cwd(), None, None);
+        let command = compose(config, cwd(), &no_mcp_servers(), None, None);
         assert_eq!(env_value(&command, "SOME_URL"), "https://example.com");
     }
 
@@ -330,6 +433,7 @@ mod tests {
         let _ = compose(
             plain(InvestigationPrompt::new().instruction("Investigate")),
             cwd(),
+            &no_mcp_servers(),
             None,
             Some(data_path()),
         );
@@ -341,6 +445,7 @@ mod tests {
         let _ = compose(
             plain(InvestigationPrompt::new().supporting_data_path()),
             cwd(),
+            &no_mcp_servers(),
             None,
             None,
         );
@@ -351,7 +456,7 @@ mod tests {
     fn an_empty_environment_key_is_a_bug() {
         let mut config = plain(InvestigationPrompt::new().instruction("Investigate"));
         config.env = vec![(String::new(), "value".to_string())];
-        let _ = compose(config, cwd(), None, None);
+        let _ = compose(config, cwd(), &no_mcp_servers(), None, None);
     }
 
     /// `tmux -e A=B=C` reads the key as `A` and the value as `B=C`, so a key
@@ -361,7 +466,7 @@ mod tests {
     fn an_environment_key_containing_an_equals_sign_is_a_bug() {
         let mut config = plain(InvestigationPrompt::new().instruction("Investigate"));
         config.env = vec![("A=B".to_string(), "value".to_string())];
-        let _ = compose(config, cwd(), None, None);
+        let _ = compose(config, cwd(), &no_mcp_servers(), None, None);
     }
 
     /// `UntrustedText::expose` is the escape hatch that would let a prompt be
@@ -428,13 +533,25 @@ mod tests {
             "ooloth/hub",
             "https://github.com/ooloth/hub/actions/runs/123",
         );
-        insta::assert_snapshot!(render(&compose(config, cwd(), Some(CLEANUP), None)));
+        insta::assert_snapshot!(render(&compose(
+            config,
+            cwd(),
+            &no_mcp_servers(),
+            Some(CLEANUP),
+            None
+        )));
     }
 
     #[test]
     fn issue_investigation_command() {
         let config = issue::config("ooloth/hub", 42);
-        insta::assert_snapshot!(render(&compose(config, cwd(), Some(CLEANUP), None)));
+        insta::assert_snapshot!(render(&compose(
+            config,
+            cwd(),
+            &no_mcp_servers(),
+            Some(CLEANUP),
+            None
+        )));
     }
 
     #[test]
@@ -451,6 +568,7 @@ mod tests {
         insta::assert_snapshot!(render(&compose(
             config,
             cwd(),
+            &no_mcp_servers(),
             Some(CLEANUP),
             Some(data_path())
         )));
@@ -475,6 +593,7 @@ mod tests {
         insta::assert_snapshot!(render(&compose(
             config,
             cwd(),
+            &no_mcp_servers(),
             Some(CLEANUP),
             Some(data_path())
         )));
@@ -497,6 +616,7 @@ mod tests {
         insta::assert_snapshot!(render(&compose(
             config,
             cwd(),
+            &no_mcp_servers(),
             Some(CLEANUP),
             Some(data_path())
         )));
@@ -505,7 +625,25 @@ mod tests {
     #[test]
     fn pr_ask_investigation_command() {
         let config = pr::ask_config(7, "ooloth/hub", PrAuthor::Peer);
-        insta::assert_snapshot!(render(&compose(config, cwd(), None, None)));
+        insta::assert_snapshot!(render(&compose(
+            config,
+            cwd(),
+            &no_mcp_servers(),
+            None,
+            None
+        )));
+    }
+
+    #[test]
+    fn pr_review_investigation_command_with_an_mcp_server() {
+        let target = PrReviewTarget {
+            repo: "ooloth/hub".to_string(),
+            number: 7,
+            head_branch: "feature".to_string(),
+            author: PrAuthor::Me,
+        };
+        let config = pr::review_config(&target, PrReview::ReviewMine);
+        insta::assert_snapshot!(render(&compose(config, cwd(), &atlassian(), None, None)));
     }
 
     #[test]
@@ -517,6 +655,12 @@ mod tests {
             author: PrAuthor::Me,
         };
         let config = pr::review_config(&target, PrReview::ReviewMine);
-        insta::assert_snapshot!(render(&compose(config, cwd(), None, None)));
+        insta::assert_snapshot!(render(&compose(
+            config,
+            cwd(),
+            &no_mcp_servers(),
+            None,
+            None
+        )));
     }
 }

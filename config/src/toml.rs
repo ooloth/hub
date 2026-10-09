@@ -8,6 +8,8 @@ pub(crate) struct HubToml {
     #[serde(default)]
     pub project: Vec<Project>,
     pub monitor: Option<Monitor>,
+    #[serde(default)]
+    pub investigation: crate::investigation::InvestigationToml,
 }
 
 /// Raw credential values from the `[credentials]` section of `hub.toml`.
@@ -524,6 +526,10 @@ mod tests {
 
             [[monitor.workflow]]
             name = "github-prs"
+
+            [investigation.mcp_servers.atlassian-rovo]
+            type = "http"
+            url = "https://mcp.atlassian.com/v1/mcp"
         "#,
         )
         .unwrap();

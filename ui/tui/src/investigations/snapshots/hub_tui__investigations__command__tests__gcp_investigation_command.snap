@@ -1,6 +1,6 @@
 ---
 source: ui/tui/src/investigations/command.rs
-expression: "render(&compose(config, cwd(), Some(CLEANUP), Some(data_path())))"
+expression: "render(&compose(config, cwd(), &no_mcp_servers(), Some(CLEANUP),\nSome(data_path())))"
 ---
 cwd: /tmp/hub-test-worktree
 env:
@@ -14,4 +14,4 @@ Log lines (last 15m), read with the Read tool:
 /tmp/hub-supporting-data-000.json
 Incident timestamp: 2026-01-01T00:00:00Z.
 Console URL (pre-filtered): https://console.cloud.google.com/logs
-shell: claude --permission-mode auto --model opus --allowedTools 'Bash,Read' --append-system-prompt "$HUB_SYSTEM_PROMPT" "$HUB_TASK_PROMPT"; cd ~ && git -C '/tmp/bare' worktree remove --force '/tmp/wt' 2>/dev/null || true
+shell: claude --permission-mode auto --strict-mcp-config --model opus --allowedTools 'Bash,Read' --append-system-prompt "$HUB_SYSTEM_PROMPT" "$HUB_TASK_PROMPT"; cd ~ && git -C '/tmp/bare' worktree remove --force '/tmp/wt' 2>/dev/null || true

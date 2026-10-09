@@ -20,6 +20,8 @@ pub struct Config {
     pub projects: Vec<toml::Project>,
     /// Optional monitor configuration for polling workflows.
     pub monitor: Option<toml::Monitor>,
+    /// The MCP servers investigations on this device get, from `[investigation.mcp_servers]`.
+    pub investigation_mcp_servers: domain::InvestigationMcpServers,
 }
 
 impl Config {
@@ -31,6 +33,7 @@ impl Config {
         let creds = hub_toml.credentials;
 
         validate_required(&creds)?;
+        let investigation_mcp_servers = hub_toml.investigation.mcp_servers()?;
 
         let github_token = Secret::new(resolve(creds.github_token).await?);
         let linear_token = match creds.linear_token {
@@ -54,6 +57,7 @@ impl Config {
             extra_credentials,
             projects: hub_toml.project,
             monitor: hub_toml.monitor,
+            investigation_mcp_servers,
         })
     }
 
@@ -320,6 +324,7 @@ mod tests {
             extra_credentials: HashMap::new(),
             projects,
             monitor: None,
+            investigation_mcp_servers: domain::InvestigationMcpServers::default(),
         }
     }
 
@@ -332,6 +337,7 @@ mod tests {
             extra_credentials: HashMap::new(),
             projects,
             monitor: Some(monitor),
+            investigation_mcp_servers: domain::InvestigationMcpServers::default(),
         }
     }
 

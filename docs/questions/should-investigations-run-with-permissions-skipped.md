@@ -93,7 +93,10 @@ Nothing here is settled until it graduates into a decision record.
 - That stalled window is a first answer to the spike: an approval prompt blocks the session
   silently, and nothing in the TUI shows it. *Measured*, same session.
 - Investigations moved to `--permission-mode auto` as an interim setting while this question
-  stays open. *Measured* once the live run above passes.
+  stays open. *Measured*, by launching a PR investigation from the TUI in tmux on 2026-10-09.
+- A repository's `.mcp.json` makes a fresh investigation worktree open on an MCP approval prompt,
+  and approving it would run commands the repository's author wrote. `--strict-mcp-config` makes
+  investigations ignore it. *Measured*, on a PR investigation worktree on 2026-10-09.
 - Delimiter-based prompt defences reduce injection success rates without eliminating them.
   *Unverified*: stated from general knowledge of the literature, with no benchmark run against this
   fence or citation checked.
