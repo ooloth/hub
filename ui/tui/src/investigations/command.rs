@@ -77,7 +77,9 @@ pub(crate) fn compose(
     env.extend(config.env);
 
     // `--mcp-config` takes every argument up to the next flag, so it is never
-    // placed where a positional argument follows it.
+    // placed where a positional argument follows it. `--strict-mcp-config`
+    // stays on every launch: see
+    // docs/invariants/an-investigation-never-loads-mcp-servers-from-the-repository-it-investigates.md
     let mcp_config_arg = if mcp_servers.is_empty() {
         String::new()
     } else {
