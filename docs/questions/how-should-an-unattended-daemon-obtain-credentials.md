@@ -187,3 +187,17 @@ into a record.
   The 60-second `SOURCE_TIMEOUT` in `workflows/src/status.rs` bounds each source in a pass, not
   credential resolution at startup. *Measured*, read from the source 2026-10-03; not observed by
   running a daemon across a restart.
+- `op read` through the desktop app's CLI integration works from a launchd agent with no TTY,
+  started in `/` with launchd's PATH, once someone approves the prompt. A throwaway LaunchAgent
+  running one `op read` against `op://Scripts/GitHub/personal-access-token-hub` exited 0 with the
+  value, after 41.9 seconds waiting on a Touch ID approval. *Measured*, 2026-10-10, macOS 26.6.2,
+  ad-hoc signed Rust binary, parent `/sbin/launchd`.
+- An approval does not carry over to the next process. The same agent was restarted twice within
+  two minutes, each run making one `op read`, and the account holder saw several prompts across
+  the three runs rather than one. The later runs finished in 4.9 and 3.6 seconds, which fits a
+  quick approval. So every daemon restart, including one `KeepAlive` performs while nobody is
+  present, waits on prompts of its own. *Reported* by the account holder, 2026-10-10; the prompt
+  count per run was not recorded. 1Password documents authorization as "confined to a terminal
+  session" on macOS, and how it scopes a process with no terminal is not documented
+  ([app integration security](https://www.1password.dev/cli/app-integration-security/), read
+  2026-10-10).
