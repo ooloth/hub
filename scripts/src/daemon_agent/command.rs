@@ -24,6 +24,13 @@ pub(crate) enum DaemonCommand {
     Start,
     /// Stop the daemon until the next login. The agent definition stays installed.
     Stop,
+    /// Restart a running daemon. Fails when it is not running.
+    Restart,
+    /// Stop the daemon and remove its agent definition, so it no longer starts at login.
+    Uninstall,
+    /// What `just install` runs after installing a new binary: restart the daemon if launchd
+    /// has it loaded, and leave it as it is otherwise.
+    RestartIfRunning,
     /// Follow the daemon's log: startup lines, startup errors and one line per pass.
     Logs,
 }
@@ -40,9 +47,16 @@ pub(crate) fn run(command: &DaemonCommand) -> ExitCode {
     let outcome = match command {
         DaemonCommand::Start => start(),
         DaemonCommand::Stop => stop(),
+        DaemonCommand::Restart => restart(),
+        DaemonCommand::Uninstall => uninstall(),
+        DaemonCommand::RestartIfRunning => restart_if_running(),
         DaemonCommand::Logs => follow_logs(),
     };
     match outcome {
+        Ok(outcome) if outcome.is_failure() => {
+            eprintln!("error: {outcome}");
+            ExitCode::FAILURE
+        }
         Ok(outcome) => {
             println!("{outcome}");
             ExitCode::SUCCESS
@@ -55,66 +69,18 @@ pub(crate) fn run(command: &DaemonCommand) -> ExitCode {
 }
 
 fn start() -> Result<AgentOutcome> {
-    let home = AbsolutePath::new(Path::new(
-        &std::env::var_os("HOME").context("HOME is unset")?,
-    ))
-    .context("HOME cannot hold the daemon's files")?;
-    let caller = CallerPath::new(std::env::var("PATH").ok())?;
-    let agent = LaunchAgent {
-        program: InstalledDaemon::find(&caller)?,
-        checkout: MainCheckout::of(&git_common_dir(&repo_root())?)?,
-        search_path: SearchPath::for_daemon(&caller),
-        log: LogFile::of_default_profile(&home)?,
-    };
+    let home = home()?;
+    let agent = resolve(&home)?;
     let rendered = AgentDefinition::render(&agent)?;
     let installed_at = definition_path(&home);
-    let installed = match std::fs::read(&installed_at) {
-        Ok(bytes) => Some(bytes),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-        Err(error) => {
-            return Err(error).with_context(|| format!("failed to read {}", installed_at.display()))
-        }
-    };
     let domain = gui_domain()?;
     let situation = Situation::Starting {
         job: job_state(&domain)?,
-        on_disk: DefinitionOnDisk::compare(installed.as_deref(), &rendered),
+        on_disk: on_disk(&installed_at, &rendered)?,
     };
     let steps = plan(situation);
-
-    // launchd creates the log file but not its directory, and the daemon creates the profile
-    // directory only after launchd has already opened the log.
-    if let Some(dir) = agent.log.path().as_path().parent() {
-        std::fs::create_dir_all(dir)
-            .with_context(|| format!("failed to create {}", dir.display()))?;
-    }
-    for step in &steps {
-        match step {
-            AgentStep::WriteDefinition => {
-                if let Some(dir) = installed_at.parent() {
-                    std::fs::create_dir_all(dir)
-                        .with_context(|| format!("failed to create {}", dir.display()))?;
-                }
-                std::fs::write(&installed_at, rendered.bytes())
-                    .with_context(|| format!("failed to write {}", installed_at.display()))?;
-            }
-            AgentStep::Bootout => bootout(&domain)?,
-            AgentStep::Bootstrap => launchctl(&[
-                "bootstrap",
-                &domain,
-                installed_at
-                    .to_str()
-                    .context("the agent definition's path is not UTF-8")?,
-            ])?,
-        }
-    }
-    if steps.contains(&AgentStep::Bootstrap) && job_state(&domain)? != JobState::Loaded {
-        bail!(
-            "launchd accepted {} but did not load it; check that hub-daemon is allowed in \
-             System Settings > General > Login Items & Extensions",
-            installed_at.display()
-        );
-    }
+    create_log_dir(&agent.log)?;
+    execute(&steps, &domain, Some(&installed_at), Some(&rendered))?;
     Ok(AgentOutcome::of(situation, &steps))
 }
 
@@ -124,23 +90,157 @@ fn stop() -> Result<AgentOutcome> {
         job: job_state(&domain)?,
     };
     let steps = plan(situation);
-    for step in &steps {
+    execute(&steps, &domain, None, None)?;
+    Ok(AgentOutcome::of(situation, &steps))
+}
+
+fn restart() -> Result<AgentOutcome> {
+    let domain = gui_domain()?;
+    let situation = Situation::Restarting {
+        job: job_state(&domain)?,
+    };
+    let steps = plan(situation);
+    execute(&steps, &domain, None, None)?;
+    Ok(AgentOutcome::of(situation, &steps))
+}
+
+fn uninstall() -> Result<AgentOutcome> {
+    let installed_at = definition_path(&home()?);
+    let domain = gui_domain()?;
+    let situation = Situation::Uninstalling {
+        job: job_state(&domain)?,
+    };
+    let steps = plan(situation);
+    execute(&steps, &domain, Some(&installed_at), None)?;
+    Ok(AgentOutcome::of(situation, &steps))
+}
+
+/// Resolves the agent only when launchd has the job, so a device that never ran
+/// `just daemon-start` needs neither `hub.toml` nor `hub-daemon` on PATH to run `just install`.
+fn restart_if_running() -> Result<AgentOutcome> {
+    let domain = gui_domain()?;
+    let (situation, definition) = match job_state(&domain)? {
+        JobState::NotLoaded => (Situation::RestartingIfRunning { running: None }, None),
+        JobState::Loaded => {
+            let home = home()?;
+            let agent = resolve(&home)?;
+            let rendered = AgentDefinition::render(&agent)?;
+            let installed_at = definition_path(&home);
+            create_log_dir(&agent.log)?;
+            (
+                Situation::RestartingIfRunning {
+                    running: Some(on_disk(&installed_at, &rendered)?),
+                },
+                Some((installed_at, rendered)),
+            )
+        }
+    };
+    let steps = plan(situation);
+    execute(
+        &steps,
+        &domain,
+        definition.as_ref().map(|(path, _)| path.as_path()),
+        definition.as_ref().map(|(_, rendered)| rendered),
+    )?;
+    Ok(AgentOutcome::of(situation, &steps))
+}
+
+/// Runs `steps` in order. `installed_at` and `rendered` are what the steps that touch the
+/// definition need; a plan that asks for one its command did not resolve is a bug.
+fn execute(
+    steps: &[AgentStep],
+    domain: &str,
+    installed_at: Option<&Path>,
+    rendered: Option<&AgentDefinition>,
+) -> Result<()> {
+    let definition_path = || installed_at.context("bug: the plan needs the definition's path");
+    for step in steps {
         match step {
-            AgentStep::Bootout => bootout(&domain)?,
-            AgentStep::WriteDefinition | AgentStep::Bootstrap => {
-                unreachable!("stopping planned {step:?}")
+            AgentStep::WriteDefinition => {
+                let path = definition_path()?;
+                let rendered =
+                    rendered.context("bug: the plan writes a definition never rendered")?;
+                if let Some(dir) = path.parent() {
+                    std::fs::create_dir_all(dir)
+                        .with_context(|| format!("failed to create {}", dir.display()))?;
+                }
+                std::fs::write(path, rendered.bytes())
+                    .with_context(|| format!("failed to write {}", path.display()))?;
+            }
+            AgentStep::Bootout => bootout(domain)?,
+            AgentStep::Bootstrap => launchctl(&[
+                "bootstrap",
+                domain,
+                definition_path()?
+                    .to_str()
+                    .context("the agent definition's path is not UTF-8")?,
+            ])?,
+            AgentStep::Kickstart => launchctl(&["kickstart", "-k", &format!("{domain}/{LABEL}")])?,
+            AgentStep::RemoveDefinition => {
+                let path = definition_path()?;
+                match std::fs::remove_file(path) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(error)
+                            .with_context(|| format!("failed to remove {}", path.display()))
+                    }
+                }
             }
         }
     }
-    Ok(AgentOutcome::of(situation, &steps))
+    if steps.contains(&AgentStep::Bootstrap) && job_state(domain)? != JobState::Loaded {
+        bail!(
+            "launchd accepted {} but did not load it; check that hub-daemon is allowed in \
+             System Settings > General > Login Items & Extensions",
+            definition_path()?.display()
+        );
+    }
+    Ok(())
+}
+
+fn home() -> Result<AbsolutePath> {
+    AbsolutePath::new(Path::new(
+        &std::env::var_os("HOME").context("HOME is unset")?,
+    ))
+    .context("HOME cannot hold the daemon's files")
+}
+
+/// Everything the definition is rendered from, read from the caller's environment and the
+/// checkout this binary was built from.
+fn resolve(home: &AbsolutePath) -> Result<LaunchAgent> {
+    let caller = CallerPath::new(std::env::var("PATH").ok())?;
+    Ok(LaunchAgent {
+        program: InstalledDaemon::find(&caller)?,
+        checkout: MainCheckout::of(&git_common_dir(&repo_root())?)?,
+        search_path: SearchPath::for_daemon(&caller),
+        log: LogFile::of_default_profile(home)?,
+    })
+}
+
+/// How the definition installed at `path` compares to `rendered`.
+fn on_disk(path: &Path, rendered: &AgentDefinition) -> Result<DefinitionOnDisk> {
+    let installed = match std::fs::read(path) {
+        Ok(bytes) => Some(bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => {
+            return Err(error).with_context(|| format!("failed to read {}", path.display()))
+        }
+    };
+    Ok(DefinitionOnDisk::compare(installed.as_deref(), rendered))
+}
+
+/// launchd creates the log file but not its directory, and the daemon creates the profile
+/// directory only after launchd has already opened the log.
+fn create_log_dir(log: &LogFile) -> Result<()> {
+    log.path().as_path().parent().map_or(Ok(()), |dir| {
+        std::fs::create_dir_all(dir).with_context(|| format!("failed to create {}", dir.display()))
+    })
 }
 
 /// Replaces this process with `tail`, so the log is followed until interrupted.
 fn follow_logs() -> Result<AgentOutcome> {
-    let home = AbsolutePath::new(Path::new(
-        &std::env::var_os("HOME").context("HOME is unset")?,
-    ))?;
-    let log = LogFile::of_default_profile(&home)?;
+    let log = LogFile::of_default_profile(&home()?)?;
     let error = Command::new("tail")
         .args(["-n", "200", "-F", log.path().as_str()])
         .exec();

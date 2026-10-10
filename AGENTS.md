@@ -121,7 +121,7 @@ just build   # build all crates
 just cli     # run the CLI
 just tui     # run the TUI
 just daemon  # refresh every 15 minutes with nobody present (--once for one pass)
-just daemon-start  # run the installed daemon under launchd at every login (daemon-stop, daemon-logs)
+just daemon-start  # run the installed daemon under launchd at every login (also -stop, -restart, -uninstall, -logs)
 ```
 
 Every `just` recipe that runs hub from source uses the `dev` profile (`~/.hub/dev/hub.db`).

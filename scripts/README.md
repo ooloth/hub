@@ -24,10 +24,12 @@ Not imported by anything.
 - `lint-configurations` — what `just lint` runs. Clippy with `-D warnings` once per configuration
   whose sources this checkout has: without hub-private always, then with each linked module. Runs
   them all, then names the failures. hub-private's pre-commit check calls it too.
-- `daemon start|stop|logs` — what the `just daemon-*` recipes run. `start` writes the LaunchAgent
-  for the installed `hub-daemon` and loads it, rewriting the plist and reloading only when it
-  changed. `stop` unloads it until the next login. `logs` follows `~/.hub/default/daemon.log`. See
-  `daemon/README.md` for what the plist holds and why.
+- `daemon start|stop|restart|uninstall|restart-if-running|logs` — what the `just daemon-*` recipes
+  and the end of `just install` run. `start` writes the LaunchAgent for the installed `hub-daemon`
+  and loads it, rewriting the plist and reloading only when it changed. `stop` unloads it until the
+  next login. `restart` restarts a running daemon and exits 1 otherwise. `uninstall` unloads it and
+  removes the plist. `restart-if-running` restarts it only when launchd has it loaded. `logs`
+  follows `~/.hub/default/daemon.log`. See `daemon/README.md` for what the plist holds and why.
 - `setup-private <device> [hub-private path]` — what `just setup-private` runs. Omitting the device
   lists the devices hub-private has configs for and links nothing. Links hub-private's sources and
   the device's config into this checkout. Safe to rerun: an existing link is left alone, a link

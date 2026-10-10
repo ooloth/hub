@@ -98,7 +98,7 @@ fn write_failed(f: &mut fmt::Formatter<'_>, failed: &[SourceFailure]) -> fmt::Re
 }
 
 /// Text made safe to sit inside one double-quoted value on one line.
-fn one_line(text: &str) -> String {
+pub(crate) fn one_line(text: &str) -> String {
     text.split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")

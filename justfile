@@ -32,6 +32,7 @@ install:
     # FIXME: cargo install --path ui/cli {{_features}}
     cargo install --path ui/tui {{_features}}
     cargo install --path daemon {{_daemon_features}}
+    @cargo run -q -p scripts -- daemon restart-if-running
 
 cli:
     cargo run -p hub-cli
@@ -52,6 +53,14 @@ daemon-start:
 # stop the launchd daemon until the next login
 daemon-stop:
     @cargo run -q -p scripts -- daemon stop
+
+# restart the launchd daemon, such as after editing hub.toml
+daemon-restart:
+    @cargo run -q -p scripts -- daemon restart
+
+# stop the launchd daemon and remove its LaunchAgent, so it no longer starts at login
+daemon-uninstall:
+    @cargo run -q -p scripts -- daemon uninstall
 
 # follow the launchd daemon's log: startup lines, startup errors and one line per pass
 daemon-logs:

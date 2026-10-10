@@ -45,14 +45,42 @@ fn parse_interval(raw: &str) -> Result<Duration, String> {
 }
 
 #[tokio::main]
-async fn main() -> Result<ExitCode> {
+async fn main() -> ExitCode {
     let cli = Cli::parse();
 
     // Before Config::load, which resolves credentials through `op read` and
     // blocks while 1Password is locked. A mistyped HUB_PROFILE should refuse
     // immediately rather than after that wait.
-    let profile = config::profile::from_env()?;
+    let profile = match config::profile::from_env() {
+        Ok(profile) => profile,
+        Err(error) => return failed_to_start(None, &error),
+    };
+    match serve(&cli, profile).await {
+        Ok(code) => code,
+        Err(error) => failed_to_start(Some(profile), &error),
+    }
+}
 
+/// Logs a failure before the first pass, with the time it happened, and exits 1.
+///
+/// The error is not redacted: these failures come before any credential is resolved, and
+/// `op read`'s errors name `op://` references rather than values.
+fn failed_to_start(profile: Option<Profile>, error: &anyhow::Error) -> ExitCode {
+    eprintln!(
+        "{}",
+        startup::StartupFailure {
+            at: Utc::now(),
+            pid: std::process::id(),
+            profile,
+            error: format!("{error:#}"),
+        }
+    );
+    ExitCode::FAILURE
+}
+
+/// Everything after the profile is known: the lock, credentials, then passes until stopped, or
+/// one pass with `--once`. Returns an error only before the first pass.
+async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
     // Also before Config::load: a second daemon for this profile refuses before raising any
     // 1Password prompt. Bound for the life of the process, because dropping it releases it.
     let home = std::env::home_dir().context("failed to resolve home directory")?;

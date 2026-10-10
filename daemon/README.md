@@ -82,6 +82,13 @@ daemon waiting on 1Password:
 hub-daemon start at=2026-10-03T23:15:55Z pid=4242 profile=default
 ```
 
+A failure before the first pass prints one line to stderr and exits 1. The line omits `profile`
+when `HUB_PROFILE` itself was the failure:
+
+```
+hub-daemon start_failed at=2026-10-10T23:14:30Z pid=1048 profile=default error="hub-daemon is already running for profile default (pid 829, ...)"
+```
+
 Each pass prints one line to stdout:
 
 ```
@@ -104,10 +111,16 @@ Opt-in per device. `just install` installs `hub-daemon` beside `hub-tui`, and th
 `default` profile, the one the installed TUI reads:
 
 ```bash
-just daemon-start   # install the LaunchAgent and start the daemon; it starts again at every login
-just daemon-logs    # follow ~/.hub/default/daemon.log
-just daemon-stop    # stop it until the next login; the LaunchAgent stays installed
+just daemon-start      # install the LaunchAgent and start the daemon; it starts again at every login
+just daemon-logs       # follow ~/.hub/default/daemon.log
+just daemon-restart    # restart it, such as after editing hub.toml; fails when it is not running
+just daemon-stop       # stop it until the next login; the LaunchAgent stays installed
+just daemon-uninstall  # stop it and remove the LaunchAgent, so it no longer starts at login
 ```
+
+`just install` ends by restarting a running daemon, so it runs the binary just installed. A stopped
+daemon stays stopped and loads the new binary at the next login, and a device that never ran
+`just daemon-start` is left alone.
 
 `just daemon-start` writes `~/Library/LaunchAgents/com.ooloth.hub.daemon.plist`
 (`scripts daemon start`, in `scripts/src/daemon_agent/`). The plist holds absolute paths, because
@@ -122,7 +135,7 @@ launchd expands neither `~` nor variables:
 
 It sets no `HUB_PROFILE`, so the daemon uses `default` whatever the calling shell exports.
 `KeepAlive` restarts a daemon that exits, at most once a minute (`ThrottleInterval` 60), so a
-daemon that cannot start leaves one failure in the log per minute.
+daemon that cannot start leaves one `start_failed` line in the log per minute.
 
 Rerunning `just daemon-start` with nothing changed does nothing. It writes the plist only when its
 bytes would change, and reloads a running daemon only then, because macOS posts a Background Items
