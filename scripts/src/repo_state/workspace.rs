@@ -10,6 +10,9 @@ use serde::Deserialize;
 pub(crate) struct WorkspaceMember {
     pub(crate) name: String,
     pub(crate) manifest: PathBuf,
+    /// The workspace crates it is built from: its normal and build dependencies that cargo
+    /// resolves by path. Dev-dependencies are left out, since they never reach a binary.
+    pub(crate) local_dependencies: Vec<String>,
 }
 
 impl WorkspaceMember {
@@ -31,6 +34,14 @@ impl WorkspaceMember {
             .map(|package| Self {
                 name: package.name,
                 manifest: package.manifest_path,
+                local_dependencies: package
+                    .dependencies
+                    .into_iter()
+                    .filter(|dependency| {
+                        dependency.path.is_some() && dependency.kind.as_deref() != Some("dev")
+                    })
+                    .map(|dependency| dependency.name)
+                    .collect(),
             })
             .collect())
     }
@@ -75,6 +86,17 @@ struct Metadata {
 struct Package {
     name: String,
     manifest_path: PathBuf,
+    #[serde(default)]
+    dependencies: Vec<Dependency>,
+}
+
+#[derive(Deserialize)]
+struct Dependency {
+    name: String,
+    /// Present only for a dependency cargo resolves by path, which in this workspace is a member.
+    path: Option<PathBuf>,
+    /// `None` for a normal dependency, `"dev"` or `"build"` otherwise.
+    kind: Option<String>,
 }
 
 #[cfg(test)]
@@ -96,13 +118,31 @@ mod tests {
                 WorkspaceMember {
                     name: "store".to_string(),
                     manifest: PathBuf::from("/repo/store/Cargo.toml"),
+                    local_dependencies: vec![],
                 },
                 WorkspaceMember {
                     name: "hub-tui".to_string(),
                     manifest: PathBuf::from("/repo/ui/tui/Cargo.toml"),
+                    local_dependencies: vec![],
                 },
             ]
         );
+    }
+
+    #[test]
+    fn a_members_local_dependencies_are_its_path_dependencies_that_reach_its_binary() {
+        let json = r#"{"packages":[
+            {"name":"hub-daemon","manifest_path":"/repo/daemon/Cargo.toml","dependencies":[
+                {"name":"store","path":"/repo/store","kind":null},
+                {"name":"anyhow","kind":null},
+                {"name":"tempfile","kind":"dev"},
+                {"name":"store-test-support","path":"/repo/support","kind":"dev"}
+            ]}
+        ],"workspace_root":"/repo"}"#;
+
+        let members = WorkspaceMember::all_from(json).unwrap();
+
+        assert_eq!(members[0].local_dependencies, ["store"]);
     }
 
     #[test]
@@ -110,6 +150,7 @@ mod tests {
         let member = WorkspaceMember {
             name: "hub-tui".to_string(),
             manifest: PathBuf::from("/repo/ui/tui/Cargo.toml"),
+            local_dependencies: vec![],
         };
 
         assert_eq!(member.dir(), Path::new("/repo/ui/tui"));

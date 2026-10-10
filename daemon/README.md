@@ -14,16 +14,19 @@ recording each pass: the payload when it replaced it, and the health record alwa
 
 ## What it does today
 
-A pass at startup, then one every 15 minutes (`--interval` changes it), each logged as one line and
-recorded in the health record. One daemon per profile: a second refuses, naming the first. `--once`
-runs a single pass and exits. Everything else in [#327](https://github.com/ooloth/hub/issues/327) is
-a later phase: launchd and log files (3.5), credentials with nobody present (3.6), notifications
-(Phase 4), and the socket the TUI will read, which is also where health is first shown (Phase 5).
+A startup line, then a pass, then one every 15 minutes (`--interval` changes it), each logged as one
+line and recorded in the health record. One daemon per profile: a second refuses, naming the first.
+`--once` runs a single pass and exits. `just daemon-start` runs the installed binary under launchd
+for the `default` profile, at every login, logging to `~/.hub/default/daemon.log`. Everything else
+in [#327](https://github.com/ooloth/hub/issues/327) is a later phase: credentials with nobody
+present (3.6), notifications (Phase 4), and the socket the TUI will read, which is also where health
+is first shown (Phase 5).
 
 ## Files
 
-- `main.rs` — parses flags, takes the lock, loads config once, then runs passes. Every I/O call is
-  here, including each pass's fetch and write
+- `main.rs` — parses flags, takes the lock, prints the startup line, loads config once, then runs
+  passes. Every I/O call is here, including each pass's fetch and write
+- `startup.rs` — `Startup`, the line printed before credentials load. Pure
 - `instance_lock.rs` — one daemon per profile: the `flock` on `~/.hub/<profile>/daemon.lock`
 - `schedule.rs` — `every`, which runs a pass now and then once per period, never catching up
 - `pass.rs` — `PassReport`, the per-pass log line, and what `--once` exits with. Pure. The pass
@@ -68,7 +71,16 @@ just daemon --once             # one pass, then exit
 ```
 
 Expect fingerprint prompts at startup if 1Password has not been touched recently: every `op://`
-reference resolves once, before the first pass, and later passes reuse them.
+reference resolves once, before the first pass, and later passes reuse them. Each start asks again,
+including a restart, so a daemon that restarts while nobody is there waits on prompts nobody
+answers.
+
+Before loading credentials the daemon prints one line, so a start with no pass line after it is a
+daemon waiting on 1Password:
+
+```
+hub-daemon start at=2026-10-03T23:15:55Z pid=4242 profile=default
+```
 
 Each pass prints one line to stdout:
 
@@ -85,6 +97,42 @@ restarts.
 When the database refuses the write, the line ends with `recorded=as_failed record_error="..."`:
 the pass was recorded as `pass_failed` instead, health only. When it refuses that too, the line
 ends with `recorded=no`, both errors, and the health record keeps its previous pass.
+
+## Running it under launchd
+
+Opt-in per device. `just install` installs `hub-daemon` beside `hub-tui`, and these run it for the
+`default` profile, the one the installed TUI reads:
+
+```bash
+just daemon-start   # install the LaunchAgent and start the daemon; it starts again at every login
+just daemon-logs    # follow ~/.hub/default/daemon.log
+just daemon-stop    # stop it until the next login; the LaunchAgent stays installed
+```
+
+`just daemon-start` writes `~/Library/LaunchAgents/com.ooloth.hub.daemon.plist`
+(`scripts daemon start`, in `scripts/src/daemon_agent/`). The plist holds absolute paths, because
+launchd expands neither `~` nor variables:
+
+- the binary: the first `hub-daemon` on the caller's `PATH`
+- the working directory: the main checkout, even from a worktree, since `hub.toml` is read from it
+- `PATH`: the directories where the caller's shell finds `git`, `op` and `gcloud`, then
+  `/usr/bin:/bin:/usr/sbin:/sbin`. See
+  [the invariant](../docs/invariants/every-program-the-daemon-runs-is-on-its-launchd-path.md)
+- stdout and stderr: both to the log, appended and never rotated, at about 280 bytes per pass
+
+It sets no `HUB_PROFILE`, so the daemon uses `default` whatever the calling shell exports.
+`KeepAlive` restarts a daemon that exits, at most once a minute (`ThrottleInterval` 60), so a
+daemon that cannot start leaves one failure in the log per minute.
+
+Rerunning `just daemon-start` with nothing changed does nothing. It writes the plist only when its
+bytes would change, and reloads a running daemon only then, because macOS posts a Background Items
+notification whenever the plist is rewritten, even with identical content.
+
+**macOS can disallow the daemon** from System Settings > General > Login Items & Extensions,
+where it is listed as `hub-daemon`. `just daemon-start` checks that launchd loaded the job after
+starting it, and fails naming Login Items when it did not. Whether a disallowed job reaches that
+check, or fails earlier in `launchctl bootstrap`, has not been observed. Nothing reports a daemon
+disallowed later until Phase 5 shows health in the TUI.
 
 ## Observing it work
 

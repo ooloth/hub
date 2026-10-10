@@ -24,6 +24,10 @@ Not imported by anything.
 - `lint-configurations` — what `just lint` runs. Clippy with `-D warnings` once per configuration
   whose sources this checkout has: without hub-private always, then with each linked module. Runs
   them all, then names the failures. hub-private's pre-commit check calls it too.
+- `daemon start|stop|logs` — what the `just daemon-*` recipes run. `start` writes the LaunchAgent
+  for the installed `hub-daemon` and loads it, rewriting the plist and reloading only when it
+  changed. `stop` unloads it until the next login. `logs` follows `~/.hub/default/daemon.log`. See
+  `daemon/README.md` for what the plist holds and why.
 - `setup-private <device> [hub-private path]` — what `just setup-private` runs. Omitting the device
   lists the devices hub-private has configs for and links nothing. Links hub-private's sources and
   the device's config into this checkout. Safe to rerun: an existing link is left alone, a link
@@ -60,7 +64,8 @@ No output means allowed. A refusal prints the hook's deny JSON with the reason.
   member's manifest sets `[lints] workspace = true`), `domain_purity` (nothing under `domain/src`
   names a way of reading ambient state), `decision_status` (no superseded decision record still
   says "not yet implemented"), `snapshot_coverage` (every snapshot file is named by a test in its
-  crate) and `workspace` (the member list, from `cargo metadata`).
+  crate), `daemon_tools` (every program the daemon's crates start by name is in `DAEMON_TOOLS`)
+  and `workspace` (the member list, from `cargo metadata`).
   Run them alone with `cargo nextest run -p scripts -E 'test(repo_state)'`
 - `src/banned_terms.rs`, `src/scanned_text.rs` — the one matching rule the guard and the
   pre-commit check share
@@ -68,5 +73,8 @@ No output means allowed. A refusal prints the hook's deny JSON with the reason.
 - `src/lint_configurations.rs` — the configuration lint
 - `src/repo_root.rs` — the checkout this binary was built from
 - `src/setup_private.rs` — the device setup
+- `src/daemon_agent/` — the launchd agent: `launch_agent` (what the plist is rendered from),
+  `definition` (the plist), `plan` (what each command does, pure) and `command`, which reads
+  launchd and the disk, plans and acts
 - `src/gh_post_guard/` — the guard, one concept per file: `shell_words`, `publishing_call`,
   `body_source`, `verdict`, `hook_io`, and `respond`, which joins them

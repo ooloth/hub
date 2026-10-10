@@ -6,6 +6,8 @@ use clap::{Parser, Subcommand};
 
 /// The terms banned from hub, and finding them in text.
 mod banned_terms;
+/// Running hub-daemon under launchd.
+mod daemon_agent;
 mod gh_post_guard;
 /// Clippy in every configuration the checkout can build.
 mod lint_configurations;
@@ -45,6 +47,12 @@ enum Command {
     /// Reads the staged content of the repository in the current directory, including from a
     /// worktree, and finds the list beside the main checkout. Passes when there is no list.
     CheckStagedTerms,
+    /// Run hub-daemon under launchd for the `default` profile: what the `just daemon-*` recipes
+    /// call.
+    Daemon {
+        #[command(subcommand)]
+        command: daemon_agent::DaemonCommand,
+    },
     /// Clippy with `-D warnings` in every configuration this checkout can build: always
     /// without hub-private, and with each hub-private module whose sources are linked in.
     ///
@@ -67,6 +75,7 @@ fn main() -> ExitCode {
     match Cli::parse().command {
         Command::GuardGhPosts { banned_terms } => gh_post_guard::run(&banned_terms),
         Command::CheckStagedTerms => staged_terms::run(),
+        Command::Daemon { command } => daemon_agent::run(&command),
         Command::LintConfigurations => lint_configurations::run(),
         Command::SetupPrivate {
             device,

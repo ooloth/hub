@@ -18,6 +18,7 @@ mod instance_lock;
 mod pass;
 mod refresh;
 mod schedule;
+mod startup;
 
 /// Hub daemon binary.
 #[derive(Parser, Debug)]
@@ -62,6 +63,17 @@ async fn main() -> Result<ExitCode> {
             bail!(instance_lock::refusal(profile.as_str(), &path, pid))
         }
     };
+
+    // Before Config::load, which can wait on 1Password prompts with no end: a startup line with
+    // no pass line after it is a daemon waiting on credentials.
+    println!(
+        "{}",
+        startup::Startup {
+            at: Utc::now(),
+            pid: std::process::id(),
+            profile,
+        }
+    );
 
     // Once, at startup: every pass reuses these credentials, so passes raise no prompts.
     let config = config::Config::load()

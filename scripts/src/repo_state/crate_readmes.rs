@@ -90,6 +90,7 @@ mod tests {
         let member = WorkspaceMember {
             name: "example".to_string(),
             manifest: dir.path().join("Cargo.toml"),
+            local_dependencies: vec![],
         };
         (dir, member)
     }

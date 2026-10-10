@@ -31,6 +31,7 @@ build:
 install:
     # FIXME: cargo install --path ui/cli {{_features}}
     cargo install --path ui/tui {{_features}}
+    cargo install --path daemon {{_daemon_features}}
 
 cli:
     cargo run -p hub-cli
@@ -42,6 +43,19 @@ tui:
 # pass and exits; `just daemon --interval 20s` changes the period
 daemon *ARGS:
     cargo run -p hub-daemon {{_daemon_features}} -- {{ARGS}}
+
+# Opt-in per device, and needs `just install` first. See daemon/README.md
+# run the installed hub-daemon under launchd for the `default` profile, now and at every login
+daemon-start:
+    @cargo run -q -p scripts -- daemon start
+
+# stop the launchd daemon until the next login
+daemon-stop:
+    @cargo run -q -p scripts -- daemon stop
+
+# follow the launchd daemon's log: startup lines, startup errors and one line per pass
+daemon-logs:
+    @cargo run -q -p scripts -- daemon logs
 
 # a proxy address nothing listens on, so every request sent through it is refused
 _unreachable_proxy := "http://127.0.0.1:9"

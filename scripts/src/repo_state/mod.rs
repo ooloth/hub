@@ -4,6 +4,8 @@
 mod crate_readmes;
 /// Only the store names the daemon health table.
 mod daemon_health_writer;
+/// The daemon's launchd PATH reaches every program the daemon runs.
+mod daemon_tools;
 /// No superseded decision is listed as a design to build.
 mod decision_status;
 /// `domain/` reads no ambient state.
