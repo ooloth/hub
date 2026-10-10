@@ -201,3 +201,10 @@ into a record.
   session" on macOS, and how it scopes a process with no terminal is not documented
   ([app integration security](https://www.1password.dev/cli/app-integration-security/), read
   2026-10-10).
+- With nobody there to answer the prompt, `op read` waits rather than failing. A daemon that
+  `just install` restarted under launchd printed its startup line at 06:39:11Z, and its first pass
+  came at 13:33:33Z, after the account holder returned and approved. Five minutes in, `ps` showed
+  the daemon's `op read` child alive and waiting, and the log held only the startup line until that
+  first pass. So a restart while nobody is there blocks until someone answers, 6 h 54 min here,
+  with no error to retry on. *Measured*, 2026-10-10, macOS 26.6.2, `op` 2.40.0, from the daemon's
+  log and `ps`.
