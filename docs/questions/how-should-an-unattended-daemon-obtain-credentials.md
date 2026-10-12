@@ -14,9 +14,12 @@ gates on an interactive unlock. That is fine for a TUI somebody just launched.
 
 [Decision 020](../decisions/020-hub-runs-an-unattended-surface.md) and
 [021](../decisions/021-daemon-owns-signal-refresh.md) put a daemon behind that same model, waking on
-an interval with nobody present. A fingerprint prompt has no one to answer it, and retrying a prompt
-nobody will answer is not resilience. Worse than failing: with the account signed out, `op read`
-blocks rather than erroring, so the caller hangs with nothing on screen.
+an interval with nobody present. The daemon is a LaunchAgent, so it runs only inside a logged-in
+session and launchd starts it at login, when someone is at the machine. A restart is different:
+`KeepAlive` or an install can restart it while nobody is there, and the prompt that restart raises
+has no one to answer it. Retrying a prompt nobody will answer is not resilience. Worse than failing:
+an unanswered prompt makes `op read` block rather than error, so the caller hangs with nothing on
+screen.
 
 An unlocked vault is not sufficient either. `op read` reaches `my.1password.com` on every
 resolution even when the desktop app's CLI integration is doing the authorising, so a daemon on a
@@ -53,29 +56,23 @@ rather than from asking for fewer of them.
 
 ## What would settle it
 
-Vendor facts first, established rather than recalled, because every option below turns on details
-nobody here has checked:
+The vendor facts and the spikes in Findings leave option A′ below as the only candidate that meets
+every requirement. What remains is to confirm it against the real daemon rather than a spike
+binary:
 
-- What a 1Password service account token can be scoped to, whether per-vault scoping is fine enough
-  to expose hub's items and nothing else, what account tier it requires, and where the token then
-  lives so that it is not itself the unprotected secret.
-- Whether a launchd agent can read a macOS Keychain item non-interactively, and whether that
-  survives a reboot, an OS update, and a rebuild of the binary that owns the ACL.
-- Whether each candidate resolves without reaching a remote service, and if it does reach one, what
-  the daemon does during an outage. This discriminates between the options in a way the others do
-  not: an option resolving locally lets the daemon start without network access, and an option
-  resolving remotely cannot start through an outage, including one that would not have stopped any
-  source. Credentials are resolved once at startup, so this matters at startup, restart and reboot
-  and not on every pass (see the 2026-10-03 finding).
+- Run `hub-daemon` with one `op inject` call at startup under launchd across a logout and login,
+  and confirm the start costs one Touch ID prompt and one macOS dialog naming `hub-daemon`, and
+  nothing more for the rest of the session.
+- Leave those prompts unanswered past the resolution deadline, and confirm the health record and
+  the log say the daemon is waiting for approval, and that a notification says so.
+- Start it with the network cut, and confirm it retries inside the process instead of exiting, so
+  `KeepAlive` never respawns it into fresh prompts.
+- Decide whether two clicks per start is acceptable, or whether the macOS dialog is worth removing.
+  A remembered approval for `hub-daemon` would need a stable code identity, and the spikes found
+  that neither a rebuild nor even a restart of the same build keeps it.
 
-Then the smallest spike that produces an observation: provision the narrowest candidate that clears
-those facts, run the daemon across a reboot and across several hours with nobody touching the
-machine, and confirm it never prompts and never blocks. Cut connectivity for part of that window,
-since an unreachable credential service is the failure mode most likely to occur in ordinary use.
-Reading about non-interactive auth does not settle whether this particular daemon stays running.
-
-One input is already available and should be gathered while filing: the exact list of items hub
-needs, since "scope it to hub's credentials" is only actionable against a list.
+The items hub needs are three `op://` references, all in vault `Scripts`, on the device the spikes
+ran on (read from `hub.toml` 2026-10-12). The other device's configuration has one.
 
 ## Resolves into
 
@@ -95,34 +92,69 @@ Related from the other direction: [#94](https://github.com/ooloth/hub/issues/94)
 run path that does not require 1Password, which is the same tension for a developer rather than a
 daemon.
 
+## Requirements
+
+Each one comes from a moment the daemon goes through, and each cites its source.
+
+- **R1. Nothing has to be started or remembered.** launchd starts the daemon at login, and no
+  command, TUI launch or other manual step stands between login and the first pass. Source: #327's
+  ideal state, "without me starting or remembering to open anything".
+- **R2. At most one approval per login session, and only one the system brings to the account
+  holder.** A prompt that appears and is answered is acceptable. Locking or quitting 1Password
+  afterwards does not stop passes. Source: the account holder, 2026-10-12.
+- **R3. Nothing the daemon holds leaks.** No secret is stored on disk, and no other process running
+  as the same user can read one without the account holder's approval. A Keychain item that any
+  same-user process can read through `/usr/bin/security`, which is how `gh` appears to keep its
+  token, does not meet this. Source: the account holder, 2026-10-12, and
+  `~/.agents/standards/security.md`, under which secrets live only in environment variables or
+  secret stores.
+- **R4. A start that cannot get credentials says so within a deadline.** The health record, the log
+  and a notification name the cause: waiting for approval, 1Password unreachable, or the desktop
+  app not running. Source: #339's ideal state.
+- **R5. A credential failure never makes the daemon exit.** `KeepAlive` restarts an exited daemon
+  once a minute, and every start raises fresh prompts (see Findings). Source: `daemon/README.md`
+  and the 2026-10-12 spikes.
+
+The network is not a requirement. Every source except the LAN-only private ones needs the network
+anyway, credentials are resolved once per process and held for its life, and an outage at startup
+costs only that start under R5's retry.
+
 ## Options
 
-- **A. Keep the interactive model and accept that the daemon cannot start unattended.** Strongest
-  case: no new credential exists anywhere, so nothing widens. It is also the honest baseline, and
-  every other option has to beat it rather than merely differ from it. Cost: after a restart or
-  reboot nothing runs until someone answers the prompts, so notifications stop silently, which is
-  the failure #327 exists to remove, so this option defeats the milestone it sits inside. It also
-  keeps both failure modes rather than one, since it stays network-dependent.
-- **B. A scoped non-interactive 1Password credential.** Strongest case: keeps one vendor, one
-  provisioning story and the existing `op://` reference shape, so `hub.toml` may not change at all.
-  Cost: unknown until the scoping and tier facts are established, and the token has to live
-  somewhere that is not itself a plaintext secret on disk. It removes the unlock prompt but is
-  expected to keep the network dependency, since a service account authenticates against 1Password
-  rather than the local app — *Unverified*, and worth checking early, because it decides whether
-  this option fixes one failure mode or both.
-- **C. macOS Keychain with an ACL for the daemon binary.** Strongest case: an OS-managed store, no
-  second vendor, access bound to a specific binary rather than to anyone who can read a file, and
-  resolution stays on the machine, so a pass survives an outage that would stop B. Cost: unknown
-  whether non-interactive reads survive reboots and binary rebuilds, and it is macOS-only, which
-  forecloses running the daemon anywhere else.
-- **D. A provisioned file or launchd environment entry.** Strongest case: simplest possible, depends
-  on nothing, works identically everywhere, and resolves locally. Cost: a plaintext secret protected
-  only by file permissions, which `~/.agents/standards/security.md` treats as one mistake away from
-  failing, and it is the option that most directly contradicts the constraint above.
+- **A′. Fingerprint at startup, hardened.** The daemon resolves every reference in one `op inject`
+  call at startup, holds the values in memory as `Secret<String>` for the life of the process, puts
+  a deadline on resolution, retries inside the process instead of exiting, and reports the waiting
+  state per R4. A start costs one Touch ID prompt and one macOS dialog naming the daemon, both
+  shown at login; further `op` calls from the same process raise neither (see Findings). Meets R1
+  to R5. Costs: two clicks per start rather than one, and a restart while nobody is at the machine
+  waits for their return before its first pass. A notification sent then would not reach anyone
+  either. Unverified: how long the 1Password approval lasts within one process, which matters only
+  if the daemon re-reads a credential.
+- **B. A 1Password service account.** A dedicated vault, read-only access to it alone, and item and
+  vault IDs in `hub.toml` so each read costs one request. Fails R3: the `ops_` token is the whole
+  credential, 1Password says only that it should not be stored in plaintext, and every place it can
+  be stored is either C's Keychain problem or D's plaintext problem. On the Families plan, all
+  service accounts in the account share 1,000 requests a day, so a daemon crash-looping at one
+  restart a minute would spend the quota in hours.
+- **C. A Keychain item readable only by a signed `hub-daemon`.** Fails R2 as measured: with a
+  self-signed identity, a rebuild carrying the identical designated requirement was refused (see
+  Findings), so every install would need a fresh approval. An Apple Development identity, renewed
+  yearly in Xcode, might give the item a stable team ID to match; that is unverified. Also needs
+  hardened runtime, or a same-user process can inject code into the trusted binary through
+  `DYLD_INSERT_LIBRARIES` in the user-writable LaunchAgent plist (unverified).
+- **D. A provisioned file or launchd environment entry.** Fails R3: a plaintext secret protected
+  only by file permissions.
 
-The network axis does not pick a winner on its own, and it should not be allowed to: it favours C
-and D, and D is the option the security constraint most directly rules out. What it does is stop B
-being scored as though it removes the whole problem when it may only remove the prompt.
+Rejected:
+
+- **A remote secret store** (a GitHub Actions secret, AWS Secrets Manager, Doppler and similar).
+  GitHub's API returns a secret "without revealing its encrypted value", so only an Actions run can
+  read one ([REST API: Actions secrets](https://docs.github.com/en/rest/actions/secrets), read
+  2026-10-12). Every other remote store needs a credential stored on the machine to fetch from it,
+  which moves the problem to that credential rather than removing it.
+- **Handing secrets to a running daemon from a terminal**, through a `hub unlock` command or the
+  TUI, over the daemon's socket. Might avoid the macOS dialog, since `just tui` is not known to
+  raise it (unverified), but fails R1: someone has to run the command after every login.
 
 ## Findings
 
@@ -162,20 +194,47 @@ into a record.
   because it resolves every `op://` reference in `hub.toml` before the first fetch. *Reported* by
   the account holder, 2026-09-21, who sees "lots of prompts, not one per window"; the exact count
   per run has not been measured.
-- Together those sharpen the cost of option A. "The daemon stops when the vault locks" understates
-  it: the daemon stops whenever nobody is present to answer a prompt, and a polling daemon would
-  raise a burst of them on every pass rather than one. A is therefore not a quiet baseline that
-  merely misses notifications — running it attended is itself disruptive.
+- Together those sharpen the cost of the interactive model without A′'s hardening. "The daemon
+  stops when the vault locks" understates it: the daemon stops whenever nobody is present to answer
+  a prompt, and a polling daemon would raise a burst of them on every pass rather than one. That
+  model is therefore not a quiet baseline that merely misses notifications — running it attended is
+  itself disruptive.
 - The daemon's credential needs are not a subset of the TUI's. `StatusParams::extra_credentials` in
   `workflows/src/status.rs` carries them into the private workflows during a fetch pass, so a daemon
   running that pass needs the same set as the TUI. *Measured*, read from the source 2026-09-19.
 - `Config` resolves every credential at startup rather than lazily, per
   `~/.agents/standards/rust.md`, which is why an unavailable vault blocks the process rather than
   the first call that needs a secret. *Measured*, `config/src/resolved.rs`.
-- 1Password offers service accounts intended for unattended use. *Unverified*: nobody has checked
-  what they can be scoped to, what tier they need, or how the token is meant to be stored.
-- A launchd agent can hold a Keychain ACL permitting non-interactive reads. *Unverified*: stated
-  from general recollection, with nothing checked and no attempt made.
+- A 1Password service account is scoped per vault, with nothing finer, and cannot be given the
+  built-in Personal or Private vault or the default Shared vault. Its permissions default to
+  `read_items`, and its vault access "is immutable" once created
+  ([get started](https://www.1password.dev/service-accounts/get-started),
+  [CLI reference](https://www.1password.dev/cli/reference/management-commands/service-account)).
+  On the 1Password, Families and Teams plans a token gets 1,000 reads an hour, and on the 1Password
+  and Families plans all service accounts in an account share 1,000 requests a day
+  ([rate limits](https://www.1password.dev/service-accounts/rate-limits)). `op read` costs "3
+  reads", or 1 when given item and vault IDs
+  ([use with 1Password CLI](https://www.1password.dev/service-accounts/use-with-1password-cli)).
+  The token, prefixed `ops_`, carries the account unlock key itself
+  ([security](https://www.1password.dev/service-accounts/security)), and the only storage guidance
+  is "don't store it in plaintext". All read 2026-10-12. *Unverified*: whether a service-account
+  `op read` works with no network, and whether setting `OP_SERVICE_ACCOUNT_TOKEN` keeps `op` from
+  contacting the desktop app; only third-party sources address the second.
+- The data protection keychain needs entitlements "authorized by a provisioning profile" and an
+  app-like bundle, which is "not for command-line tools", so an ad-hoc `hub-daemon` cannot use it
+  ([TN3137](https://developer.apple.com/documentation/technotes/tn3137-on-mac-keychains), read
+  2026-10-12). `man codesign` says ad-hoc signing "identifies exactly one instance of code".
+- A Keychain item created by a binary signed with a self-signed code-signing certificate, with a
+  pinned identifier and hardened runtime, was read by that build in 8 ms with no prompt. A rebuild
+  with different code, signed with the same certificate and the same identifier, and so carrying
+  the identical designated requirement, was refused with `-25293` (`errSecAuthFailed`) in 11 ms
+  while user interaction was disabled. The original build could still read it. Setting up the
+  certificate also cost one login-keychain password dialog for `codesign` to use the new key.
+  *Measured*, 2026-10-12, macOS 26.6.2, `security-framework` 3.7.0. Why the rebuild was refused is
+  inferred, not observed: the item's partition list probably names the first build's code hash,
+  because a self-signed certificate carries no team ID.
+- With user interaction disabled through `SecKeychain::disable_user_interaction`, a read that would
+  prompt fails fast with `-25293` instead. *Measured*, same run.
 - Credentials are resolved once per daemon process, not once per pass. `hub-daemon` calls
   `Config::load` once in `daemon/src/main.rs`, before either the `--once` pass or the
   `schedule::every` loop, and every pass reuses that `Config`, so no pass calls `op read`. This
@@ -208,3 +267,18 @@ into a record.
   first pass. So a restart while nobody is there blocks until someone answers, 6 h 54 min here,
   with no error to retry on. *Measured*, 2026-10-10, macOS 26.6.2, `op` 2.40.0, from the daemon's
   log and `ps`.
+- One 1Password approval covers every `op` process started by the same parent process, and no more.
+  Under one launchd job, one `op inject` resolving all three references raised one Touch ID prompt,
+  and three further `op` processes started by the same shell raised none. Each new launchd job
+  raised its own. *Measured*, 2026-10-12, macOS 26.6.2, `op` 2.40.0; prompts reported by the
+  account holder through a dialog shown after each step.
+- macOS shows "op would like to access data from other apps" for `op` processes started under
+  launchd, and the dialog names the launchd job's own binary when that binary starts `op`.
+  Answering Allow lasts for that process only. A Rust binary started by launchd ran `op read`
+  twice: the first raised Touch ID and the dialog naming the binary, and the second raised
+  nothing. A new job running the same build raised both again, and so did a rebuild. With a shell
+  as the parent, the dialog named `op` and came back for every `op` process. *Measured*,
+  2026-10-12, macOS 26.6.2, `op` 2.40.0, ad-hoc linker-signed binary.
+- Setting `OP_LOAD_DESKTOP_APP_SETTINGS=false` does not remove that dialog, and stops the CLI
+  integration from finding the account ("No accounts configured for use with 1Password CLI").
+  *Measured*, same session.
