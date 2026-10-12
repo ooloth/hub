@@ -215,8 +215,8 @@ Then clean up every time: `tmux kill-session -t qa`, remove any
   which says `account is not signed in` on a working machine, because the
   1Password desktop app's CLI integration authorises each `op read` on its own
   instead of creating a session. A signed-out `op whoami` is never a reason to
-  skip running hub. See
-  [the credentials question](docs/questions/how-should-an-unattended-daemon-obtain-credentials.md).
+  skip running hub. See the findings behind
+  [decision 027](docs/decisions/027-daemon-resolves-credentials-once-per-start-and-holds-them-in-memory.md).
 - **`op read` raises 1Password prompts, and that is normal.** `Config::load`
   resolves every `op://` reference in `hub.toml` before the first fetch, so one
   run raises several prompts, each answered with a fingerprint. Expect them.
@@ -225,10 +225,10 @@ Then clean up every time: `tmux kill-session -t qa`, remove any
   running.** `op read` fails within a second with that message, before any
   fetch starts. Start the app and run again. The first run after starting it
   can fail the same way while the app finishes launching (observed 2026-10-02).
-- **A hang with nothing on screen is a different state.** `op read` is waiting
-  on something nobody has answered. A 2026-09-21 measurement attributed this to
-  the app not running, which a 2026-10-02 run contradicts. The cause is open in
-  `docs/questions/how-should-an-unattended-daemon-obtain-credentials.md`.
+- **A hang with nothing in the terminal is a different state.** `op read` is
+  waiting on an approval prompt nobody has answered, and it waits with no limit
+  rather than failing (measured 2026-10-10). Look for a Touch ID prompt, or a
+  macOS "would like to access data from other apps" dialog, waiting on screen.
   Diagnose on this symptom, not on anything `op whoami` says.
 - **You cannot `echo` inside a launched investigation window** — it is running
   Claude Code. Read the prompts off the process instead:
