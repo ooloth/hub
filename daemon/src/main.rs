@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
+use domain::credential_attempt::CredentialAttempt;
 use domain::daemon_pass::{Pass, PassOutcome};
 use domain::known_secrets::KnownSecrets;
 use domain::pass_failure::PassFailure;
@@ -13,6 +14,7 @@ use crate::freshness::{FreshPayload, RefreshOutcome};
 use clap::Parser;
 
 mod cache;
+mod credentials;
 mod freshness;
 mod instance_lock;
 mod pass;
@@ -48,7 +50,7 @@ fn parse_interval(raw: &str) -> Result<Duration, String> {
 async fn main() -> ExitCode {
     let cli = Cli::parse();
 
-    // Before Config::load, which resolves credentials through `op read` and
+    // Before credentials are resolved, which happens through `op read` and
     // blocks while 1Password is locked. A mistyped HUB_PROFILE should refuse
     // immediately rather than after that wait.
     let profile = match config::profile::from_env() {
@@ -79,9 +81,10 @@ fn failed_to_start(profile: Option<Profile>, error: &anyhow::Error) -> ExitCode 
 }
 
 /// Everything after the profile is known: the lock, credentials, then passes until stopped, or
-/// one pass with `--once`. Returns an error only before the first pass.
+/// one pass with `--once`. Returns an error only before the first pass, and never for
+/// credentials, which are tried again until they arrive, or with `--once`, exit 1.
 async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
-    // Also before Config::load: a second daemon for this profile refuses before raising any
+    // Also before credentials are resolved: a second daemon for this profile refuses before raising any
     // 1Password prompt. Bound for the life of the process, because dropping it releases it.
     let home = std::env::home_dir().context("failed to resolve home directory")?;
     let lock_path = profile.dir(&home).join("daemon.lock");
@@ -92,8 +95,8 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
         }
     };
 
-    // Before Config::load, which can wait on 1Password prompts with no end: a startup line with
-    // no pass line after it is a daemon waiting on credentials.
+    // Before credentials are resolved, which can wait on 1Password prompts with no end: a startup
+    // line with no pass or credentials line after it is a daemon waiting on an approval.
     println!(
         "{}",
         startup::Startup {
@@ -103,10 +106,32 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
         }
     );
 
-    // Once, at startup: every pass reuses these credentials, so passes raise no prompts.
-    let config = config::Config::load()
-        .await
-        .context("failed to load hub config")?;
+    // A broken hub.toml is not something waiting fixes, so it ends the start as before.
+    let file = config::ConfigFile::read().context("failed to load hub config")?;
+
+    // Once, at startup: every pass reuses these credentials, so passes raise no prompts. A failed
+    // attempt is recorded and tried again in this process, because a restart would raise fresh
+    // prompts. With --once there is one attempt.
+    let resolve = || file.resolve();
+    let record = |attempt: &CredentialAttempt| {
+        let record_error = cache::record_credential_attempt(|| cache::open(profile), attempt);
+        println!(
+            "{}",
+            credentials::AttemptReport {
+                profile: profile.as_str().to_string(),
+                attempt: attempt.clone(),
+                record_error,
+            }
+        );
+    };
+    let obtained = if cli.once {
+        credentials::obtain(resolve, std::iter::empty(), record).await
+    } else {
+        credentials::obtain(resolve, credentials::Backoff::new(), record).await
+    };
+    let Some(config) = obtained else {
+        return Ok(ExitCode::FAILURE);
+    };
 
     if cli.once {
         let report = run_pass(&config, profile).await;

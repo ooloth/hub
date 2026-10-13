@@ -6,8 +6,8 @@ date: 2026-10-12
 
 # 027 — The daemon resolves its credentials through 1Password once per start and holds them only in memory
 
-_Status: accepted; not yet implemented. `serve` in `daemon/src/main.rs` still calls
-`Config::load` with no deadline and exits when it fails._
+_Status: accepted; not yet implemented. `obtain` in `daemon/src/credentials.rs` sets no
+deadline on resolution, so an approval nobody answers is neither recorded nor notified._
 
 ## Forced by
 

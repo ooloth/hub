@@ -17,15 +17,19 @@ recording each pass: the payload when it replaced it, and the health record alwa
 A startup line, then a pass, then one every 15 minutes (`--interval` changes it), each logged as one
 line and recorded in the health record. One daemon per profile: a second refuses, naming the first.
 `--once` runs a single pass and exits. `just daemon-start` runs the installed binary under launchd
-for the `default` profile, at every login, logging to `~/.hub/default/daemon.log`. Everything else
-in [#327](https://github.com/ooloth/hub/issues/327) is a later phase: credentials with nobody
-present (3.6), notifications (Phase 4), and the socket the TUI will read, which is also where health
-is first shown (Phase 5).
+for the `default` profile, at every login, logging to `~/.hub/default/daemon.log`. When 1Password
+fails straight away, because it is unreachable or its desktop app is not running, the daemon records
+why and tries again in the same process, waiting a second, then doubling up to a minute. Everything
+else in [#327](https://github.com/ooloth/hub/issues/327) is a later phase: a deadline on an approval
+nobody answers and a notification saying so (the rest of 3.6), notifications (Phase 4), and the
+socket the TUI will read, which is also where health is first shown (Phase 5).
 
 ## Files
 
-- `main.rs` — parses flags, takes the lock, prints the startup line, loads config once, then runs
-  passes. Every I/O call is here, including each pass's fetch and write
+- `main.rs` — parses flags, takes the lock, prints the startup line, reads `hub.toml`, obtains
+  credentials once, then runs passes. Every I/O call is here, including each pass's fetch and write
+- `credentials.rs` — `obtain`, which resolves credentials until they arrive, `Backoff`, the waits
+  between attempts, and `AttemptReport`, the log line for a failed attempt. No I/O of its own
 - `startup.rs` — `Startup`, the line printed before credentials load. Pure
 - `instance_lock.rs` — one daemon per profile: the `flock` on `~/.hub/<profile>/daemon.lock`
 - `schedule.rs` — `every`, which runs a pass now and then once per period, never catching up
@@ -35,7 +39,7 @@ is first shown (Phase 5).
   network edge
 - `freshness.rs` — `RefreshOutcome`, `FreshStatus`, `FreshPayload`, `classify`. Pure; no I/O
 - `cache.rs` — `open` and `record`, which writes the pass and its payload in one transaction and
-  falls back to recording the pass as failed. The SQLite edge
+  falls back to recording the pass as failed, and `record_credential_attempt`. The SQLite edge
 
 `refresh::fetch` takes no database handle on purpose: `rusqlite::Connection` is not `Sync`, so
 holding one across the fetch would make the surrounding future non-`Send` and unspawnable, which
@@ -75,8 +79,8 @@ reference resolves once, before the first pass, and later passes reuse them. Eac
 including a restart, so a daemon that restarts while nobody is there waits on prompts nobody
 answers.
 
-Before loading credentials the daemon prints one line, so a start with no pass line after it is a
-daemon waiting on 1Password:
+Before resolving credentials the daemon prints one line, so a start with nothing after it is a
+daemon waiting on an approval nobody has answered:
 
 ```
 hub-daemon start at=2026-10-03T23:15:55Z pid=4242 profile=default
@@ -87,6 +91,14 @@ when `HUB_PROFILE` itself was the failure:
 
 ```
 hub-daemon start_failed at=2026-10-10T23:14:30Z pid=1048 profile=default error="hub-daemon is already running for profile default (pid 829, ...)"
+```
+
+Each attempt to resolve credentials that fails prints one line to stdout and is recorded in the
+health record, with `cause` one of `unreachable`, `app_not_running` or `other`. `retry_in` is absent
+with `--once`, which makes one attempt and exits 1:
+
+```
+hub-daemon credentials at=2026-10-12T08:59:03Z pid=4242 profile=default attempt=3 cause=app_not_running duration_ms=812 retry_in=4s error="failed to resolve credential from 1Password: ... couldn't connect to the 1Password desktop app."
 ```
 
 Each pass prints one line to stdout:

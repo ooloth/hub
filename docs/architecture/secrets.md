@@ -15,21 +15,18 @@ loki_token      = "op://Scripts/Loki/token"        # optional
 ```
 
 ```rust
-// config/src/lib.rs — credentials resolved once at startup
+// config/src/config_file.rs — the file, read once; credentials resolved from it
+impl ConfigFile {
+    pub fn read() -> Result<Self> { /* parse hub.toml, check required keys */ }
+    pub async fn resolve(&self) -> Result<Config, CredentialFailure> { /* op read each reference */ }
+}
+
+// config/src/resolved.rs
 pub struct Config {
     pub github_token: Secret<String>,
     pub github_username: String,
     pub linear_token: Option<Secret<String>>,
     // ...
-}
-
-impl Config {
-    pub async fn load() -> Result<Self> {
-        let hub_toml = toml::parse_file("hub.toml")?;
-        validate_required(&hub_toml.credentials)?;
-        let github_token = Secret::new(resolve(hub_toml.credentials.github_token).await?);
-        // ...
-    }
 }
 ```
 
@@ -38,8 +35,18 @@ and `StatusParams`. `.expose_secret()` is called only at client call sites —
 every access point is explicit and grep-able. `Debug` output prints `[REDACTED]`,
 preventing accidental logging.
 
-`config::Config::load()` is called once in `main()` and the struct is passed
-down as an argument. Nothing else calls `op read` or knows about 1Password.
+The TUI and CLI call `config::Config::load()`, which reads the file and
+resolves it in one step, once in `main()`, and pass the struct down as an
+argument. Nothing else calls `op read` or knows about 1Password.
+
+The daemon reads the file and resolves it as two steps
+([Decision 027](../decisions/027-daemon-resolves-credentials-once-per-start-and-holds-them-in-memory.md)).
+A broken `hub.toml` ends the start. A credential that fails is a
+`CredentialFailure` naming its cause, 1Password unreachable, the desktop app
+not running, or something else, with `op`'s message redacted of every
+credential resolved before it. The daemon records it and resolves again in
+the same process, so a restart never raises fresh prompts. Credentials are
+held in memory only, for the life of the process.
 
 ## Per-device config
 

@@ -13,8 +13,8 @@ pub(crate) struct HubToml {
 }
 
 /// Raw credential values from the `[credentials]` section of `hub.toml`.
-/// `op://` references are resolved later during [`Config::load`].
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+/// `op://` references are resolved later, by [`crate::ConfigFile::resolve`].
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct CredentialsToml {
     /// GitHub personal access token (plain value or `op://` reference).
     pub github_token: String,
@@ -30,7 +30,7 @@ pub struct CredentialsToml {
 }
 
 /// A project tracked by hub, from a `[[project]]` entry in `hub.toml`.
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct Project {
     /// Human-readable project name shown in the TUI.
     pub name: String,
@@ -45,7 +45,7 @@ pub struct Project {
 }
 
 /// A deployment environment within a project, from `[[project.environment]]`.
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct Environment {
     /// Environment name (e.g. `prod`, `staging`).
     pub env: String,
@@ -63,7 +63,7 @@ pub struct Environment {
 }
 
 /// A workflow configuration entry, discriminated by the `name` field in TOML.
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(tag = "name")]
 pub enum WorkflowConfig {
     /// Poll GitHub Actions runs for a repo (`name = "github-ci"`).
@@ -109,7 +109,7 @@ pub enum WorkflowConfig {
 }
 
 /// Monitor configuration from the `[monitor]` section of `hub.toml`.
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct Monitor {
     /// Workflows the monitor daemon should run on its polling cycle.
     #[serde(default)]
@@ -117,7 +117,7 @@ pub struct Monitor {
 }
 
 /// A single workflow entry under `[[monitor.workflow]]`.
-#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct MonitorWorkflowConfig {
     /// Workflow name, matched against registered monitor handlers.
     pub name: String,

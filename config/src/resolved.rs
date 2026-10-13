@@ -1,5 +1,6 @@
+use crate::config_file::ConfigFile;
 use crate::toml;
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Result};
 use secrecy::Secret;
 use std::collections::HashMap;
 
@@ -25,40 +26,16 @@ pub struct Config {
 }
 
 impl Config {
+    /// Reads `hub.toml` and resolves every credential in it.
+    ///
     /// # Errors
     /// Returns an error if `hub.toml` is missing or malformed, or if any credential
     /// reference (e.g. an `op://` URI) cannot be resolved.
     pub async fn load() -> Result<Self> {
-        let hub_toml = toml::parse_file("hub.toml")?;
-        let creds = hub_toml.credentials;
-
-        validate_required(&creds)?;
-        let investigation_mcp_servers = hub_toml.investigation.mcp_servers()?;
-
-        let github_token = Secret::new(resolve(creds.github_token).await?);
-        let linear_token = match creds.linear_token {
-            Some(v) => Some(Secret::new(resolve(v).await?)),
-            None => None,
-        };
-        let loki_token = match creds.loki_token {
-            Some(v) => Some(Secret::new(resolve(v).await?)),
-            None => None,
-        };
-        let mut extra_credentials = HashMap::new();
-        for (k, v) in creds.extra {
-            let _ = extra_credentials.insert(k, Secret::new(resolve(v).await?));
-        }
-
-        Ok(Self {
-            github_token,
-            github_username: creds.github_username,
-            linear_token,
-            loki_token,
-            extra_credentials,
-            projects: hub_toml.project,
-            monitor: hub_toml.monitor,
-            investigation_mcp_servers,
-        })
+        ConfigFile::read()?
+            .resolve()
+            .await
+            .map_err(|failure| anyhow!("{}", failure.reason()))
     }
 
     /// Returns repos that have the `github-prs` workflow configured.
@@ -218,36 +195,6 @@ impl Config {
     }
 }
 
-fn validate_required(creds: &toml::CredentialsToml) -> Result<()> {
-    if creds.github_token.is_empty() {
-        anyhow::bail!("credentials.github_token is required in hub.toml");
-    }
-    if creds.github_username.is_empty() {
-        anyhow::bail!("credentials.github_username is required in hub.toml");
-    }
-    Ok(())
-}
-
-async fn resolve(value: String) -> Result<String> {
-    if !value.starts_with("op://") {
-        return Ok(value);
-    }
-    let output = tokio::process::Command::new("op")
-        .args(["read", &value])
-        .output()
-        .await
-        .context("failed to run `op read` — is the 1Password CLI installed?")?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!(
-            "failed to resolve credential from 1Password: {}",
-            stderr.trim()
-        );
-    }
-    let resolved = String::from_utf8(output.stdout).context("op read returned non-UTF-8 output")?;
-    Ok(resolved.trim().to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -339,60 +286,6 @@ mod tests {
             monitor: Some(monitor),
             investigation_mcp_servers: domain::InvestigationMcpServers::default(),
         }
-    }
-
-    // validate_required
-
-    #[test]
-    fn validate_required_passes_with_both_fields_set() {
-        let creds = toml::CredentialsToml {
-            github_token: "tok".into(),
-            github_username: "user".into(),
-            linear_token: None,
-            loki_token: None,
-            extra: HashMap::new(),
-        };
-        assert!(validate_required(&creds).is_ok());
-    }
-
-    #[test]
-    fn validate_required_fails_on_empty_github_token() {
-        let creds = toml::CredentialsToml {
-            github_token: String::new(),
-            github_username: "user".into(),
-            linear_token: None,
-            loki_token: None,
-            extra: HashMap::new(),
-        };
-        let err = validate_required(&creds).unwrap_err();
-        assert!(err.to_string().contains("github_token"));
-    }
-
-    #[test]
-    fn validate_required_fails_on_empty_github_username() {
-        let creds = toml::CredentialsToml {
-            github_token: "tok".into(),
-            github_username: String::new(),
-            linear_token: None,
-            loki_token: None,
-            extra: HashMap::new(),
-        };
-        let err = validate_required(&creds).unwrap_err();
-        assert!(err.to_string().contains("github_username"));
-    }
-
-    // resolve
-
-    #[tokio::test]
-    async fn resolve_returns_plain_value_unchanged() {
-        let result = resolve("plain-value".into()).await.unwrap();
-        assert_eq!(result, "plain-value");
-    }
-
-    #[tokio::test]
-    async fn resolve_returns_empty_string_unchanged() {
-        let result = resolve(String::new()).await.unwrap();
-        assert_eq!(result, "");
     }
 
     // github_pr_repos

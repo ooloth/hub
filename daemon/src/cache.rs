@@ -2,6 +2,7 @@
 //! pass replaced it.
 
 use anyhow::{Context, Result};
+use domain::credential_attempt::CredentialAttempt;
 use domain::daemon_pass::{Pass, PassOutcome};
 use domain::known_secrets::KnownSecrets;
 use domain::pass_failure::PassFailure;
@@ -73,6 +74,20 @@ pub(crate) fn record(
             fallback_error: Some(PassFailure::new(&fallback_error, secrets)),
         },
     }
+}
+
+/// Records a failed attempt to obtain credentials in the health record, returning why that
+/// failed when it did. The cached payload is left as it was.
+pub(crate) fn record_credential_attempt(
+    open: impl Fn() -> Result<Connection>,
+    attempt: &CredentialAttempt,
+) -> Option<PassFailure> {
+    let written =
+        open().and_then(|conn| store::daemon_health::record_credential_attempt(&conn, attempt));
+    // No credential has been resolved yet, so there is nothing a failure here could repeat.
+    written
+        .err()
+        .map(|error| PassFailure::new(&error, &KnownSecrets::new(Vec::new())))
 }
 
 fn write(
@@ -353,5 +368,45 @@ mod tests {
         };
         assert!(!error.reason().as_str().contains("ghp-token-value"));
         assert!(!fallback_error.reason().as_str().contains("ghp-token-value"));
+    }
+
+    fn credential_attempt() -> CredentialAttempt {
+        CredentialAttempt {
+            started_at: DateTime::from_timestamp(1_760_000_000, 0).unwrap(),
+            duration: Duration::from_millis(812),
+            pid: 4242,
+            attempt: 1,
+            failure: domain::credential_failure::CredentialFailure::new(
+                &anyhow::anyhow!("dial tcp: lookup my.1password.com: no such host"),
+                &no_secrets(),
+            ),
+            retry_in: Some(Duration::from_secs(1)),
+        }
+    }
+
+    #[test]
+    fn a_failed_credential_attempt_is_recorded_as_the_last_outcome() {
+        let (_dir, path) = database();
+
+        let error = record_credential_attempt(opener(&path), &credential_attempt());
+
+        assert_eq!(error, None);
+        let conn = Connection::open(&path).unwrap();
+        let recorded = store::daemon_health::recorded(&conn).unwrap().unwrap();
+        assert_eq!(recorded.outcome, "credentials_unreachable");
+    }
+
+    #[test]
+    fn a_credential_attempt_the_database_refuses_says_why() {
+        let (_dir, path) = database();
+
+        let error = record_credential_attempt(read_only(&path), &credential_attempt());
+
+        let error = error.expect("the write was refused");
+        assert!(
+            error.reason().as_str().contains("readonly"),
+            "{}",
+            error.reason()
+        );
     }
 }

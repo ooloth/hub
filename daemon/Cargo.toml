@@ -24,6 +24,7 @@
   workflows = { path = "../workflows" }
 
 [dev-dependencies]
+  proptest = "1"
   rstest = "0.25"
   secrecy = "0.8"
   store = { path = "../store", features = ["test-support"] }

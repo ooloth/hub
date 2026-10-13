@@ -2,6 +2,10 @@
 
 /// CI failure signals from GitHub Actions.
 pub mod ci;
+/// One failed attempt by the daemon to obtain its credentials.
+pub mod credential_attempt;
+/// Why the daemon could not obtain its credentials from 1Password.
+pub mod credential_failure;
 /// One refresh pass of the daemon, as it is logged and recorded.
 pub mod daemon_pass;
 /// GCP Cloud Logging query configuration and log entry types.

@@ -7,10 +7,14 @@ pub mod toml;
 /// The `[investigation]` section: what every investigation on this device receives.
 pub mod investigation;
 
+/// `hub.toml` as read, before any credential is resolved.
+pub mod config_file;
+
 /// Resolved, credential-injected configuration used at runtime.
 pub mod resolved;
 
 /// Reads `HUB_PROFILE` from the environment.
 pub mod profile;
 
+pub use config_file::ConfigFile;
 pub use resolved::Config;

@@ -885,6 +885,7 @@ dependencies = [
  "config",
  "domain",
  "humantime",
+ "proptest",
  "rstest 0.25.0",
  "rusqlite",
  "secrecy",

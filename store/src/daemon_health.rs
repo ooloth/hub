@@ -2,6 +2,8 @@
 //!
 //! It is written in the same transaction as the payload when the pass replaced it (Decision 026).
 use anyhow::{Context, Result};
+use domain::credential_attempt::CredentialAttempt;
+use domain::credential_failure::CredentialCause;
 use domain::daemon_pass::Pass;
 use rusqlite::{params, Connection, Transaction, TransactionBehavior};
 
@@ -12,10 +14,13 @@ use crate::status_cache::{self, Payload};
 /// Bump it in the change that alters the `CREATE TABLE` below. [`ensure_table`] then drops the
 /// old table and creates the new one, which loses at most one pass's record, because the daemon
 /// rewrites the row on every pass.
-const SCHEMA_VERSION: i32 = 1;
+const SCHEMA_VERSION: i32 = 2;
 
 /// Every rule that ties a row's outcome to the rest of it, so a row that contradicts itself cannot
 /// be stored, however it is written.
+///
+/// The `credentials_` outcomes record an attempt to obtain credentials that failed before any
+/// pass could run, so no source was asked and the payload was kept.
 const CREATE_TABLE: &str = "CREATE TABLE daemon_health (
     id              INTEGER PRIMARY KEY CHECK (id = 1),
     schema_version  INTEGER NOT NULL,
@@ -23,14 +28,17 @@ const CREATE_TABLE: &str = "CREATE TABLE daemon_health (
     duration_ms     INTEGER NOT NULL CHECK (duration_ms >= 0),
     pid             INTEGER NOT NULL,
     outcome         TEXT NOT NULL
-                    CHECK (outcome IN ('ok', 'partial', 'no_source_answered', 'pass_failed')),
+                    CHECK (outcome IN ('ok', 'partial', 'no_source_answered', 'pass_failed',
+                                       'credentials_unreachable', 'credentials_app_not_running',
+                                       'credentials_failed')),
     payload_written INTEGER NOT NULL CHECK (payload_written IN (0, 1)),
     items           INTEGER CHECK (items >= 0),
     answered        TEXT NOT NULL CHECK (json_valid(answered) AND json_type(answered) = 'array'),
     failed          TEXT NOT NULL CHECK (json_valid(failed) AND json_type(failed) = 'array'),
     error           TEXT,
     CHECK ((payload_written = 1) = (items IS NOT NULL)),
-    CHECK ((outcome = 'pass_failed') = (error IS NOT NULL)),
+    CHECK ((outcome = 'pass_failed' OR outcome GLOB 'credentials_*')
+           = (error IS NOT NULL)),
     CHECK (outcome <> 'ok'
            OR (payload_written = 1 AND json_array_length(failed) = 0)),
     CHECK (outcome <> 'partial'
@@ -38,7 +46,7 @@ const CREATE_TABLE: &str = "CREATE TABLE daemon_health (
     CHECK (outcome <> 'no_source_answered'
            OR (payload_written = 0 AND json_array_length(answered) = 0
                AND json_array_length(failed) > 0)),
-    CHECK (outcome <> 'pass_failed'
+    CHECK ((outcome <> 'pass_failed' AND outcome NOT GLOB 'credentials_*')
            OR (payload_written = 0 AND json_array_length(answered) = 0
                AND json_array_length(failed) = 0))
 )";
@@ -107,6 +115,48 @@ pub fn record(conn: &Connection, pass: &Pass, payload: Option<&Payload>) -> Resu
     transaction
         .commit()
         .context("failed to commit the recorded pass")
+}
+
+/// Records `attempt` as the daemon's last pass, leaving the cached payload as it was.
+///
+/// # Errors
+/// Returns an error if the health record cannot be written.
+pub fn record_credential_attempt(conn: &Connection, attempt: &CredentialAttempt) -> Result<()> {
+    let outcome = match attempt.failure.cause() {
+        CredentialCause::Unreachable => "credentials_unreachable",
+        CredentialCause::AppNotRunning => "credentials_app_not_running",
+        CredentialCause::Other => "credentials_failed",
+    };
+    let duration_ms = i64::try_from(attempt.duration.as_millis())
+        .context("an attempt lasted longer than the health record can hold")?;
+    let _ = conn
+        .execute(
+            "INSERT INTO daemon_health (
+                id, schema_version, started_at, duration_ms, pid, outcome, payload_written,
+                items, answered, failed, error
+             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, 0, NULL, '[]', '[]', ?6)
+             ON CONFLICT(id) DO UPDATE SET
+                schema_version  = excluded.schema_version,
+                started_at      = excluded.started_at,
+                duration_ms     = excluded.duration_ms,
+                pid             = excluded.pid,
+                outcome         = excluded.outcome,
+                payload_written = excluded.payload_written,
+                items           = excluded.items,
+                answered        = excluded.answered,
+                failed          = excluded.failed,
+                error           = excluded.error",
+            params![
+                SCHEMA_VERSION,
+                attempt.started_at.to_rfc3339(),
+                duration_ms,
+                attempt.pid,
+                outcome,
+                attempt.failure.reason().as_str(),
+            ],
+        )
+        .context("failed to write the daemon health record")?;
+    Ok(())
 }
 
 fn upsert(conn: &Connection, pass: &Pass) -> Result<()> {
@@ -184,7 +234,9 @@ pub struct RecordedPass {
     pub duration_ms: i64,
     /// The daemon process that ran it.
     pub pid: i64,
-    /// One of `ok`, `partial`, `no_source_answered` or `pass_failed`.
+    /// One of `ok`, `partial`, `no_source_answered` or `pass_failed`, or for a failed attempt to
+    /// obtain credentials, `credentials_unreachable`, `credentials_app_not_running` or
+    /// `credentials_failed`.
     pub outcome: String,
     /// Whether the pass replaced the payload.
     pub payload_written: bool,
@@ -194,7 +246,7 @@ pub struct RecordedPass {
     pub answered: Vec<String>,
     /// The sources that failed, as `(source, reason)`.
     pub failed: Vec<(String, String)>,
-    /// Why the pass failed, when it did.
+    /// Why the pass, or the attempt to obtain credentials, failed, when it did.
     pub error: Option<String>,
 }
 
@@ -276,6 +328,7 @@ mod tests {
     use std::time::Duration;
 
     use chrono::DateTime;
+    use domain::credential_failure::CredentialFailure;
     use domain::daemon_pass::PassOutcome;
     use domain::known_secrets::KnownSecrets;
     use domain::pass_failure::PassFailure;
@@ -495,6 +548,124 @@ mod tests {
         let result = insert_with(&conn, column, value);
 
         assert!(result.is_err(), "{column} = {value} was accepted");
+    }
+
+    fn credential_attempt(cause_text: &str, retry_in: Option<Duration>) -> CredentialAttempt {
+        CredentialAttempt {
+            started_at: DateTime::from_timestamp(1_760_000_000, 0).unwrap(),
+            duration: Duration::from_millis(812),
+            pid: 4242,
+            attempt: 3,
+            failure: CredentialFailure::new(&anyhow::anyhow!("{cause_text}"), &no_secrets()),
+            retry_in,
+        }
+    }
+
+    #[rstest]
+    #[case::unreachable(
+        "dial tcp: lookup my.1password.com: no such host",
+        "credentials_unreachable"
+    )]
+    #[case::app_not_running(
+        "1Password CLI couldn't connect to the 1Password desktop app.",
+        "credentials_app_not_running"
+    )]
+    #[case::other("\"Nope\" isn't a vault", "credentials_failed")]
+    fn a_recorded_credential_attempt_reads_back_as_it_was_recorded(
+        #[case] message: &str,
+        #[case] outcome: &str,
+    ) {
+        let conn = in_memory();
+
+        record_credential_attempt(
+            &conn,
+            &credential_attempt(message, Some(Duration::from_secs(4))),
+        )
+        .unwrap();
+
+        assert_eq!(
+            recorded_row(&conn),
+            RecordedPass {
+                started_at: "2025-10-09T08:53:20+00:00".to_string(),
+                duration_ms: 812,
+                pid: 4242,
+                outcome: outcome.to_string(),
+                payload_written: false,
+                items: None,
+                answered: Vec::new(),
+                failed: Vec::new(),
+                error: Some(message.to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn a_credential_attempt_leaves_the_cache_row_as_it_was() {
+        let conn = in_memory();
+        status_cache::upsert(&conn, "before", 18).unwrap();
+
+        record_credential_attempt(&conn, &credential_attempt("dial tcp", None)).unwrap();
+
+        assert_eq!(
+            status_cache::read(&conn).unwrap().unwrap().payload,
+            "before"
+        );
+    }
+
+    /// Inserts a credential attempt's row, valid except for each `(column, value)` in `changes`.
+    fn insert_credential_row(
+        conn: &Connection,
+        changes: &[(&str, &str)],
+    ) -> rusqlite::Result<usize> {
+        let mut row = vec![
+            ("id", "1"),
+            ("schema_version", "2"),
+            ("started_at", "'2025-10-09T08:53:20+00:00'"),
+            ("duration_ms", "812"),
+            ("pid", "4242"),
+            ("outcome", "'credentials_unreachable'"),
+            ("payload_written", "0"),
+            ("items", "NULL"),
+            ("answered", "'[]'"),
+            ("failed", "'[]'"),
+            ("error", "'dial tcp'"),
+        ];
+        for (name, cell) in &mut row {
+            if let Some((_, value)) = changes.iter().find(|(column, _)| column == name) {
+                *cell = value;
+            }
+        }
+        let columns: Vec<&str> = row.iter().map(|(name, _)| *name).collect();
+        let values: Vec<&str> = row.iter().map(|(_, cell)| *cell).collect();
+        conn.execute(
+            &format!(
+                "INSERT INTO daemon_health ({}) VALUES ({})",
+                columns.join(", "),
+                values.join(", ")
+            ),
+            [],
+        )
+    }
+
+    #[test]
+    fn the_baseline_credential_row_the_refusals_vary_is_accepted() {
+        let conn = in_memory();
+
+        assert!(insert_credential_row(&conn, &[]).is_ok());
+    }
+
+    #[rstest]
+    #[case::an_unknown_cause(&[("outcome", "'credentials_locked'")])]
+    #[case::no_error(&[("error", "NULL")])]
+    #[case::a_source_answered(&[("answered", r#"'["a"]'"#)])]
+    #[case::a_source_failed(&[("failed", r#"'[{"source":"b","reason":"down"}]'"#)])]
+    #[case::a_written_payload(&[("payload_written", "1"), ("items", "3")])]
+    fn a_credential_row_that_contradicts_itself_is_refused(#[case] changes: &[(&str, &str)]) {
+        let conn = in_memory();
+
+        let result = insert_credential_row(&conn, changes);
+
+        assert!(result.is_err(), "{changes:?} was accepted");
     }
 
     #[test]
