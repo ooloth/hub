@@ -30,3 +30,11 @@
 
   [workspace.lints.rustdoc]
     broken_intra_doc_links = "deny"
+
+# On macOS, unpacked debug information stays in the object files, so every rebuild left ~2,600
+# more in target/debug/deps and none were removed. Packed, a .dSYM bundle replaces them on each
+# rebuild. Line tables only keep file and line in backtraces at ~0.5 s per rebuild. Test builds
+# inherit this. Checked by scripts/src/repo_state/packed_debug_info.rs.
+[profile.dev]
+  debug = "line-tables-only"
+  split-debuginfo = "packed"

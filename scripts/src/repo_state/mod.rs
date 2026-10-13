@@ -12,6 +12,8 @@ mod decision_status;
 mod domain_purity;
 /// Every workspace member inherits the workspace lints.
 mod lint_inheritance;
+/// Debug builds pack their debug information, so rebuilds leave no object files behind.
+mod packed_debug_info;
 /// Every snapshot file is produced by a test.
 mod snapshot_coverage;
 /// The workspace's members, as cargo sees them.
