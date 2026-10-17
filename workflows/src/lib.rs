@@ -8,6 +8,8 @@ pub mod gcp;
 pub(crate) mod git;
 /// Loki log query and entry parsing.
 pub mod loki;
+/// Which pull requests a refresh found waiting on me.
+pub mod pr_turns;
 /// Asking every source at once, each within a time limit.
 pub(crate) mod sources;
 /// Unified status fetch across all configured signal sources.

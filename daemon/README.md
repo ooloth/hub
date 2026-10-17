@@ -25,10 +25,17 @@ minute. When an attempt finds the 1Password app not running, the daemon opens it
 1Password`), at most once a minute, so someone returning sees it asking to be unlocked. It never
 closes or quits the app. After 10 minutes without credentials it posts a macOS notification through
 `terminal-notifier`, saying signals have paused and what's needed, then again every hour while they
-stay missing. Each replaces the last, and once credentials arrive the daemon removes it. Everything
-else in [#327](https://github.com/ooloth/hub/issues/327) is a later phase: notifications about pull
-requests (Phase 4), and the socket the TUI will read, which is also where health is first shown
-(Phase 5).
+stay missing. Each replaces the last, and once credentials arrive the daemon removes it.
+
+It also posts a card for each pull request that is my turn: my review is requested, or it is mine,
+approved, and GitHub says nothing blocks the merge. A card is posted once, at the first pass after
+the turn begins, and removed at the first pass after it ends. A pull request that stays my turn is
+not posted again while the daemon runs, even after its card is dismissed. A restart posts the ones
+still my turn once more. Clicking a card opens the pull request. Cards are removed only when both
+pull request sources answered, so a source that failed never takes one away. Posting happens beside
+the passes, so no pass waits on `terminal-notifier`. The socket the TUI will read, which is also
+where health is first shown, is a later phase of
+[#327](https://github.com/ooloth/hub/issues/327) (Phase 5).
 
 ## Files
 
@@ -43,6 +50,10 @@ requests (Phase 4), and the socket the TUI will read, which is also where health
   itself, `domain::daemon_pass::Pass`, lives in `domain/` so the store can record it
 - `refresh.rs` — `params` and `fetch`, which asks all sources once and merges the answers. The
   network edge
+- `notification.rs` — the `terminal-notifier` commands: the missing-credentials notification, each
+  pull request's card, and listing the cards showing. The notification edge
+- `pr_notifier.rs` — `PrNotifier`, which posts and removes cards to match the turns each pass hands
+  it, and its log lines. Which cards to change is decided in `domain::notified`, purely
 - `cache.rs` — `open` and `record`, which writes the pass and its payload in one transaction and
   falls back to recording the pass as failed, and `record_credential_attempt`. The SQLite edge
 
@@ -134,6 +145,18 @@ least one answered), `no_source_answered` (every source failed) or `pass_failed`
 failed, with `error`). `payload` says whether the cache was replaced: `written`, or `kept` when
 nothing that answered had any signals and something failed. `pid` changes when the daemon
 restarts.
+
+After each pass that reached its sources, the notifier prints one line saying what it changed:
+
+```
+hub-daemon notifications at=2026-10-17T23:15:55Z pid=4242 profile=default turns=3 coverage=complete posted="ooloth/hub#344" removed="" failed=""
+```
+
+`turns` is how many pull requests are my turn. `coverage=incomplete` means a pull request source
+failed, so no card was removed. A card that could not be posted or removed is named in `failed`
+with the reason, and tried again on the next pass. At startup, before the first pass, a
+`hub-daemon notifications_found` line names the cards already showing, read with
+`terminal-notifier -list ALL`, or the `error` that stopped it reading them.
 
 When the database refuses the write, the line ends with `recorded=as_failed record_error="..."`:
 the pass was recorded as `pass_failed` instead, health only. When it refuses that too, the line

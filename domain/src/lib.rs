@@ -24,10 +24,18 @@ pub mod issue;
 pub mod known_secrets;
 /// Loki query configuration and log entry types.
 pub mod loki;
+/// Which pull requests have a notification showing, and what to change when the turns change.
+pub mod notified;
 /// Why a whole refresh pass failed, in a form safe to log and store.
 pub mod pass_failure;
 /// Pull request types and repository slug newtype.
 pub mod pr;
+/// The notification group a pull request's card is posted in, and reading groups back.
+pub mod pr_group;
+/// Which pull request something is about.
+pub mod pr_id;
+/// Whether a pull request is waiting on me, and the card that says so.
+pub mod pr_turn;
 /// Which set of hub's own state a process reads and writes.
 pub mod profile;
 /// What the screen showed when an `op read` reached its deadline.
@@ -40,6 +48,8 @@ pub mod session;
 pub mod source_failure;
 /// Which sources a refresh heard from, and which failed.
 pub mod source_outcomes;
+/// Which pull requests one refresh found waiting on me.
+pub mod turns_seen;
 /// Text hub did not write.
 pub mod untrusted;
 /// Urgency ranking used across all signal and task types.

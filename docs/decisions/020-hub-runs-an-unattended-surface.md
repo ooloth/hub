@@ -6,10 +6,6 @@ date: 2026-09-16
 
 # 020 — Hub runs an unattended surface
 
-_Status: accepted; partly implemented. `hub-daemon` is long-lived and refreshes the
-cache on an interval, but it does not notify: nothing calls `terminal-notifier` or
-`osascript`._
-
 ## Forced by
 
 [Decision 009](009-no-scheduled-runs.md) removed every unattended path from hub, for two reasons it

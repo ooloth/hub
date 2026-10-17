@@ -17,6 +17,12 @@ use domain::source_outcomes::SourceOutcomes;
 /// margin while a source that never answers still cannot hold back the rest. See #338.
 pub const SOURCE_TIMEOUT: Duration = Duration::from_mins(1);
 
+/// The source that reports my open pull requests, and so which of mine are ready to merge.
+pub const MY_OPEN_PRS: &str = "github my open prs";
+
+/// The source that reports pull requests whose review is requested from me.
+pub const PRS_AWAITING_REVIEW: &str = "github prs awaiting review";
+
 /// Bump when the serialized `StatusReport` format changes incompatibly.
 pub const SCHEMA_VERSION: i32 = 19;
 
@@ -229,13 +235,13 @@ fn sources(params: StatusParams) -> Vec<Source> {
         pr_repos.clone(),
         github_username.clone(),
     );
-    sources.push(Source::new("github my open prs", async move {
+    sources.push(Source::new(MY_OPEN_PRS, async move {
         let prs = clients::github::my_open_prs(token.expose_secret(), &repos, &user).await?;
         Ok(answer(prs.into_iter().map(StatusItem::Pr)))
     }));
 
     let (token, repos) = (github_token.clone(), pr_repos.clone());
-    sources.push(Source::new("github prs awaiting review", async move {
+    sources.push(Source::new(PRS_AWAITING_REVIEW, async move {
         let prs = clients::github::prs_awaiting_review(token.expose_secret(), &repos).await?;
         Ok(answer(prs.into_iter().map(StatusItem::Pr)))
     }));

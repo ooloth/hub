@@ -7,8 +7,11 @@ use chrono::Utc;
 use domain::credential_attempt::CredentialAttempt;
 use domain::daemon_pass::{Pass, PassOutcome};
 use domain::known_secrets::KnownSecrets;
+use domain::notified::Notified;
 use domain::pass_failure::PassFailure;
+use domain::pr_group::shown_cards;
 use domain::profile::Profile;
+use domain::turns_seen::TurnsSeen;
 
 use clap::Parser;
 use workflows::freshness::{self, FreshPayload, RefreshOutcome};
@@ -19,6 +22,7 @@ mod instance_lock;
 mod notification;
 mod onepassword_app;
 mod pass;
+mod pr_notifier;
 mod refresh;
 mod schedule;
 mod startup;
@@ -162,9 +166,20 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
         );
     }
 
+    // Before the first pass, so it can remove a card whose turn ended while no daemon was running.
+    let mut pr_notifier = pr_notifier::PrNotifier::new(
+        profile,
+        cards_showing(profile).await,
+        notification::post_turn,
+        notification::remove_turn,
+    );
+
     if cli.once {
-        let report = run_pass(&config, profile).await;
+        let (report, turns) = run_pass(&config, profile).await;
         println!("{report}");
+        if let Some(turns) = turns {
+            println!("{}", pr_notifier.apply(&turns).await);
+        }
         return Ok(if report.wrote_the_cache() {
             ExitCode::SUCCESS
         } else {
@@ -172,31 +187,79 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
         });
     }
 
+    // Beside the passes, so no pass waits on terminal-notifier.
+    let (send_turns, turns) = tokio::sync::watch::channel(None);
+    let _notifying = tokio::spawn(pr_notifier.run(turns));
+
     let config = &config;
+    let send_turns = &send_turns;
     schedule::every(cli.interval, move || async move {
-        println!("{}", run_pass(config, profile).await);
+        let (report, turns) = run_pass(config, profile).await;
+        println!("{report}");
+        if let Some(turns) = turns {
+            // Sending fails only once the notifier has stopped, which only a bug can cause.
+            // Exiting lets launchd start a daemon whose notifier runs.
+            assert!(
+                send_turns.send(Some(turns)).is_ok(),
+                "the pull request notifier has stopped"
+            );
+        }
     })
     .await;
     Ok(ExitCode::SUCCESS)
 }
 
+/// The pull request cards `profile` has showing, logged. None when they cannot be listed, so a card
+/// whose turn ended before this start stays until dismissed.
+async fn cards_showing(profile: Profile) -> Notified {
+    let found = notification::list_shown()
+        .await
+        .map(|listed| shown_cards(profile, &listed))
+        .map_err(|error| format!("{error:#}"));
+    let showing = found
+        .as_ref()
+        .map(|shown| Notified::from_showing(shown.prs.clone()))
+        .unwrap_or_default();
+    println!(
+        "{}",
+        pr_notifier::CardsFound {
+            at: Utc::now(),
+            pid: std::process::id(),
+            profile,
+            found,
+        }
+    );
+    showing
+}
+
 /// Runs one pass: asks every source, replaces the cache if anything came back, and records the
-/// pass in the health record either way.
+/// pass in the health record either way. Also returns the pull requests it found waiting on me,
+/// unless the refresh could not run at all.
 ///
 /// Never returns an error. Whatever happens is recorded in the report, so a pass that goes wrong
 /// cannot end the loop that called it.
-async fn run_pass(config: &config::Config, profile: Profile) -> pass::PassReport {
+async fn run_pass(
+    config: &config::Config,
+    profile: Profile,
+) -> (pass::PassReport, Option<TurnsSeen>) {
     let started_at = Utc::now();
     let started = std::time::Instant::now();
     let params = refresh::params(config);
     // Before the refresh takes the credentials, so a failure of the whole pass is redacted too.
     let secrets = workflows::status::known_secrets(&params);
-    let (outcome, payload) = match refresh::fetch(params).await {
-        Ok(refresh) => settle(freshness::classify(refresh), &secrets),
+    let (outcome, payload, turns) = match refresh::fetch(params).await {
+        Ok(refresh) => {
+            // From the refresh itself, not the cache it may replace: a source that answered with
+            // nothing still says which turns ended.
+            let turns = workflows::pr_turns::turns_seen(&refresh);
+            let (outcome, payload) = settle(freshness::classify(refresh), &secrets);
+            (outcome, payload, Some(turns))
+        }
         Err(error) => (
             PassOutcome::Failed {
                 failure: PassFailure::new(&error, &secrets),
             },
+            None,
             None,
         ),
     };
@@ -208,11 +271,12 @@ async fn run_pass(config: &config::Config, profile: Profile) -> pass::PassReport
     };
     // Opened after the fetch returns. See refresh::fetch.
     let recording = cache::record(|| cache::open(profile), &pass, payload.as_ref(), &secrets);
-    pass::PassReport {
+    let report = pass::PassReport {
         profile: profile.as_str().to_string(),
         pass,
         recording,
-    }
+    };
+    (report, turns)
 }
 
 /// What a refresh means for the pass, and the payload to write when it replaces the cache.
