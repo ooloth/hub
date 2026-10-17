@@ -157,28 +157,33 @@ const NOTIFY_EVERY: Duration = Duration::from_hours(1);
 /// Posts a notification once credentials have been missing for a while, and again every so often
 /// while they stay missing.
 #[derive(Debug)]
-pub(crate) struct Notifier<N> {
+pub(crate) struct Notifier<N, R> {
     post: N,
+    remove: R,
     after: Duration,
     every: Duration,
     first_failure: Option<tokio::time::Instant>,
     last_posted: Option<tokio::time::Instant>,
 }
 
-impl<N, Fut> Notifier<N>
+impl<N, Fut, R, RemoveFut> Notifier<N, R>
 where
     N: FnMut(Notification) -> Fut,
     Fut: Future<Output = anyhow::Result<()>>,
+    R: FnMut() -> RemoveFut,
+    RemoveFut: Future<Output = anyhow::Result<()>>,
 {
-    /// `post` is what posts: `osascript` in the daemon, a stub in tests. Notifies after
-    /// [`NOTIFY_AFTER`] without credentials, then every [`NOTIFY_EVERY`].
-    pub(crate) const fn new(post: N) -> Self {
-        Self::with_timing(post, NOTIFY_AFTER, NOTIFY_EVERY)
+    /// `post` posts a notification and `remove` takes hub's down again: `terminal-notifier` in the
+    /// daemon, stubs in tests. Notifies after [`NOTIFY_AFTER`] without credentials, then every
+    /// [`NOTIFY_EVERY`].
+    pub(crate) const fn new(post: N, remove: R) -> Self {
+        Self::with_timing(post, remove, NOTIFY_AFTER, NOTIFY_EVERY)
     }
 
-    pub(crate) const fn with_timing(post: N, after: Duration, every: Duration) -> Self {
+    pub(crate) const fn with_timing(post: N, remove: R, after: Duration, every: Duration) -> Self {
         Self {
             post,
+            remove,
             after,
             every,
             first_failure: None,
@@ -205,6 +210,13 @@ where
             Err(error) => Notifying::failed(&error, &KnownSecrets::new(Vec::new())),
         })
     }
+
+    /// Once credentials have arrived: removes hub's notification if one was posted, and says how
+    /// that went, or `None` when none was posted.
+    pub(crate) async fn clear(&mut self) -> Option<anyhow::Result<()>> {
+        let _posted_at = self.last_posted.take()?;
+        Some((self.remove)().await)
+    }
 }
 
 /// Calls `resolve` until it returns credentials, waiting as `retries` says between attempts, and
@@ -215,11 +227,11 @@ where
 ///
 /// Returns `None` once `retries` says to stop, after the last attempt has been recorded. With
 /// [`Retries::UntilObtained`] it returns only with credentials.
-pub(crate) async fn obtain<T, F, Fut, O, OpenFut, N, PostFut>(
+pub(crate) async fn obtain<T, F, Fut, O, OpenFut, N, PostFut, R, RemoveFut>(
     mut resolve: F,
     mut retries: Retries,
     opener: &mut AppOpener<O>,
-    notifier: &mut Notifier<N>,
+    notifier: &mut Notifier<N, R>,
     mut record: impl FnMut(&CredentialAttempt),
 ) -> Option<T>
 where
@@ -229,6 +241,8 @@ where
     OpenFut: Future<Output = anyhow::Result<()>>,
     N: FnMut(Notification) -> PostFut,
     PostFut: Future<Output = anyhow::Result<()>>,
+    R: FnMut() -> RemoveFut,
+    RemoveFut: Future<Output = anyhow::Result<()>>,
 {
     // Bounded by `retries`: endless only when the caller asks to wait for 1Password forever.
     for attempt in 1_u32.. {
@@ -323,6 +337,36 @@ impl fmt::Display for AttemptReport {
                 one_line(error.reason().as_str())
             )
         })
+    }
+}
+
+/// The line left when the daemon removes its notification once credentials have arrived.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct NotificationRemoval {
+    pub(crate) at: chrono::DateTime<Utc>,
+    pub(crate) pid: u32,
+    pub(crate) profile: String,
+    /// Why removing it failed, when it did.
+    pub(crate) error: Option<String>,
+}
+
+impl fmt::Display for NotificationRemoval {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let event = if self.error.is_some() {
+            "notification_remove_failed"
+        } else {
+            "notification_removed"
+        };
+        write!(
+            f,
+            "hub-daemon {event} at={} pid={} profile={}",
+            self.at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            self.pid,
+            self.profile
+        )?;
+        self.error
+            .as_ref()
+            .map_or(Ok(()), |error| write!(f, " error=\"{}\"", one_line(error)))
     }
 }
 
@@ -492,26 +536,33 @@ mod tests {
     }
 
     /// A notifier whose posting would panic, for loops that never last ten minutes.
-    fn never_posts() -> Notifier<impl FnMut(Notification) -> OpenResult> {
-        Notifier::new(|_| -> OpenResult { panic!("posted a notification") })
+    fn never_posts() -> Notifier<impl FnMut(Notification) -> OpenResult, impl FnMut() -> OpenResult>
+    {
+        Notifier::new(
+            |_| -> OpenResult { panic!("posted a notification") },
+            || -> OpenResult { panic!("removed a notification") },
+        )
     }
 
     /// A notifier that records every notification it posts in `posted`, with the real timing.
     fn recording_notifier(
         posted: &Rc<RefCell<Vec<Notification>>>,
-    ) -> Notifier<impl FnMut(Notification) -> OpenResult> {
+    ) -> Notifier<impl FnMut(Notification) -> OpenResult, impl FnMut() -> OpenResult> {
         let posted = Rc::clone(posted);
-        Notifier::new(move |notification| {
-            posted.borrow_mut().push(notification);
-            std::future::ready(Ok(()))
-        })
+        Notifier::new(
+            move |notification| {
+                posted.borrow_mut().push(notification);
+                std::future::ready(Ok(()))
+            },
+            || std::future::ready(Ok(())),
+        )
     }
 
     /// What each failed attempt recorded about notifying, for `failures` each taking `takes`.
     async fn notified_for(
         failures: Vec<CredentialFailure>,
         takes: Duration,
-        notifier: &mut Notifier<impl FnMut(Notification) -> OpenResult>,
+        notifier: &mut Notifier<impl FnMut(Notification) -> OpenResult, impl FnMut() -> OpenResult>,
     ) -> Vec<Option<Notifying>> {
         let recorded = Rc::new(RefCell::new(Vec::new()));
         let log = Rc::clone(&recorded);
@@ -578,6 +629,50 @@ mod tests {
         );
     }
 
+    /// A notifier that posts at once and counts its removals in `removals`.
+    fn removal_counting_notifier(
+        removals: &Rc<RefCell<u32>>,
+    ) -> Notifier<impl FnMut(Notification) -> OpenResult, impl FnMut() -> OpenResult> {
+        let removals = Rc::clone(removals);
+        Notifier::with_timing(
+            |_| std::future::ready(Ok(())),
+            move || {
+                *removals.borrow_mut() += 1;
+                std::future::ready(Ok(()))
+            },
+            Duration::ZERO,
+            Duration::from_secs(60 * 60),
+        )
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn once_credentials_arrive_a_posted_notification_is_removed_once() {
+        let removals = Rc::new(RefCell::new(0));
+        let mut notifier = removal_counting_notifier(&removals);
+        let _ = notified_for(vec![failure(NETWORK)], Duration::ZERO, &mut notifier).await;
+
+        let cleared = notifier.clear().await;
+
+        assert!(matches!(cleared, Some(Ok(()))), "{cleared:?}");
+        assert_eq!(*removals.borrow(), 1);
+        assert!(notifier.clear().await.is_none(), "removed twice");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn nothing_is_removed_when_nothing_was_posted() {
+        let removals = Rc::new(RefCell::new(0));
+        let mut notifier = Notifier::new(|_| std::future::ready(Ok(())), {
+            let removals = Rc::clone(&removals);
+            move || {
+                *removals.borrow_mut() += 1;
+                std::future::ready(Ok(()))
+            }
+        });
+
+        assert!(notifier.clear().await.is_none());
+        assert_eq!(*removals.borrow(), 0);
+    }
+
     #[tokio::test(start_paused = true)]
     async fn a_slow_post_does_not_push_back_the_next_attempt() {
         let started = tokio::time::Instant::now();
@@ -586,6 +681,7 @@ mod tests {
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 Ok(())
             },
+            || async { Ok(()) },
             Duration::ZERO,
             Duration::from_secs(60 * 60),
         );
@@ -607,7 +703,8 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_failed_post_is_recorded_and_the_daemon_keeps_trying() {
         let mut failing = Notifier::with_timing(
-            |_| std::future::ready(Err(anyhow::anyhow!("osascript exited 1"))),
+            |_| std::future::ready(Err(anyhow::anyhow!("terminal-notifier exited 1"))),
+            || std::future::ready(Ok(())),
             Duration::ZERO,
             Duration::from_secs(60 * 60),
         );
@@ -617,7 +714,7 @@ mod tests {
         assert_eq!(
             notified,
             vec![Some(Notifying::failed(
-                &anyhow::anyhow!("osascript exited 1"),
+                &anyhow::anyhow!("terminal-notifier exited 1"),
                 &no_secrets()
             ))]
         );
@@ -946,7 +1043,7 @@ mod tests {
         sent.attempt.notified = Some(Notifying::Sent);
         let mut failed = report(Some(Duration::from_secs(1)), None);
         failed.attempt.notified = Some(Notifying::failed(
-            &anyhow::anyhow!("osascript exited 1"),
+            &anyhow::anyhow!("terminal-notifier exited 1"),
             &no_secrets(),
         ));
 
@@ -957,9 +1054,30 @@ mod tests {
         );
         assert!(
             failed.to_string().contains(
-                " retry_in=1s notified=failed notify_error=\"osascript exited 1\" error="
+                " retry_in=1s notified=failed notify_error=\"terminal-notifier exited 1\" error="
             ),
             "{failed}"
         );
+    }
+
+    #[rstest]
+    #[case::removed(
+        None,
+        "hub-daemon notification_removed at=2026-10-17T18:30:00Z pid=4242 profile=default"
+    )]
+    #[case::failed(
+        Some("terminal-notifier exited 1"),
+        "hub-daemon notification_remove_failed at=2026-10-17T18:30:00Z pid=4242 profile=default \
+         error=\"terminal-notifier exited 1\""
+    )]
+    fn removing_the_notification_leaves_a_line(#[case] error: Option<&str>, #[case] line: &str) {
+        let removal = NotificationRemoval {
+            at: Utc.with_ymd_and_hms(2026, 10, 17, 18, 30, 0).unwrap(),
+            pid: 4242,
+            profile: "default".to_string(),
+            error: error.map(str::to_string),
+        };
+
+        assert_eq!(removal.to_string(), line);
     }
 }

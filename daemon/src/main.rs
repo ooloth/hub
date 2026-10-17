@@ -127,7 +127,7 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
         );
     };
     let mut opener = credentials::AppOpener::new(onepassword_app::open);
-    let mut notifier = credentials::Notifier::new(notification::post);
+    let mut notifier = credentials::Notifier::new(notification::post, notification::remove);
     let obtained = if cli.once {
         credentials::obtain(
             resolve,
@@ -150,6 +150,18 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
     let Some(config) = obtained else {
         return Ok(ExitCode::FAILURE);
     };
+    // A notification about missing credentials would now be out of date.
+    if let Some(removed) = notifier.clear().await {
+        println!(
+            "{}",
+            credentials::NotificationRemoval {
+                at: Utc::now(),
+                pid: std::process::id(),
+                profile: profile.as_str().to_string(),
+                error: removed.err().map(|error| format!("{error:#}")),
+            }
+        );
+    }
 
     if cli.once {
         let report = run_pass(&config, profile).await;

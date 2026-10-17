@@ -152,5 +152,7 @@ The decision above has the daemon send a notification once the deadline passes. 
 after 10 minutes without credentials, counted from the first failed attempt, and again every hour
 while they stay missing, as the account holder chose on 2026-10-17. Prompts are already on screen
 for anyone at the machine, so the notification is for someone who has been away, and the causes
-that clear by themselves usually do so within 10 minutes. It goes out through `osascript`, so macOS
-shows it as coming from Script Editor; Phase 4 (#344) plans `terminal-notifier`.
+that clear by themselves usually do so within 10 minutes. It goes out through `terminal-notifier`,
+whose notifications stay on screen until dismissed, in one group, so each replaces the last, and the
+daemon removes it once credentials arrive. `osascript` was tried first: from the daemon under
+launchd its notification never reached the screen, though `osascript` exited 0.
