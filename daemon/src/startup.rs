@@ -7,8 +7,8 @@ use domain::profile::Profile;
 use crate::pass::one_line;
 
 /// Printed once the daemon holds its profile's lock and before it loads credentials, which can
-/// wait on 1Password prompts with no end. A startup line with no pass line after it is a daemon
-/// waiting on credentials.
+/// wait on a 1Password prompt for up to 90 seconds an attempt. A startup line with nothing after it
+/// is a daemon in its first attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Startup {
     pub(crate) at: DateTime<Utc>,

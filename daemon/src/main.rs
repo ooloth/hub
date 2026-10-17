@@ -95,8 +95,8 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
         }
     };
 
-    // Before credentials are resolved, which can wait on 1Password prompts with no end: a startup
-    // line with no pass or credentials line after it is a daemon waiting on an approval.
+    // Before credentials are resolved, which can wait on a 1Password prompt for up to 90 seconds
+    // an attempt: a startup line with nothing after it is a daemon in its first attempt.
     println!(
         "{}",
         startup::Startup {
@@ -125,9 +125,9 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
         );
     };
     let obtained = if cli.once {
-        credentials::obtain(resolve, std::iter::empty(), record).await
+        credentials::obtain(resolve, credentials::Retries::Never, record).await
     } else {
-        credentials::obtain(resolve, credentials::Backoff::new(), record).await
+        credentials::obtain(resolve, credentials::Retries::until_obtained(), record).await
     };
     let Some(config) = obtained else {
         return Ok(ExitCode::FAILURE);

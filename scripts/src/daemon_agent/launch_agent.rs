@@ -65,7 +65,7 @@ impl CallerPath {
 /// Every program the daemon's code runs by name. The daemon's `PATH` holds where these are and
 /// nothing else of the caller's. `daemon_tools_are_every_program_the_daemon_runs` holds this
 /// list equal to the programs the code spawns.
-pub(crate) const DAEMON_TOOLS: [&str; 3] = ["git", "op", "gcloud"];
+pub(crate) const DAEMON_TOOLS: [&str; 5] = ["git", "op", "gcloud", "osascript", "ps"];
 
 /// Where launchd's own `PATH` already looks. The daemon's `PATH` ends with these.
 const SYSTEM_DIRS: [&str; 4] = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"];

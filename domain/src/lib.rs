@@ -28,6 +28,8 @@ pub mod pass_failure;
 pub mod pr;
 /// Which set of hub's own state a process reads and writes.
 pub mod profile;
+/// What the screen showed when an `op read` reached its deadline.
+pub mod screen_at_deadline;
 /// Serde helpers for non-standard wire formats (e.g. duration as seconds).
 pub mod serde_helpers;
 /// Claude Code session transcript parsing.

@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use chrono::Utc;
 use domain::credential_attempt::CredentialAttempt;
-use domain::credential_failure::CredentialFailure;
+use domain::credential_failure::{CredentialCause, CredentialFailure};
 use domain::pass_failure::PassFailure;
 
 use crate::pass::one_line;
@@ -48,22 +48,76 @@ impl Iterator for Backoff {
     }
 }
 
-/// Calls `resolve` until it returns credentials, waiting each of `delays` in turn between
-/// attempts, and hands every failed attempt to `record` before waiting.
+/// How long to wait after a failed attempt, if at all.
+#[derive(Debug, Clone)]
+pub(crate) enum Retries {
+    /// One attempt only, for `--once`.
+    Never,
+    /// Until credentials arrive: soon after an attempt that ended because something was not
+    /// answering, so a fresh prompt is on screen within a second or two, and on the backoff after
+    /// a fast failure.
+    UntilObtained(Backoff),
+}
+
+impl Retries {
+    pub(crate) const fn until_obtained() -> Self {
+        Self::UntilObtained(Backoff::new())
+    }
+
+    /// The wait after an attempt that failed with `cause` and took `took`, or `None` for no more
+    /// attempts.
+    pub(crate) fn after(&mut self, cause: CredentialCause, took: Duration) -> Option<Duration> {
+        match (self, cause) {
+            (Self::Never, _) => None,
+            (
+                Self::UntilObtained(_),
+                CredentialCause::TouchIdPromptUnanswered
+                | CredentialCause::MacosPromptWaitingForYou
+                | CredentialCause::AppRunningNotAnswering,
+            ) => Some(after_not_answering(took)),
+            (Self::UntilObtained(backoff), _) => backoff.next(),
+        }
+    }
+}
+
+/// The wait after an attempt that ended because something was not answering and took `took`: the
+/// rest of a minute, and at least a second.
 ///
-/// Returns `None` once `delays` runs out, after the last attempt has been recorded. With an
-/// endless `delays`, such as [`Backoff`], it returns only with credentials.
+/// `op` gives up on a Touch ID prompt after a minute and the deadline ends a silent `op` after 90
+/// seconds, so this is usually a second and a fresh attempt, with its prompt, follows at once.
+/// However soon an attempt ended, attempts still start no more than once a minute.
+fn after_not_answering(took: Duration) -> Duration {
+    let wait = LONGEST_DELAY.saturating_sub(took).max(FIRST_DELAY);
+    assert!(
+        wait >= FIRST_DELAY,
+        "a wait of {wait:?} is shorter than a second"
+    );
+    assert!(
+        wait <= LONGEST_DELAY,
+        "a wait of {wait:?} is longer than a minute"
+    );
+    assert!(
+        took + wait >= LONGEST_DELAY,
+        "attempts {took:?} + {wait:?} apart start less than a minute apart"
+    );
+    wait
+}
+
+/// Calls `resolve` until it returns credentials, waiting as `retries` says between attempts, and
+/// hands every failed attempt to `record` before waiting.
+///
+/// Returns `None` once `retries` says to stop, after the last attempt has been recorded. With
+/// [`Retries::UntilObtained`] it returns only with credentials.
 pub(crate) async fn obtain<T, F, Fut>(
     mut resolve: F,
-    delays: impl IntoIterator<Item = Duration>,
+    mut retries: Retries,
     mut record: impl FnMut(&CredentialAttempt),
 ) -> Option<T>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, CredentialFailure>>,
 {
-    let mut delays = delays.into_iter();
-    // Bounded by `delays`: endless only when the caller asks to wait for 1Password forever.
+    // Bounded by `retries`: endless only when the caller asks to wait for 1Password forever.
     for attempt in 1_u32.. {
         let started_at = Utc::now();
         let started = std::time::Instant::now();
@@ -71,10 +125,11 @@ where
             Ok(credentials) => return Some(credentials),
             Err(failure) => failure,
         };
-        let retry_in = delays.next();
+        let duration = started.elapsed();
+        let retry_in = retries.after(failure.cause(), duration);
         record(&CredentialAttempt {
             started_at,
-            duration: started.elapsed(),
+            duration,
             pid: std::process::id(),
             attempt,
             failure,
@@ -134,6 +189,7 @@ mod tests {
 
     use chrono::TimeZone;
     use domain::known_secrets::KnownSecrets;
+    use domain::screen_at_deadline::ScreenAtDeadline;
     use proptest::prelude::*;
     use rstest::rstest;
 
@@ -166,6 +222,110 @@ mod tests {
         }
     }
 
+    const UNANSWERED: &str = "error initializing client: authorization timeout";
+
+    #[rstest]
+    #[case::at_op_s_limit(60_090, 1)]
+    #[case::early(5_000, 55)]
+    #[case::instantly(0, 60)]
+    #[case::past_a_minute(90_000, 1)]
+    fn after_an_unanswered_prompt_the_wait_is_the_rest_of_a_minute(
+        #[case] took_ms: u64,
+        #[case] wait_secs: u64,
+    ) {
+        let mut retries = Retries::until_obtained();
+
+        let wait = retries.after(
+            CredentialCause::TouchIdPromptUnanswered,
+            Duration::from_millis(took_ms),
+        );
+
+        assert_eq!(wait.map(|wait| wait.as_secs()), Some(wait_secs));
+    }
+
+    proptest! {
+        #[test]
+        fn an_unanswered_prompt_never_starts_attempts_less_than_a_minute_apart(
+            took_ms in 0_u64..200_000
+        ) {
+            let took = Duration::from_millis(took_ms);
+
+            let wait = after_not_answering(took);
+
+            prop_assert!((FIRST_DELAY..=LONGEST_DELAY).contains(&wait), "{wait:?}");
+            prop_assert!(took + wait >= LONGEST_DELAY, "{took:?} + {wait:?}");
+        }
+    }
+
+    #[rstest]
+    #[case::unreachable(CredentialCause::Unreachable)]
+    #[case::app_not_running(CredentialCause::AppNotRunning)]
+    #[case::other(CredentialCause::Other)]
+    fn every_fast_failure_waits_on_the_backoff(#[case] cause: CredentialCause) {
+        let mut retries = Retries::until_obtained();
+
+        let waits: Vec<u64> = (0..4)
+            .filter_map(|_| retries.after(cause, Duration::from_secs(90)))
+            .map(|wait| wait.as_secs())
+            .collect();
+
+        assert_eq!(waits, vec![1, 2, 4, 8]);
+    }
+
+    #[rstest]
+    #[case::touch_id(CredentialCause::TouchIdPromptUnanswered)]
+    #[case::macos_prompt(CredentialCause::MacosPromptWaitingForYou)]
+    #[case::app_running(CredentialCause::AppRunningNotAnswering)]
+    fn every_cause_that_was_not_answering_gets_the_short_wait_every_time(
+        #[case] cause: CredentialCause,
+    ) {
+        let mut retries = Retries::until_obtained();
+
+        // A deadline attempt lasts 90 s, so the short wait is a second each time, where the backoff
+        // would have doubled.
+        let waits: Vec<u64> = (0..3)
+            .filter_map(|_| retries.after(cause, Duration::from_secs(90)))
+            .map(|wait| wait.as_secs())
+            .collect();
+
+        assert_eq!(waits, vec![1, 1, 1]);
+    }
+
+    #[test]
+    fn never_means_no_wait_whatever_the_cause() {
+        assert_eq!(
+            Retries::Never.after(CredentialCause::TouchIdPromptUnanswered, Duration::ZERO),
+            None
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn unanswered_prompts_then_approval_give_credentials_with_each_wait_recorded() {
+        let recorded = Rc::new(RefCell::new(Vec::new()));
+        let log = Rc::clone(&recorded);
+        let resolve = failing_then(vec![failure(UNANSWERED), failure(UNANSWERED)], "secrets");
+
+        let obtained = obtain(resolve, Retries::until_obtained(), move |attempt| {
+            log.borrow_mut()
+                .push((attempt.failure.cause(), attempt.retry_in));
+        })
+        .await;
+
+        assert_eq!(obtained, Some("secrets"));
+        // Each stubbed attempt takes almost no time, so each wait is nearly the whole minute,
+        // where the backoff would have waited 1 then 2 seconds.
+        let recorded = recorded.borrow();
+        assert_eq!(recorded.len(), 2);
+        for (cause, wait) in recorded.iter() {
+            assert_eq!(*cause, CredentialCause::TouchIdPromptUnanswered);
+            let wait = wait.expect("retried");
+            assert!(
+                wait > Duration::from_secs(59) && wait <= LONGEST_DELAY,
+                "{wait:?}"
+            );
+        }
+    }
+
     /// A resolver that fails with `failures` in order, then returns `credentials`.
     fn failing_then(
         failures: Vec<CredentialFailure>,
@@ -184,7 +344,7 @@ mod tests {
             "secrets",
         );
 
-        let obtained = obtain(resolve, Backoff::new(), move |attempt| {
+        let obtained = obtain(resolve, Retries::until_obtained(), move |attempt| {
             log.borrow_mut().push((attempt.attempt, attempt.retry_in));
         })
         .await;
@@ -205,7 +365,7 @@ mod tests {
         let started = tokio::time::Instant::now();
         let resolve = failing_then(vec![failure("dial tcp"), failure("dial tcp")], "secrets");
 
-        let _ = obtain(resolve, Backoff::new(), |_| {}).await;
+        let _ = obtain(resolve, Retries::until_obtained(), |_| {}).await;
 
         assert_eq!(started.elapsed(), Duration::from_secs(3));
     }
@@ -221,7 +381,7 @@ mod tests {
             std::future::ready(Err::<(), _>(failure("dial tcp")))
         };
 
-        let obtained = obtain(resolve, std::iter::empty(), move |attempt| {
+        let obtained = obtain(resolve, Retries::Never, move |attempt| {
             log.borrow_mut().push((attempt.attempt, attempt.retry_in));
         })
         .await;
@@ -281,5 +441,38 @@ mod tests {
         #[case] line: &str,
     ) {
         assert_eq!(report.to_string(), line);
+    }
+
+    #[test]
+    fn the_line_names_who_was_not_answering_in_the_words_the_record_uses() {
+        let mut prompt = report(Some(Duration::from_secs(1)), None);
+        prompt.attempt.failure = failure(UNANSWERED);
+        let mut alert = report(Some(Duration::from_secs(1)), None);
+        alert.attempt.failure = CredentialFailure::no_answer(
+            "op://Scripts/GitHub/token",
+            Duration::from_secs(90),
+            &ScreenAtDeadline::MacosAlert { windows: 1 },
+            &no_secrets(),
+        );
+
+        assert!(
+            prompt
+                .to_string()
+                .contains(" cause=touch_id_prompt_unanswered "),
+            "{prompt}"
+        );
+        assert!(
+            alert
+                .to_string()
+                .contains(" cause=macos_prompt_waiting_for_you "),
+            "{alert}"
+        );
+        assert!(
+            alert.to_string().ends_with(
+                "error=\"1Password did not answer within 90s reading op://Scripts/GitHub/token; 1 \
+                 macOS alert window(s) from UserNotificationCenter on screen\""
+            ),
+            "{alert}"
+        );
     }
 }

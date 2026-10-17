@@ -17,12 +17,13 @@ recording each pass: the payload when it replaced it, and the health record alwa
 A startup line, then a pass, then one every 15 minutes (`--interval` changes it), each logged as one
 line and recorded in the health record. One daemon per profile: a second refuses, naming the first.
 `--once` runs a single pass and exits. `just daemon-start` runs the installed binary under launchd
-for the `default` profile, at every login, logging to `~/.hub/default/daemon.log`. When 1Password
-fails straight away, because it is unreachable or its desktop app is not running, the daemon records
-why and tries again in the same process, waiting a second, then doubling up to a minute. Everything
-else in [#327](https://github.com/ooloth/hub/issues/327) is a later phase: a deadline on an approval
-nobody answers and a notification saying so (the rest of 3.6), notifications (Phase 4), and the
-socket the TUI will read, which is also where health is first shown (Phase 5).
+for the `default` profile, at every login, logging to `~/.hub/default/daemon.log`. When the daemon
+cannot obtain its credentials, it records who was not answering and tries again in the same
+process: within about a second after a prompt went unanswered or `op` reached its 90-second
+deadline, so a fresh prompt is on screen, and otherwise waiting a second, then doubling up to a
+minute. Everything else in [#327](https://github.com/ooloth/hub/issues/327) is a later
+phase: a notification when credentials are missing (the rest of 3.6), notifications (Phase 4), and
+the socket the TUI will read, which is also where health is first shown (Phase 5).
 
 ## Files
 
@@ -80,7 +81,7 @@ including a restart, so a daemon that restarts while nobody is there waits on pr
 answers.
 
 Before resolving credentials the daemon prints one line, so a start with nothing after it is a
-daemon waiting on an approval nobody has answered:
+daemon in its first `op read`, which ends within 90 seconds:
 
 ```
 hub-daemon start at=2026-10-03T23:15:55Z pid=4242 profile=default
@@ -94,8 +95,18 @@ hub-daemon start_failed at=2026-10-10T23:14:30Z pid=1048 profile=default error="
 ```
 
 Each attempt to resolve credentials that fails prints one line to stdout and is recorded in the
-health record, with `cause` one of `unreachable`, `app_not_running` or `other`. `retry_in` is absent
-with `--once`, which makes one attempt and exits 1:
+health record, with `cause` one of:
+
+- `touch_id_prompt_unanswered`: 1Password's Touch ID prompt went unanswered, and `op` gave up after
+  60 seconds. A Touch ID prompt on screen at the 90-second deadline gets up to 65 seconds more, so
+  it isn't cut short
+- `macos_prompt_waiting_for_you`: `op` had not answered after 90 seconds and a macOS alert is on
+  screen, under launchd usually "hub-daemon would like to access data from other apps"
+- `app_running_not_answering`: `op` had not answered after 90 seconds, no alert is on screen, and
+  the 1Password app is running
+- `app_not_running`, `unreachable` or `other`
+
+`retry_in` is absent with `--once`, which makes one attempt and exits 1:
 
 ```
 hub-daemon credentials at=2026-10-12T08:59:03Z pid=4242 profile=default attempt=3 cause=app_not_running duration_ms=812 retry_in=4s error="failed to resolve credential from 1Password: ... couldn't connect to the 1Password desktop app."

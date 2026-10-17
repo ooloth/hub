@@ -15,6 +15,7 @@
   insta = "1"
   proptest = "1"
   rstest = "0.25"
+  tokio = { version = "1", features = ["full", "test-util"] }
 
 [lints]
   workspace = true

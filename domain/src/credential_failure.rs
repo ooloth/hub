@@ -1,8 +1,11 @@
 //! Why the daemon could not obtain its credentials from 1Password, in a form safe to log and store.
+use std::time::Duration;
+
 use crate::known_secrets::KnownSecrets;
+use crate::screen_at_deadline::ScreenAtDeadline;
 use crate::source_failure::FailureReason;
 
-/// What kept `op` from returning a credential, as far as its message says.
+/// What kept `op` from returning a credential: what its message says, or that it said nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CredentialCause {
     /// 1Password's servers could not be reached. Usually clears on its own once the network does.
@@ -10,6 +13,16 @@ pub enum CredentialCause {
     /// The 1Password desktop app is not running, or has not finished starting. Clears once it is
     /// open.
     AppNotRunning,
+    /// 1Password's Touch ID prompt was on screen and nobody approved it, so `op` gave up after 60
+    /// seconds. Clears once someone approves the next prompt.
+    TouchIdPromptUnanswered,
+    /// `op` had not answered by its deadline and a macOS alert was on screen, waiting for someone:
+    /// under launchd, usually "hub-daemon would like to access data from other apps".
+    MacosPromptWaitingForYou,
+    /// `op` had not answered by its deadline, no macOS alert was on screen, and the 1Password app
+    /// was running: the app is what was not answering. Also recorded when the screen could not be
+    /// checked, with the reason saying so.
+    AppRunningNotAnswering,
     /// Anything `op` said that hub does not recognise. The reason keeps its words.
     Other,
 }
@@ -21,19 +34,26 @@ impl CredentialCause {
         match self {
             Self::Unreachable => "unreachable",
             Self::AppNotRunning => "app_not_running",
+            Self::TouchIdPromptUnanswered => "touch_id_prompt_unanswered",
+            Self::MacosPromptWaitingForYou => "macos_prompt_waiting_for_you",
+            Self::AppRunningNotAnswering => "app_running_not_answering",
             Self::Other => "other",
         }
     }
 
     /// The cause `op`'s message names, matched without regard to case.
     ///
-    /// The desktop app is checked first, because its message comes from a failed connection
-    /// too. A message that names neither is [`Self::Other`], never a guess.
+    /// The desktop app and the unanswered prompt are checked first, because their messages come
+    /// from a failed connection or a timeout too. A message that names none is [`Self::Other`],
+    /// never a guess. The causes a deadline finds are never named here: only the deadline and the
+    /// screen know them.
     fn named_in(message: &str) -> Self {
         let message = message.to_lowercase();
         let names = |markers: &[&str]| markers.iter().any(|marker| message.contains(marker));
         if names(APP_NOT_RUNNING) {
             Self::AppNotRunning
+        } else if names(TOUCH_ID_PROMPT_UNANSWERED) {
+            Self::TouchIdPromptUnanswered
         } else if names(UNREACHABLE) {
             Self::Unreachable
         } else {
@@ -44,6 +64,9 @@ impl CredentialCause {
 
 /// What `op` says when it cannot reach the desktop app, lowercased.
 const APP_NOT_RUNNING: &[&str] = &["couldn't connect to the 1password desktop app"];
+
+/// What `op` says when it gave up on a Touch ID prompt nobody answered, lowercased.
+const TOUCH_ID_PROMPT_UNANSWERED: &[&str] = &["authorization timeout"];
 
 /// What Go's network stack, which `op` is built on, says when a server cannot be reached,
 /// lowercased.
@@ -74,6 +97,29 @@ impl CredentialFailure {
         let reason = FailureReason::redacted(error, secrets, "the credentials");
         let cause = CredentialCause::named_in(reason.as_str());
         Self { cause, reason }
+    }
+
+    /// `op` had not answered for `reference` after `after`, so it was ended, and `screen` is what
+    /// was then on screen. Known from the deadline and the screen, never read back from text.
+    ///
+    /// # Panics
+    /// As [`Self::new`].
+    #[must_use]
+    pub fn no_answer(
+        reference: &str,
+        after: Duration,
+        screen: &ScreenAtDeadline,
+        secrets: &KnownSecrets,
+    ) -> Self {
+        let error = anyhow::anyhow!(
+            "1Password did not answer within {}s reading {reference}; {}",
+            after.as_secs(),
+            screen.describe()
+        );
+        Self {
+            cause: screen.cause(),
+            reason: FailureReason::redacted(&error, secrets, "the credentials"),
+        }
     }
 
     /// What kept the credential from being returned.
@@ -146,6 +192,45 @@ mod tests {
     #[case::offline("dial tcp 10.0.0.1:443: connect: network is unreachable")]
     fn a_network_error_is_1password_unreachable(#[case] stderr: &str) {
         assert_eq!(from_op(stderr).cause(), CredentialCause::Unreachable);
+    }
+
+    // Measured with op 2.40.0, 2026-10-17, with the vault locked and the prompt left unanswered.
+    #[test]
+    fn an_authorization_timeout_is_a_touch_id_prompt_nobody_answered() {
+        let failure = from_op(
+            "[ERROR] 2026/10/17 10:25:39 could not read secret \
+             'op://Scripts/GitHub/personal-access-token-hub': error initializing client: \
+             authorization timeout",
+        );
+
+        assert_eq!(failure.cause(), CredentialCause::TouchIdPromptUnanswered);
+    }
+
+    #[test]
+    fn no_answer_takes_its_cause_from_the_screen_and_names_reference_deadline_and_screen() {
+        let failure = CredentialFailure::no_answer(
+            "op://Scripts/GitHub/token",
+            Duration::from_secs(90),
+            &ScreenAtDeadline::MacosAlert { windows: 1 },
+            &no_secrets(),
+        );
+
+        assert_eq!(failure.cause(), CredentialCause::MacosPromptWaitingForYou);
+        assert_eq!(
+            failure.reason().as_str(),
+            "1Password did not answer within 90s reading op://Scripts/GitHub/token; 1 macOS \
+             alert window(s) from UserNotificationCenter on screen"
+        );
+    }
+
+    #[test]
+    fn hubs_own_words_for_a_deadline_are_not_read_back_as_its_cause() {
+        let failure = from_op(
+            "1Password did not answer within 90s reading op://x/y/z; 1 macOS alert window(s) from \
+             UserNotificationCenter on screen",
+        );
+
+        assert_eq!(failure.cause(), CredentialCause::Other);
     }
 
     #[rstest]

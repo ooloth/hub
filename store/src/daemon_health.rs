@@ -14,7 +14,7 @@ use crate::status_cache::{self, Payload};
 /// Bump it in the change that alters the `CREATE TABLE` below. [`ensure_table`] then drops the
 /// old table and creates the new one, which loses at most one pass's record, because the daemon
 /// rewrites the row on every pass.
-const SCHEMA_VERSION: i32 = 2;
+const SCHEMA_VERSION: i32 = 4;
 
 /// Every rule that ties a row's outcome to the rest of it, so a row that contradicts itself cannot
 /// be stored, however it is written.
@@ -30,6 +30,9 @@ const CREATE_TABLE: &str = "CREATE TABLE daemon_health (
     outcome         TEXT NOT NULL
                     CHECK (outcome IN ('ok', 'partial', 'no_source_answered', 'pass_failed',
                                        'credentials_unreachable', 'credentials_app_not_running',
+                                       'credentials_touch_id_prompt_unanswered',
+                                       'credentials_macos_prompt_waiting_for_you',
+                                       'credentials_app_running_not_answering',
                                        'credentials_failed')),
     payload_written INTEGER NOT NULL CHECK (payload_written IN (0, 1)),
     items           INTEGER CHECK (items >= 0),
@@ -125,6 +128,9 @@ pub fn record_credential_attempt(conn: &Connection, attempt: &CredentialAttempt)
     let outcome = match attempt.failure.cause() {
         CredentialCause::Unreachable => "credentials_unreachable",
         CredentialCause::AppNotRunning => "credentials_app_not_running",
+        CredentialCause::TouchIdPromptUnanswered => "credentials_touch_id_prompt_unanswered",
+        CredentialCause::MacosPromptWaitingForYou => "credentials_macos_prompt_waiting_for_you",
+        CredentialCause::AppRunningNotAnswering => "credentials_app_running_not_answering",
         CredentialCause::Other => "credentials_failed",
     };
     let duration_ms = i64::try_from(attempt.duration.as_millis())
@@ -235,8 +241,9 @@ pub struct RecordedPass {
     /// The daemon process that ran it.
     pub pid: i64,
     /// One of `ok`, `partial`, `no_source_answered` or `pass_failed`, or for a failed attempt to
-    /// obtain credentials, `credentials_unreachable`, `credentials_app_not_running` or
-    /// `credentials_failed`.
+    /// obtain credentials, `credentials_unreachable`, `credentials_app_not_running`,
+    /// `credentials_touch_id_prompt_unanswered`, `credentials_macos_prompt_waiting_for_you`,
+    /// `credentials_app_running_not_answering` or `credentials_failed`.
     pub outcome: String,
     /// Whether the pass replaced the payload.
     pub payload_written: bool,
@@ -332,6 +339,7 @@ mod tests {
     use domain::daemon_pass::PassOutcome;
     use domain::known_secrets::KnownSecrets;
     use domain::pass_failure::PassFailure;
+    use domain::screen_at_deadline::ScreenAtDeadline;
     use domain::source_failure::SourceFailure;
     use domain::source_outcomes::SourceOutcomes;
     use rstest::rstest;
@@ -570,6 +578,10 @@ mod tests {
         "1Password CLI couldn't connect to the 1Password desktop app.",
         "credentials_app_not_running"
     )]
+    #[case::touch_id_prompt_unanswered(
+        "error initializing client: authorization timeout",
+        "credentials_touch_id_prompt_unanswered"
+    )]
     #[case::other("\"Nope\" isn't a vault", "credentials_failed")]
     fn a_recorded_credential_attempt_reads_back_as_it_was_recorded(
         #[case] message: &str,
@@ -599,6 +611,36 @@ mod tests {
         );
     }
 
+    #[rstest]
+    #[case::macos_prompt(ScreenAtDeadline::MacosAlert { windows: 1 }, "credentials_macos_prompt_waiting_for_you")]
+    #[case::app_running(
+        ScreenAtDeadline::AppRunningNoAlert,
+        "credentials_app_running_not_answering"
+    )]
+    #[case::app_not_running(ScreenAtDeadline::AppNotRunning, "credentials_app_not_running")]
+    fn a_deadline_reads_back_as_who_was_not_answering(
+        #[case] screen: ScreenAtDeadline,
+        #[case] outcome: &str,
+    ) {
+        let conn = in_memory();
+        let mut attempt = credential_attempt("unused", None);
+        attempt.failure = CredentialFailure::no_answer(
+            "op://Scripts/GitHub/token",
+            Duration::from_secs(90),
+            &screen,
+            &no_secrets(),
+        );
+
+        record_credential_attempt(&conn, &attempt).unwrap();
+
+        let row = recorded_row(&conn);
+        assert_eq!(row.outcome, outcome);
+        assert_eq!(
+            row.error.as_deref(),
+            Some(attempt.failure.reason().as_str())
+        );
+    }
+
     #[test]
     fn a_credential_attempt_leaves_the_cache_row_as_it_was() {
         let conn = in_memory();
@@ -619,7 +661,7 @@ mod tests {
     ) -> rusqlite::Result<usize> {
         let mut row = vec![
             ("id", "1"),
-            ("schema_version", "2"),
+            ("schema_version", "4"),
             ("started_at", "'2025-10-09T08:53:20+00:00'"),
             ("duration_ms", "812"),
             ("pid", "4242"),

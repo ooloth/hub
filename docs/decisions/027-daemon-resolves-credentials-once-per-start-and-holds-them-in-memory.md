@@ -2,12 +2,13 @@
 number: 027
 status: accepted
 date: 2026-10-12
+amended: 2026-10-17
 ---
 
 # 027 — The daemon resolves its credentials through 1Password once per start and holds them only in memory
 
-_Status: accepted; not yet implemented. `obtain` in `daemon/src/credentials.rs` sets no
-deadline on resolution, so an approval nobody answers is neither recorded nor notified._
+_Status: accepted; not yet implemented. Nothing sends a notification when the daemon cannot obtain
+its credentials (#339)._
 
 ## Forced by
 
@@ -105,5 +106,37 @@ Or the login dialogs prove a nuisance worth the signing route's maintenance.
 - [x] questions/README.md — nothing to change. This settles the credentials question, which is
       deleted; its findings are linked above at `c49b3f6`
 - [x] vision.md — nothing defined or foreclosed; it does not mention credentials
-- [ ] architecture/secrets.md — describes what is built, so it changes in the change that builds
+- [x] architecture/secrets.md — describes what is built, so it changes in the change that builds
       this, under #339
+
+## Addendum (2026-10-17) — retrying at the deadline instead of waiting
+
+The decision above says that once the deadline passes, the daemon keeps waiting. Measurements on
+`op` 2.40.0 changed that, and the daemon now retries instead:
+
+- With the 1Password app quit, an `op read` blocked for 3.7 minutes with nothing on screen, and
+  stayed blocked after the app was reopened and unlocked. Ending it and trying again got the
+  credentials at once (2026-10-12). Waiting on the same `op read` would never have recovered.
+- In a terminal, with the vault locked and the Touch ID prompt left unanswered, `op` gave up on
+  its own after 60 seconds with "authorization timeout", three times out of three (2026-10-17).
+- Under launchd, a start first shows macOS's "hub-daemon would like to access data from other
+  apps" dialog, a window owned by `UserNotificationCenter`. `op` waits on it with no limit, which
+  is what the 6 h 54 min case above was. The dialog stays on screen while attempts are ended and
+  retried. Once it is approved, the Touch ID prompt follows, a window owned by `1Password`, and `op`
+  gives up on that after 60 seconds as in a terminal (2026-10-17).
+
+So each `op read` has a 90-second deadline, longer than `op`'s own 60 seconds so it never cuts a
+Touch ID prompt short, and an `op read` still silent at the deadline is ended. At the deadline the
+daemon reads which programs own the windows on screen and whether the 1Password app is running, so
+the record says who was not answering: `macos_prompt_waiting_for_you` when a macOS alert is on
+screen, `app_running_not_answering` when the app is running with no alert, and `app_not_running`
+otherwise. `op`'s own timeout is `touch_id_prompt_unanswered`. When 1Password's Touch ID window is on
+screen at the deadline, which happens when the macOS dialog is approved partway through an attempt,
+`op` is left up to 65 more seconds, so it gives up on the prompt by itself rather than having it cut
+short. Which macOS alert is on screen is not known, because reading a window's title needs the
+Screen Recording permission. After any of these
+the daemon tries again within about a second, so a fresh prompt follows at once; after a fast
+failure it waits on the backoff.
+
+The rest of the decision stands: credentials are resolved once per start through the desktop app
+and held only in memory.

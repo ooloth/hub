@@ -41,12 +41,17 @@ argument. Nothing else calls `op read` or knows about 1Password.
 
 The daemon reads the file and resolves it as two steps
 ([Decision 027](../decisions/027-daemon-resolves-credentials-once-per-start-and-holds-them-in-memory.md)).
-A broken `hub.toml` ends the start. A credential that fails is a
-`CredentialFailure` naming its cause, 1Password unreachable, the desktop app
-not running, or something else, with `op`'s message redacted of every
-credential resolved before it. The daemon records it and resolves again in
+A broken `hub.toml` ends the start. Each `op read` has a 90-second
+deadline, and an `op` still silent at the deadline is ended. A credential
+that fails is a `CredentialFailure` naming its cause: a Touch ID prompt
+nobody answered, a macOS prompt waiting for you, the app running but not
+answering, the desktop app not running, 1Password unreachable, or something
+else, with `op`'s message redacted of every credential resolved before it.
+At the deadline the daemon reads which programs own the windows on screen,
+through `osascript`, to tell those apart. The daemon records it and resolves again in
 the same process, so a restart never raises fresh prompts. Credentials are
-held in memory only, for the life of the process.
+held in memory only, for the life of the process. The TUI and CLI get the
+same deadline through `Config::load`.
 
 ## Per-device config
 
