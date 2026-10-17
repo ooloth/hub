@@ -444,7 +444,7 @@ mod tests {
             total_changed_files: 0,
             review_threads: vec![],
             pr_comments: vec![],
-            merge_blocker: None,
+            merge_readiness: domain::MergeReadiness::NotYetKnown,
         })
     }
 
@@ -965,7 +965,7 @@ mod tests {
             total_changed_files: 0,
             review_threads: vec![],
             pr_comments: vec![],
-            merge_blocker: None,
+            merge_readiness: domain::MergeReadiness::NotYetKnown,
         }
     }
 

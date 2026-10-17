@@ -50,7 +50,7 @@ pub(super) fn pr_right_column_lines(
     };
     lines.push(field_row_plain("comments", &comment_label));
 
-    if let Some(blocker) = pr.merge_blocker {
+    if let Some(blocker) = pr.merge_readiness.blocker() {
         lines.push(field_row_spans(
             "blocker",
             vec![Span::styled(
@@ -189,7 +189,8 @@ mod tests {
     use super::{diff_spans, dim, file_lines, pr_right_column_lines, truncate};
     use chrono::Duration;
     use domain::{
-        ChangedFile, CiStatus, MergeBlocker, PrKind, PullRequest, RepoSlug, ReviewDecision, Urgency,
+        ChangedFile, CiStatus, MergeBlocker, MergeReadiness, PrKind, PullRequest, RepoSlug,
+        ReviewDecision, Urgency,
     };
     use ratatui::{style::Color, text::Line};
     use rstest::rstest;
@@ -275,7 +276,7 @@ mod tests {
             total_changed_files: 2,
             review_threads: vec![],
             pr_comments: vec![],
-            merge_blocker: Some(MergeBlocker::Conflict),
+            merge_readiness: MergeReadiness::Blocked(MergeBlocker::Conflict),
         }
     }
 
@@ -347,9 +348,9 @@ mod tests {
     }
 
     #[test]
-    fn pr_right_column_lines_omits_blocker_row_when_merge_blocker_is_none() {
+    fn pr_right_column_lines_omits_blocker_row_when_nothing_blocks_the_merge() {
         let mut p = pr_with_all_fields();
-        p.merge_blocker = None;
+        p.merge_readiness = MergeReadiness::Ready;
         let lines = pr_right_column_lines(&p, W, H, dim());
         let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(
@@ -367,7 +368,7 @@ mod tests {
         #[case] expected_word: &str,
     ) {
         let mut p = pr_with_all_fields();
-        p.merge_blocker = Some(blocker);
+        p.merge_readiness = MergeReadiness::Blocked(blocker);
         let lines = pr_right_column_lines(&p, W, H, dim());
         let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(

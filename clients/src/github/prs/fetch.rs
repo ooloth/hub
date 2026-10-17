@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use domain::{
-    ChangedFile, CiStatus, GithubPrsRepo, MergeBlocker, PrKind, PullRequest, RepoSlug,
-    ReviewComment, ReviewDecision, ReviewThread, Urgency,
+    ChangedFile, CiStatus, GithubPrsRepo, MergeBlocker, MergeReadiness, PrKind, PullRequest,
+    RepoSlug, ReviewComment, ReviewDecision, ReviewThread, Urgency,
 };
 use serde::Deserialize;
 
@@ -461,7 +461,7 @@ fn node_to_pr(node: PrNode, urgency: Urgency, kind: PrKind) -> Result<PullReques
         comment_count,
         head_branch: node.head_ref_name,
         base_branch: node.base_ref_name,
-        merge_blocker: parse_merge_blocker(node.merge_state_status.as_deref()),
+        merge_readiness: parse_merge_readiness(node.merge_state_status.as_deref()),
     })
 }
 
@@ -533,12 +533,14 @@ fn parse_ci_state(state: &str) -> Option<CiStatus> {
     }
 }
 
-fn parse_merge_blocker(s: Option<&str>) -> Option<MergeBlocker> {
-    match s? {
-        "DIRTY" => Some(MergeBlocker::Conflict),
-        "BEHIND" => Some(MergeBlocker::Behind),
-        "BLOCKED" => Some(MergeBlocker::Blocked),
-        _ => None,
+/// `UNSTABLE` is ready: only checks that are not required are failing, and GitHub allows the merge.
+fn parse_merge_readiness(s: Option<&str>) -> MergeReadiness {
+    match s {
+        Some("DIRTY") => MergeReadiness::Blocked(MergeBlocker::Conflict),
+        Some("BEHIND") => MergeReadiness::Blocked(MergeBlocker::Behind),
+        Some("BLOCKED") => MergeReadiness::Blocked(MergeBlocker::Blocked),
+        Some("CLEAN" | "UNSTABLE" | "HAS_HOOKS") => MergeReadiness::Ready,
+        _ => MergeReadiness::NotYetKnown,
     }
 }
 
@@ -888,21 +890,24 @@ mod tests {
         assert_eq!(parse_review_decision(None), None);
     }
 
-    // ── parse_merge_blocker ───────────────────────────────────────────────────
+    // ── parse_merge_readiness ─────────────────────────────────────────────────
 
     #[rstest::rstest]
-    #[case(Some("DIRTY"), Some(MergeBlocker::Conflict))]
-    #[case(Some("BEHIND"), Some(MergeBlocker::Behind))]
-    #[case(Some("BLOCKED"), Some(MergeBlocker::Blocked))]
-    #[case(Some("CLEAN"), None)]
-    #[case(Some("UNSTABLE"), None)]
-    #[case(Some("UNKNOWN"), None)]
-    #[case(Some(""), None)]
-    #[case(None, None)]
-    fn parse_merge_blocker_cases(
+    #[case::conflict(Some("DIRTY"), MergeReadiness::Blocked(MergeBlocker::Conflict))]
+    #[case::behind(Some("BEHIND"), MergeReadiness::Blocked(MergeBlocker::Behind))]
+    #[case::blocked(Some("BLOCKED"), MergeReadiness::Blocked(MergeBlocker::Blocked))]
+    #[case::clean(Some("CLEAN"), MergeReadiness::Ready)]
+    #[case::failing_checks_not_required(Some("UNSTABLE"), MergeReadiness::Ready)]
+    #[case::hooks(Some("HAS_HOOKS"), MergeReadiness::Ready)]
+    #[case::not_computed_yet(Some("UNKNOWN"), MergeReadiness::NotYetKnown)]
+    #[case::draft(Some("DRAFT"), MergeReadiness::NotYetKnown)]
+    #[case::unrecognised(Some("SOMETHING_NEW"), MergeReadiness::NotYetKnown)]
+    #[case::empty(Some(""), MergeReadiness::NotYetKnown)]
+    #[case::absent(None, MergeReadiness::NotYetKnown)]
+    fn a_merge_state_is_ready_only_when_github_says_nothing_blocks_it(
         #[case] input: Option<&str>,
-        #[case] expected: Option<MergeBlocker>,
+        #[case] expected: MergeReadiness,
     ) {
-        assert_eq!(parse_merge_blocker(input), expected);
+        assert_eq!(parse_merge_readiness(input), expected);
     }
 }

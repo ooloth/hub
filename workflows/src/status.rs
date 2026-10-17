@@ -18,7 +18,7 @@ use domain::source_outcomes::SourceOutcomes;
 pub const SOURCE_TIMEOUT: Duration = Duration::from_mins(1);
 
 /// Bump when the serialized `StatusReport` format changes incompatibly.
-pub const SCHEMA_VERSION: i32 = 18;
+pub const SCHEMA_VERSION: i32 = 19;
 
 /// A single signal from any source, as stored in the unified status list.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -492,7 +492,7 @@ mod tests {
             total_changed_files: 0,
             review_threads: vec![],
             pr_comments: vec![],
-            merge_blocker: None,
+            merge_readiness: domain::MergeReadiness::NotYetKnown,
         })
     }
 

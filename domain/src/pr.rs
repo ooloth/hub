@@ -2,7 +2,7 @@ use chrono::Duration;
 use serde::{Deserialize, Serialize};
 
 /// A validated `owner/repo` identifier for a GitHub repository.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct RepoSlug(String);
 
@@ -123,6 +123,33 @@ pub enum MergeBlocker {
     Blocked,
 }
 
+/// Whether GitHub would let a pull request merge now, as far as it has worked it out.
+///
+/// GitHub computes this lazily: a search often reports `UNKNOWN` for a pull request nobody has
+/// looked at recently, and the real state a few seconds later (measured 2026-10-17). So "nothing
+/// blocks the merge" is only known once it says so.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub enum MergeReadiness {
+    /// Nothing stops the merge, though checks that are not required may be failing.
+    Ready,
+    /// Something stops the merge.
+    Blocked(MergeBlocker),
+    /// GitHub has not worked it out yet, or reported a state hub does not know.
+    #[default]
+    NotYetKnown,
+}
+
+impl MergeReadiness {
+    /// What stops the merge, when something is known to.
+    #[must_use]
+    pub const fn blocker(self) -> Option<MergeBlocker> {
+        match self {
+            Self::Blocked(blocker) => Some(blocker),
+            Self::Ready | Self::NotYetKnown => None,
+        }
+    }
+}
+
 impl std::str::FromStr for RepoSlug {
     type Err = String;
 
@@ -235,9 +262,9 @@ pub struct PullRequest {
     /// Top-level (non-diff) comments on the PR.
     #[serde(default)]
     pub pr_comments: Vec<ReviewComment>,
-    /// Reason the PR cannot be merged right now, if any.
+    /// Whether the PR can be merged right now, as far as GitHub has worked it out.
     #[serde(default)]
-    pub merge_blocker: Option<MergeBlocker>,
+    pub merge_readiness: MergeReadiness,
 }
 
 #[cfg(test)]
@@ -300,7 +327,7 @@ mod tests {
             total_changed_files: 0,
             review_threads: vec![],
             pr_comments: vec![],
-            merge_blocker: None,
+            merge_readiness: MergeReadiness::NotYetKnown,
         }
     }
 

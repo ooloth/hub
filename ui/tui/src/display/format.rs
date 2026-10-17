@@ -201,7 +201,7 @@ fn pr_line(pr: &domain::PullRequest) -> LineParts {
     } else {
         vec![format!(" #{}", pr.number), pr.author.clone(), review_status]
     };
-    if let Some(blocker) = pr.merge_blocker {
+    if let Some(blocker) = pr.merge_readiness.blocker() {
         dim_inline.push(merge_blocker_word(blocker).to_string());
     }
     LineParts {

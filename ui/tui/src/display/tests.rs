@@ -60,7 +60,7 @@ fn pr() -> StatusItem {
         total_changed_files: 0,
         review_threads: vec![],
         pr_comments: vec![],
-        merge_blocker: None,
+        merge_readiness: domain::MergeReadiness::NotYetKnown,
     })
 }
 
@@ -316,7 +316,7 @@ fn make_pr_conflicting(kind: domain::PrKind) -> StatusItem {
     let StatusItem::Pr(mut pr) = make_pr_with(kind, None, 0, 0) else {
         unreachable!()
     };
-    pr.merge_blocker = Some(domain::MergeBlocker::Conflict);
+    pr.merge_readiness = domain::MergeReadiness::Blocked(domain::MergeBlocker::Conflict);
     StatusItem::Pr(pr)
 }
 
@@ -347,7 +347,7 @@ fn make_pr_with(
         total_changed_files: 0,
         review_threads: vec![],
         pr_comments: vec![],
-        merge_blocker: None,
+        merge_readiness: domain::MergeReadiness::NotYetKnown,
     })
 }
 

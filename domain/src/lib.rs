@@ -202,26 +202,29 @@ mod tests {
         let _ = RepoSlug::new("ooloth", "");
     }
 
-    // ── merge_blocker serde default ───────────────────────────────────────────
+    // ── merge_readiness serde default ─────────────────────────────────────────
 
     #[rstest::rstest]
-    #[case(Some(r#""Conflict""#), Some(MergeBlocker::Conflict))]
-    #[case(Some(r#""Behind""#), Some(MergeBlocker::Behind))]
-    #[case(Some(r#""Blocked""#), Some(MergeBlocker::Blocked))]
-    #[case(None, None)]
-    fn merge_blocker_deserializes_with_default(
+    #[case(
+        Some(r#"{"Blocked":"Conflict"}"#),
+        MergeReadiness::Blocked(MergeBlocker::Conflict)
+    )]
+    #[case(Some(r#""Ready""#), MergeReadiness::Ready)]
+    #[case(Some(r#""NotYetKnown""#), MergeReadiness::NotYetKnown)]
+    #[case(None, MergeReadiness::NotYetKnown)]
+    fn merge_readiness_deserializes_with_default(
         #[case] field_value: Option<&str>,
-        #[case] expected: Option<MergeBlocker>,
+        #[case] expected: MergeReadiness,
     ) {
         let blocker_field = match field_value {
-            Some(v) => format!(r#","merge_blocker":{v}"#),
+            Some(v) => format!(r#","merge_readiness":{v}"#),
             None => String::new(),
         };
         let json = format!(
             r#"{{"number":1,"title":"t","repo":"o/r","url":"u","age":0,"urgency":"Low","kind":"Mine","author":"a","head_branch":"h","base_branch":"b"{blocker_field}}}"#
         );
         let pr: PullRequest = serde_json::from_str(&json).expect("deserialize");
-        assert_eq!(pr.merge_blocker, expected);
+        assert_eq!(pr.merge_readiness, expected);
     }
 
     // ── encode_project_path ───────────────────────────────────────────────────
