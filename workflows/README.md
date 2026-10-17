@@ -12,4 +12,7 @@ Orchestrated operations — the "what this tool does."
 `sources.rs` gathers every source at once, each within `SOURCE_TIMEOUT` (`status.rs`), so one
 source that never answers cannot hold back the rest.
 
+`freshness.rs` decides whether a refresh may replace the cache. `hub-daemon` and `hub-tui` both
+write only a `FreshPayload` it produced, so the two cache writers apply one rule.
+
 To add a workflow: [docs/playbooks/add-a-workflow.md](../docs/playbooks/add-a-workflow.md)

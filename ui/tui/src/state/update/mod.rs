@@ -260,7 +260,7 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
                 Ok(vec![Effect::StartRefresh])
             }
         }
-        Msg::FetchResult(Ok(report)) => refresh::apply_refresh(app, report),
+        Msg::FetchResult(Ok(fetched)) => refresh::apply_refresh(app, fetched),
         Msg::FetchResult(Err(e)) => {
             app.data.refresh_state = RefreshState::Failed(e.to_string());
             Ok(vec![])
@@ -287,7 +287,10 @@ mod tests {
         Action, App, DataState, DetailMode, Effect, InvestigateAction, Msg, RefreshState, Screen,
         SubmenuState, UiState,
     };
-    use workflows::status::{StatusItem, StatusReport};
+    use domain::known_secrets::KnownSecrets;
+    use domain::source_failure::SourceFailure;
+    use domain::source_outcomes::SourceOutcomes;
+    use workflows::status::{Refresh, StatusItem, StatusReport};
 
     fn app_with_items(items: Vec<DisplayItem>) -> App {
         let expanded = HashSet::new();
@@ -311,6 +314,26 @@ mod tests {
     fn apply(app: &mut App, actions: &[Action]) {
         for action in actions {
             let _ = app.update(*action);
+        }
+    }
+
+    /// A refresh as `workflows::status::run` returns it: the failed sources are the ones `report`
+    /// names, and one source answered.
+    fn fetched(report: StatusReport) -> Refresh {
+        let failures = report
+            .errors
+            .iter()
+            .map(|source| {
+                SourceFailure::new(
+                    source.clone(),
+                    &anyhow::anyhow!("unreachable"),
+                    &KnownSecrets::new(Vec::new()),
+                )
+            })
+            .collect();
+        Refresh {
+            report,
+            sources: SourceOutcomes::new(vec!["github prs".to_string()], failures),
         }
     }
 
@@ -720,7 +743,7 @@ mod tests {
             },
             ..App::default()
         };
-        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(fetched(report_with_ci())))).unwrap();
         assert!(matches!(app.data.refresh_state, RefreshState::Idle));
         assert!(matches!(
             app.current_screen(),
@@ -732,8 +755,118 @@ mod tests {
     #[test]
     fn handle_msg_fetch_ok_returns_write_cache_effect() {
         let mut app = App::default();
-        let effects = handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        let effects =
+            handle_msg(&mut app, Msg::FetchResult(Ok(fetched(report_with_ci())))).unwrap();
         assert!(matches!(effects.as_slice(), [Effect::WriteCache(_)]));
+    }
+
+    /// A refresh that came back with no signals, from the `answered` sources, while `failed` failed.
+    fn empty_refresh(answered: &[&str], failed: &[&str]) -> Refresh {
+        let mut refresh = fetched(StatusReport {
+            items: vec![],
+            errors: failed.iter().map(|source| (*source).to_string()).collect(),
+        });
+        refresh.sources = SourceOutcomes::new(
+            answered
+                .iter()
+                .map(|source| (*source).to_string())
+                .collect(),
+            refresh.sources.failed().to_vec(),
+        );
+        refresh
+    }
+
+    /// An app showing the signals of one earlier refresh that reached its sources.
+    fn showing_an_earlier_refresh() -> App {
+        let mut app = App::default();
+        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(fetched(report_with_ci())))).unwrap();
+        app
+    }
+
+    fn shown_item_count(app: &App) -> usize {
+        match app.current_screen() {
+            Screen::UnifiedList { items, .. } => items.len(),
+            Screen::MergingPr { parent, .. } => parent.items.len(),
+        }
+    }
+
+    #[rstest]
+    #[case::every_source_failed(&[], &["github prs", "github issues"])]
+    #[case::one_failed_and_the_rest_found_nothing(&["github issues"], &["github prs"])]
+    fn a_refresh_with_no_signals_and_a_failure_does_not_write_the_cache(
+        #[case] answered: &[&str],
+        #[case] failed: &[&str],
+    ) {
+        let mut app = showing_an_earlier_refresh();
+
+        let effects = handle_msg(
+            &mut app,
+            Msg::FetchResult(Ok(empty_refresh(answered, failed))),
+        )
+        .unwrap();
+
+        assert!(effects.is_empty(), "expected no cache write");
+    }
+
+    #[test]
+    fn a_refused_refresh_keeps_showing_the_earlier_signals() {
+        let mut app = showing_an_earlier_refresh();
+
+        let _ = handle_msg(
+            &mut app,
+            Msg::FetchResult(Ok(empty_refresh(&[], &["github prs"]))),
+        )
+        .unwrap();
+
+        assert_eq!(shown_item_count(&app), 1);
+        assert_eq!(app.data.raw_items.len(), 1);
+    }
+
+    #[test]
+    fn a_refused_refresh_keeps_the_earlier_updated_time() {
+        let mut app = showing_an_earlier_refresh();
+        let earlier = app.data.last_updated;
+
+        let _ = handle_msg(
+            &mut app,
+            Msg::FetchResult(Ok(empty_refresh(&[], &["github prs"]))),
+        )
+        .unwrap();
+
+        assert!(earlier.is_some());
+        assert_eq!(app.data.last_updated, earlier);
+    }
+
+    #[test]
+    fn a_refused_refresh_names_the_sources_that_failed() {
+        let mut app = showing_an_earlier_refresh();
+
+        let _ = handle_msg(
+            &mut app,
+            Msg::FetchResult(Ok(empty_refresh(&[], &["github prs", "github issues"]))),
+        )
+        .unwrap();
+
+        assert!(
+            matches!(&app.data.refresh_state, RefreshState::Partial(sources) if sources == &["github prs", "github issues"]),
+            "got {:?}",
+            app.data.refresh_state
+        );
+    }
+
+    #[test]
+    fn a_refresh_that_found_the_queue_empty_with_nothing_failing_writes_the_cache_and_empties_the_list(
+    ) {
+        let mut app = showing_an_earlier_refresh();
+
+        let effects = handle_msg(
+            &mut app,
+            Msg::FetchResult(Ok(empty_refresh(&["github prs"], &[]))),
+        )
+        .unwrap();
+
+        assert!(matches!(effects.as_slice(), [Effect::WriteCache(_)]));
+        assert_eq!(shown_item_count(&app), 0);
     }
 
     #[test]
@@ -745,7 +878,11 @@ mod tests {
             },
             ..App::default()
         };
-        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci_and_errors()))).unwrap();
+        let _ = handle_msg(
+            &mut app,
+            Msg::FetchResult(Ok(fetched(report_with_ci_and_errors()))),
+        )
+        .unwrap();
         assert!(
             matches!(&app.data.refresh_state, RefreshState::Partial(sources) if sources == &["media", "linear issues"])
         );
@@ -754,7 +891,11 @@ mod tests {
     #[test]
     fn handle_msg_fetch_ok_with_errors_still_populates_items() {
         let mut app = App::default();
-        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci_and_errors()))).unwrap();
+        let _ = handle_msg(
+            &mut app,
+            Msg::FetchResult(Ok(fetched(report_with_ci_and_errors()))),
+        )
+        .unwrap();
         assert!(matches!(
             app.current_screen(),
             Screen::UnifiedList { items, .. } if !items.is_empty()
@@ -764,8 +905,11 @@ mod tests {
     #[test]
     fn handle_msg_fetch_ok_with_errors_returns_write_cache_effect() {
         let mut app = App::default();
-        let effects =
-            handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci_and_errors()))).unwrap();
+        let effects = handle_msg(
+            &mut app,
+            Msg::FetchResult(Ok(fetched(report_with_ci_and_errors()))),
+        )
+        .unwrap();
         assert!(matches!(effects.as_slice(), [Effect::WriteCache(_)]));
     }
 
@@ -1119,7 +1263,11 @@ mod tests {
             DisplayItem::Single(stub_issue()),
         ]);
         apply(&mut app, &[Action::MoveDown]); // cursor → 1
-        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(report_with_two_items()))).unwrap();
+        let _ = handle_msg(
+            &mut app,
+            Msg::FetchResult(Ok(fetched(report_with_two_items()))),
+        )
+        .unwrap();
         let Screen::UnifiedList { selected, .. } = app.current_screen() else {
             panic!("expected UnifiedList");
         };
@@ -1136,7 +1284,11 @@ mod tests {
         ]);
         apply(&mut app, &[Action::MoveToBottom]); // cursor → 3
                                                   // report has 2 items → new len 2, cursor clamps to 1
-        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(report_with_two_items()))).unwrap();
+        let _ = handle_msg(
+            &mut app,
+            Msg::FetchResult(Ok(fetched(report_with_two_items()))),
+        )
+        .unwrap();
         let Screen::UnifiedList { selected, .. } = app.current_screen() else {
             panic!("expected UnifiedList");
         };
@@ -1162,7 +1314,11 @@ mod tests {
             },
             ..App::default()
         };
-        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(report_with_two_items()))).unwrap();
+        let _ = handle_msg(
+            &mut app,
+            Msg::FetchResult(Ok(fetched(report_with_two_items()))),
+        )
+        .unwrap();
         let Screen::UnifiedList { items, .. } = app.current_screen() else {
             panic!("expected UnifiedList");
         };
@@ -1282,14 +1438,14 @@ mod tests {
     #[test]
     fn refresh_in_merging_preserves_screen_variant() {
         let mut app = app_in_merging();
-        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(fetched(report_with_ci())))).unwrap();
         assert!(matches!(app.current_screen(), Screen::MergingPr { .. }));
     }
 
     #[test]
     fn refresh_in_merging_updates_parent_items() {
         let mut app = app_in_merging();
-        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(fetched(report_with_ci())))).unwrap();
         let Screen::MergingPr { parent, .. } = app.current_screen() else {
             panic!("expected MergingPr");
         };
@@ -1419,7 +1575,7 @@ mod tests {
 
         // A background refresh replaces the list with a different PR under the
         // same selection index. The captured target must survive it.
-        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(report_with_ci()))).unwrap();
+        let _ = handle_msg(&mut app, Msg::FetchResult(Ok(fetched(report_with_ci())))).unwrap();
 
         let effects = app.update(Action::CommitReview(crate::state::PrReview::FixMine));
         assert_eq!(effects.len(), 1);

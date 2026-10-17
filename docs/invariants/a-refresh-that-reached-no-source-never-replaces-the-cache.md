@@ -2,8 +2,9 @@
 
 ## The invariant
 
-`hub-daemon` replaces the `status_cache` row only with a refresh that at least one source answered.
-A refresh where every source failed leaves the previous row exactly as it was.
+Neither cache writer, `hub-daemon` or `hub-tui`, replaces the `status_cache` row with a refresh that
+came back with no signals while a source failed. Such a refresh leaves the previous row exactly as
+it was. Both writers decide with one rule, `classify` in `workflows/src/freshness.rs`.
 
 ## Why it must hold
 
@@ -32,6 +33,8 @@ indistinguishable from a quiet morning.
 - Calling `store::status_cache::upsert` from anywhere in `daemon/`, or
   `store::daemon_health::record` from anywhere in `daemon/` other than `daemon/src/cache.rs`, which
   is the only place that has checked.
+- Calling `store::status_cache::upsert` from anywhere in `ui/tui/` other than the
+  `Effect::WriteCache` handler in `ui/tui/src/main.rs`, which receives only a checked payload.
 
 What it permits: writing a partial refresh, where some sources failed and others answered. The
 report carries the failed source names, `RefreshState::Partial` renders them, and the items that
@@ -39,10 +42,11 @@ did arrive are real.
 
 ## How it is enforced
 
-**The construction path is enforced by the compiler, totally.** `daemon::freshness::FreshStatus`
-wraps the report in a private field and `classify` is its only constructor. A payload reaches
-`cache::record` only as a `FreshPayload`, whose only constructor is `FreshStatus::payload`. There is
-no way to hand a total-outage report to the writer, and no check is needed for that path.
+**The construction path is enforced by the compiler, totally.** `workflows::freshness::FreshStatus`
+wraps the report in a private field and `classify` is its only constructor. A payload reaches the
+daemon's `cache::record` and the TUI's `Effect::WriteCache` only as a `FreshPayload`, whose only
+constructor is `FreshStatus::payload`. There is no way to hand a total-outage report to either
+writer, and no check is needed for that path.
 
 **The branch is covered by a test, not the compiler.** `settle` in `daemon/src/main.rs` turns a
 `NothingRefreshed` into a pass with no payload, and nothing stops a future edit from passing one
@@ -51,12 +55,15 @@ anyway. That is what `a_refresh_that_reached_no_source_leaves_the_previous_row_u
 source failed after it, and asserts the payload, schema version and `refreshed_at` are all
 unchanged while the health record moved on.
 
-What that misses: a new file under `daemon/src/` calling `store::status_cache::upsert` on its own
-bypasses both mechanisms. Nothing greps for that today. The `domain_reads_no_ambient_state` test in
-`scripts/src/repo_state/domain_purity.rs` is the model for the tripwire that would close it.
+In the TUI, `apply_refresh` in `ui/tui/src/state/update/refresh.rs` turns a `NothingRefreshed` into
+no effect at all. `a_refresh_with_no_signals_and_a_failure_does_not_write_the_cache` in
+`ui/tui/src/state/update/mod.rs` covers that branch, and the tests beside it check that the screen
+keeps the earlier signals and their time.
 
-**The TUI does not uphold this and is outside its scope.** `ui/tui/src/main.rs` is still a second
-cache writer and writes every report unconditionally, including a total outage.
-[Decision 021](../decisions/021-daemon-owns-signal-refresh.md) makes the daemon the only writer, and
-Phase 5 of #327 removes the TUI's write. Until that lands, this invariant holds for the daemon and
-not for the cache as a whole.
+What that misses: a new file under `daemon/src/` or `ui/tui/src/` calling
+`store::status_cache::upsert` on its own bypasses both mechanisms. Nothing greps for that today.
+The `domain_reads_no_ambient_state` test in `scripts/src/repo_state/domain_purity.rs` is the model
+for the tripwire that would close it.
+
+[Decision 022](../decisions/022-tui-reads-cache-never-fetches.md) removes the TUI's fetch, and with
+it the TUI's write. The daemon is then the only writer this invariant covers.

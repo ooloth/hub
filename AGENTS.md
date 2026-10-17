@@ -184,9 +184,8 @@ while 1Password still answers: `just sources-unreachable daemon --once`, or
 port and exempts 1Password's domains, so it does not cut 1Password, DNS, or
 anything that ignores proxy variables, such as `git` over SSH. The GitHub sources
 and the private workflows have been seen to fail through it; Linear, Loki and GCP
-have not been tried. A TUI refresh through it currently empties the cache
-([#343](https://github.com/ooloth/hub/issues/343)), so run `just daemon --once`
-afterwards to refill it.
+have not been tried. A TUI refresh through it leaves the cache and the screen as
+they were, and the status bar names the sources that failed.
 
 **The loop.**
 

@@ -1,5 +1,7 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::Utc;
+use workflows::freshness::{classify, RefreshOutcome};
+use workflows::status::Refresh;
 
 use crate::display::{build_unified, flatten};
 use crate::state::{App, Effect, RefreshState, Screen};
@@ -42,11 +44,24 @@ pub(super) fn apply_report(
     refresh_screen_in_place(&mut app.ui.screen, &app.data.raw_items);
 }
 
-pub(super) fn apply_refresh(
-    app: &mut App,
-    report: workflows::status::StatusReport,
-) -> Result<Vec<Effect>> {
-    let json = serde_json::to_string(&report).context("failed to serialize status report")?;
-    apply_report(app, report, Utc::now());
-    Ok(vec![Effect::WriteCache(json)])
+/// Shows a refresh and caches it, unless it came back with nothing worth caching. Then the
+/// earlier signals and their time stay on screen, and only the failed sources are named.
+pub(super) fn apply_refresh(app: &mut App, fetched: Refresh) -> Result<Vec<Effect>> {
+    match classify(fetched) {
+        RefreshOutcome::Refreshed(fresh) => {
+            let payload = fresh.payload()?;
+            apply_report(app, fresh.into_report(), Utc::now());
+            Ok(vec![Effect::WriteCache(payload)])
+        }
+        RefreshOutcome::NothingRefreshed { sources } => {
+            app.data.refresh_state = RefreshState::Partial(
+                sources
+                    .failed()
+                    .iter()
+                    .map(|failure| failure.source().to_string())
+                    .collect(),
+            );
+            Ok(vec![])
+        }
+    }
 }

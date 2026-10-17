@@ -1,13 +1,14 @@
 //! Whether a refresh came back with anything worth caching.
 
+use crate::status::{Refresh, StatusReport};
 use anyhow::{Context, Result};
+use domain::source_failure::SourceFailure;
 use domain::source_outcomes::SourceOutcomes;
 use store::status_cache::Payload;
-use workflows::status::Refresh;
 
 /// What one refresh came back with.
 #[derive(Debug)]
-pub(crate) enum RefreshOutcome {
+pub enum RefreshOutcome {
     /// At least one source answered with something, or nothing failed. This is the queue as of
     /// now. An empty queue with no failures lands here and must be written, or nothing ever
     /// learns that the queue drained.
@@ -25,29 +26,37 @@ pub(crate) enum RefreshOutcome {
 /// The field is private and [`classify`] is the only constructor, so a refresh
 /// that came back with nothing cannot reach the cache.
 #[derive(Debug)]
-pub(crate) struct FreshStatus(Refresh);
+pub struct FreshStatus(Refresh);
 
 impl FreshStatus {
     /// How many signals the refresh came back with.
-    pub(crate) const fn item_count(&self) -> usize {
+    #[must_use]
+    pub const fn item_count(&self) -> usize {
         self.0.report.items.len()
     }
 
     /// Which sources answered, and each that failed with why.
-    pub(crate) fn sources(&self) -> SourceOutcomes {
+    #[must_use]
+    pub fn sources(&self) -> SourceOutcomes {
         self.0.sources.clone()
+    }
+
+    /// The report itself, to show once its payload has been taken.
+    #[must_use]
+    pub fn into_report(self) -> StatusReport {
+        self.0.report
     }
 
     /// The payload to store, in the shape the TUI reads.
     ///
     /// # Errors
     /// Returns an error if the report cannot be serialized.
-    pub(crate) fn payload(&self) -> Result<FreshPayload> {
+    pub fn payload(&self) -> Result<FreshPayload> {
         let json = serde_json::to_string(&self.0.report)
             .context("failed to serialize the status report")?;
         Ok(FreshPayload(Payload {
             json,
-            schema_version: workflows::status::SCHEMA_VERSION,
+            schema_version: crate::status::SCHEMA_VERSION,
         }))
     }
 }
@@ -55,13 +64,14 @@ impl FreshStatus {
 /// A payload serialized from a [`FreshStatus`].
 ///
 /// The field is private and [`FreshStatus::payload`] is the only constructor, so a refresh that
-/// came back with nothing cannot reach [`crate::cache::record`] as a payload.
+/// came back with nothing cannot reach a cache writer as a payload.
 #[derive(Debug)]
-pub(crate) struct FreshPayload(Payload);
+pub struct FreshPayload(Payload);
 
 impl FreshPayload {
     /// The payload as the store writes it.
-    pub(crate) const fn payload(&self) -> &Payload {
+    #[must_use]
+    pub const fn payload(&self) -> &Payload {
         &self.0
     }
 }
@@ -71,7 +81,21 @@ impl FreshPayload {
 /// An empty report with no failures is a real answer: the queue drained, and
 /// the cache has to say so. An empty report with failures is not trusted as
 /// one, and writing it would discard what was last known.
-pub(crate) fn classify(refresh: Refresh) -> RefreshOutcome {
+///
+/// # Panics
+/// If `report.errors` and `sources` name different failures. `workflows::status::run` derives
+/// one from the other, so only a bug produces a refresh where they disagree.
+pub fn classify(refresh: Refresh) -> RefreshOutcome {
+    // The decision reads `sources`, while the cached payload and the TUI's banner show
+    // `report.errors`, so the two must name the same failures.
+    assert!(
+        refresh
+            .report
+            .errors
+            .iter()
+            .eq(refresh.sources.failed().iter().map(SourceFailure::source)),
+        "the report names the sources that failed"
+    );
     if refresh.report.items.is_empty() && !refresh.sources.failed().is_empty() {
         let sources = refresh.sources;
         assert!(
@@ -92,9 +116,9 @@ pub(crate) fn classify(refresh: Refresh) -> RefreshOutcome {
 mod tests {
     use super::*;
     use domain::known_secrets::KnownSecrets;
-    use domain::source_failure::SourceFailure;
+
+    use crate::status::{StatusItem, StatusReport};
     use domain::source_outcomes::Reach;
-    use workflows::status::{StatusItem, StatusReport};
 
     fn ci_failure() -> StatusItem {
         StatusItem::Ci(domain::CiFailure {
@@ -194,6 +218,36 @@ mod tests {
         }
     }
 
+    proptest::proptest! {
+        #[test]
+        fn a_refresh_replaces_the_cache_exactly_when_it_has_signals_or_nothing_failed(
+            items in 0usize..3,
+            answered in 0usize..3,
+            failed_sources in 0usize..3,
+        ) {
+            // Every refresh asks at least one source; `SourceOutcomes::new` rejects one that asked none.
+            proptest::prop_assume!(answered + failed_sources > 0);
+            let answered: Vec<String> = (0..answered).map(|i| format!("answered {i}")).collect();
+            let answered: Vec<&str> = answered.iter().map(String::as_str).collect();
+
+            let outcome = classify(refresh(items, &answered, failed_sources));
+
+            proptest::prop_assert_eq!(
+                matches!(outcome, RefreshOutcome::Refreshed(_)),
+                items > 0 || failed_sources == 0
+            );
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "the report names the sources that failed")]
+    fn a_refresh_whose_report_names_different_failures_than_its_sources_halts() {
+        let mut disagreeing = refresh(1, &["answered"], 1);
+        disagreeing.report.errors = vec!["another source".to_string()];
+
+        let _ = classify(disagreeing);
+    }
+
     #[test]
     fn a_payload_reads_back_as_the_same_status_report() {
         let RefreshOutcome::Refreshed(fresh) = classify(report(3, 1)) else {
@@ -217,7 +271,7 @@ mod tests {
 
         assert_eq!(
             payload.payload().schema_version,
-            workflows::status::SCHEMA_VERSION
+            crate::status::SCHEMA_VERSION
         );
     }
 }

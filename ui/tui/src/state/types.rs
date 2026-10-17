@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use domain::{PrKind, PullRequest, UntrustedText};
-use workflows::status::{StatusItem, StatusReport};
+use workflows::status::{Refresh, StatusItem, StatusReport};
 
 use crate::display::{
     Category, DisplayItem, Filter, FlatRow, GroupKey, ListSnapshot, SelectedItemKind,
@@ -208,7 +208,9 @@ pub(crate) enum RefreshState {
     #[default]
     Idle,
     InProgress,
-    /// Partial refresh: some sources succeeded, others failed.
+    /// Some sources failed. The signals shown are from the last refresh that the cache accepted,
+    /// which is this one when other sources answered with signals, or an earlier one when nothing
+    /// that answered had any.
     Partial(Vec<String>),
     Failed(String),
 }
@@ -450,13 +452,14 @@ pub(crate) enum Effect {
         error: UntrustedText,
     },
     StartRefresh,
-    WriteCache(String),
+    /// Replace the cache with a refresh the shared rule accepted.
+    WriteCache(workflows::freshness::FreshPayload),
 }
 
 pub(crate) enum Msg {
     Action(Action),
     Tick,
-    FetchResult(Result<StatusReport>),
+    FetchResult(Result<Refresh>),
     AppliedFromCache {
         report: StatusReport,
         refreshed_at: DateTime<Utc>,

@@ -43,7 +43,6 @@ requests (Phase 4), and the socket the TUI will read, which is also where health
   itself, `domain::daemon_pass::Pass`, lives in `domain/` so the store can record it
 - `refresh.rs` — `params` and `fetch`, which asks all sources once and merges the answers. The
   network edge
-- `freshness.rs` — `RefreshOutcome`, `FreshStatus`, `FreshPayload`, `classify`. Pure; no I/O
 - `cache.rs` — `open` and `record`, which writes the pass and its payload in one transaction and
   falls back to recording the pass as failed, and `record_credential_attempt`. The SQLite edge
 
@@ -60,7 +59,8 @@ and writing that over a populated cache is silent data loss. A source that does 
 60 seconds (`SOURCE_TIMEOUT`, `workflows/src/status.rs`) is reported as failed like any other, and
 the others still contribute.
 
-A refresh is cached unless it came back with nothing **and** a source failed:
+A refresh is cached unless it came back with nothing **and** a source failed. The rule is
+`classify` in `workflows/src/freshness.rs`, which the TUI applies to its own refreshes too:
 
 - items, no failures → written
 - items, some failures → written (partial)

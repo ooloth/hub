@@ -10,12 +10,11 @@ use domain::known_secrets::KnownSecrets;
 use domain::pass_failure::PassFailure;
 use domain::profile::Profile;
 
-use crate::freshness::{FreshPayload, RefreshOutcome};
 use clap::Parser;
+use workflows::freshness::{self, FreshPayload, RefreshOutcome};
 
 mod cache;
 mod credentials;
-mod freshness;
 mod instance_lock;
 mod notification;
 mod onepassword_app;

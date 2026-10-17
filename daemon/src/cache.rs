@@ -9,7 +9,7 @@ use domain::pass_failure::PassFailure;
 use domain::profile::Profile;
 use rusqlite::Connection;
 
-use crate::freshness::FreshPayload;
+use workflows::freshness::FreshPayload;
 
 /// Whether a pass reached the database, and how.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -111,7 +111,7 @@ mod tests {
     use secrecy::Secret;
 
     use super::*;
-    use crate::freshness::{classify, RefreshOutcome};
+    use workflows::freshness::{classify, RefreshOutcome};
 
     fn no_secrets() -> KnownSecrets {
         KnownSecrets::new(Vec::new())

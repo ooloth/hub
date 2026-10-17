@@ -1,6 +1,8 @@
 //! Orchestrated workflows for the hub task and signal pipeline.
 /// PR investigation worktree management.
 pub mod fetch;
+/// Whether a refresh came back with anything worth caching, for every cache writer.
+pub mod freshness;
 /// GCP Logging query and entry parsing.
 pub mod gcp;
 pub(crate) mod git;

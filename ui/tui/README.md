@@ -19,12 +19,15 @@ The event loop runs on tokio and multiplexes three sources with `tokio::select!`
 
 - `crossterm::event::EventStream` — keyboard events
 - `tokio::time::interval` (30 min) — periodic background refresh
-- `mpsc::Receiver<Result<StatusReport>>` — results from background fetches
+- `mpsc::Receiver<Result<Refresh>>` — results from background fetches
 
 Background fetches run in spawned tokio tasks and send results back over the
 channel. The `rusqlite::Connection` stays in the main task (it is `Send` but not `Sync`, so
-tasks cannot share it); tasks return a typed `StatusReport`, and the main task serializes and
-upserts it.
+tasks cannot share it); tasks return a typed `Refresh`, the update step classifies it with
+`workflows::freshness::classify`, and the main task upserts the payload only when the rule
+accepted it. A refresh that came back with no signals while a source failed is not cached: the
+screen keeps the earlier signals and their time, and the status bar names the failed sources. See
+[the invariant](../../docs/invariants/a-refresh-that-reached-no-source-never-replaces-the-cache.md).
 
 ## State machine
 

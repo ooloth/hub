@@ -11,7 +11,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use secrecy::ExposeSecret;
 use std::{io, time::Duration};
 use tokio::sync::mpsc;
-use workflows::status::{StatusReport, SCHEMA_VERSION};
+use workflows::status::{Refresh, StatusReport, SCHEMA_VERSION};
 
 use crate::display::{build_unified, flatten, Filter};
 use crate::input::key_to_action;
@@ -131,7 +131,7 @@ async fn main() -> Result<()> {
         },
     };
 
-    let (tx, mut rx) = mpsc::channel::<Result<StatusReport>>(1);
+    let (tx, mut rx) = mpsc::channel::<Result<Refresh>>(1);
     if start_refresh {
         spawn_fetch(&config, tx.clone());
     }
@@ -150,7 +150,7 @@ async fn main() -> Result<()> {
     .await
 }
 
-fn spawn_fetch(config: &config::Config, tx: mpsc::Sender<Result<StatusReport>>) {
+fn spawn_fetch(config: &config::Config, tx: mpsc::Sender<Result<Refresh>>) {
     let params = workflows::status::StatusParams {
         github_token: config.github_token.clone(),
         github_username: config.github_username.clone(),
@@ -165,13 +165,7 @@ fn spawn_fetch(config: &config::Config, tx: mpsc::Sender<Result<StatusReport>>) 
     };
 
     drop(tokio::spawn(async move {
-        let _ = tx
-            .send(
-                workflows::status::run(params)
-                    .await
-                    .map(|refresh| refresh.report),
-            )
-            .await;
+        let _ = tx.send(workflows::status::run(params).await).await;
     }));
 }
 
@@ -191,7 +185,7 @@ fn spawn_git_fetch(config: &config::Config) {
 fn request_refresh(
     app: &mut App,
     config: &config::Config,
-    tx: &mpsc::Sender<Result<StatusReport>>,
+    tx: &mpsc::Sender<Result<Refresh>>,
     include_git_fetch: bool,
     delay: Option<Duration>,
 ) {
@@ -218,13 +212,7 @@ fn request_refresh(
         let tx = tx.clone();
         drop(tokio::spawn(async move {
             tokio::time::sleep(d).await;
-            let _ = tx
-                .send(
-                    workflows::status::run(params)
-                        .await
-                        .map(|refresh| refresh.report),
-                )
-                .await;
+            let _ = tx.send(workflows::status::run(params).await).await;
             if let Some(projects) = git_params {
                 if let Err(e) = workflows::fetch::run(&projects).await {
                     eprintln!("hub fetch: {e}");
@@ -249,8 +237,8 @@ async fn run_loop(
     app: &mut App,
     conn: &rusqlite::Connection,
     config: &config::Config,
-    tx: &mpsc::Sender<Result<StatusReport>>,
-    rx: &mut mpsc::Receiver<Result<StatusReport>>,
+    tx: &mpsc::Sender<Result<Refresh>>,
+    rx: &mut mpsc::Receiver<Result<Refresh>>,
 ) -> Result<()> {
     let mut events = EventStream::new();
     let mut refresh_interval =
@@ -318,7 +306,7 @@ async fn handle_effect(
     app: &mut App,
     conn: &rusqlite::Connection,
     config: &config::Config,
-    tx: &mpsc::Sender<Result<StatusReport>>,
+    tx: &mpsc::Sender<Result<Refresh>>,
 ) -> Result<bool> {
     match effect {
         Effect::Quit => return Ok(true),
@@ -337,8 +325,9 @@ async fn handle_effect(
             handle_merge_pull_request(app, config, tx, repo, number).await;
         }
         Effect::StartRefresh => request_refresh(app, config, tx, true, None),
-        Effect::WriteCache(json) => {
-            store::status_cache::upsert(conn, &json, SCHEMA_VERSION)
+        Effect::WriteCache(fresh) => {
+            let payload = fresh.payload();
+            store::status_cache::upsert(conn, &payload.json, payload.schema_version)
                 .context("failed to upsert status cache")?;
         }
         other => handle_investigation_effect(other, app, config).await,
@@ -644,7 +633,7 @@ async fn handle_launch_media(
 async fn handle_set_issue_labels(
     app: &mut App,
     config: &config::Config,
-    tx: &mpsc::Sender<Result<StatusReport>>,
+    tx: &mpsc::Sender<Result<Refresh>>,
     repo: String,
     number: u64,
     labels: Vec<String>,
@@ -670,7 +659,7 @@ async fn handle_set_issue_labels(
 async fn handle_merge_pull_request(
     app: &mut App,
     config: &config::Config,
-    tx: &mpsc::Sender<Result<StatusReport>>,
+    tx: &mpsc::Sender<Result<Refresh>>,
     repo: String,
     number: u64,
 ) {
