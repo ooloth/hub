@@ -7,8 +7,6 @@ amended: 2026-10-17
 
 # 027 — The daemon resolves its credentials through 1Password once per start and holds them only in memory
 
-_Status: accepted; not yet implemented. Nothing sends a notification when the daemon cannot obtain
-its credentials (#339)._
 
 ## Forced by
 
@@ -147,3 +145,12 @@ When an attempt finds the 1Password app not running, the daemon opens it with `o
 at most once a minute, and records that it did. The account holder asked for this on 2026-10-17:
 the app should always be open, and a 1Password window with a Touch ID prompt is better than signals
 silently stopping. The daemon never closes, quits or hides the app.
+
+## Addendum (2026-10-17) — when the notification is sent
+
+The decision above has the daemon send a notification once the deadline passes. It is sent instead
+after 10 minutes without credentials, counted from the first failed attempt, and again every hour
+while they stay missing, as the account holder chose on 2026-10-17. Prompts are already on screen
+for anyone at the machine, so the notification is for someone who has been away, and the causes
+that clear by themselves usually do so within 10 minutes. It goes out through `osascript`, so macOS
+shows it as coming from Script Editor; Phase 4 (#344) plans `terminal-notifier`.

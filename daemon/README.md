@@ -23,9 +23,11 @@ process: within about a second after a prompt went unanswered or `op` reached it
 deadline, so a fresh prompt is on screen, and otherwise waiting a second, then doubling up to a
 minute. When an attempt finds the 1Password app not running, the daemon opens it (`open -a
 1Password`), at most once a minute, so someone returning sees it asking to be unlocked. It never
-closes or quits the app. Everything else in [#327](https://github.com/ooloth/hub/issues/327) is a later
-phase: a notification when credentials are missing (the rest of 3.6), notifications (Phase 4), and
-the socket the TUI will read, which is also where health is first shown (Phase 5).
+closes or quits the app. After 10 minutes without credentials it posts a macOS notification saying
+signals have paused and what's needed, then again every hour while they stay missing. Everything
+else in [#327](https://github.com/ooloth/hub/issues/327) is a later phase: notifications about pull
+requests (Phase 4), and the socket the TUI will read, which is also where health is first shown
+(Phase 5).
 
 ## Files
 
@@ -110,7 +112,8 @@ health record, with `cause` one of:
 
 When the daemon opened the app after an attempt, the line also says `opened_app=yes`, or
 `opened_app=failed` with `open_error`, and the health record keeps the same in `opened_app` and
-`open_error`.
+`open_error`. When it posted a notification, the line says `notified=yes`, or `notified=failed` with
+`notify_error`, kept in `notified` and `notify_error`.
 
 `retry_in` is absent with `--once`, which makes one attempt and exits 1:
 

@@ -17,6 +17,7 @@ mod cache;
 mod credentials;
 mod freshness;
 mod instance_lock;
+mod notification;
 mod onepassword_app;
 mod pass;
 mod refresh;
@@ -126,13 +127,22 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
         );
     };
     let mut opener = credentials::AppOpener::new(onepassword_app::open);
+    let mut notifier = credentials::Notifier::new(notification::post);
     let obtained = if cli.once {
-        credentials::obtain(resolve, credentials::Retries::Never, &mut opener, record).await
+        credentials::obtain(
+            resolve,
+            credentials::Retries::Never,
+            &mut opener,
+            &mut notifier,
+            record,
+        )
+        .await
     } else {
         credentials::obtain(
             resolve,
             credentials::Retries::until_obtained(),
             &mut opener,
+            &mut notifier,
             record,
         )
         .await

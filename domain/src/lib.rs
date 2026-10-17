@@ -6,6 +6,8 @@ pub mod ci;
 pub mod credential_attempt;
 /// Why the daemon could not obtain its credentials from 1Password.
 pub mod credential_failure;
+/// The notification posted when the daemon has gone without credentials for a while.
+pub mod credential_notification;
 /// One refresh pass of the daemon, as it is logged and recorded.
 pub mod daemon_pass;
 /// GCP Cloud Logging query configuration and log entry types.

@@ -24,6 +24,9 @@ pub struct CredentialAttempt {
     /// What happened when the daemon opened the 1Password app after this attempt found it not
     /// running, or `None` when it did not try.
     pub opened_app: Option<AppOpening>,
+    /// What happened when the daemon posted a notification after this attempt, or `None` when none
+    /// was due.
+    pub notified: Option<Notifying>,
     /// How long until the next attempt, or `None` when there will be none.
     pub retry_in: Option<Duration>,
 }
@@ -50,6 +53,31 @@ impl AppOpening {
     pub fn failed(error: &anyhow::Error, secrets: &KnownSecrets) -> Self {
         Self::Failed {
             reason: FailureReason::redacted(error, secrets, "opening the 1Password app"),
+        }
+    }
+}
+
+/// The daemon's attempt to post a notification that signals have paused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Notifying {
+    /// It was posted.
+    Sent,
+    /// Posting it failed.
+    Failed {
+        /// Why.
+        reason: FailureReason,
+    },
+}
+
+impl Notifying {
+    /// Posting failed with `error`, redacted of every value in `secrets`.
+    ///
+    /// # Panics
+    /// As [`AppOpening::failed`].
+    #[must_use]
+    pub fn failed(error: &anyhow::Error, secrets: &KnownSecrets) -> Self {
+        Self::Failed {
+            reason: FailureReason::redacted(error, secrets, "posting the notification"),
         }
     }
 }

@@ -2,7 +2,7 @@
 //!
 //! It is written in the same transaction as the payload when the pass replaced it (Decision 026).
 use anyhow::{Context, Result};
-use domain::credential_attempt::{AppOpening, CredentialAttempt};
+use domain::credential_attempt::{AppOpening, CredentialAttempt, Notifying};
 use domain::credential_failure::CredentialCause;
 use domain::daemon_pass::Pass;
 use rusqlite::{params, Connection, Transaction, TransactionBehavior};
@@ -14,7 +14,7 @@ use crate::status_cache::{self, Payload};
 /// Bump it in the change that alters the `CREATE TABLE` below. [`ensure_table`] then drops the
 /// old table and creates the new one, which loses at most one pass's record, because the daemon
 /// rewrites the row on every pass.
-const SCHEMA_VERSION: i32 = 5;
+const SCHEMA_VERSION: i32 = 6;
 
 /// Every rule that ties a row's outcome to the rest of it, so a row that contradicts itself cannot
 /// be stored, however it is written.
@@ -41,7 +41,11 @@ const CREATE_TABLE: &str = "CREATE TABLE daemon_health (
     error           TEXT,
     opened_app      TEXT CHECK (opened_app IN ('opened', 'failed')),
     open_error      TEXT,
+    notified        TEXT CHECK (notified IN ('sent', 'failed')),
+    notify_error    TEXT,
     CHECK ((payload_written = 1) = (items IS NOT NULL)),
+    CHECK ((notified IS 'failed') = (notify_error IS NOT NULL)),
+    CHECK (notified IS NULL OR outcome GLOB 'credentials_*'),
     CHECK ((opened_app IS 'failed') = (open_error IS NOT NULL)),
     CHECK (opened_app IS NULL OR outcome = 'credentials_app_not_running'),
     CHECK ((outcome = 'pass_failed' OR outcome GLOB 'credentials_*')
@@ -144,12 +148,17 @@ pub fn record_credential_attempt(conn: &Connection, attempt: &CredentialAttempt)
         Some(AppOpening::Opened) => (Some("opened"), None),
         Some(AppOpening::Failed { reason }) => (Some("failed"), Some(reason.as_str())),
     };
+    let (notified, notify_error) = match &attempt.notified {
+        None => (None, None),
+        Some(Notifying::Sent) => (Some("sent"), None),
+        Some(Notifying::Failed { reason }) => (Some("failed"), Some(reason.as_str())),
+    };
     let _ = conn
         .execute(
             "INSERT INTO daemon_health (
                 id, schema_version, started_at, duration_ms, pid, outcome, payload_written,
-                items, answered, failed, error, opened_app, open_error
-             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, 0, NULL, '[]', '[]', ?6, ?7, ?8)
+                items, answered, failed, error, opened_app, open_error, notified, notify_error
+             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, 0, NULL, '[]', '[]', ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(id) DO UPDATE SET
                 schema_version  = excluded.schema_version,
                 started_at      = excluded.started_at,
@@ -162,7 +171,9 @@ pub fn record_credential_attempt(conn: &Connection, attempt: &CredentialAttempt)
                 failed          = excluded.failed,
                 error           = excluded.error,
                 opened_app      = excluded.opened_app,
-                open_error      = excluded.open_error",
+                open_error      = excluded.open_error,
+                notified        = excluded.notified,
+                notify_error    = excluded.notify_error",
             params![
                 SCHEMA_VERSION,
                 attempt.started_at.to_rfc3339(),
@@ -172,6 +183,8 @@ pub fn record_credential_attempt(conn: &Connection, attempt: &CredentialAttempt)
                 attempt.failure.reason().as_str(),
                 opened_app,
                 open_error,
+                notified,
+                notify_error,
             ],
         )
         .context("failed to write the daemon health record")?;
@@ -224,7 +237,9 @@ fn upsert(conn: &Connection, pass: &Pass) -> Result<()> {
                 failed          = excluded.failed,
                 error           = excluded.error,
                 opened_app      = NULL,
-                open_error      = NULL",
+                open_error      = NULL,
+                notified        = NULL,
+                notify_error    = NULL",
             params![
                 SCHEMA_VERSION,
                 pass.started_at.to_rfc3339(),
@@ -274,6 +289,10 @@ pub struct RecordedPass {
     pub opened_app: Option<String>,
     /// Why opening the app failed, when it did.
     pub open_error: Option<String>,
+    /// `sent` or `failed` when the daemon posted a notification after this attempt.
+    pub notified: Option<String>,
+    /// Why posting failed, when it did.
+    pub notify_error: Option<String>,
 }
 
 /// The recorded pass, if any.
@@ -287,7 +306,7 @@ pub fn recorded(conn: &Connection) -> Result<Option<RecordedPass>> {
     let row = conn
         .query_row(
             "SELECT started_at, duration_ms, pid, outcome, payload_written, items, answered,
-                    failed, error, opened_app, open_error
+                    failed, error, opened_app, open_error, notified, notify_error
              FROM daemon_health WHERE id = 1",
             [],
             |row| {
@@ -303,6 +322,8 @@ pub fn recorded(conn: &Connection) -> Result<Option<RecordedPass>> {
                     row.get::<_, Option<String>>(8)?,
                     row.get::<_, Option<String>>(9)?,
                     row.get::<_, Option<String>>(10)?,
+                    row.get::<_, Option<String>>(11)?,
+                    row.get::<_, Option<String>>(12)?,
                 ))
             },
         )
@@ -320,6 +341,8 @@ pub fn recorded(conn: &Connection) -> Result<Option<RecordedPass>> {
         error,
         opened_app,
         open_error,
+        notified,
+        notify_error,
     )) = row
     else {
         return Ok(None);
@@ -352,6 +375,8 @@ pub fn recorded(conn: &Connection) -> Result<Option<RecordedPass>> {
         error,
         opened_app,
         open_error,
+        notified,
+        notify_error,
     }))
 }
 
@@ -464,6 +489,8 @@ mod tests {
                 error: error.map(str::to_string),
                 opened_app: None,
                 open_error: None,
+                notified: None,
+                notify_error: None,
             }
         );
     }
@@ -593,6 +620,7 @@ mod tests {
             attempt: 3,
             failure: CredentialFailure::new(&anyhow::anyhow!("{cause_text}"), &no_secrets()),
             opened_app: None,
+            notified: None,
             retry_in,
         }
     }
@@ -637,6 +665,8 @@ mod tests {
                 error: Some(message.to_string()),
                 opened_app: None,
                 open_error: None,
+                notified: None,
+                notify_error: None,
             }
         );
     }
@@ -721,6 +751,49 @@ mod tests {
         assert_eq!(recorded_row(&conn).opened_app, None);
     }
 
+    #[rstest]
+    #[case::sent(Some(Notifying::Sent), Some("sent"), None)]
+    #[case::failed(
+        Some(Notifying::failed(&anyhow::anyhow!("osascript exited 1"), &no_secrets())),
+        Some("failed"),
+        Some("osascript exited 1")
+    )]
+    #[case::not_due(None, None, None)]
+    fn notifying_reads_back_as_recorded(
+        #[case] notified: Option<Notifying>,
+        #[case] stored: Option<&str>,
+        #[case] notify_error: Option<&str>,
+    ) {
+        let conn = in_memory();
+        let mut attempt = credential_attempt("dial tcp", Some(Duration::from_secs(1)));
+        attempt.notified = notified;
+
+        record_credential_attempt(&conn, &attempt).unwrap();
+
+        let row = recorded_row(&conn);
+        assert_eq!(row.notified.as_deref(), stored);
+        assert_eq!(row.notify_error.as_deref(), notify_error);
+    }
+
+    #[test]
+    fn a_pass_after_notifying_clears_what_notifying_recorded() {
+        let conn = in_memory();
+        let mut attempt = credential_attempt("dial tcp", Some(Duration::from_secs(1)));
+        attempt.notified = Some(Notifying::Sent);
+        record_credential_attempt(&conn, &attempt).unwrap();
+
+        record(
+            &conn,
+            &pass(PassOutcome::Kept {
+                sources: sources(&[], &["a"]),
+            }),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(recorded_row(&conn).notified, None);
+    }
+
     #[test]
     fn a_credential_attempt_leaves_the_cache_row_as_it_was() {
         let conn = in_memory();
@@ -741,7 +814,7 @@ mod tests {
     ) -> rusqlite::Result<usize> {
         let mut row = vec![
             ("id", "1"),
-            ("schema_version", "5"),
+            ("schema_version", "6"),
             ("started_at", "'2025-10-09T08:53:20+00:00'"),
             ("duration_ms", "812"),
             ("pid", "4242"),
@@ -753,6 +826,8 @@ mod tests {
             ("error", "'dial tcp'"),
             ("opened_app", "NULL"),
             ("open_error", "NULL"),
+            ("notified", "NULL"),
+            ("notify_error", "NULL"),
         ];
         for (name, cell) in &mut row {
             if let Some((_, value)) = changes.iter().find(|(column, _)| column == name) {
@@ -787,6 +862,9 @@ mod tests {
     #[case::opened_the_app_for_another_cause(&[("opened_app", "'opened'")])]
     #[case::an_open_error_without_a_failed_open(&[("opened_app", "'opened'"), ("open_error", "'x'")])]
     #[case::a_failed_open_without_its_error(&[("outcome", "'credentials_app_not_running'"), ("opened_app", "'failed'")])]
+    #[case::a_notify_error_without_a_failed_post(&[("notified", "'sent'"), ("notify_error", "'x'")])]
+    #[case::a_failed_post_without_its_error(&[("notified", "'failed'")])]
+    #[case::an_unknown_notifying(&[("notified", "'queued'")])]
     #[case::an_unknown_opening(&[("outcome", "'credentials_app_not_running'"), ("opened_app", "'tried'")])]
     fn a_credential_row_that_contradicts_itself_is_refused(#[case] changes: &[(&str, &str)]) {
         let conn = in_memory();

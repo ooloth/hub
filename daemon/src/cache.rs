@@ -381,6 +381,7 @@ mod tests {
                 &no_secrets(),
             ),
             opened_app: None,
+            notified: None,
             retry_in: Some(Duration::from_secs(1)),
         }
     }
