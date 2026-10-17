@@ -154,3 +154,7 @@ into a decision record._
 - *Reasoned* (2026-10-08): the daemon's health record does not depend on this question.
   [Decision 026](../decisions/026-daemon-health-is-one-row-in-its-own-table.md) puts it in a table
   of its own, so neither the single-row shape nor a per-category one has to carry it.
+- *Measured* (2026-10-17, read from the source): `classify` now lives in
+  `workflows/src/freshness.rs`, and the TUI's writes go through it as well as the daemon's. A
+  partial refresh still replaces the whole row without the failed sources' items, from either
+  writer.
