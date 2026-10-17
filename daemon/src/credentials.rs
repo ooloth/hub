@@ -5,8 +5,9 @@ use std::future::Future;
 use std::time::Duration;
 
 use chrono::Utc;
-use domain::credential_attempt::CredentialAttempt;
+use domain::credential_attempt::{AppOpening, CredentialAttempt};
 use domain::credential_failure::{CredentialCause, CredentialFailure};
+use domain::known_secrets::KnownSecrets;
 use domain::pass_failure::PassFailure;
 
 use crate::pass::one_line;
@@ -103,19 +104,66 @@ fn after_not_answering(took: Duration) -> Duration {
     wait
 }
 
+/// How long after opening the 1Password app the daemon leaves it before opening it again.
+const REOPEN_AFTER: Duration = Duration::from_secs(60);
+
+/// Opens the 1Password app when an attempt found it not running, at most once per
+/// [`REOPEN_AFTER`], so an app that will not stay open is not relaunched every second.
+#[derive(Debug)]
+pub(crate) struct AppOpener<O> {
+    open: O,
+    last_opened: Option<tokio::time::Instant>,
+}
+
+impl<O, Fut> AppOpener<O>
+where
+    O: FnMut() -> Fut,
+    Fut: Future<Output = anyhow::Result<()>>,
+{
+    /// `open` is what opens the app: `open -a 1Password` in the daemon, a stub in tests.
+    pub(crate) const fn new(open: O) -> Self {
+        Self {
+            open,
+            last_opened: None,
+        }
+    }
+
+    /// Opens the app unless it was opened within the last [`REOPEN_AFTER`], and says how that
+    /// went, or `None` when it was not due.
+    async fn open_if_due(&mut self) -> Option<AppOpening> {
+        let now = tokio::time::Instant::now();
+        if self
+            .last_opened
+            .is_some_and(|last| now.duration_since(last) < REOPEN_AFTER)
+        {
+            return None;
+        }
+        self.last_opened = Some(now);
+        Some(match (self.open)().await {
+            Ok(()) => AppOpening::Opened,
+            // Nothing has been resolved when the app is not running, so nothing to redact.
+            Err(error) => AppOpening::failed(&error, &KnownSecrets::new(Vec::new())),
+        })
+    }
+}
+
 /// Calls `resolve` until it returns credentials, waiting as `retries` says between attempts, and
-/// hands every failed attempt to `record` before waiting.
+/// hands every failed attempt to `record` before waiting. An attempt that found the 1Password app
+/// not running has `opener` open it first.
 ///
 /// Returns `None` once `retries` says to stop, after the last attempt has been recorded. With
 /// [`Retries::UntilObtained`] it returns only with credentials.
-pub(crate) async fn obtain<T, F, Fut>(
+pub(crate) async fn obtain<T, F, Fut, O, OpenFut>(
     mut resolve: F,
     mut retries: Retries,
+    opener: &mut AppOpener<O>,
     mut record: impl FnMut(&CredentialAttempt),
 ) -> Option<T>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, CredentialFailure>>,
+    O: FnMut() -> OpenFut,
+    OpenFut: Future<Output = anyhow::Result<()>>,
 {
     // Bounded by `retries`: endless only when the caller asks to wait for 1Password forever.
     for attempt in 1_u32.. {
@@ -127,12 +175,22 @@ where
         };
         let duration = started.elapsed();
         let retry_in = retries.after(failure.cause(), duration);
+        let opened_app = if failure.cause() == CredentialCause::AppNotRunning {
+            opener.open_if_due().await
+        } else {
+            None
+        };
+        assert!(
+            opened_app.is_none() || failure.cause() == CredentialCause::AppNotRunning,
+            "the app was opened after an attempt that found it running"
+        );
         record(&CredentialAttempt {
             started_at,
             duration,
             pid: std::process::id(),
             attempt,
             failure,
+            opened_app,
             retry_in,
         });
         tokio::time::sleep(retry_in?).await;
@@ -166,6 +224,15 @@ impl fmt::Display for AttemptReport {
         )?;
         if let Some(retry_in) = attempt.retry_in {
             write!(f, " retry_in={}", humantime::format_duration(retry_in))?;
+        }
+        match &attempt.opened_app {
+            None => {}
+            Some(AppOpening::Opened) => write!(f, " opened_app=yes")?,
+            Some(AppOpening::Failed { reason }) => write!(
+                f,
+                " opened_app=failed open_error=\"{}\"",
+                one_line(reason.as_str())
+            )?,
         }
         write!(
             f,
@@ -305,10 +372,15 @@ mod tests {
         let log = Rc::clone(&recorded);
         let resolve = failing_then(vec![failure(UNANSWERED), failure(UNANSWERED)], "secrets");
 
-        let obtained = obtain(resolve, Retries::until_obtained(), move |attempt| {
-            log.borrow_mut()
-                .push((attempt.failure.cause(), attempt.retry_in));
-        })
+        let obtained = obtain(
+            resolve,
+            Retries::until_obtained(),
+            &mut never_opens(),
+            move |attempt| {
+                log.borrow_mut()
+                    .push((attempt.failure.cause(), attempt.retry_in));
+            },
+        )
         .await;
 
         assert_eq!(obtained, Some("secrets"));
@@ -324,6 +396,139 @@ mod tests {
                 "{wait:?}"
             );
         }
+    }
+
+    type OpenResult = std::future::Ready<anyhow::Result<()>>;
+
+    /// An opener whose open always succeeds, counting its calls in `opens`.
+    fn counting_opener(opens: &Rc<RefCell<u32>>) -> AppOpener<impl FnMut() -> OpenResult> {
+        let opens = Rc::clone(opens);
+        AppOpener::new(move || {
+            *opens.borrow_mut() += 1;
+            std::future::ready(Ok(()))
+        })
+    }
+
+    fn never_opens() -> AppOpener<impl FnMut() -> OpenResult> {
+        AppOpener::new(|| -> OpenResult { panic!("opened the app") })
+    }
+
+    const APP_QUIT: &str =
+        "connecting to desktop app: 1Password CLI couldn't connect to the 1Password desktop app.";
+
+    /// A resolver that fails with `failures` in order, each after `takes`, then returns
+    /// `credentials`.
+    fn failing_slowly_then(
+        failures: Vec<CredentialFailure>,
+        takes: Duration,
+        credentials: &'static str,
+    ) -> impl FnMut() -> std::pin::Pin<Box<dyn Future<Output = Result<&'static str, CredentialFailure>>>>
+    {
+        let mut failures = failures.into_iter();
+        move || {
+            let next = failures.next();
+            Box::pin(async move {
+                tokio::time::sleep(takes).await;
+                next.map_or(Ok(credentials), Err)
+            })
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_app_is_opened_on_the_first_quit_attempt_and_not_again_within_a_minute() {
+        let opens = Rc::new(RefCell::new(0));
+        let recorded = Rc::new(RefCell::new(Vec::new()));
+        let log = Rc::clone(&recorded);
+        let resolve = failing_then(
+            vec![failure(APP_QUIT), failure(APP_QUIT), failure(APP_QUIT)],
+            "secrets",
+        );
+
+        let obtained = obtain(
+            resolve,
+            Retries::until_obtained(),
+            &mut counting_opener(&opens),
+            move |attempt| {
+                log.borrow_mut().push(attempt.opened_app.clone());
+            },
+        )
+        .await;
+
+        assert_eq!(obtained, Some("secrets"));
+        assert_eq!(*opens.borrow(), 1);
+        assert_eq!(
+            *recorded.borrow(),
+            vec![Some(AppOpening::Opened), None, None]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn the_app_is_opened_again_once_a_minute_has_passed() {
+        let opens = Rc::new(RefCell::new(0));
+        // Attempts start at 0 s, about 41 s and about 83 s.
+        let resolve = failing_slowly_then(
+            vec![failure(APP_QUIT), failure(APP_QUIT), failure(APP_QUIT)],
+            Duration::from_secs(40),
+            "secrets",
+        );
+
+        let _ = obtain(
+            resolve,
+            Retries::until_obtained(),
+            &mut counting_opener(&opens),
+            |_| {},
+        )
+        .await;
+
+        assert_eq!(*opens.borrow(), 2);
+    }
+
+    #[rstest]
+    #[case::unreachable("dial tcp: lookup my.1password.com: no such host")]
+    #[case::touch_id(UNANSWERED)]
+    #[case::other("\"Nope\" isn't a vault")]
+    #[tokio::test(start_paused = true)]
+    async fn no_other_cause_opens_the_app(#[case] message: &str) {
+        let resolve = failing_then(vec![failure(message)], "secrets");
+
+        let obtained = obtain(
+            resolve,
+            Retries::until_obtained(),
+            &mut never_opens(),
+            |_| {},
+        )
+        .await;
+
+        assert_eq!(obtained, Some("secrets"));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_open_is_recorded_and_the_daemon_keeps_trying() {
+        let recorded = Rc::new(RefCell::new(Vec::new()));
+        let log = Rc::clone(&recorded);
+        let mut opener = AppOpener::new(|| {
+            std::future::ready(Err(anyhow::anyhow!("LSOpenURLsWithRole() failed")))
+        });
+        let resolve = failing_then(vec![failure(APP_QUIT)], "secrets");
+
+        let obtained = obtain(
+            resolve,
+            Retries::until_obtained(),
+            &mut opener,
+            move |attempt| {
+                log.borrow_mut().push(attempt.opened_app.clone());
+            },
+        )
+        .await;
+
+        assert_eq!(obtained, Some("secrets"));
+        assert_eq!(
+            *recorded.borrow(),
+            vec![Some(AppOpening::failed(
+                &anyhow::anyhow!("LSOpenURLsWithRole() failed"),
+                &no_secrets()
+            ))]
+        );
     }
 
     /// A resolver that fails with `failures` in order, then returns `credentials`.
@@ -344,9 +549,14 @@ mod tests {
             "secrets",
         );
 
-        let obtained = obtain(resolve, Retries::until_obtained(), move |attempt| {
-            log.borrow_mut().push((attempt.attempt, attempt.retry_in));
-        })
+        let obtained = obtain(
+            resolve,
+            Retries::until_obtained(),
+            &mut never_opens(),
+            move |attempt| {
+                log.borrow_mut().push((attempt.attempt, attempt.retry_in));
+            },
+        )
         .await;
 
         assert_eq!(obtained, Some("secrets"));
@@ -365,7 +575,13 @@ mod tests {
         let started = tokio::time::Instant::now();
         let resolve = failing_then(vec![failure("dial tcp"), failure("dial tcp")], "secrets");
 
-        let _ = obtain(resolve, Retries::until_obtained(), |_| {}).await;
+        let _ = obtain(
+            resolve,
+            Retries::until_obtained(),
+            &mut never_opens(),
+            |_| {},
+        )
+        .await;
 
         assert_eq!(started.elapsed(), Duration::from_secs(3));
     }
@@ -381,9 +597,14 @@ mod tests {
             std::future::ready(Err::<(), _>(failure("dial tcp")))
         };
 
-        let obtained = obtain(resolve, Retries::Never, move |attempt| {
-            log.borrow_mut().push((attempt.attempt, attempt.retry_in));
-        })
+        let obtained = obtain(
+            resolve,
+            Retries::Never,
+            &mut never_opens(),
+            move |attempt| {
+                log.borrow_mut().push((attempt.attempt, attempt.retry_in));
+            },
+        )
         .await;
 
         assert_eq!(obtained, None);
@@ -404,6 +625,7 @@ mod tests {
                      'op://Scripts/GitHub/token': 1Password CLI couldn't connect to the \
                      1Password desktop app.",
                 ),
+                opened_app: None,
                 retry_in,
             },
             record_error,
@@ -473,6 +695,30 @@ mod tests {
                  macOS alert window(s) from UserNotificationCenter on screen\""
             ),
             "{alert}"
+        );
+    }
+
+    #[test]
+    fn the_line_says_whether_the_app_was_opened() {
+        let mut opened = report(Some(Duration::from_secs(1)), None);
+        opened.attempt.opened_app = Some(AppOpening::Opened);
+        let mut refused = report(Some(Duration::from_secs(1)), None);
+        refused.attempt.opened_app = Some(AppOpening::failed(
+            &anyhow::anyhow!("LSOpenURLsWithRole() failed"),
+            &no_secrets(),
+        ));
+
+        assert!(
+            opened
+                .to_string()
+                .contains(" retry_in=1s opened_app=yes error="),
+            "{opened}"
+        );
+        assert!(
+            refused.to_string().contains(
+                " retry_in=1s opened_app=failed open_error=\"LSOpenURLsWithRole() failed\" error="
+            ),
+            "{refused}"
         );
     }
 }

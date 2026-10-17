@@ -21,7 +21,9 @@ for the `default` profile, at every login, logging to `~/.hub/default/daemon.log
 cannot obtain its credentials, it records who was not answering and tries again in the same
 process: within about a second after a prompt went unanswered or `op` reached its 90-second
 deadline, so a fresh prompt is on screen, and otherwise waiting a second, then doubling up to a
-minute. Everything else in [#327](https://github.com/ooloth/hub/issues/327) is a later
+minute. When an attempt finds the 1Password app not running, the daemon opens it (`open -a
+1Password`), at most once a minute, so someone returning sees it asking to be unlocked. It never
+closes or quits the app. Everything else in [#327](https://github.com/ooloth/hub/issues/327) is a later
 phase: a notification when credentials are missing (the rest of 3.6), notifications (Phase 4), and
 the socket the TUI will read, which is also where health is first shown (Phase 5).
 
@@ -105,6 +107,10 @@ health record, with `cause` one of:
 - `app_running_not_answering`: `op` had not answered after 90 seconds, no alert is on screen, and
   the 1Password app is running
 - `app_not_running`, `unreachable` or `other`
+
+When the daemon opened the app after an attempt, the line also says `opened_app=yes`, or
+`opened_app=failed` with `open_error`, and the health record keeps the same in `opened_app` and
+`open_error`.
 
 `retry_in` is absent with `--once`, which makes one attempt and exits 1:
 

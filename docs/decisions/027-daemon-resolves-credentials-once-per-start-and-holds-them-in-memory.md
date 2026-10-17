@@ -140,3 +140,10 @@ failure it waits on the backoff.
 
 The rest of the decision stands: credentials are resolved once per start through the desktop app
 and held only in memory.
+
+## Addendum (2026-10-17) — opening the app when it is closed
+
+When an attempt finds the 1Password app not running, the daemon opens it with `open -a 1Password`,
+at most once a minute, and records that it did. The account holder asked for this on 2026-10-17:
+the app should always be open, and a 1Password window with a Touch ID prompt is better than signals
+silently stopping. The daemon never closes, quits or hides the app.

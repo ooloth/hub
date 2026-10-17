@@ -380,6 +380,7 @@ mod tests {
                 &anyhow::anyhow!("dial tcp: lookup my.1password.com: no such host"),
                 &no_secrets(),
             ),
+            opened_app: None,
             retry_in: Some(Duration::from_secs(1)),
         }
     }
