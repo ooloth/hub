@@ -1,11 +1,15 @@
 //! The daemon's health record: one row describing its last pass.
 //!
 //! It is written in the same transaction as the payload when the pass replaced it (Decision 026).
-use anyhow::{Context, Result};
+use std::time::Duration;
+
+use anyhow::{bail, Context, Result};
+use chrono::{DateTime, Utc};
 use domain::credential_attempt::{AppOpening, CredentialAttempt, Notifying};
 use domain::credential_failure::CredentialCause;
-use domain::daemon_pass::Pass;
-use rusqlite::{params, Connection, Transaction, TransactionBehavior};
+use domain::daemon_health::{DaemonHealth, DaemonRecord, LastActivity, Schedule};
+use domain::daemon_pass::{Pass, PassStatus};
+use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBehavior};
 
 use crate::status_cache::{self, Payload};
 
@@ -14,7 +18,7 @@ use crate::status_cache::{self, Payload};
 /// Bump it in the change that alters the `CREATE TABLE` below. [`ensure_table`] then drops the
 /// old table and creates the new one, which loses at most one pass's record, because the daemon
 /// rewrites the row on every pass.
-const SCHEMA_VERSION: i32 = 6;
+const SCHEMA_VERSION: i32 = 7;
 
 /// Every rule that ties a row's outcome to the rest of it, so a row that contradicts itself cannot
 /// be stored, however it is written.
@@ -27,6 +31,7 @@ const CREATE_TABLE: &str = "CREATE TABLE daemon_health (
     started_at      TEXT NOT NULL,
     duration_ms     INTEGER NOT NULL CHECK (duration_ms >= 0),
     pid             INTEGER NOT NULL,
+    interval_ms     INTEGER CHECK (interval_ms IS NULL OR interval_ms > 0),
     outcome         TEXT NOT NULL
                     CHECK (outcome IN ('ok', 'partial', 'no_source_answered', 'pass_failed',
                                        'credentials_unreachable', 'credentials_app_not_running',
@@ -94,15 +99,20 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
         .context("failed to create the daemon health table")
 }
 
-/// Records `pass` as the daemon's last pass, and replaces the cached payload with `payload` in
-/// the same transaction when the pass wrote one.
+/// Records `pass` as the daemon's last pass, run on `schedule`, and replaces the cached payload
+/// with `payload` in the same transaction when the pass wrote one.
 ///
 /// # Errors
 /// Returns an error if either write fails, in which case neither is kept.
 ///
 /// # Panics
 /// If `payload` is given for a pass that kept the payload, or missing for one that wrote it.
-pub fn record(conn: &Connection, pass: &Pass, payload: Option<&Payload>) -> Result<()> {
+pub fn record(
+    conn: &Connection,
+    pass: &Pass,
+    schedule: Schedule,
+    payload: Option<&Payload>,
+) -> Result<()> {
     if pass.outcome.payload_written() {
         assert!(
             payload.is_some(),
@@ -122,17 +132,22 @@ pub fn record(conn: &Connection, pass: &Pass, payload: Option<&Payload>) -> Resu
     if let Some(payload) = payload {
         status_cache::upsert(&transaction, &payload.json, payload.schema_version)?;
     }
-    upsert(&transaction, pass)?;
+    upsert(&transaction, pass, schedule)?;
     transaction
         .commit()
         .context("failed to commit the recorded pass")
 }
 
-/// Records `attempt` as the daemon's last pass, leaving the cached payload as it was.
+/// Records `attempt` as the daemon's last pass, by a daemon running on `schedule`, leaving the
+/// cached payload as it was.
 ///
 /// # Errors
 /// Returns an error if the health record cannot be written.
-pub fn record_credential_attempt(conn: &Connection, attempt: &CredentialAttempt) -> Result<()> {
+pub fn record_credential_attempt(
+    conn: &Connection,
+    attempt: &CredentialAttempt,
+    schedule: Schedule,
+) -> Result<()> {
     let outcome = match attempt.failure.cause() {
         CredentialCause::Unreachable => "credentials_unreachable",
         CredentialCause::AppNotRunning => "credentials_app_not_running",
@@ -156,14 +171,16 @@ pub fn record_credential_attempt(conn: &Connection, attempt: &CredentialAttempt)
     let _ = conn
         .execute(
             "INSERT INTO daemon_health (
-                id, schema_version, started_at, duration_ms, pid, outcome, payload_written,
-                items, answered, failed, error, opened_app, open_error, notified, notify_error
-             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, 0, NULL, '[]', '[]', ?6, ?7, ?8, ?9, ?10)
+                id, schema_version, started_at, duration_ms, pid, interval_ms, outcome,
+                payload_written, items, answered, failed, error, opened_app, open_error, notified,
+                notify_error
+             ) VALUES (1, ?1, ?2, ?3, ?4, ?11, ?5, 0, NULL, '[]', '[]', ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(id) DO UPDATE SET
                 schema_version  = excluded.schema_version,
                 started_at      = excluded.started_at,
                 duration_ms     = excluded.duration_ms,
                 pid             = excluded.pid,
+                interval_ms     = excluded.interval_ms,
                 outcome         = excluded.outcome,
                 payload_written = excluded.payload_written,
                 items           = excluded.items,
@@ -185,13 +202,14 @@ pub fn record_credential_attempt(conn: &Connection, attempt: &CredentialAttempt)
                 open_error,
                 notified,
                 notify_error,
+                interval_ms(schedule)?,
             ],
         )
         .context("failed to write the daemon health record")?;
     Ok(())
 }
 
-fn upsert(conn: &Connection, pass: &Pass) -> Result<()> {
+fn upsert(conn: &Connection, pass: &Pass, schedule: Schedule) -> Result<()> {
     let outcome = &pass.outcome;
     let (answered, failed) = outcome.sources().map_or_else(
         || (serde_json::json!([]), serde_json::json!([])),
@@ -222,14 +240,15 @@ fn upsert(conn: &Connection, pass: &Pass) -> Result<()> {
     let _ = conn
         .execute(
             "INSERT INTO daemon_health (
-                id, schema_version, started_at, duration_ms, pid, outcome, payload_written,
-                items, answered, failed, error
-             ) VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                id, schema_version, started_at, duration_ms, pid, interval_ms, outcome,
+                payload_written, items, answered, failed, error
+             ) VALUES (1, ?1, ?2, ?3, ?4, ?11, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(id) DO UPDATE SET
                 schema_version  = excluded.schema_version,
                 started_at      = excluded.started_at,
                 duration_ms     = excluded.duration_ms,
                 pid             = excluded.pid,
+                interval_ms     = excluded.interval_ms,
                 outcome         = excluded.outcome,
                 payload_written = excluded.payload_written,
                 items           = excluded.items,
@@ -251,16 +270,98 @@ fn upsert(conn: &Connection, pass: &Pass) -> Result<()> {
                 answered.to_string(),
                 failed.to_string(),
                 outcome.failure().map(|failure| failure.reason().as_str()),
+                interval_ms(schedule)?,
             ],
         )
         .context("failed to write the daemon health record")?;
     Ok(())
 }
 
+/// The daemon's last record, read inside the caller's transaction so it matches the payload read
+/// beside it. A table of another version is reported and left as it is.
+pub(crate) fn last_record(conn: &Connection) -> Result<DaemonRecord> {
+    let exists: bool = conn
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'daemon_health')",
+            [],
+            |row| row.get(0),
+        )
+        .context("failed to look for the daemon health table")?;
+    if !exists {
+        return Ok(DaemonRecord::NoneRecorded);
+    }
+    // Read alone first: a table of another version may lack the columns this build selects.
+    let version: Option<Option<i32>> = conn
+        .query_row(
+            "SELECT schema_version FROM daemon_health WHERE id = 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .context("failed to read the daemon health record's version")?;
+    match version {
+        None => return Ok(DaemonRecord::NoneRecorded),
+        Some(Some(version)) if version == SCHEMA_VERSION => {}
+        Some(_) => return Ok(DaemonRecord::OtherVersion),
+    }
+    let (started_at, interval_ms, outcome): (String, Option<i64>, String) = conn
+        .query_row(
+            "SELECT started_at, interval_ms, outcome FROM daemon_health WHERE id = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .context("failed to read the daemon health record")?;
+    Ok(DaemonRecord::Recorded(DaemonHealth {
+        started_at: DateTime::parse_from_rfc3339(&started_at)
+            .with_context(|| format!("the daemon's last pass has an invalid start: {started_at}"))?
+            .with_timezone(&Utc),
+        schedule: schedule(interval_ms)?,
+        activity: activity(&outcome)?,
+    }))
+}
+
+fn schedule(interval_ms: Option<i64>) -> Result<Schedule> {
+    let Some(interval_ms) = interval_ms else {
+        return Ok(Schedule::Once);
+    };
+    let interval_ms = u64::try_from(interval_ms)
+        .ok()
+        .filter(|interval_ms| *interval_ms > 0)
+        .with_context(|| format!("the daemon recorded an interval of {interval_ms} ms"))?;
+    Ok(Schedule::every(Duration::from_millis(interval_ms)))
+}
+
+fn activity(outcome: &str) -> Result<LastActivity> {
+    let status = match outcome {
+        "ok" => PassStatus::Ok,
+        "partial" => PassStatus::Partial,
+        "no_source_answered" => PassStatus::NoSourceAnswered,
+        "pass_failed" => PassStatus::PassFailed,
+        "credentials_unreachable"
+        | "credentials_app_not_running"
+        | "credentials_touch_id_prompt_unanswered"
+        | "credentials_macos_prompt_waiting_for_you"
+        | "credentials_app_running_not_answering"
+        | "credentials_failed" => return Ok(LastActivity::WaitingForCredentials),
+        unknown => bail!("the daemon recorded an outcome this build does not know: {unknown}"),
+    };
+    Ok(LastActivity::Pass(status))
+}
+
+/// How `schedule` is stored: the interval in milliseconds, or NULL for a single pass.
+fn interval_ms(schedule: Schedule) -> Result<Option<i64>> {
+    match schedule {
+        Schedule::Once => Ok(None),
+        Schedule::Every(interval) => i64::try_from(interval.as_millis())
+            .map(Some)
+            .context("an interval is longer than the health record can hold"),
+    }
+}
+
 /// The health row as stored, for tests in other crates to check what a pass recorded.
 ///
 /// Not a reader's API: a reader of health also needs the payload from the same snapshot, which
-/// Phase 5 of #327 designs with its first readers.
+/// [`crate::snapshot::read`] gives it.
 #[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecordedPass {
@@ -270,6 +371,8 @@ pub struct RecordedPass {
     pub duration_ms: i64,
     /// The daemon process that ran it.
     pub pid: i64,
+    /// The interval the daemon ran on, in milliseconds, or None for a single pass.
+    pub interval_ms: Option<i64>,
     /// One of `ok`, `partial`, `no_source_answered` or `pass_failed`, or for a failed attempt to
     /// obtain credentials, `credentials_unreachable`, `credentials_app_not_running`,
     /// `credentials_touch_id_prompt_unanswered`, `credentials_macos_prompt_waiting_for_you`,
@@ -305,8 +408,8 @@ pub fn recorded(conn: &Connection) -> Result<Option<RecordedPass>> {
 
     let row = conn
         .query_row(
-            "SELECT started_at, duration_ms, pid, outcome, payload_written, items, answered,
-                    failed, error, opened_app, open_error, notified, notify_error
+            "SELECT started_at, duration_ms, pid, interval_ms, outcome, payload_written, items,
+                    answered, failed, error, opened_app, open_error, notified, notify_error
              FROM daemon_health WHERE id = 1",
             [],
             |row| {
@@ -314,16 +417,17 @@ pub fn recorded(conn: &Connection) -> Result<Option<RecordedPass>> {
                     row.get::<_, String>(0)?,
                     row.get::<_, i64>(1)?,
                     row.get::<_, i64>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, bool>(4)?,
-                    row.get::<_, Option<i64>>(5)?,
-                    row.get::<_, String>(6)?,
+                    row.get::<_, Option<i64>>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, bool>(5)?,
+                    row.get::<_, Option<i64>>(6)?,
                     row.get::<_, String>(7)?,
-                    row.get::<_, Option<String>>(8)?,
+                    row.get::<_, String>(8)?,
                     row.get::<_, Option<String>>(9)?,
                     row.get::<_, Option<String>>(10)?,
                     row.get::<_, Option<String>>(11)?,
                     row.get::<_, Option<String>>(12)?,
+                    row.get::<_, Option<String>>(13)?,
                 ))
             },
         )
@@ -333,6 +437,7 @@ pub fn recorded(conn: &Connection) -> Result<Option<RecordedPass>> {
         started_at,
         duration_ms,
         pid,
+        interval_ms,
         outcome,
         payload_written,
         items,
@@ -367,6 +472,7 @@ pub fn recorded(conn: &Connection) -> Result<Option<RecordedPass>> {
         started_at,
         duration_ms,
         pid,
+        interval_ms,
         outcome,
         payload_written,
         items,
@@ -395,6 +501,9 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    /// The schedule every test records with, unless it is about the schedule.
+    const SCHEDULE: Schedule = Schedule::Every(Duration::from_secs(15 * 60));
 
     fn in_memory() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
@@ -470,7 +579,7 @@ mod tests {
         let conn = in_memory();
         let written = payload_written.then(|| payload("{}"));
 
-        record(&conn, &pass(outcome), written.as_ref()).unwrap();
+        record(&conn, &pass(outcome), SCHEDULE, written.as_ref()).unwrap();
 
         assert_eq!(
             recorded_row(&conn),
@@ -478,6 +587,7 @@ mod tests {
                 started_at: "2025-10-09T08:53:20+00:00".to_string(),
                 duration_ms: 6412,
                 pid: 4242,
+                interval_ms: Some(900_000),
                 outcome: status.to_string(),
                 payload_written,
                 items,
@@ -503,7 +613,13 @@ mod tests {
             sources: sources(&["a"], &[]),
         };
 
-        record(&conn, &pass(outcome), Some(&payload(r#"{"items":[1]}"#))).unwrap();
+        record(
+            &conn,
+            &pass(outcome),
+            SCHEDULE,
+            Some(&payload(r#"{"items":[1]}"#)),
+        )
+        .unwrap();
 
         let cached = status_cache::read(&conn).unwrap().unwrap();
         assert_eq!(cached.payload, r#"{"items":[1]}"#);
@@ -521,7 +637,7 @@ mod tests {
             sources: sources(&["a"], &[]),
         };
 
-        let result = record(&conn, &pass(outcome), Some(&payload("after")));
+        let result = record(&conn, &pass(outcome), SCHEDULE, Some(&payload("after")));
 
         assert!(result.is_err());
         let after = status_cache::read(&conn).unwrap().unwrap();
@@ -538,7 +654,7 @@ mod tests {
             sources: sources(&["a"], &[]),
         };
 
-        let _ = record(&conn, &pass(outcome), None);
+        let _ = record(&conn, &pass(outcome), SCHEDULE, None);
     }
 
     #[test]
@@ -549,7 +665,7 @@ mod tests {
             sources: sources(&[], &["a"]),
         };
 
-        let _ = record(&conn, &pass(outcome), Some(&payload("{}")));
+        let _ = record(&conn, &pass(outcome), SCHEDULE, Some(&payload("{}")));
     }
 
     /// Inserts a row that is valid except for `column = value`.
@@ -560,6 +676,7 @@ mod tests {
             ("started_at", "'2025-10-09T08:53:20+00:00'"),
             ("duration_ms", "6412"),
             ("pid", "4242"),
+            ("interval_ms", "900000"),
             ("outcome", "'partial'"),
             ("payload_written", "1"),
             ("items", "3"),
@@ -604,6 +721,7 @@ mod tests {
     #[case::answered_that_is_not_a_list("answered", r#"'{"a":1}'"#)]
     #[case::failed_that_is_not_json("failed", "'down'")]
     #[case::a_negative_duration("duration_ms", "-1")]
+    #[case::a_zero_interval("interval_ms", "0")]
     fn a_row_that_contradicts_itself_is_refused(#[case] column: &str, #[case] value: &str) {
         let conn = in_memory();
 
@@ -648,6 +766,7 @@ mod tests {
         record_credential_attempt(
             &conn,
             &credential_attempt(message, Some(Duration::from_secs(4))),
+            SCHEDULE,
         )
         .unwrap();
 
@@ -657,6 +776,7 @@ mod tests {
                 started_at: "2025-10-09T08:53:20+00:00".to_string(),
                 duration_ms: 812,
                 pid: 4242,
+                interval_ms: Some(900_000),
                 outcome: outcome.to_string(),
                 payload_written: false,
                 items: None,
@@ -691,7 +811,7 @@ mod tests {
             &no_secrets(),
         );
 
-        record_credential_attempt(&conn, &attempt).unwrap();
+        record_credential_attempt(&conn, &attempt, SCHEDULE).unwrap();
 
         let row = recorded_row(&conn);
         assert_eq!(row.outcome, outcome);
@@ -721,7 +841,7 @@ mod tests {
         );
         attempt.opened_app = opened_app;
 
-        record_credential_attempt(&conn, &attempt).unwrap();
+        record_credential_attempt(&conn, &attempt, SCHEDULE).unwrap();
 
         let row = recorded_row(&conn);
         assert_eq!(row.outcome, "credentials_app_not_running");
@@ -737,13 +857,14 @@ mod tests {
             Some(Duration::from_secs(1)),
         );
         attempt.opened_app = Some(AppOpening::Opened);
-        record_credential_attempt(&conn, &attempt).unwrap();
+        record_credential_attempt(&conn, &attempt, SCHEDULE).unwrap();
 
         record(
             &conn,
             &pass(PassOutcome::Kept {
                 sources: sources(&[], &["a"]),
             }),
+            SCHEDULE,
             None,
         )
         .unwrap();
@@ -768,7 +889,7 @@ mod tests {
         let mut attempt = credential_attempt("dial tcp", Some(Duration::from_secs(1)));
         attempt.notified = notified;
 
-        record_credential_attempt(&conn, &attempt).unwrap();
+        record_credential_attempt(&conn, &attempt, SCHEDULE).unwrap();
 
         let row = recorded_row(&conn);
         assert_eq!(row.notified.as_deref(), stored);
@@ -780,13 +901,14 @@ mod tests {
         let conn = in_memory();
         let mut attempt = credential_attempt("dial tcp", Some(Duration::from_secs(1)));
         attempt.notified = Some(Notifying::Sent);
-        record_credential_attempt(&conn, &attempt).unwrap();
+        record_credential_attempt(&conn, &attempt, SCHEDULE).unwrap();
 
         record(
             &conn,
             &pass(PassOutcome::Kept {
                 sources: sources(&[], &["a"]),
             }),
+            SCHEDULE,
             None,
         )
         .unwrap();
@@ -799,7 +921,7 @@ mod tests {
         let conn = in_memory();
         status_cache::upsert(&conn, "before", 18).unwrap();
 
-        record_credential_attempt(&conn, &credential_attempt("dial tcp", None)).unwrap();
+        record_credential_attempt(&conn, &credential_attempt("dial tcp", None), SCHEDULE).unwrap();
 
         assert_eq!(
             status_cache::read(&conn).unwrap().unwrap().payload,
@@ -882,6 +1004,7 @@ mod tests {
             &pass(PassOutcome::Kept {
                 sources: sources(&[], &["a"]),
             }),
+            SCHEDULE,
             None,
         )
         .unwrap();
@@ -912,6 +1035,7 @@ mod tests {
             &pass(PassOutcome::Kept {
                 sources: sources(&[], &["a"]),
             }),
+            SCHEDULE,
             None,
         )
         .unwrap();
@@ -919,5 +1043,71 @@ mod tests {
         ensure_table(&conn).unwrap();
 
         assert!(recorded(&conn).unwrap().is_some());
+    }
+
+    fn table_exists(conn: &Connection) -> bool {
+        conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'daemon_health')",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn a_table_from_another_version_reads_as_such_and_is_left_unchanged() {
+        let conn = Connection::open_in_memory().unwrap();
+        status_cache::ensure_table(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE daemon_health (id INTEGER PRIMARY KEY, schema_version INTEGER, outcome TEXT);
+             INSERT INTO daemon_health VALUES (1, 6, 'ok');",
+        )
+        .unwrap();
+
+        assert_eq!(last_record(&conn).unwrap(), DaemonRecord::OtherVersion);
+        let left: (i32, String) = conn
+            .query_row(
+                "SELECT schema_version, outcome FROM daemon_health",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(left, (6, "ok".to_string()));
+    }
+
+    #[test]
+    fn an_absent_table_reads_as_no_record_and_is_not_created() {
+        let conn = Connection::open_in_memory().unwrap();
+        status_cache::ensure_table(&conn).unwrap();
+
+        assert_eq!(last_record(&conn).unwrap(), DaemonRecord::NoneRecorded);
+        assert!(!table_exists(&conn));
+    }
+
+    #[rstest]
+    #[case::a_zero_interval("interval_ms", "0")]
+    #[case::an_unknown_outcome("outcome", "'fine'")]
+    fn a_row_this_builds_schema_does_not_allow_is_an_error_to_read(
+        #[case] column: &str,
+        #[case] value: &str,
+    ) {
+        let conn = in_memory();
+        record(
+            &conn,
+            &pass(PassOutcome::Kept {
+                sources: sources(&["a"], &["b"]),
+            }),
+            Schedule::every(Duration::from_secs(60)),
+            None,
+        )
+        .unwrap();
+        // As a daemon whose CHECK clauses differ from this build's could have written it.
+        conn.execute_batch("PRAGMA ignore_check_constraints = ON")
+            .unwrap();
+        let _ = conn
+            .execute(&format!("UPDATE daemon_health SET {column} = {value}"), [])
+            .unwrap();
+
+        assert!(last_record(&conn).is_err(), "{column} = {value} was read");
     }
 }

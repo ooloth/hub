@@ -145,23 +145,12 @@ pub fn upsert(conn: &Connection, payload: &str, schema_version: i32) -> Result<(
     Ok(())
 }
 
-/// Returns the cached status if its `refreshed_at` is within `max_age` of now.
+/// The cached row, if any. Read through [`crate::snapshot::read`], which reads it beside the
+/// daemon's health record (Decision 026).
 ///
-/// Returns `None` when no row exists or the row is older than `max_age` —
-/// the caller treats both cases the same: fetch fresh data instead of reusing.
-///
-/// # Errors
-/// Returns an error if the underlying SQL query fails.
-pub fn read_if_fresh(conn: &Connection, max_age: chrono::Duration) -> Result<Option<CachedStatus>> {
-    match read(conn)? {
-        Some(cached) if Utc::now() - cached.refreshed_at < max_age => Ok(Some(cached)),
-        _ => Ok(None),
-    }
-}
-
 /// # Errors
 /// Returns an error if the SQL query fails or a row value cannot be parsed.
-pub fn read(conn: &Connection) -> Result<Option<CachedStatus>> {
+pub(crate) fn read(conn: &Connection) -> Result<Option<CachedStatus>> {
     let mut stmt = conn
         .prepare("SELECT schema_version, refreshed_at, payload FROM status_cache WHERE id = 1")
         .context("failed to prepare status cache read")?;
@@ -223,30 +212,6 @@ mod tests {
         let cached = read(&conn).unwrap().unwrap();
         assert_eq!(cached.payload, r#"{"items":[1]}"#);
         assert_eq!(cached.schema_version, 2);
-    }
-
-    #[rstest::rstest]
-    #[case::empty_table(None, None)]
-    #[case::fresh_row(Some(chrono::Duration::seconds(60)), Some(()))]
-    #[case::stale_row(Some(chrono::Duration::seconds(60 * 60)), None)]
-    fn read_if_fresh_returns_some_only_when_row_is_within_max_age(
-        #[case] row_age: Option<chrono::Duration>,
-        #[case] expected_some: Option<()>,
-    ) {
-        let conn = in_memory();
-        if let Some(age) = row_age {
-            let written_at = (chrono::Utc::now() - age).to_rfc3339();
-            let _ = conn
-                .execute(
-                    "INSERT INTO status_cache (id, schema_version, refreshed_at, payload)
-                 VALUES (1, ?1, ?2, ?3)",
-                    rusqlite::params![1i32, written_at, r#"{"items":[]}"#],
-                )
-                .unwrap();
-        }
-        let max_age = chrono::Duration::minutes(30);
-        let result = read_if_fresh(&conn, max_age).unwrap();
-        assert_eq!(result.is_some(), expected_some.is_some());
     }
 
     #[test]

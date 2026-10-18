@@ -265,11 +265,8 @@ pub(crate) fn handle_msg(app: &mut App, msg: Msg) -> Result<Vec<Effect>> {
             app.data.refresh_state = RefreshState::Failed(e.to_string());
             Ok(vec![])
         }
-        Msg::AppliedFromCache {
-            report,
-            refreshed_at,
-        } => {
-            refresh::apply_report(app, report, refreshed_at);
+        Msg::DatabaseRead(read) => {
+            refresh::apply_database_read(app, read)?;
             Ok(vec![])
         }
     }
@@ -287,10 +284,12 @@ mod tests {
         Action, App, DataState, DetailMode, Effect, InvestigateAction, Msg, RefreshState, Screen,
         SubmenuState, UiState,
     };
+    use domain::daemon_health::{DaemonHealth, DaemonRecord, LastActivity, Schedule};
+    use domain::daemon_pass::PassStatus;
     use domain::known_secrets::KnownSecrets;
     use domain::source_failure::SourceFailure;
     use domain::source_outcomes::SourceOutcomes;
-    use workflows::status::{Refresh, StatusItem, StatusReport};
+    use workflows::status::{Refresh, StatusItem, StatusReport, SCHEMA_VERSION};
 
     fn app_with_items(items: Vec<DisplayItem>) -> App {
         let expanded = HashSet::new();
@@ -913,9 +912,133 @@ mod tests {
         assert!(matches!(effects.as_slice(), [Effect::WriteCache(_)]));
     }
 
+    /// A read that found `report` cached at `refreshed_at`, at `schema_version`, beside `daemon`.
+    fn database_read(
+        report: &StatusReport,
+        refreshed_at: chrono::DateTime<chrono::Utc>,
+        schema_version: i32,
+        daemon: DaemonRecord,
+    ) -> Msg {
+        Msg::DatabaseRead(Ok(store::snapshot::Snapshot {
+            cached: Some(store::status_cache::CachedStatus {
+                refreshed_at,
+                schema_version,
+                payload: serde_json::to_string(report).unwrap(),
+            }),
+            daemon,
+        }))
+    }
+
+    fn recorded_daemon() -> DaemonRecord {
+        DaemonRecord::Recorded(DaemonHealth {
+            started_at: chrono::Utc::now(),
+            schedule: Schedule::every(std::time::Duration::from_secs(15 * 60)),
+            activity: LastActivity::Pass(PassStatus::Ok),
+        })
+    }
+
+    fn list_len(app: &App) -> usize {
+        match app.current_screen() {
+            Screen::UnifiedList { items, .. } => items.len(),
+            Screen::MergingPr { .. } => panic!("the list is showing"),
+        }
+    }
+
     #[test]
-    fn handle_msg_applied_from_cache_sets_idle_and_uses_cache_timestamp() {
-        use chrono::{Duration, Utc};
+    fn a_read_with_newer_signals_shows_them_beside_the_daemons_record() {
+        let mut app = App::default();
+        let cached_at = chrono::Utc::now() - chrono::Duration::minutes(5);
+
+        let effects = handle_msg(
+            &mut app,
+            database_read(
+                &report_with_ci(),
+                cached_at,
+                SCHEMA_VERSION,
+                recorded_daemon(),
+            ),
+        )
+        .unwrap();
+
+        assert!(effects.is_empty(), "a read writes nothing back");
+        assert_eq!(list_len(&app), 1);
+        assert_eq!(app.data.last_updated, Some(cached_at));
+        assert!(matches!(app.data.refresh_state, RefreshState::Idle));
+        assert!(matches!(app.data.daemon, DaemonRecord::Recorded(_)));
+    }
+
+    #[test]
+    fn a_read_with_failed_sources_in_its_signals_names_them() {
+        let mut app = App::default();
+
+        let _ = handle_msg(
+            &mut app,
+            database_read(
+                &report_with_ci_and_errors(),
+                chrono::Utc::now(),
+                SCHEMA_VERSION,
+                recorded_daemon(),
+            ),
+        )
+        .unwrap();
+
+        assert!(
+            matches!(&app.data.refresh_state, RefreshState::Partial(sources) if sources == &["media", "linear issues"])
+        );
+    }
+
+    #[rstest]
+    #[case::the_same_signals(chrono::Duration::zero())]
+    #[case::older_signals(chrono::Duration::minutes(-10))]
+    fn a_read_with_no_newer_signals_leaves_the_list_but_takes_the_record(
+        #[case] cached_relative_to_shown: chrono::Duration,
+    ) {
+        let shown_at = chrono::Utc::now() - chrono::Duration::minutes(5);
+        let mut app = App {
+            data: DataState {
+                last_updated: Some(shown_at),
+                ..DataState::default()
+            },
+            ..App::default()
+        };
+
+        let _ = handle_msg(
+            &mut app,
+            database_read(
+                &report_with_ci(),
+                shown_at + cached_relative_to_shown,
+                SCHEMA_VERSION,
+                recorded_daemon(),
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(list_len(&app), 0);
+        assert_eq!(app.data.last_updated, Some(shown_at));
+        assert!(matches!(app.data.daemon, DaemonRecord::Recorded(_)));
+    }
+
+    #[test]
+    fn signals_of_another_schema_version_are_left_unread() {
+        let mut app = App::default();
+
+        let _ = handle_msg(
+            &mut app,
+            database_read(
+                &report_with_ci(),
+                chrono::Utc::now(),
+                SCHEMA_VERSION - 1,
+                recorded_daemon(),
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(list_len(&app), 0);
+        assert_eq!(app.data.last_updated, None);
+    }
+
+    #[test]
+    fn newer_signals_during_the_tuis_own_refresh_leave_it_refreshing() {
         let mut app = App {
             data: DataState {
                 refresh_state: RefreshState::InProgress,
@@ -923,42 +1046,60 @@ mod tests {
             },
             ..App::default()
         };
-        let cache_ts = Utc::now() - Duration::minutes(5);
-        let effects = handle_msg(
+
+        let _ = handle_msg(
             &mut app,
-            Msg::AppliedFromCache {
-                report: report_with_ci(),
-                refreshed_at: cache_ts,
-            },
+            database_read(
+                &report_with_ci_and_errors(),
+                chrono::Utc::now(),
+                SCHEMA_VERSION,
+                recorded_daemon(),
+            ),
         )
         .unwrap();
-        assert!(matches!(app.data.refresh_state, RefreshState::Idle));
-        assert_eq!(app.data.last_updated, Some(cache_ts));
-        assert!(matches!(
-            app.current_screen(),
-            Screen::UnifiedList { items, .. } if !items.is_empty()
-        ));
-        assert!(
-            effects.is_empty(),
-            "AppliedFromCache must not emit effects (e.g. no WriteCache)"
-        );
+
+        assert_eq!(list_len(&app), 1);
+        assert!(matches!(app.data.refresh_state, RefreshState::InProgress));
     }
 
     #[test]
-    fn handle_msg_applied_from_cache_with_errors_sets_partial_state() {
-        use chrono::Utc;
+    fn a_failed_read_leaves_the_signals_and_keeps_the_reason_until_a_read_succeeds() {
+        let shown_at = chrono::Utc::now() - chrono::Duration::minutes(5);
         let mut app = App::default();
         let _ = handle_msg(
             &mut app,
-            Msg::AppliedFromCache {
-                report: report_with_ci_and_errors(),
-                refreshed_at: Utc::now(),
-            },
+            database_read(
+                &report_with_ci(),
+                shown_at,
+                SCHEMA_VERSION,
+                recorded_daemon(),
+            ),
         )
         .unwrap();
-        assert!(
-            matches!(&app.data.refresh_state, RefreshState::Partial(sources) if sources == &["media", "linear issues"])
-        );
+
+        let _ = handle_msg(
+            &mut app,
+            Msg::DatabaseRead(Err("disk I/O error".to_string())),
+        )
+        .unwrap();
+
+        assert_eq!(list_len(&app), 1);
+        assert_eq!(app.data.last_updated, Some(shown_at));
+        assert!(matches!(app.data.daemon, DaemonRecord::Recorded(_)));
+        assert_eq!(app.data.database_error.as_deref(), Some("disk I/O error"));
+
+        let _ = handle_msg(
+            &mut app,
+            database_read(
+                &report_with_ci(),
+                shown_at,
+                SCHEMA_VERSION,
+                recorded_daemon(),
+            ),
+        )
+        .unwrap();
+
+        assert_eq!(app.data.database_error, None);
     }
 
     #[test]

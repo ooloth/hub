@@ -1,9 +1,8 @@
 use std::collections::HashSet;
 
 use anyhow::Result;
-use chrono::{DateTime, Utc};
 use domain::{PrKind, PullRequest, UntrustedText};
-use workflows::status::{Refresh, StatusItem, StatusReport};
+use workflows::status::{Refresh, StatusItem};
 
 use crate::display::{
     Category, DisplayItem, Filter, FlatRow, GroupKey, ListSnapshot, SelectedItemKind,
@@ -460,8 +459,6 @@ pub(crate) enum Msg {
     Action(Action),
     Tick,
     FetchResult(Result<Refresh>),
-    AppliedFromCache {
-        report: StatusReport,
-        refreshed_at: DateTime<Utc>,
-    },
+    /// What a read of the database found, or why it failed.
+    DatabaseRead(Result<store::snapshot::Snapshot, String>),
 }

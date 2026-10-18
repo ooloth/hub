@@ -3,6 +3,7 @@
 
 use anyhow::{Context, Result};
 use domain::credential_attempt::CredentialAttempt;
+use domain::daemon_health::Schedule;
 use domain::daemon_pass::{Pass, PassOutcome};
 use domain::known_secrets::KnownSecrets;
 use domain::pass_failure::PassFailure;
@@ -45,17 +46,19 @@ fn prepare(conn: &Connection) -> Result<()> {
     store::daemon_health::ensure_table(conn).context("failed to prepare the daemon health record")
 }
 
-/// Records `pass`, with `payload` when it replaced the payload, in one transaction.
+/// Records `pass`, run on `schedule`, with `payload` when it replaced the payload, in one
+/// transaction.
 ///
 /// When that fails, records the pass once more as failed, health only, so a database that refuses
 /// only the payload still says why. Every error is redacted of `secrets` before it is kept.
 pub(crate) fn record(
     open: impl Fn() -> Result<Connection>,
     pass: &Pass,
+    schedule: Schedule,
     payload: Option<&FreshPayload>,
     secrets: &KnownSecrets,
 ) -> Recording {
-    let Err(error) = write(&open, pass, payload.map(FreshPayload::payload)) else {
+    let Err(error) = write(&open, pass, schedule, payload.map(FreshPayload::payload)) else {
         return Recording::Recorded;
     };
     let error = PassFailure::new(&error, secrets);
@@ -67,7 +70,7 @@ pub(crate) fn record(
             fallback_error: None,
         };
     }
-    match write(&open, &pass.failed_with(error.clone()), None) {
+    match write(&open, &pass.failed_with(error.clone()), schedule, None) {
         Ok(()) => Recording::RecordedAsFailed { error },
         Err(fallback_error) => Recording::Unrecorded {
             error,
@@ -76,14 +79,15 @@ pub(crate) fn record(
     }
 }
 
-/// Records a failed attempt to obtain credentials in the health record, returning why that
-/// failed when it did. The cached payload is left as it was.
+/// Records a failed attempt to obtain credentials, by a daemon running on `schedule`, in the health
+/// record, returning why that failed when it did. The cached payload is left as it was.
 pub(crate) fn record_credential_attempt(
     open: impl Fn() -> Result<Connection>,
     attempt: &CredentialAttempt,
+    schedule: Schedule,
 ) -> Option<PassFailure> {
-    let written =
-        open().and_then(|conn| store::daemon_health::record_credential_attempt(&conn, attempt));
+    let written = open()
+        .and_then(|conn| store::daemon_health::record_credential_attempt(&conn, attempt, schedule));
     // No credential has been resolved yet, so there is nothing a failure here could repeat.
     written
         .err()
@@ -93,10 +97,11 @@ pub(crate) fn record_credential_attempt(
 fn write(
     open: &impl Fn() -> Result<Connection>,
     pass: &Pass,
+    schedule: Schedule,
     payload: Option<&store::status_cache::Payload>,
 ) -> Result<()> {
     let conn = open()?;
-    store::daemon_health::record(&conn, pass, payload)
+    store::daemon_health::record(&conn, pass, schedule, payload)
 }
 
 #[cfg(test)]
@@ -110,8 +115,14 @@ mod tests {
     use rusqlite::OpenFlags;
     use secrecy::Secret;
 
+    use domain::daemon_health::{DaemonHealth, DaemonRecord, LastActivity};
+    use domain::daemon_pass::PassStatus;
+
     use super::*;
     use workflows::freshness::{classify, RefreshOutcome};
+
+    /// The schedule every test records with, unless it is about the schedule.
+    const SCHEDULE: Schedule = Schedule::Every(Duration::from_secs(15 * 60));
 
     fn no_secrets() -> KnownSecrets {
         KnownSecrets::new(Vec::new())
@@ -210,9 +221,36 @@ mod tests {
     }
 
     fn cached(path: &Path) -> store::status_cache::CachedStatus {
-        store::status_cache::read(&Connection::open(path).unwrap())
+        store::snapshot::read(&Connection::open(path).unwrap())
             .unwrap()
+            .cached
             .expect("the cache has a row")
+    }
+
+    #[test]
+    fn a_recorded_pass_is_what_a_reader_of_the_database_sees() {
+        let (_dir, path) = database();
+        let schedule = Schedule::every(Duration::from_secs(20));
+
+        let recording = record(
+            opener(&path),
+            &wrote(1_000),
+            schedule,
+            Some(&payload(3)),
+            &no_secrets(),
+        );
+
+        assert_eq!(recording, Recording::Recorded);
+        let snapshot = store::snapshot::read(&Connection::open(&path).unwrap()).unwrap();
+        assert_eq!(
+            snapshot.daemon,
+            DaemonRecord::Recorded(DaemonHealth {
+                started_at: DateTime::from_timestamp(1_000, 0).unwrap(),
+                schedule,
+                activity: LastActivity::Pass(PassStatus::Ok),
+            })
+        );
+        assert_eq!(cached_items(&path), 3);
     }
 
     #[test]
@@ -221,6 +259,7 @@ mod tests {
         let _ = record(
             opener(&path),
             &wrote(1_000),
+            SCHEDULE,
             Some(&payload(1)),
             &no_secrets(),
         );
@@ -234,6 +273,7 @@ mod tests {
                     sources: sources(&[], &["a"]),
                 },
             ),
+            SCHEDULE,
             None,
             &no_secrets(),
         );
@@ -253,6 +293,7 @@ mod tests {
         let _ = record(
             opener(&path),
             &wrote(1_000),
+            SCHEDULE,
             Some(&payload(1)),
             &no_secrets(),
         );
@@ -267,6 +308,7 @@ mod tests {
         let recording = record(
             opener(&path),
             &wrote(2_000),
+            SCHEDULE,
             Some(&payload(2)),
             &no_secrets(),
         );
@@ -289,6 +331,7 @@ mod tests {
         let _ = record(
             opener(&path),
             &wrote(1_000),
+            SCHEDULE,
             Some(&payload(1)),
             &no_secrets(),
         );
@@ -296,6 +339,7 @@ mod tests {
         let recording = record(
             read_only(&path),
             &wrote(2_000),
+            SCHEDULE,
             Some(&payload(2)),
             &no_secrets(),
         );
@@ -324,7 +368,7 @@ mod tests {
             },
         );
 
-        let recording = record(read_only(&path), &failed, None, &no_secrets());
+        let recording = record(read_only(&path), &failed, SCHEDULE, None, &no_secrets());
 
         assert!(
             matches!(
@@ -357,7 +401,13 @@ mod tests {
             anyhow::bail!("could not open the database for ghp-token-value")
         };
 
-        let recording = record(refusing, &wrote(2_000), Some(&payload(2)), &secrets);
+        let recording = record(
+            refusing,
+            &wrote(2_000),
+            SCHEDULE,
+            Some(&payload(2)),
+            &secrets,
+        );
 
         let Recording::Unrecorded {
             error,
@@ -390,7 +440,7 @@ mod tests {
     fn a_failed_credential_attempt_is_recorded_as_the_last_outcome() {
         let (_dir, path) = database();
 
-        let error = record_credential_attempt(opener(&path), &credential_attempt());
+        let error = record_credential_attempt(opener(&path), &credential_attempt(), SCHEDULE);
 
         assert_eq!(error, None);
         let conn = Connection::open(&path).unwrap();
@@ -402,7 +452,7 @@ mod tests {
     fn a_credential_attempt_the_database_refuses_says_why() {
         let (_dir, path) = database();
 
-        let error = record_credential_attempt(read_only(&path), &credential_attempt());
+        let error = record_credential_attempt(read_only(&path), &credential_attempt(), SCHEDULE);
 
         let error = error.expect("the write was refused");
         assert!(

@@ -3,6 +3,7 @@ use crate::state::{
     compute_investigate_action, App, DetailMode, InvestigateAction, RefreshState, Screen,
 };
 use chrono::Utc;
+use domain::daemon_health::{DaemonRecord, DaemonStatus};
 use domain::profile::Profile;
 
 pub(crate) fn position_label(screen: &Screen) -> String {
@@ -146,5 +147,65 @@ fn refresh_status_text(
         RefreshState::Idle => last_updated
             .map(|t| format!("updated {}", age_str(t)))
             .unwrap_or_default(),
+    }
+}
+
+/// The whole right-hand status text: the profile and the refresh, then a warning when the
+/// daemon's refreshes have stopped reaching the signals or the notifications.
+pub(crate) fn right_text(app: &App, now: chrono::DateTime<Utc>) -> String {
+    let status = right_status_text(
+        app.profile,
+        &app.data.refresh_state,
+        app.data.last_updated,
+        now,
+    );
+    let warning = daemon_warning(&app.data.daemon, app.data.database_error.as_deref(), now);
+    match (status.is_empty(), warning) {
+        (_, None) => status,
+        (true, Some(warning)) => warning,
+        (false, Some(warning)) => format!("{status} · {warning}"),
+    }
+}
+
+/// What the status bar says about background refreshes, or nothing while they run on schedule.
+///
+/// Each warning names what stopped rather than the daemon, which is an implementation detail
+/// until it affects the signals or the notifications.
+pub(crate) fn daemon_warning(
+    daemon: &DaemonRecord,
+    database_error: Option<&str>,
+    now: chrono::DateTime<Utc>,
+) -> Option<String> {
+    if let Some(error) = database_error {
+        return Some(format!("! can't read hub.db: {error}"));
+    }
+    match daemon.status(now) {
+        DaemonStatus::Current => None,
+        DaemonStatus::Overdue { age } => Some(format!(
+            "! no refresh in {}, notifications paused",
+            whole_minutes_or_hours(age)
+        )),
+        DaemonStatus::WaitingForCredentials => {
+            Some("! refresh waiting for 1Password, notifications paused".to_string())
+        }
+        DaemonStatus::NoneRecorded => {
+            Some("! no background refresh yet, notifications off".to_string())
+        }
+        DaemonStatus::RanOnce => {
+            Some("! no background refresh scheduled, notifications off".to_string())
+        }
+        DaemonStatus::OtherVersion => {
+            Some("! can't read refresh status (another hub version)".to_string())
+        }
+    }
+}
+
+/// `47m` under an hour, and `3h` from an hour on, rounded down.
+fn whole_minutes_or_hours(age: std::time::Duration) -> String {
+    let minutes = age.as_secs() / 60;
+    if minutes < 60 {
+        format!("{minutes}m")
+    } else {
+        format!("{}h", minutes / 60)
     }
 }

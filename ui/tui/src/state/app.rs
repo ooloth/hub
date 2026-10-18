@@ -19,6 +19,10 @@ pub(crate) struct DataState {
     pub(crate) raw_items: Vec<StatusItem>,
     pub(crate) refresh_state: crate::state::types::RefreshState,
     pub(crate) last_updated: Option<DateTime<Utc>>,
+    /// The daemon's last record, as of the last read of the database.
+    pub(crate) daemon: domain::daemon_health::DaemonRecord,
+    /// Why the last read of the database failed, until a read succeeds.
+    pub(crate) database_error: Option<String>,
 }
 
 #[derive(Debug, Default)]

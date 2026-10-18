@@ -91,18 +91,18 @@ async fn main() -> Result<()> {
     let conn = store::status_cache::connect(profile)?;
     store::status_cache::ensure_table(&conn)?;
 
-    let (initial_items, initial_updated, start_refresh) =
-        match store::status_cache::read(&conn).context("failed to read status cache")? {
-            Some(cached)
-                if cached.schema_version == SCHEMA_VERSION
-                    && (Utc::now() - cached.refreshed_at) < refresh_interval_chrono() =>
-            {
-                let report: StatusReport = serde_json::from_str(&cached.payload)
-                    .context("failed to deserialize cached status")?;
-                (report.items, Some(cached.refreshed_at), false)
-            }
-            _ => (vec![], None, true),
-        };
+    let snapshot = store::snapshot::read(&conn).context("failed to read the hub database")?;
+    let (initial_items, initial_updated, start_refresh) = match snapshot.cached {
+        Some(cached)
+            if cached.schema_version == SCHEMA_VERSION
+                && (Utc::now() - cached.refreshed_at) < refresh_interval_chrono() =>
+        {
+            let report: StatusReport = serde_json::from_str(&cached.payload)
+                .context("failed to deserialize cached status")?;
+            (report.items, Some(cached.refreshed_at), false)
+        }
+        _ => (vec![], None, true),
+    };
 
     let initial_filter = Filter::default();
     let initial_display = build_unified(initial_items.clone(), &initial_filter);
@@ -117,6 +117,8 @@ async fn main() -> Result<()> {
                 RefreshState::Idle
             },
             last_updated: initial_updated,
+            daemon: snapshot.daemon,
+            database_error: None,
         },
         ui: UiState {
             screen: Screen::UnifiedList {
@@ -246,7 +248,7 @@ async fn run_loop(
     // Consume the first tick so the interval fires after a full period.
     let _ = refresh_interval.tick().await;
     // Wakes the loop every minute so the "updated Xm ago" timestamp
-    // advances without requiring a keypress.
+    // advances without requiring a keypress, and reads the database.
     let mut display_interval = tokio::time::interval(tokio::time::Duration::from_mins(1));
     let _ = display_interval.tick().await;
     'run: loop {
@@ -265,8 +267,12 @@ async fn run_loop(
                     vec![]
                 }
             }
-            _ = refresh_interval.tick() => on_refresh_tick(app, conn)?,
-            _ = display_interval.tick() => vec![], // redraw only; no state change
+            _ = refresh_interval.tick() => on_refresh_tick(app)?,
+            // Also reads the database, so the daemon's record and signals are never more than a
+            // minute behind it.
+            _ = display_interval.tick() => handle_msg(app, Msg::DatabaseRead(
+                store::snapshot::read(conn).map_err(|error| format!("{error:#}")),
+            ))?,
             Some(result) = rx.recv() => handle_msg(app, Msg::FetchResult(result))?,
         };
 
@@ -280,22 +286,17 @@ async fn run_loop(
     Ok(())
 }
 
-fn on_refresh_tick(app: &mut App, conn: &rusqlite::Connection) -> Result<Vec<Effect>> {
-    let cached = store::status_cache::read_if_fresh(conn, refresh_interval_chrono())
-        .context("failed to read status cache on tick")?;
-    match cached {
-        Some(cached) if cached.schema_version == SCHEMA_VERSION => {
-            let report: StatusReport = serde_json::from_str(&cached.payload)
-                .context("failed to deserialize cached status on tick")?;
-            handle_msg(
-                app,
-                Msg::AppliedFromCache {
-                    report,
-                    refreshed_at: cached.refreshed_at,
-                },
-            )
-        }
-        _ => handle_msg(app, Msg::Tick),
+/// Starts a refresh of its own when the signals on screen are older than the refresh interval.
+/// Newer signals in the cache reach the screen through the database read on the display tick.
+fn on_refresh_tick(app: &mut App) -> Result<Vec<Effect>> {
+    let fresh = app
+        .data
+        .last_updated
+        .is_some_and(|updated| Utc::now() - updated < refresh_interval_chrono());
+    if fresh {
+        Ok(vec![])
+    } else {
+        handle_msg(app, Msg::Tick)
     }
 }
 

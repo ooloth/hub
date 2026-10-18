@@ -215,7 +215,8 @@ sqlite3 ~/.hub/dev/hub.db "SELECT count(*) FROM status_cache;"   # always 1
 ```
 
 **What it recorded about the pass.** The health record is one row, rewritten every pass, and
-`started_at` moves on even when the payload is kept.
+`started_at` moves on even when the payload is kept. `interval_ms` is the interval the daemon runs
+on, or NULL after `--once`, so the TUI can tell when a pass is overdue.
 
 ```bash
 sqlite3 -line ~/.hub/dev/hub.db "SELECT * FROM daemon_health;"

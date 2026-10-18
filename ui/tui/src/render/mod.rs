@@ -104,19 +104,14 @@ fn render_content(frame: &mut ratatui::Frame, app: &mut App, content_area: ratat
 }
 
 fn render_status_bar(frame: &mut ratatui::Frame, app: &App, bar_area: ratatui::layout::Rect) {
-    let right_status = status_bar::right_status_text(
-        app.profile,
-        &app.data.refresh_state,
-        app.data.last_updated,
-        Utc::now(),
-    );
+    let right_status = status_bar::right_text(app, Utc::now());
 
     // The left side takes whatever space is left, so a narrow terminal truncates
     // it mid-word right up against this block. A blank column keeps the two from
     // reading as one word — `[i] investigate` cut to `[i] in` beside `dev` says
-    // `indev`. Only the profile prefix claims the column, so screens without one
-    // render exactly as they did before.
-    let gap = usize::from(app.profile != domain::profile::Profile::default());
+    // `indev`, and `[O] issues` cut to `[O` beside a warning says `[O!`. Any
+    // right-hand text claims the column.
+    let gap = usize::from(!right_status.is_empty());
     let right_width =
         u16::try_from(Span::raw(right_status.as_str()).width() + 1 + gap).unwrap_or(u16::MAX);
 
@@ -215,6 +210,8 @@ mod tests {
         App, DataState, DetailMode, InvestigateAction, RefreshState, Screen, SubmenuState, UiState,
     };
     use chrono::Utc;
+    use domain::daemon_health::{DaemonHealth, DaemonRecord, LastActivity, Schedule};
+    use domain::daemon_pass::PassStatus;
     use domain::profile::Profile;
     use proptest::proptest;
     use ratatui::backend::TestBackend;
@@ -712,6 +709,154 @@ mod tests {
         );
     }
 
+    /// The moment the daemon status tests read their records at.
+    fn reading_at() -> chrono::DateTime<Utc> {
+        chrono::DateTime::from_timestamp(1_760_000_000, 0).unwrap()
+    }
+
+    /// A record of a pass that started `started_minutes_ago` before `now`.
+    fn daemon_record_at(
+        now: chrono::DateTime<Utc>,
+        started_minutes_ago: i64,
+        schedule: Schedule,
+        activity: LastActivity,
+    ) -> DaemonRecord {
+        DaemonRecord::Recorded(DaemonHealth {
+            started_at: now - chrono::Duration::minutes(started_minutes_ago),
+            schedule,
+            activity,
+        })
+    }
+
+    fn daemon_record(
+        started_minutes_ago: i64,
+        schedule: Schedule,
+        activity: LastActivity,
+    ) -> DaemonRecord {
+        daemon_record_at(reading_at(), started_minutes_ago, schedule, activity)
+    }
+
+    fn every_fifteen_minutes() -> Schedule {
+        Schedule::every(std::time::Duration::from_secs(15 * 60))
+    }
+
+    #[rstest::rstest]
+    #[case::current(
+        daemon_record(4, every_fifteen_minutes(), LastActivity::Pass(PassStatus::Ok)),
+        None,
+        None
+    )]
+    #[case::overdue_by_minutes(
+        daemon_record(47, every_fifteen_minutes(), LastActivity::Pass(PassStatus::Ok)),
+        None,
+        Some("! no refresh in 47m, notifications paused")
+    )]
+    #[case::overdue_by_hours(
+        daemon_record(185, every_fifteen_minutes(), LastActivity::Pass(PassStatus::Ok)),
+        None,
+        Some("! no refresh in 3h, notifications paused")
+    )]
+    #[case::waiting_for_credentials(
+        daemon_record(1, every_fifteen_minutes(), LastActivity::WaitingForCredentials),
+        None,
+        Some("! refresh waiting for 1Password, notifications paused")
+    )]
+    #[case::none_recorded(
+        DaemonRecord::NoneRecorded,
+        None,
+        Some("! no background refresh yet, notifications off")
+    )]
+    #[case::ran_once(
+        daemon_record(4, Schedule::Once, LastActivity::Pass(PassStatus::Ok)),
+        None,
+        Some("! no background refresh scheduled, notifications off")
+    )]
+    #[case::other_version(
+        DaemonRecord::OtherVersion,
+        None,
+        Some("! can't read refresh status (another hub version)")
+    )]
+    #[case::database_unreadable(
+        daemon_record(4, every_fifteen_minutes(), LastActivity::Pass(PassStatus::Ok)),
+        Some("disk I/O error"),
+        Some("! can't read hub.db: disk I/O error")
+    )]
+    fn the_daemon_shows_only_when_refreshes_have_stopped(
+        #[case] daemon: DaemonRecord,
+        #[case] database_error: Option<&str>,
+        #[case] expected: Option<&str>,
+    ) {
+        assert_eq!(
+            status_bar::daemon_warning(&daemon, database_error, reading_at()).as_deref(),
+            expected
+        );
+    }
+
+    #[rstest::rstest]
+    #[case::default_profile_current(Profile::Default, 4, "updated 4m ago")]
+    #[case::dev_profile_current(Profile::Dev, 4, "dev · updated 4m ago")]
+    #[case::default_profile_overdue(
+        Profile::Default,
+        47,
+        "updated 4m ago · ! no refresh in 47m, notifications paused"
+    )]
+    #[case::dev_profile_overdue(
+        Profile::Dev,
+        47,
+        "dev · updated 4m ago · ! no refresh in 47m, notifications paused"
+    )]
+    fn the_daemon_warning_follows_the_refresh_status(
+        #[case] profile: Profile,
+        #[case] daemon_started_minutes_ago: i64,
+        #[case] expected: &str,
+    ) {
+        let now = reading_at();
+        let app = App {
+            profile,
+            data: DataState {
+                last_updated: Some(now - chrono::Duration::minutes(4)),
+                daemon: daemon_record(
+                    daemon_started_minutes_ago,
+                    every_fifteen_minutes(),
+                    LastActivity::Pass(PassStatus::Ok),
+                ),
+                ..DataState::default()
+            },
+            ..App::default()
+        };
+
+        assert_eq!(status_bar::right_text(&app, now), expected);
+    }
+
+    #[test]
+    fn with_nothing_else_to_say_the_bar_shows_the_warning_alone() {
+        assert_eq!(
+            status_bar::right_text(&App::default(), reading_at()),
+            "! no background refresh yet, notifications off"
+        );
+    }
+
+    /// Refreshes stopped long enough ago that the warning crowds the key hints, at the width the
+    /// other snapshots use.
+    #[test]
+    fn full_screen_unified_list_refreshes_overdue() {
+        // `render` reads the clock itself, so the record is placed against it.
+        let mut app = App {
+            data: DataState {
+                daemon: daemon_record_at(
+                    Utc::now(),
+                    47,
+                    every_fifteen_minutes(),
+                    LastActivity::Pass(PassStatus::Ok),
+                ),
+                ..DataState::default()
+            },
+            ..unified_list_app(vec![DisplayItem::Single(pr())])
+        };
+        let buf = draw(&mut app, 80, 15);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
     // ── Full-screen unified list snapshots ───────────────────────────────────
     //
     // These capture the entire rendered buffer (not just the status bar row) so
@@ -770,6 +915,20 @@ mod tests {
         assert!(
             !bar.contains("indev"),
             "the hints must not run into the profile: {bar:?}"
+        );
+    }
+
+    /// The same gap holds before a warning on the default profile, where nothing else claims it.
+    #[test]
+    fn status_bar_keeps_a_gap_before_a_warning_when_hints_truncate() {
+        let mut app = unified_list_app(vec![DisplayItem::Single(pr())]);
+        let buf = draw(&mut app, 80, 15);
+        let text = screen_text(&buf);
+        let bar = text.lines().last().expect("a rendered screen has rows");
+
+        assert!(
+            bar.contains(" ! no background refresh yet"),
+            "the warning must keep a blank column before it: {bar:?}"
         );
     }
 

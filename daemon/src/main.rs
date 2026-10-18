@@ -5,6 +5,7 @@ use std::time::Duration;
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
 use domain::credential_attempt::CredentialAttempt;
+use domain::daemon_health::Schedule;
 use domain::daemon_pass::{Pass, PassOutcome};
 use domain::known_secrets::KnownSecrets;
 use domain::notified::Notified;
@@ -40,6 +41,18 @@ struct Cli {
     /// Run one pass and exit: 0 if it wrote the cache, 1 if it did not.
     #[arg(long)]
     once: bool,
+}
+
+impl Cli {
+    /// How this daemon runs its passes, recorded on every pass and attempt so a reader can tell
+    /// how old a pass is too old.
+    fn schedule(&self) -> Schedule {
+        if self.once {
+            Schedule::Once
+        } else {
+            Schedule::every(self.interval)
+        }
+    }
 }
 
 /// A period between passes, written the way people write durations (`15m`, `20s`, `2h`).
@@ -118,8 +131,10 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
     // attempt is recorded and tried again in this process, because a restart would raise fresh
     // prompts. With --once there is one attempt.
     let resolve = || file.resolve();
+    let schedule = cli.schedule();
     let record = |attempt: &CredentialAttempt| {
-        let record_error = cache::record_credential_attempt(|| cache::open(profile), attempt);
+        let record_error =
+            cache::record_credential_attempt(|| cache::open(profile), attempt, schedule);
         println!(
             "{}",
             credentials::AttemptReport {
@@ -155,15 +170,7 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
     };
     // A notification about missing credentials would now be out of date.
     if let Some(removed) = notifier.clear().await {
-        println!(
-            "{}",
-            credentials::NotificationRemoval {
-                at: Utc::now(),
-                pid: std::process::id(),
-                profile: profile.as_str().to_string(),
-                error: removed.err().map(|error| format!("{error:#}")),
-            }
-        );
+        log_notification_removal(profile, removed);
     }
 
     // Before the first pass, so it can remove a card whose turn ended while no daemon was running.
@@ -175,7 +182,7 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
     );
 
     if cli.once {
-        let (report, turns) = run_pass(&config, profile).await;
+        let (report, turns) = run_pass(&config, profile, schedule).await;
         println!("{report}");
         if let Some(turns) = turns {
             println!("{}", pr_notifier.apply(&turns).await);
@@ -194,7 +201,7 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
     let config = &config;
     let send_turns = &send_turns;
     schedule::every(cli.interval, Utc::now, move || async move {
-        let (report, turns) = run_pass(config, profile).await;
+        let (report, turns) = run_pass(config, profile, schedule).await;
         println!("{report}");
         if let Some(turns) = turns {
             // Sending fails only once the notifier has stopped, which only a bug can cause.
@@ -207,6 +214,19 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
     })
     .await;
     Ok(ExitCode::SUCCESS)
+}
+
+/// Logs how removing the notification about missing credentials went.
+fn log_notification_removal(profile: Profile, removed: Result<()>) {
+    println!(
+        "{}",
+        credentials::NotificationRemoval {
+            at: Utc::now(),
+            pid: std::process::id(),
+            profile: profile.as_str().to_string(),
+            error: removed.err().map(|error| format!("{error:#}")),
+        }
+    );
 }
 
 /// The pull request cards `profile` has showing, logged. None when they cannot be listed, so a card
@@ -241,6 +261,7 @@ async fn cards_showing(profile: Profile) -> Notified {
 async fn run_pass(
     config: &config::Config,
     profile: Profile,
+    schedule: Schedule,
 ) -> (pass::PassReport, Option<TurnsSeen>) {
     let started_at = Utc::now();
     let started = std::time::Instant::now();
@@ -270,7 +291,13 @@ async fn run_pass(
         outcome,
     };
     // Opened after the fetch returns. See refresh::fetch.
-    let recording = cache::record(|| cache::open(profile), &pass, payload.as_ref(), &secrets);
+    let recording = cache::record(
+        || cache::open(profile),
+        &pass,
+        schedule,
+        payload.as_ref(),
+        &secrets,
+    );
     let report = pass::PassReport {
         profile: profile.as_str().to_string(),
         pass,

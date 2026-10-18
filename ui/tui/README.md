@@ -11,15 +11,24 @@ auto-refreshes from SQLite, and opens items in the browser via keyboard shortcut
 
 ## Architecture
 
-On launch: load config → open SQLite → read cache. If the cache is fresh
-(≤ 30 min, matching `SCHEMA_VERSION`), render immediately from it. Otherwise
-render an empty list and kick off a live fetch in the background.
+On launch: load config → open SQLite → read the cached signals and the daemon's health record
+together with `store::snapshot::read`. If the cache is fresh (≤ 30 min, matching `SCHEMA_VERSION`),
+render immediately from it. Otherwise render an empty list and kick off a live fetch in the
+background.
 
-The event loop runs on tokio and multiplexes three sources with `tokio::select!`:
+The event loop runs on tokio and multiplexes four sources with `tokio::select!`:
 
 - `crossterm::event::EventStream` — keyboard events
-- `tokio::time::interval` (30 min) — periodic background refresh
+- `tokio::time::interval` (30 min) — a fetch of its own, when the signals on screen are older than that
+- `tokio::time::interval` (1 min) — a redraw, and a read of the database: newer cached signals
+  replace the list, and the daemon's record decides the status bar's warning
 - `mpsc::Receiver<Result<Refresh>>` — results from background fetches
+
+The status bar says nothing about the daemon while it refreshes on schedule. Otherwise it ends
+with a warning naming what stopped, such as `! no refresh in 47m, notifications paused`, decided
+by `DaemonRecord::status` in `domain/src/daemon_health.rs`. A read of the database that fails
+leaves the signals on screen and shows `! can't read hub.db: <reason>` until a read succeeds. See
+[the invariant](../../docs/invariants/the-daemons-health-and-the-signals-are-only-read-together.md).
 
 Background fetches run in spawned tokio tasks and send results back over the
 channel. The `rusqlite::Connection` stays in the main task (it is `Send` but not `Sync`, so

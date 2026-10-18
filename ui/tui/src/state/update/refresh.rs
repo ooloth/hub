@@ -1,7 +1,7 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::Utc;
 use workflows::freshness::{classify, RefreshOutcome};
-use workflows::status::Refresh;
+use workflows::status::{Refresh, SCHEMA_VERSION};
 
 use crate::display::{build_unified, flatten};
 use crate::state::{App, Effect, RefreshState, Screen};
@@ -64,4 +64,46 @@ pub(super) fn apply_refresh(app: &mut App, fetched: Refresh) -> Result<Vec<Effec
             Ok(vec![])
         }
     }
+}
+
+/// Takes in what a read of the database found: the daemon's record always, and the cached
+/// signals when they are newer than the ones on screen. A read that failed leaves everything on
+/// screen and keeps the reason until a read succeeds.
+///
+/// # Errors
+/// If cached signals of this build's schema version do not parse, which only a bug can cause.
+pub(super) fn apply_database_read(
+    app: &mut App,
+    read: Result<store::snapshot::Snapshot, String>,
+) -> Result<()> {
+    let snapshot = match read {
+        Ok(snapshot) => snapshot,
+        Err(reason) => {
+            app.data.database_error = Some(reason);
+            return Ok(());
+        }
+    };
+    app.data.database_error = None;
+    app.data.daemon = snapshot.daemon;
+    let Some(cached) = snapshot.cached else {
+        return Ok(());
+    };
+    let newer = app
+        .data
+        .last_updated
+        .is_none_or(|shown| cached.refreshed_at > shown);
+    if cached.schema_version != SCHEMA_VERSION || !newer {
+        return Ok(());
+    }
+    let report: workflows::status::StatusReport = serde_json::from_str(&cached.payload)
+        .context("failed to deserialize the cached signals")?;
+    // The TUI's own refresh is still running, and says so until it finishes.
+    if matches!(app.data.refresh_state, RefreshState::InProgress) {
+        app.data.last_updated = Some(cached.refreshed_at);
+        app.data.raw_items = report.items;
+        refresh_screen_in_place(&mut app.ui.screen, &app.data.raw_items);
+    } else {
+        apply_report(app, report, cached.refreshed_at);
+    }
+    Ok(())
 }
