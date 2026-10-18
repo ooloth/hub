@@ -47,8 +47,9 @@ In hub, the cost of delay is high when:
   qualify, the `M1:` / `M2:` prefix in their titles orders them. If none qualifies, ask which
   milestone is current rather than picking one. List them with
   `gh api 'repos/ooloth/hub/milestones?state=open'`, quoted so the shell does not expand the `?`.
-  Inside a milestone, the `Phase N.M` numbering in issue titles is the work order, and every issue
-  in the milestone ranks by its phase number, defects included.
+  Inside a milestone, the `Phase N.M` numbering in issue titles is the work order of its critical
+  path, and every numbered issue ranks by its phase number, defects included. An unnumbered
+  sub-issue is off the critical path and ranks by its kind with the work outside the milestone.
 - **Started features outside a milestone:** a parent issue with some of its sub-issues closed.
   `gh issue view N --json subIssues,blockedBy` prints the relationships, each as an object with
   `nodes` and `totalCount` rather than as an array.

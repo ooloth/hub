@@ -40,10 +40,13 @@ The plan lives in a **comment**. `gh issue view <epic>` on its own prints the bo
 the body can predate the plan, so reading it alone can give you a superseded design. The comment
 carries the settled architecture, the measured spike findings, and the full phase sequence.
 
-**The title numbering is the work order.** Issues are titled `Phase N.M — ...`; take them in that
-order. Hard dependencies are recorded separately as GitHub `blockedBy` relationships, which
-`gh issue view N --json blockedBy` prints. Everything else the numbering implies is sequence, not
-blocking.
+**Only issues on the critical path carry a phase number.** An issue is on the critical path when
+the milestone's "Done when" cannot be reached without it. Those are titled `Phase N.M — ...`, and
+the numbering is their work order. Every other sub-issue of the epic has a plain title and is taken
+whenever it is convenient. Hard dependencies are recorded separately as GitHub `blockedBy`
+relationships, which `gh issue view N --json blockedBy` prints. Everything else the numbering
+implies is sequence, not blocking. An issue body does not name its parent or its phase: read the
+parent with `gh issue view N --json parent`, as above.
 
 ## Project Structure
 
