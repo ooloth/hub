@@ -193,7 +193,7 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
 
     let config = &config;
     let send_turns = &send_turns;
-    schedule::every(cli.interval, move || async move {
+    schedule::every(cli.interval, Utc::now, move || async move {
         let (report, turns) = run_pass(config, profile).await;
         println!("{report}");
         if let Some(turns) = turns {
