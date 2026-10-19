@@ -31,4 +31,4 @@ expression: screen_text(&buf)
 │                                                                       │                                              │
 │                                                                       │                                              │
 ╰───────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────╯
- Squash and merge #102 into main?  [↩] confirm · [Esc] cancel            ! no background refresh yet, notifications off
+ Squash and merge #102 into main?  [↩] confirm · [Esc] cancel

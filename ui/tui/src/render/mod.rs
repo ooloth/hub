@@ -325,14 +325,38 @@ mod tests {
                 // Use None for last_updated so the timestamp is deterministic ("unknown").
                 refresh_state: RefreshState::Partial(vec!["source-a".to_string()]),
                 last_updated: None,
-                ..DataState::default()
+                ..data_with_a_current_daemon()
             },
-            ..App::default()
+            ..app_with_a_current_daemon()
         }
     }
 
     fn idle_app() -> App {
-        App::default() // RefreshState::Idle, last_updated: None → right status = ""
+        app_with_a_current_daemon() // RefreshState::Idle, last_updated: None → right status = ""
+    }
+
+    /// A daemon whose last pass started just now, so the status bar says nothing about it. The
+    /// screens below are about other things, and a warning would crowd out what they show.
+    fn current_daemon() -> DaemonRecord {
+        DaemonRecord::Recorded(DaemonHealth {
+            started_at: Utc::now(),
+            schedule: Schedule::every(std::time::Duration::from_secs(15 * 60)),
+            activity: LastActivity::Pass(PassStatus::Ok),
+        })
+    }
+
+    fn data_with_a_current_daemon() -> DataState {
+        DataState {
+            daemon: current_daemon(),
+            ..DataState::default()
+        }
+    }
+
+    fn app_with_a_current_daemon() -> App {
+        App {
+            data: data_with_a_current_daemon(),
+            ..App::default()
+        }
     }
 
     // ── Two-frame status bar snapshot tests ──────────────────────────────────
@@ -411,9 +435,9 @@ mod tests {
         let mut app = App {
             data: DataState {
                 refresh_state: RefreshState::InProgress,
-                ..DataState::default()
+                ..data_with_a_current_daemon()
             },
-            ..App::default()
+            ..app_with_a_current_daemon()
         };
         let buf = draw(&mut app, 80, 5);
         insta::assert_snapshot!(status_row(&buf));
@@ -460,7 +484,7 @@ mod tests {
                 },
                 ..UiState::default()
             },
-            ..App::default()
+            ..app_with_a_current_daemon()
         }
     }
 
@@ -499,7 +523,7 @@ mod tests {
                 },
                 ..UiState::default()
             },
-            ..App::default()
+            ..app_with_a_current_daemon()
         }
     }
 
@@ -510,7 +534,7 @@ mod tests {
                 flash: Some("something went wrong".to_string()),
                 ..UiState::default()
             },
-            ..App::default()
+            ..app_with_a_current_daemon()
         };
         assert_eq!(status_bar::status_bar_left(&app), "something went wrong");
     }
@@ -820,9 +844,9 @@ mod tests {
                     every_fifteen_minutes(),
                     LastActivity::Pass(PassStatus::Ok),
                 ),
-                ..DataState::default()
+                ..data_with_a_current_daemon()
             },
-            ..App::default()
+            ..app_with_a_current_daemon()
         };
 
         assert_eq!(status_bar::right_text(&app, now), expected);
@@ -849,7 +873,7 @@ mod tests {
                     every_fifteen_minutes(),
                     LastActivity::Pass(PassStatus::Ok),
                 ),
-                ..DataState::default()
+                ..data_with_a_current_daemon()
             },
             ..unified_list_app(vec![DisplayItem::Single(pr())])
         };
@@ -921,7 +945,10 @@ mod tests {
     /// The same gap holds before a warning on the default profile, where nothing else claims it.
     #[test]
     fn status_bar_keeps_a_gap_before_a_warning_when_hints_truncate() {
-        let mut app = unified_list_app(vec![DisplayItem::Single(pr())]);
+        let mut app = App {
+            data: DataState::default(),
+            ..unified_list_app(vec![DisplayItem::Single(pr())])
+        };
         let buf = draw(&mut app, 80, 15);
         let text = screen_text(&buf);
         let bar = text.lines().last().expect("a rendered screen has rows");
@@ -969,7 +996,7 @@ mod tests {
                 ),
                 ..UiState::default()
             },
-            ..App::default()
+            ..app_with_a_current_daemon()
         };
         let buf = draw(&mut app, 80, 15);
         insta::assert_snapshot!(screen_text(&buf));
@@ -984,7 +1011,7 @@ mod tests {
                 query_input: Some("hub".to_string()),
                 ..UiState::default()
             },
-            ..App::default()
+            ..app_with_a_current_daemon()
         };
         let buf = draw(&mut app, 80, 15);
         insta::assert_snapshot!(screen_text(&buf));
@@ -1007,7 +1034,7 @@ mod tests {
                 show_help: true,
                 ..UiState::default()
             },
-            ..App::default()
+            ..app_with_a_current_daemon()
         };
         let buf = draw(&mut app, 80, 20);
         insta::assert_snapshot!(screen_text(&buf));
@@ -1029,7 +1056,7 @@ mod tests {
                 ),
                 ..UiState::default()
             },
-            ..App::default()
+            ..app_with_a_current_daemon()
         };
         let buf = draw(&mut app, 80, 15);
         insta::assert_snapshot!(screen_text(&buf));
@@ -1046,7 +1073,7 @@ mod tests {
                 screen: make_screen(items, 14, Filter::default()),
                 ..UiState::default()
             },
-            ..App::default()
+            ..app_with_a_current_daemon()
         };
         let buf = draw(&mut app, 80, 15);
         insta::assert_snapshot!(screen_text(&buf));
@@ -1068,7 +1095,7 @@ mod tests {
                 ),
                 ..UiState::default()
             },
-            ..App::default()
+            ..app_with_a_current_daemon()
         };
         let buf = draw(&mut app, 80, 15);
         insta::assert_snapshot!(screen_text(&buf));
@@ -1090,7 +1117,7 @@ mod tests {
                 ),
                 ..UiState::default()
             },
-            ..App::default()
+            ..app_with_a_current_daemon()
         };
         let buf = draw(&mut app, 80, 15);
         insta::assert_snapshot!(screen_text(&buf));
@@ -1147,7 +1174,7 @@ mod tests {
                 },
                 ..UiState::default()
             },
-            ..App::default()
+            ..app_with_a_current_daemon()
         }
     }
 
@@ -1193,9 +1220,9 @@ mod tests {
         let mut app = App {
             data: DataState {
                 refresh_state: RefreshState::Failed("connection refused".to_string()),
-                ..DataState::default()
+                ..data_with_a_current_daemon()
             },
-            ..App::default()
+            ..app_with_a_current_daemon()
         };
         let buf = draw(&mut app, 80, 5);
         insta::assert_snapshot!(status_row(&buf));
@@ -1244,7 +1271,7 @@ mod tests {
                 },
                 ..UiState::default()
             },
-            ..App::default()
+            ..app_with_a_current_daemon()
         }
     }
 

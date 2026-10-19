@@ -2,4 +2,4 @@
 source: ui/tui/src/render/mod.rs
 expression: status_row(&buf)
 ---
- refresh failed: connection refused · ! no background refresh yet, notifications
+  · [↩] details · [p] prs · [O] issues · [e] refresh failed: connection refused
