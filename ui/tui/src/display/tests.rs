@@ -608,9 +608,9 @@ fn build_unified_category_filter_excludes_non_matching() {
 #[case("Fix bug")] // primary
 #[case("fix bug")] // primary, case-insensitive
 #[case("#7")] // dim_inline
-#[case("owner/repo")] // source — currently fails
-#[case("Issue")] // category — currently fails
-#[case("now")] // age — currently fails
+#[case("owner/repo")] // source
+#[case("Issue")] // category
+#[case("now")] // age
 fn build_unified_query_searches_all_visible_text(#[case] query: &str) {
     let result = build_unified(
         vec![issue()],
