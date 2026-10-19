@@ -48,3 +48,7 @@ graduates into a decision record._
   me, which is option A applied to a better age measure. It does not decide whether importance
   should outrank age, so this question survives the milestone and the milestone is what produces
   its evidence.
+- *Stated* (2026-10-19, the maintainer): actionable items rank above non-actionable ones through
+  the shared urgency tiers, which are expected to grow longer and more granular, rather than
+  through per-source sorting. Each source assigns a tier from the item's state; the list sorts
+  every signal by tier, then age.

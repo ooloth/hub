@@ -24,8 +24,10 @@ arriving causes hub to be opened, so the delay is unbounded by anything except h
 opened anyway.
 
 Delivery from an unattended process is measured, not assumed. Spike, 2026-09-04, recorded in #327:
-an `osascript` notification fired from a launchd agent running with `PPID=1`, parent
-`/sbin/launchd`, no TTY, exit 0, with a delivery record present in Notification Center.
+a notification command runs from a launchd agent with `PPID=1`, parent `/sbin/launchd` and no TTY.
+Measured under launchd on 2026-10-17 (recorded in `daemon/src/notification.rs`): `osascript`
+notifications from the installed daemon exit 0 and never reach the screen or Notification Center,
+so hub posts through `terminal-notifier`, which macOS treats as an app of its own.
 
 ## Decision
 

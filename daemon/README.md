@@ -31,12 +31,12 @@ stay missing. Each replaces the last, and once credentials arrive the daemon rem
 It also posts a card for each pull request that is my turn: my review is requested, or it is mine,
 approved, and GitHub says nothing blocks the merge. A card is posted once, at the first pass after
 the turn begins, and removed at the first pass after it ends. A pull request that stays my turn is
-not posted again while the daemon runs, even after its card is dismissed. A restart posts the ones
-still my turn once more. Clicking a card opens the pull request. Cards are removed only when both
-pull request sources answered, so a source that failed never takes one away. Posting happens beside
-the passes, so no pass waits on `terminal-notifier`. The TUI's status bar warns when the daemon's
-refreshes stop, reading the health record from the database (#364). The TUI asking the daemon for a
-pass is [#365](https://github.com/ooloth/hub/issues/365).
+not posted again while the daemon runs, even after its card is dismissed. A restart posts again
+only the turns whose card is no longer showing. Clicking a card opens the pull request. Cards are
+removed only when both pull request sources answered, so a source that failed never takes one away.
+Posting happens beside the passes, so no pass waits on `terminal-notifier`. The TUI's status bar
+warns when the daemon's refreshes stop, reading the health record from the database (#364). The
+TUI asking the daemon for a pass is [#365](https://github.com/ooloth/hub/issues/365).
 
 ## Files
 

@@ -6,7 +6,7 @@ in their own tmux windows.
 
 Agents do not interact with the TUI — they use the `hub` CLI toolkit.
 
-A Ratatui terminal dashboard that renders status items grouped by category,
+A Ratatui terminal dashboard that renders status items in one list ranked by urgency,
 auto-refreshes from SQLite, and opens items in the browser via keyboard shortcuts.
 
 ## Architecture
@@ -126,6 +126,7 @@ The test suite keeps one full-screen snapshot per major screen state:
 | `full_screen_unified_list_help_popup` | keybind popup overlaid on list |
 | `full_screen_unified_list_dev_profile` | `dev` profile label at the right of the status bar |
 | `full_screen_unified_list_refreshes_overdue` | the daemon warning crowding the key hints at 80 columns |
+| `full_screen_unified_list_turn_reasons_{80,200}` | a turn's reason after `PR`, in one column, never truncated |
 | `full_screen_merging_pr` | merge confirmation prompt over the PR body |
 | `full_screen_detail_view_first_selected` | group expanded, first item selected |
 | `full_screen_detail_view_last_selected` | group expanded, last item selected |
