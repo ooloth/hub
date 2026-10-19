@@ -47,11 +47,22 @@ where
     /// Posts a card for each new turn in `seen` and removes the card of each turn that ended.
     pub(crate) async fn apply(&mut self, seen: &TurnsSeen) -> NotifierReport {
         let changes = self.notified.changes_for(seen);
-        let mut outcomes = Vec::with_capacity(changes.post.len() + changes.remove.len());
-        for turn in changes.post {
+        let mut outcomes =
+            Vec::with_capacity(changes.post.len() + changes.repost.len() + changes.remove.len());
+        let posts = changes.post.into_iter().map(|turn| (turn, false));
+        let reposts = changes.repost.into_iter().map(|turn| (turn, true));
+        // A repost goes to the card's own group, so it replaces the card rather than adding one.
+        for (turn, again) in posts.chain(reposts) {
             let group = group_for(self.profile, &turn.pr);
             outcomes.push(match (self.post)(group, turn.card()).await {
-                Ok(()) => ChangeOutcome::Posted(turn.pr),
+                Ok(()) if again => ChangeOutcome::Reposted {
+                    pr: turn.pr,
+                    reason: turn.reason,
+                },
+                Ok(()) => ChangeOutcome::Posted {
+                    pr: turn.pr,
+                    reason: turn.reason,
+                },
                 Err(error) => ChangeOutcome::PostFailed {
                     pr: turn.pr,
                     reason: format!("{error:#}"),
@@ -126,14 +137,21 @@ impl fmt::Display for NotifierReport {
                 .join(" ")
         };
         let posted = prs(|outcome| match outcome {
-            ChangeOutcome::Posted(pr) => Some(pr),
+            ChangeOutcome::Posted { pr, .. } => Some(pr),
+            _ => None,
+        });
+        let reposted = prs(|outcome| match outcome {
+            ChangeOutcome::Reposted { pr, .. } => Some(pr),
             _ => None,
         });
         let removed = prs(|outcome| match outcome {
             ChangeOutcome::Removed(pr) => Some(pr),
             _ => None,
         });
-        write!(f, " posted=\"{posted}\" removed=\"{removed}\"")?;
+        write!(
+            f,
+            " posted=\"{posted}\" reposted=\"{reposted}\" removed=\"{removed}\""
+        )?;
         let failures: Vec<String> = self
             .outcomes
             .iter()
@@ -142,7 +160,9 @@ impl fmt::Display for NotifierReport {
                 ChangeOutcome::RemoveFailed { pr, reason } => {
                     Some(format!("remove {pr}: {reason}"))
                 }
-                ChangeOutcome::Posted(_) | ChangeOutcome::Removed(_) => None,
+                ChangeOutcome::Posted { .. }
+                | ChangeOutcome::Reposted { .. }
+                | ChangeOutcome::Removed(_) => None,
             })
             .collect();
         if failures.is_empty() {
@@ -198,6 +218,7 @@ mod tests {
     use std::time::Duration;
 
     use chrono::TimeZone;
+    use domain::pr_turn::TurnReason;
     use domain::{MergeReadiness, PrKind, PullRequest, RepoSlug, Urgency};
 
     use super::*;
@@ -364,6 +385,89 @@ mod tests {
         );
     }
 
+    /// My pull request `number`, approved with nothing blocking the merge, and a review from Ada
+    /// waiting on me when `reviewed`.
+    fn mine(number: u64, reviewed: bool) -> PullRequest {
+        use domain::review_waiting::{
+            Feedback, Review, ReviewWaiting, Reviewer, ReviewerKind, Verdict,
+        };
+        let feedback = Feedback::from_review(&Review {
+            by: Reviewer::Other {
+                login: "ada".to_string(),
+                kind: ReviewerKind::Person,
+            },
+            verdict: Verdict::ChangesRequested,
+            inline_comments: 1,
+            has_body: true,
+            submitted: chrono::DateTime::UNIX_EPOCH,
+        })
+        .unwrap();
+        PullRequest {
+            kind: PrKind::Mine,
+            approval_count: 1,
+            merge_readiness: MergeReadiness::Ready,
+            review_waiting: if reviewed {
+                ReviewWaiting::Waiting(feedback)
+            } else {
+                ReviewWaiting::NoReview
+            },
+            ..pr(number)
+        }
+    }
+
+    #[tokio::test]
+    async fn a_card_is_posted_again_in_its_group_when_its_reason_changes() {
+        let cards: Rc<RefCell<Vec<(String, String)>>> = Rc::default();
+        let posts = Rc::clone(&cards);
+        let mut notifier = PrNotifier::new(
+            Profile::Dev,
+            Notified::default(),
+            move |group, card: TurnCard| {
+                posts.borrow_mut().push((group, card.title));
+                std::future::ready(Ok(()))
+            },
+            |_group| std::future::ready(Ok(())),
+        );
+
+        let _ = notifier
+            .apply(&TurnsSeen::from_prs(
+                &[mine(7, false)],
+                TurnCoverage::Complete,
+            ))
+            .await;
+        let report = notifier
+            .apply(&TurnsSeen::from_prs(
+                &[mine(7, true)],
+                TurnCoverage::Complete,
+            ))
+            .await;
+        let unchanged = notifier
+            .apply(&TurnsSeen::from_prs(
+                &[mine(7, true)],
+                TurnCoverage::Complete,
+            ))
+            .await;
+
+        assert_eq!(
+            *cards.borrow(),
+            vec![
+                (
+                    "hub-dev-pr-ooloth/hub#7".to_string(),
+                    "PR ready to merge".to_string()
+                ),
+                (
+                    "hub-dev-pr-ooloth/hub#7".to_string(),
+                    "PR reviewed".to_string()
+                ),
+            ]
+        );
+        assert!(
+            report.to_string().contains("reposted=\"ooloth/hub#7\""),
+            "{report}"
+        );
+        assert!(unchanged.outcomes.is_empty(), "{unchanged}");
+    }
+
     #[test]
     fn a_round_is_one_line_naming_what_changed() {
         let report = NotifierReport {
@@ -373,8 +477,20 @@ mod tests {
             turns: 3,
             coverage: TurnCoverage::Incomplete,
             outcomes: vec![
-                ChangeOutcome::Posted(id(1)),
-                ChangeOutcome::Posted(id(2)),
+                ChangeOutcome::Posted {
+                    pr: id(1),
+                    reason: TurnReason::ReviewRequested,
+                },
+                ChangeOutcome::Posted {
+                    pr: id(2),
+                    reason: TurnReason::ReviewRequested,
+                },
+                ChangeOutcome::Reposted {
+                    pr: id(5),
+                    reason: TurnReason::Reviewed {
+                        by: "ada".to_string(),
+                    },
+                },
                 ChangeOutcome::Removed(id(3)),
                 ChangeOutcome::RemoveFailed {
                     pr: id(4),
@@ -386,7 +502,8 @@ mod tests {
         assert_eq!(
             report.to_string(),
             "hub-daemon notifications at=2026-10-17T23:15:55Z pid=4242 profile=default turns=3 \
-             coverage=incomplete posted=\"ooloth/hub#1 ooloth/hub#2\" removed=\"ooloth/hub#3\" \
+             coverage=incomplete posted=\"ooloth/hub#1 ooloth/hub#2\" reposted=\"ooloth/hub#5\" \
+             removed=\"ooloth/hub#3\" \
              failed=\"remove ooloth/hub#4: terminal-notifier exited 1: no\""
         );
     }

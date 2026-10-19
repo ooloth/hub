@@ -9,8 +9,10 @@ resolves_into: decision
 ## Why it matters
 
 The daemon notifies a pull request once, when it becomes my turn, and does not notify it again
-while it stays my turn and the daemon keeps running
-([#344](https://github.com/ooloth/hub/issues/344)). Nothing reminds me about a pull request whose
+while it stays my turn for the same reason and the daemon keeps running
+([#344](https://github.com/ooloth/hub/issues/344)). It notifies again only when the reason
+changes, such as a review arriving on my pull request that was ready to merge
+([#371](https://github.com/ooloth/hub/issues/371)). Nothing reminds me about a pull request whose
 notification I dismissed. So today nothing needs snoozing, and the cost falls the other way: a
 review request I dismiss and then forget stays forgotten until I open hub or the daemon restarts.
 

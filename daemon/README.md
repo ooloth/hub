@@ -35,9 +35,12 @@ approval does not, nor does a bot's review with no inline comments, such as Copi
 last push is read from GitHub's repository activity, and only for a pull request with such a review.
 When it cannot be read, the turn neither starts nor ends, and the pass names `github last push` as
 a failed source. A card is posted once, at the first pass after
-the turn begins, and removed at the first pass after it ends. A pull request that stays my turn is
-not posted again while the daemon runs, even after its card is dismissed. A restart posts again
-only the turns whose card is no longer showing. Clicking a card opens the pull request. Cards are
+the turn begins, and removed at the first pass after it ends. A pull request that stays my turn for
+the same reason is not posted again while the daemon runs, even after its card is dismissed. When
+the reason changes, such as a review arriving on my pull request that was ready to merge, its card
+is posted again in its own group, which replaces it. A restart posts again only the turns whose
+card is no longer showing, and a card found showing is not posted again whatever its reason, since
+hub does not read back what it says. Clicking a card opens the pull request. Cards are
 removed only when both pull request sources answered, so a source that failed never takes one away.
 Posting happens beside the passes, so no pass waits on `terminal-notifier`. The TUI's status bar
 warns when the daemon's refreshes stop, reading the health record from the database (#364). The
@@ -156,10 +159,11 @@ restarts.
 After each pass that reached its sources, the notifier prints one line saying what it changed:
 
 ```
-hub-daemon notifications at=2026-10-17T23:15:55Z pid=4242 profile=default turns=3 coverage=complete posted="ooloth/hub#344" removed="" failed=""
+hub-daemon notifications at=2026-10-17T23:15:55Z pid=4242 profile=default turns=3 coverage=complete posted="ooloth/hub#344" reposted="" removed="" failed=""
 ```
 
-`turns` is how many pull requests are my turn. `coverage=incomplete` means a pull request source
+`turns` is how many pull requests are my turn. `reposted` names cards posted again because the
+reason they are my turn changed. `coverage=incomplete` means a pull request source
 failed, so no card was removed. A card that could not be posted or removed is named in `failed`
 with the reason, and tried again on the next pass. At startup, before the first pass, a
 `hub-daemon notifications_found` line names the cards already showing, read with
