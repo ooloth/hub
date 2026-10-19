@@ -28,7 +28,13 @@ pub(crate) fn build_unified_list_item(
         RowSeparator::TreeChild(_) => 4, // "  │ " / "  └ "
         _ => 3,                          // " · " / " ▸ " / " ▾ "
     };
-    let category_prefix_width = parts.category.chars().count() + separator_width;
+    // A subcategory narrows the category, so it shares the label's width, which is never truncated.
+    let label_width = parts.category.chars().count()
+        + parts
+            .subcategory
+            .as_ref()
+            .map_or(0, |s| 3 + s.chars().count());
+    let category_prefix_width = label_width + separator_width;
     let content_budget = inner_width
         .saturating_sub(chrome_total)
         .saturating_sub(category_prefix_width);
@@ -56,7 +62,12 @@ pub(crate) fn build_unified_list_item(
             Span::styled(format!("  {bar} "), Style::default().fg(bullet_color))
         }
     };
-    let mut spans: Vec<Span<'static>> = vec![Span::styled(parts.category, text_style), separator];
+    let mut spans: Vec<Span<'static>> = vec![Span::styled(parts.category, text_style)];
+    if let Some(subcategory) = parts.subcategory {
+        spans.push(bullet_span(bullet_color));
+        spans.push(Span::styled(subcategory, text_style));
+    }
+    spans.push(separator);
     push_segments(
         &mut spans,
         &parts.primary,

@@ -312,6 +312,97 @@ fn make_pr(kind: domain::PrKind) -> StatusItem {
     make_pr_with(kind, None, 0, 0)
 }
 
+fn make_pr_merging(
+    kind: domain::PrKind,
+    approval_count: u32,
+    changes_requested_count: u32,
+    merge_readiness: domain::MergeReadiness,
+) -> StatusItem {
+    let StatusItem::Pr(mut pr) = make_pr_with(kind, None, approval_count, changes_requested_count)
+    else {
+        unreachable!()
+    };
+    pr.merge_readiness = merge_readiness;
+    StatusItem::Pr(pr)
+}
+
+#[rstest]
+#[case::my_review_is_requested(
+    domain::PrKind::ToReview,
+    0,
+    0,
+    domain::MergeReadiness::NotYetKnown,
+    Some("review requested")
+)]
+#[case::mine_approved_and_nothing_blocks_the_merge(
+    domain::PrKind::Mine,
+    1,
+    0,
+    domain::MergeReadiness::Ready,
+    Some("ready to merge")
+)]
+#[case::mine_approved_before_github_decides_the_merge(
+    domain::PrKind::Mine,
+    1,
+    0,
+    domain::MergeReadiness::NotYetKnown,
+    None
+)]
+#[case::mine_approved_with_a_conflict(
+    domain::PrKind::Mine,
+    1,
+    0,
+    domain::MergeReadiness::Blocked(domain::MergeBlocker::Conflict),
+    None
+)]
+#[case::mine_with_no_reviews(domain::PrKind::Mine, 0, 0, domain::MergeReadiness::Ready, None)]
+#[case::mine_with_changes_requested(
+    domain::PrKind::Mine,
+    1,
+    1,
+    domain::MergeReadiness::Ready,
+    None
+)]
+#[case::my_draft(domain::PrKind::MyDraft, 1, 0, domain::MergeReadiness::Ready, None)]
+#[case::someone_elses_not_awaiting_my_review(
+    domain::PrKind::External,
+    1,
+    0,
+    domain::MergeReadiness::Ready,
+    None
+)]
+fn a_pr_row_names_why_it_is_my_turn_exactly_when_it_is(
+    #[case] kind: domain::PrKind,
+    #[case] approvals: u32,
+    #[case] changes_requested: u32,
+    #[case] merge: domain::MergeReadiness,
+    #[case] expected: Option<&str>,
+) {
+    let line = item_line(&make_pr_merging(kind, approvals, changes_requested, merge));
+
+    assert_eq!(line.subcategory.as_deref(), expected);
+}
+
+#[test]
+fn searching_for_a_reason_finds_only_the_rows_that_show_it() {
+    let ready = make_pr_merging(domain::PrKind::Mine, 1, 0, domain::MergeReadiness::Ready);
+    let waiting = make_pr_merging(domain::PrKind::Mine, 0, 0, domain::MergeReadiness::Ready);
+
+    let result = build_unified(
+        vec![ready, waiting],
+        &Filter {
+            category: None,
+            query: Some("ready to merge".to_string()),
+        },
+    );
+
+    assert_eq!(result.len(), 1);
+    assert!(matches!(
+        &result[0],
+        DisplayItem::Single(StatusItem::Pr(pr)) if pr.approval_count == 1
+    ));
+}
+
 fn make_pr_conflicting(kind: domain::PrKind) -> StatusItem {
     let StatusItem::Pr(mut pr) = make_pr_with(kind, None, 0, 0) else {
         unreachable!()

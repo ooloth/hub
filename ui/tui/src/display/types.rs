@@ -119,6 +119,7 @@ pub(crate) struct LineParts {
     pub(crate) dim_inline: Vec<String>,
     pub(crate) source: Option<String>,
     pub(crate) category: String,
+    pub(crate) subcategory: Option<String>,
     pub(crate) age: String,
 }
 
@@ -129,6 +130,7 @@ impl LineParts {
 
     pub(crate) fn all_text(&self) -> String {
         let mut parts: Vec<&str> = vec![&self.category];
+        parts.extend(self.subcategory.as_deref());
         parts.extend(self.primary.iter().map(String::as_str));
         parts.extend(self.dim_inline.iter().map(String::as_str));
         if let Some(s) = &self.source {

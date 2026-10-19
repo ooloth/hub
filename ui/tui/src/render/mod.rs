@@ -1025,6 +1025,79 @@ mod tests {
         insta::assert_snapshot!(screen_text(&buf));
     }
 
+    /// A pull request in ooloth/hub, opened three hours ago, whose merge nothing blocks.
+    fn turn_pr(number: u64, kind: domain::PrKind, approvals: u32, title: &str) -> StatusItem {
+        let StatusItem::Pr(base) = pr() else {
+            unreachable!()
+        };
+        StatusItem::Pr(domain::PullRequest {
+            number,
+            kind,
+            approval_count: approvals,
+            title: title.to_string(),
+            urgency: domain::Urgency::High,
+            repo: domain::RepoSlug::new("ooloth", "hub"),
+            age: chrono::Duration::hours(3),
+            merge_readiness: domain::MergeReadiness::Ready,
+            ..base
+        })
+    }
+
+    fn turn_rows() -> Vec<DisplayItem> {
+        vec![
+            DisplayItem::Single(turn_pr(
+                344,
+                domain::PrKind::ToReview,
+                0,
+                "Notify when a pull request is my turn, with a card for each one",
+            )),
+            DisplayItem::Single(turn_pr(
+                370,
+                domain::PrKind::Mine,
+                0,
+                "The status bar shows when signals were last updated, however",
+            )),
+            DisplayItem::Single(turn_pr(
+                371,
+                domain::PrKind::Mine,
+                1,
+                "Investigation worktrees are removed however their session ends",
+            )),
+        ]
+    }
+
+    #[rstest]
+    #[case::narrow(80, "full_screen_unified_list_turn_reasons_80")]
+    #[case::wide(200, "full_screen_unified_list_turn_reasons_200")]
+    fn full_screen_unified_list_turn_reasons(#[case] width: u16, #[case] snapshot: &str) {
+        let mut app = unified_list_app(turn_rows());
+        let buf = draw(&mut app, width, 8);
+        insta::assert_snapshot!(snapshot, screen_text(&buf));
+    }
+
+    #[test]
+    fn a_turn_reason_is_drawn_in_the_colour_of_the_pr_label() {
+        let mut app = unified_list_app(turn_rows());
+        let buf = draw(&mut app, 120, 8);
+        // Row 3 is the third pull request, which is not selected, so no highlight restyles it.
+        let row = 3;
+        let text: String = (0..buf.area.width)
+            .map(|x| buf[(x, row)].symbol().to_string())
+            .collect();
+        let column_of = |needle: &str| {
+            let byte = text.find(needle).unwrap();
+            u16::try_from(text[..byte].chars().count()).unwrap()
+        };
+        let label_at = column_of("PR");
+        let reason_at = column_of("ready to merge");
+        let dot_at = reason_at - 2;
+
+        let label_colour = buf[(label_at, row)].fg;
+        assert_eq!(buf[(dot_at, row)].symbol(), "·");
+        assert_eq!(buf[(dot_at, row)].fg, label_colour);
+        assert_eq!(buf[(reason_at, row)].fg, label_colour);
+    }
+
     #[test]
     fn full_screen_unified_list_help_popup() {
         // U7: Help popup overlaid on the list.

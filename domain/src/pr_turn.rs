@@ -12,6 +12,17 @@ pub enum TurnReason {
     ReadyToMerge,
 }
 
+impl TurnReason {
+    /// The words that say why, wherever a turn is shown.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::ReviewRequested => "review requested",
+            Self::ReadyToMerge => "ready to merge",
+        }
+    }
+}
+
 /// A pull request that is waiting on me, with what a notification about it needs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Turn {
@@ -85,15 +96,12 @@ impl Turn {
     #[must_use]
     pub fn card(&self) -> TurnCard {
         let repo_and_number = format!("{} #{}", self.pr.repo.repo_name(), self.pr.number);
-        let (title, subtitle) = match self.reason {
-            TurnReason::ReviewRequested => (
-                "PR review requested",
-                format!("{repo_and_number} · @{}", self.author),
-            ),
-            TurnReason::ReadyToMerge => ("PR ready to merge", repo_and_number),
+        let subtitle = match self.reason {
+            TurnReason::ReviewRequested => format!("{repo_and_number} · @{}", self.author),
+            TurnReason::ReadyToMerge => repo_and_number,
         };
         TurnCard {
-            title: title.to_string(),
+            title: format!("PR {}", self.reason.label()),
             subtitle,
             message: self.title.clone(),
             url: self.url.clone(),
@@ -270,5 +278,16 @@ mod tests {
 
         assert_eq!(card.title, "PR ready to merge");
         assert_eq!(card.subtitle, "hub #344");
+    }
+
+    #[rstest]
+    #[case(TurnReason::ReviewRequested, "review requested")]
+    #[case(TurnReason::ReadyToMerge, "ready to merge")]
+    fn a_cards_title_is_pr_followed_by_its_reasons_label(
+        #[case] reason: TurnReason,
+        #[case] label: &str,
+    ) {
+        assert_eq!(reason.label(), label);
+        assert_eq!(turn(reason).card().title, format!("PR {label}"));
     }
 }

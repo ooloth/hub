@@ -204,12 +204,17 @@ fn pr_line(pr: &domain::PullRequest) -> LineParts {
     if let Some(blocker) = pr.merge_readiness.blocker() {
         dim_inline.push(merge_blocker_word(blocker).to_string());
     }
+    let subcategory = match domain::pr_turn::TurnReading::of(pr) {
+        domain::pr_turn::TurnReading::Turn(turn) => Some(turn.reason.label().to_string()),
+        domain::pr_turn::TurnReading::NotMyTurn | domain::pr_turn::TurnReading::Undecided => None,
+    };
     LineParts {
         separator: RowSeparator::Bullet,
         primary: vec![pr.title.clone()],
         dim_inline,
         source: Some(pr.repo.to_string()),
         category: "PR".to_string(),
+        subcategory,
         age: format_age_short(pr.age),
     }
 }
@@ -226,6 +231,7 @@ fn issue_line(i: &domain::Issue) -> LineParts {
         dim_inline,
         source: Some(i.repo.to_string()),
         category: "Issue".to_string(),
+        subcategory: None,
         age: format_age_short(i.age),
     }
 }
@@ -243,6 +249,7 @@ fn ci_line(c: &domain::CiFailure) -> LineParts {
         dim_inline: vec![],
         source: Some(c.repo.to_string()),
         category: "CI".to_string(),
+        subcategory: None,
         age: format_age_short(c.age),
     }
 }
@@ -258,6 +265,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             dim_inline: vec![format!(" ({})", l.identifier)],
             source: None,
             category: "Linear".to_string(),
+            subcategory: None,
             age: format_age_short(l.age),
         },
         StatusItem::Loki(l) => LineParts {
@@ -266,6 +274,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             dim_inline: vec![],
             source: Some(format!("{}:{}", l.project, l.env)),
             category: "Loki".to_string(),
+            subcategory: None,
             age: format_age_short(l.age),
         },
         StatusItem::Gcp(g) => LineParts {
@@ -274,6 +283,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             dim_inline: vec![],
             source: Some(format!("{}:{}", g.project, g.env)),
             category: "GCP".to_string(),
+            subcategory: None,
             age: format_age_short(g.age),
         },
         #[cfg(feature = "private")]
@@ -283,6 +293,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             dim_inline: vec![],
             source: Some(b.source.clone()),
             category: "Media".to_string(),
+            subcategory: None,
             age: format_age_short(b.age),
         },
         #[cfg(feature = "private")]
@@ -296,6 +307,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             dim_inline: vec![],
             source: Some(m.source.clone()),
             category: "Media".to_string(),
+            subcategory: None,
             age: format_age_short(m.age),
         },
         #[cfg(feature = "private")]
@@ -305,6 +317,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             dim_inline: vec![],
             source: Some(h.source.clone()),
             category: "Media".to_string(),
+            subcategory: None,
             age: format_age_short(h.age),
         },
         #[cfg(feature = "private")]
@@ -314,6 +327,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
             dim_inline: vec![],
             source: Some(source.clone()),
             category: "Media".to_string(),
+            subcategory: None,
             age: "now".to_string(),
         },
     }
