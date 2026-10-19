@@ -43,16 +43,14 @@ In hub, the cost of delay is high when:
 - **Issues:** the GitHub tracker. Kind labels are `bug`, `feature` and `maintenance`. Invoke
   `use-gh` before any `gh` call, and pass `--limit 300` to every `gh issue list`, because its
   default of 30 truncates without saying so.
-- **Milestones:** the current milestone is the open one with at least one closed issue. If two
-  qualify, the `M1:` / `M2:` prefix in their titles orders them. If none qualifies, ask which
-  milestone is current rather than picking one. List them with
-  `gh api 'repos/ooloth/hub/milestones?state=open'`, quoted so the shell does not expand the `?`.
-  Inside a milestone, the `Phase N.M` numbering in issue titles is the work order of its critical
-  path, and every numbered issue ranks by its phase number, defects included. An unnumbered
-  sub-issue is off the critical path and ranks by its kind with the work outside the milestone.
-- **Started features outside a milestone:** a parent issue with some of its sub-issues closed.
-  `gh issue view N --json subIssues,blockedBy` prints the relationships, each as an object with
-  `nodes` and `totalCount` rather than as an array.
+- **Epics:** any parent issue is an epic, and one with at least one closed sub-issue has started.
+  List them with `gh issue list -R ooloth/hub --state open --limit 300 --json
+  number,title,subIssues` and keep those whose `subIssues.totalCount` is above zero. `subIssues`
+  and `blockedBy` are objects with `nodes` and `totalCount` rather than arrays. Inside an epic, the
+  `Phase N.M` numbering in sub-issue titles is the work order of its critical path, and every
+  numbered issue ranks by its phase number, defects included. An unnumbered sub-issue is off the
+  critical path and ranks by its kind with the work outside any epic. Read the epic's comments
+  before ranking its sub-issues, because its plan of record lives there.
 - **Open questions:** `docs/questions/`, one file per question. Issues cite the question files they
   depend on; the question files do not list what they block.
 - **Not ranked:** an issue labelled `status:agent-working` already has an agent on it, unless the
@@ -66,14 +64,14 @@ In hub, the cost of delay is high when:
    unranked. Propose `bug`, `feature` or `maintenance` for each from its title. Propose closing it
    as obsolete when the code it describes has changed, saying what you checked, or as a duplicate,
    naming the issue it duplicates. Read the body only when the title leaves the kind unclear or
-   suggests the issue may be obsolete. Apply nothing until the user approves the batch. Milestone
-   phases get a kind too, and still rank by their phase number.
-3. **Bugs outside the current milestone**, by how often each one hits and how bad it is when it
+   suggests the issue may be obsolete. Apply nothing until the user approves the batch. Phase
+   issues get a kind too, and still rank by their phase number.
+3. **Bugs off every epic's critical path**, by how often each one hits and how bad it is when it
    does.
-4. **Started work:** the lowest open phase of the current milestone, then started features outside
-   a milestone.
+4. **Started epics:** in each, the lowest open phase, then its unnumbered sub-issues by kind.
+   Between epics, cost of delay decides.
 5. **Maintenance.**
-6. **New features**, and the next milestone once the current one is finished.
+6. **New features**, and epics not yet started.
 7. **Questions no issue cites.** Attach each one to the issue it blocks, which moves it up the
    order, or delete it as obsolete. Answering a question that nothing needs yet decides it before
    the information that would improve the answer exists.
@@ -95,5 +93,6 @@ Read issue comments and relationships rather than bodies when deciding whether w
 
 For each recommendation, three or four lines: the item, its rank, and the sentence of evidence that
 decided it, including any cost-of-delay sentence that moved it across a kind boundary. Name
-anything ambiguous, such as two milestones that both qualify as current, rather than picking. If
+anything ambiguous, such as two started epics whose next phases tie on cost of delay, rather than
+picking. If
 nothing is left anywhere, say so and offer `scan-gaps`.

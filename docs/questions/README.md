@@ -1,6 +1,6 @@
 ---
 updated: 2026-09-04
-update_when: a decision is made, a question is split, or an active milestone changes
+update_when: a decision is made, a question is split, or the epics being worked change
 decays: fast
 status: active
 ---
@@ -48,7 +48,7 @@ that implements the behaviour, which is where a future reader will look for the 
 Without the second exit a nuance has nowhere to go but a record it doesn't deserve, so it either
 gets promoted or stays open forever, and both are worse than closing it where the work happened.
 
-## Working on an active milestone
+## Working on an epic
 
 When several open questions belong to one current push, not just isolated one-offs, group them
 under a heading naming that push's end state in one sentence, order them by what has to be

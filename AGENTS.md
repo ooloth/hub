@@ -16,23 +16,25 @@ Its three binaries serve three distinct audiences:
 
 - **`hub-tui`** (Ratatui dashboard) — the **human-facing surface**. Read signals, launch investigation sessions, watch session progress, review results.
 - **`hub`** (CLI) — the **agent's toolkit** (stub). The task subcommand (`hub task *`) was removed with the task model (ADR 019). Future agent-facing subcommands will be added here as the filesystem session model is built out.
-- **`hub-daemon`** — the **unattended surface** (ADR 020). Refreshes the signal cache with nobody present. It refreshes every 15 minutes (`--interval`), one daemon per profile, and `--once` runs a single pass. Each pass is recorded in a health record in the profile's database, and each pull request that becomes my turn gets a macOS notification through `terminal-notifier`. `just daemon-start` runs the installed binary under launchd at every login. The TUI's status bar warns when the daemon's refreshes stop. The TUI becoming a client of the daemon and the PR attention model are the rest of the [#327](https://github.com/ooloth/hub/issues/327) milestone.
+- **`hub-daemon`** — the **unattended surface** (ADR 020). Refreshes the signal cache with nobody present. It refreshes every 15 minutes (`--interval`), one daemon per profile, and `--once` runs a single pass. Each pass is recorded in a health record in the profile's database, and each pull request that becomes my turn gets a macOS notification through `terminal-notifier`. `just daemon-start` runs the installed binary under launchd at every login. The TUI's status bar warns when the daemon's refreshes stop. The TUI becoming a client of the daemon and the PR attention model are the rest of [#327](https://github.com/ooloth/hub/issues/327).
 
 The core value is cross-domain triage plus agent delegation: signals from different systems are ranked together in one list, and any signal can be investigated by pressing `i` to launch a Claude Code session with injected context. That session opens in its own tmux window, named after the signal by `domain::InvestigationWindow`, so several investigations run side by side and each stays reachable from tmux's window list.
 
 See [README.md](README.md) for the full feature list and value proposition.
 
-## Current milestone
+## Epics
 
-The current milestone is the open GitHub milestone with at least one closed issue. If two
-qualify, the `M1:` / `M2:` prefix in their titles orders them. The `next` skill finds it and ranks
-it against everything else in the tracker.
-
-Each phase issue's parent is the milestone's epic. Before starting anything in the milestone, read
-the epic's plan of record:
+Any parent issue is an epic, and one with at least one closed sub-issue has started. The `next`
+skill finds them and ranks their sub-issues against everything else in the tracker:
 
 ```bash
-gh issue view <phase> --json parent       # finds the epic
+gh issue list -R ooloth/hub --state open --limit 300 --json number,title,subIssues
+```
+
+Before starting any sub-issue of an epic, read the epic's plan of record:
+
+```bash
+gh issue view <sub-issue> --json parent   # finds the epic
 gh issue view <epic> --comments
 ```
 
@@ -40,8 +42,8 @@ The plan lives in a **comment**. `gh issue view <epic>` on its own prints the bo
 the body can predate the plan, so reading it alone can give you a superseded design. The comment
 carries the settled architecture, the measured spike findings, and the full phase sequence.
 
-**Only issues on the critical path carry a phase number.** An issue is on the critical path when
-the milestone's "Done when" cannot be reached without it. Those are titled `Phase N.M — ...`, and
+**Only issues on an epic's critical path carry a phase number.** An issue is on the critical path
+when the epic's "Done when" cannot be reached without it. Those are titled `Phase N.M — ...`, and
 the numbering is their work order. Every other sub-issue of the epic has a plain title and is taken
 whenever it is convenient. Hard dependencies are recorded separately as GitHub `blockedBy`
 relationships, which `gh issue view N --json blockedBy` prints. Everything else the numbering
