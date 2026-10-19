@@ -2,8 +2,10 @@
 
 Project documentation.
 
-**Lives here:** `vision.md` and these subdirectories. Grow subdirectories from actual need rather
-than in anticipation of it.
+**Lives here:** `vision.md`, `constraints.md` and these subdirectories. Grow subdirectories from
+actual need rather than in anticipation of it.
+
+- `constraints.md` holds facts about the systems hub depends on that limit which designs work
 
 - `architecture/` describes what is built
 - `brainstorming/` holds ideas not yet decided

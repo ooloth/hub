@@ -280,6 +280,7 @@ builds it.
 | `docs/architecture/secrets.md`           | 1Password → op read → Secret<String> model                                                                        |
 | `docs/architecture/private-workflows.md` | Two-repo model for private workflows                                                                              |
 | `docs/questions/`                        | Open design questions, one per file                                                                               |
+| `docs/constraints.md`                    | Measured facts about GitHub and other dependencies that limit which designs work                                  |
 | `docs/decisions/`                        | ADRs (rationale). Unbuilt ones say so under the title — see the note above          |
 | `docs/invariants/`                       | What must always hold, and the check that holds it up. No exceptions, unlike a standard |
 | `clients/README.md`                      | reqwest pattern for HTTP clients                                                                                  |
