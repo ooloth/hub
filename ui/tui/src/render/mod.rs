@@ -466,6 +466,7 @@ mod tests {
             review_threads: vec![],
             pr_comments: vec![],
             merge_readiness: domain::MergeReadiness::NotYetKnown,
+            review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
         })
     }
 
@@ -1039,6 +1040,7 @@ mod tests {
             repo: domain::RepoSlug::new("ooloth", "hub"),
             age: chrono::Duration::hours(3),
             merge_readiness: domain::MergeReadiness::Ready,
+            review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
             ..base
         })
     }
@@ -1063,7 +1065,38 @@ mod tests {
                 1,
                 "Investigation worktrees are removed however their session ends",
             )),
+            DisplayItem::Single(reviewed(turn_pr(
+                372,
+                domain::PrKind::Mine,
+                1,
+                "A reply in a review thread I took part in makes it my turn",
+            ))),
         ]
+    }
+
+    /// `item` with a review from Ada waiting on me.
+    fn reviewed(item: StatusItem) -> StatusItem {
+        use domain::review_waiting::{
+            Feedback, Review, ReviewWaiting, Reviewer, ReviewerKind, Verdict,
+        };
+        let StatusItem::Pr(pr) = item else {
+            unreachable!()
+        };
+        let feedback = Feedback::from_review(&Review {
+            by: Reviewer::Other {
+                login: "ada".to_string(),
+                kind: ReviewerKind::Person,
+            },
+            verdict: Verdict::ChangesRequested,
+            inline_comments: 1,
+            has_body: true,
+            submitted: chrono::DateTime::UNIX_EPOCH,
+        })
+        .unwrap();
+        StatusItem::Pr(domain::PullRequest {
+            review_waiting: ReviewWaiting::Waiting(feedback),
+            ..pr
+        })
     }
 
     #[rstest]
@@ -1225,6 +1258,7 @@ mod tests {
             review_threads: vec![],
             pr_comments: vec![],
             merge_readiness: domain::MergeReadiness::NotYetKnown,
+            review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
         }
     }
 

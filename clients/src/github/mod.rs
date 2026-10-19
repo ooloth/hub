@@ -8,6 +8,7 @@ pub use ci::ci_failures;
 pub use issues::{dismiss_issue, issue_states, issues, set_issue_labels};
 pub use prs::{
     external_prs, merge_pull_request, my_draft_prs, my_open_prs, pr_states, prs_awaiting_review,
+    MyOpenPrs,
 };
 
 use chrono::Utc;

@@ -6,7 +6,7 @@ use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::time::Duration;
 
-use crate::sources::{gather, Gathered, Source, SourceAnswer};
+use crate::sources::{gather, Gathered, Source, SourceAnswer, SourceError};
 use domain::known_secrets::KnownSecrets;
 use domain::source_failure::SourceFailure;
 use domain::source_outcomes::SourceOutcomes;
@@ -23,8 +23,12 @@ pub const MY_OPEN_PRS: &str = "github my open prs";
 /// The source that reports pull requests whose review is requested from me.
 pub const PRS_AWAITING_REVIEW: &str = "github prs awaiting review";
 
+/// The lookups of my last push to my pull requests that have a review I have not replied to. It
+/// fails on its own, so my pull requests are still reported when it does.
+pub const LAST_PUSH: &str = "github last push";
+
 /// Bump when the serialized `StatusReport` format changes incompatibly.
-pub const SCHEMA_VERSION: i32 = 19;
+pub const SCHEMA_VERSION: i32 = 20;
 
 /// A single signal from any source, as stored in the unified status list.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -236,8 +240,8 @@ fn sources(params: StatusParams) -> Vec<Source> {
         github_username.clone(),
     );
     sources.push(Source::new(MY_OPEN_PRS, async move {
-        let prs = clients::github::my_open_prs(token.expose_secret(), &repos, &user).await?;
-        Ok(answer(prs.into_iter().map(StatusItem::Pr)))
+        let mine = clients::github::my_open_prs(token.expose_secret(), &repos, &user).await?;
+        Ok(my_open_prs_answer(mine))
     }));
 
     let (token, repos) = (github_token.clone(), pr_repos.clone());
@@ -309,6 +313,28 @@ fn sources(params: StatusParams) -> Vec<Source> {
 /// A source's own answer, holding `items`.
 fn answer(items: impl IntoIterator<Item = StatusItem>) -> SourceAnswer {
     SourceAnswer::Own(items.into_iter().collect())
+}
+
+/// My pull requests, answered as [`MY_OPEN_PRS`], and any last push that could not be read as a
+/// failure of [`LAST_PUSH`].
+fn my_open_prs_answer(mine: clients::github::MyOpenPrs) -> SourceAnswer {
+    let items = mine.prs.into_iter().map(StatusItem::Pr).collect();
+    if mine.last_push_failures.is_empty() {
+        return SourceAnswer::Own(items);
+    }
+    let reasons: Vec<String> = mine
+        .last_push_failures
+        .iter()
+        .map(|(pr, error)| format!("{pr}: {error:#}"))
+        .collect();
+    SourceAnswer::Several {
+        items,
+        answered: vec![MY_OPEN_PRS.to_string()],
+        failed: vec![SourceError::new(
+            LAST_PUSH,
+            anyhow::anyhow!(reasons.join("; ")),
+        )],
+    }
 }
 
 /// Keeps the first occurrence of each pull request. A PR can match several queries
@@ -499,6 +525,7 @@ mod tests {
             review_threads: vec![],
             pr_comments: vec![],
             merge_readiness: domain::MergeReadiness::NotYetKnown,
+            review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
         })
     }
 
@@ -519,5 +546,59 @@ mod tests {
         dedupe_prs(&mut items);
 
         assert_eq!(titles(&items), vec!["first match", "other"]);
+    }
+
+    fn my_pr(number: u64) -> PullRequest {
+        let StatusItem::Pr(pr) = pr(number, "mine") else {
+            unreachable!("pr makes a pull request")
+        };
+        pr
+    }
+
+    #[test]
+    fn my_pull_requests_answer_on_their_own_when_every_last_push_was_read() {
+        let answer = my_open_prs_answer(clients::github::MyOpenPrs {
+            prs: vec![my_pr(1)],
+            last_push_failures: vec![],
+        });
+
+        assert!(
+            matches!(&answer, SourceAnswer::Own(items) if items.len() == 1),
+            "{answer:?}"
+        );
+    }
+
+    #[test]
+    fn a_last_push_that_could_not_be_read_fails_beside_my_pull_requests_answering() {
+        let pr = my_pr(7);
+        let answer = my_open_prs_answer(clients::github::MyOpenPrs {
+            last_push_failures: vec![(
+                domain::pr_id::PrId::of(&pr),
+                anyhow::anyhow!("GitHub API error fetching repository activity"),
+            )],
+            prs: vec![pr],
+        });
+
+        let SourceAnswer::Several {
+            items,
+            answered,
+            failed,
+        } = answer
+        else {
+            panic!("expected my pull requests beside a failure");
+        };
+        assert_eq!(items.len(), 1);
+        assert_eq!(answered, vec![MY_OPEN_PRS.to_string()]);
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].source, LAST_PUSH);
+        assert_eq!(
+            failed[0].error.to_string(),
+            "owner/repo#7: GitHub API error fetching repository activity"
+        );
+    }
+
+    #[test]
+    fn the_cache_schema_moved_past_pull_requests_without_review_waiting() {
+        assert_eq!(SCHEMA_VERSION, 20);
     }
 }

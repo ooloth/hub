@@ -28,8 +28,13 @@ closes or quits the app. After 10 minutes without credentials it posts a macOS n
 `terminal-notifier`, saying signals have paused and what's needed, then again every hour while they
 stay missing. Each replaces the last, and once credentials arrive the daemon removes it.
 
-It also posts a card for each pull request that is my turn: my review is requested, or it is mine,
-approved, and GitHub says nothing blocks the merge. A card is posted once, at the first pass after
+It also posts a card for each pull request that is my turn: my review is requested, or it is mine
+and someone else reviewed it since my last push without my replying, or it is mine, approved, and
+GitHub says nothing blocks the merge. A review counts only when it asks something of me: an
+approval does not, nor does a bot's review with no inline comments, such as Copilot's overview. My
+last push is read from GitHub's repository activity, and only for a pull request with such a review.
+When it cannot be read, the turn neither starts nor ends, and the pass names `github last push` as
+a failed source. A card is posted once, at the first pass after
 the turn begins, and removed at the first pass after it ends. A pull request that stays my turn is
 not posted again while the daemon runs, even after its card is dismissed. A restart posts again
 only the turns whose card is no longer showing. Clicking a card opens the pull request. Cards are

@@ -377,6 +377,7 @@ mod tests {
                         review_threads: vec![],
                         pr_comments: vec![],
                         merge_readiness: domain::MergeReadiness::NotYetKnown,
+                        review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
                     },
                     prev: PrPrevScreen::UnifiedList { snapshot },
                 },
@@ -503,6 +504,7 @@ mod tests {
             review_threads: vec![],
             pr_comments: vec![],
             merge_readiness: domain::MergeReadiness::NotYetKnown,
+            review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
         });
         let items = vec![DisplayItem::Single(item)];
         let expanded = std::collections::HashSet::new();

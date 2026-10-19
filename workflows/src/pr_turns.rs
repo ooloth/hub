@@ -57,6 +57,7 @@ mod tests {
             review_threads: vec![],
             pr_comments: vec![],
             merge_readiness: MergeReadiness::Ready,
+            review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
         }
     }
 

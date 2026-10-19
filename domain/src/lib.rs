@@ -40,6 +40,8 @@ pub mod pr_id;
 pub mod pr_turn;
 /// Which set of hub's own state a process reads and writes.
 pub mod profile;
+/// Whether a review of my pull request is waiting on me, settled against my last push.
+pub mod review_waiting;
 /// What the screen showed when an `op read` reached its deadline.
 pub mod screen_at_deadline;
 /// Serde helpers for non-standard wire formats (e.g. duration as seconds).

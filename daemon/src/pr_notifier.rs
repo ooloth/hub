@@ -225,6 +225,7 @@ mod tests {
             review_threads: vec![],
             pr_comments: vec![],
             merge_readiness: MergeReadiness::NotYetKnown,
+            review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
         }
     }
 

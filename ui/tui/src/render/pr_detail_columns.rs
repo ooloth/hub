@@ -277,6 +277,7 @@ mod tests {
             review_threads: vec![],
             pr_comments: vec![],
             merge_readiness: MergeReadiness::Blocked(MergeBlocker::Conflict),
+            review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
         }
     }
 

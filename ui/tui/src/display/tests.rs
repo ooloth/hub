@@ -61,6 +61,7 @@ fn pr() -> StatusItem {
         review_threads: vec![],
         pr_comments: vec![],
         merge_readiness: domain::MergeReadiness::NotYetKnown,
+        review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
     })
 }
 
@@ -439,6 +440,7 @@ fn make_pr_with(
         review_threads: vec![],
         pr_comments: vec![],
         merge_readiness: domain::MergeReadiness::NotYetKnown,
+        review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
     })
 }
 

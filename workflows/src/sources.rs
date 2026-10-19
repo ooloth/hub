@@ -13,12 +13,9 @@ use crate::status::StatusItem;
 pub(crate) enum SourceAnswer {
     /// The source answered for itself, with the signals it found.
     Own(Vec<StatusItem>),
-    /// The source runs several sources inside it (the private workflows), each of which answered
-    /// or failed on its own. The source itself is named in neither list.
-    #[cfg_attr(
-        all(not(feature = "private"), not(test)),
-        expect(dead_code, reason = "only the private workflows run several sources")
-    )]
+    /// The source runs several sources inside it, each of which answered or failed on its own:
+    /// the private workflows, or my pull requests and the lookups of my last push to them. The
+    /// source itself is named in neither list.
     Several {
         /// The signals from the sources inside it that answered.
         items: Vec<StatusItem>,

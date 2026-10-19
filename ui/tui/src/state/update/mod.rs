@@ -437,6 +437,7 @@ mod tests {
                 review_threads: vec![],
                 pr_comments: vec![],
                 merge_readiness: domain::MergeReadiness::NotYetKnown,
+                review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
             },
         ))]);
         assert_eq!(
@@ -477,6 +478,7 @@ mod tests {
                 review_threads: vec![],
                 pr_comments: vec![],
                 merge_readiness: domain::MergeReadiness::NotYetKnown,
+                review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
             },
         ))]);
         assert_eq!(
@@ -517,6 +519,7 @@ mod tests {
                 review_threads: vec![],
                 pr_comments: vec![],
                 merge_readiness: domain::MergeReadiness::NotYetKnown,
+                review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
             },
         ))]);
         assert_eq!(
@@ -1493,6 +1496,7 @@ mod tests {
             review_threads: vec![],
             pr_comments: vec![],
             merge_readiness: domain::MergeReadiness::NotYetKnown,
+            review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
         })
     }
 
@@ -1957,6 +1961,7 @@ mod tests {
             review_threads: vec![],
             pr_comments: vec![],
             merge_readiness: domain::MergeReadiness::NotYetKnown,
+            review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
         })
     }
 

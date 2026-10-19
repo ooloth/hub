@@ -6,7 +6,7 @@ expression: screen_text(&buf)
 │PR · review requested · Notify when a pull request is my turn, with a card for each one #344 · alice · no reviews                                                                      ooloth/hub · 3h│
 │PR · The status bar shows when signals were last updated, however #370 · alice · no reviews                                                                                            ooloth/hub · 3h│
 │PR · ready to merge · Investigation worktrees are removed however their session ends #371 · alice · 1 approval                                                                         ooloth/hub · 3h│
-│                                                                                                                                                                                                      │
+│PR · reviewed · A reply in a review thread I took part in makes it my turn #372 · alice · 1 approval                                                                                   ooloth/hub · 3h│
 │                                                                                                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- 1/3 · [↩] details · [p] prs · [O] issues · [e] errors · [/] search · [i] investigate
+ 1/4 · [↩] details · [p] prs · [O] issues · [e] errors · [/] search · [i] investigate

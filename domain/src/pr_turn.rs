@@ -1,24 +1,31 @@
 //! Whether a pull request is waiting on me, and the card that says so.
 use crate::pr::{MergeReadiness, PrKind, PullRequest, ReviewStatus};
 use crate::pr_id::PrId;
+use crate::review_waiting::ReviewWaiting;
 use crate::untrusted::UntrustedText;
 
 /// Why a pull request is waiting on me.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TurnReason {
     /// Someone asked for my review.
     ReviewRequested,
     /// It is mine, approved, and nothing stops the merge.
     ReadyToMerge,
+    /// It is mine, and someone reviewed it since my last push and my last reply.
+    Reviewed {
+        /// Who reviewed it.
+        by: String,
+    },
 }
 
 impl TurnReason {
     /// The words that say why, wherever a turn is shown.
     #[must_use]
-    pub const fn label(self) -> &'static str {
+    pub const fn label(&self) -> &'static str {
         match self {
             Self::ReviewRequested => "review requested",
             Self::ReadyToMerge => "ready to merge",
+            Self::Reviewed { .. } => "reviewed",
         }
     }
 }
@@ -45,27 +52,35 @@ pub enum TurnReading {
     Turn(Turn),
     /// It is not.
     NotMyTurn,
-    /// It would be if nothing stops the merge, and GitHub has not worked that out yet.
+    /// It might be, and this refresh could not tell: GitHub has not worked out whether anything
+    /// stops the merge, or my last push could not be read.
     Undecided,
 }
 
 impl TurnReading {
-    /// Whether `pr` is waiting on me: my review is requested, or it is mine, approved, and nothing
-    /// stops the merge.
+    /// Whether `pr` is waiting on me: my review is requested, or it is mine and either a review
+    /// waits on me or it is approved and nothing stops the merge. A waiting review is named first,
+    /// since merging before reading it is the wrong next move.
     #[must_use]
     pub fn of(pr: &PullRequest) -> Self {
         let reason = match pr.kind {
             PrKind::ToReview => TurnReason::ReviewRequested,
-            PrKind::Mine => {
-                if !matches!(pr.review_status(), ReviewStatus::Approved(_)) {
-                    return Self::NotMyTurn;
+            PrKind::Mine => match &pr.review_waiting {
+                ReviewWaiting::Waiting(feedback) => TurnReason::Reviewed {
+                    by: feedback.by().to_string(),
+                },
+                ReviewWaiting::PushUnknown(_) => return Self::Undecided,
+                ReviewWaiting::NoReview | ReviewWaiting::Answered { .. } => {
+                    if !matches!(pr.review_status(), ReviewStatus::Approved(_)) {
+                        return Self::NotMyTurn;
+                    }
+                    match pr.merge_readiness {
+                        MergeReadiness::Ready => TurnReason::ReadyToMerge,
+                        MergeReadiness::Blocked(_) => return Self::NotMyTurn,
+                        MergeReadiness::NotYetKnown => return Self::Undecided,
+                    }
                 }
-                match pr.merge_readiness {
-                    MergeReadiness::Ready => TurnReason::ReadyToMerge,
-                    MergeReadiness::Blocked(_) => return Self::NotMyTurn,
-                    MergeReadiness::NotYetKnown => return Self::Undecided,
-                }
-            }
+            },
             PrKind::MyDraft | PrKind::External => return Self::NotMyTurn,
         };
         Self::Turn(Turn {
@@ -96,8 +111,9 @@ impl Turn {
     #[must_use]
     pub fn card(&self) -> TurnCard {
         let repo_and_number = format!("{} #{}", self.pr.repo.repo_name(), self.pr.number);
-        let subtitle = match self.reason {
+        let subtitle = match &self.reason {
             TurnReason::ReviewRequested => format!("{repo_and_number} · @{}", self.author),
+            TurnReason::Reviewed { by } => format!("{repo_and_number} · @{by}"),
             TurnReason::ReadyToMerge => repo_and_number,
         };
         TurnCard {
@@ -116,6 +132,9 @@ mod tests {
 
     use super::*;
     use crate::pr::{MergeBlocker, RepoSlug, ReviewDecision};
+    use crate::review_waiting::{
+        Answer, Feedback, Review, ReviewWaiting, Reviewer, ReviewerKind, Verdict,
+    };
     use crate::urgency::Urgency;
 
     fn pr(
@@ -146,12 +165,32 @@ mod tests {
             review_threads: vec![],
             pr_comments: vec![],
             merge_readiness: merge,
+            review_waiting: ReviewWaiting::NoReview,
         }
+    }
+
+    fn feedback_from(login: &str) -> Feedback {
+        Feedback::from_review(&Review {
+            by: Reviewer::Other {
+                login: login.to_string(),
+                kind: ReviewerKind::Person,
+            },
+            verdict: Verdict::ChangesRequested,
+            inline_comments: 1,
+            has_body: true,
+            submitted: chrono::DateTime::UNIX_EPOCH,
+        })
+        .unwrap()
+    }
+
+    fn with_review(mut pr: PullRequest, waiting: ReviewWaiting) -> PullRequest {
+        pr.review_waiting = waiting;
+        pr
     }
 
     fn reason(reading: &TurnReading) -> Option<TurnReason> {
         match reading {
-            TurnReading::Turn(turn) => Some(turn.reason),
+            TurnReading::Turn(turn) => Some(turn.reason.clone()),
             TurnReading::NotMyTurn | TurnReading::Undecided => None,
         }
     }
@@ -222,6 +261,79 @@ mod tests {
         assert_eq!(reading, TurnReading::NotMyTurn);
     }
 
+    #[rstest]
+    #[case::not_yet_approved(0, MergeReadiness::NotYetKnown)]
+    #[case::blocked(0, MergeReadiness::Blocked(MergeBlocker::Conflict))]
+    #[case::also_ready_to_merge(1, MergeReadiness::Ready)]
+    fn my_pull_request_with_a_review_waiting_is_my_turn_naming_the_reviewer(
+        #[case] approvals: u32,
+        #[case] merge: MergeReadiness,
+    ) {
+        let reviewed = with_review(
+            pr(PrKind::Mine, approvals, 0, merge),
+            ReviewWaiting::Waiting(feedback_from("ada")),
+        );
+
+        assert_eq!(
+            reason(&TurnReading::of(&reviewed)),
+            Some(TurnReason::Reviewed {
+                by: "ada".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn an_answered_review_leaves_my_approved_pull_request_ready_to_merge() {
+        let answered = with_review(
+            pr(PrKind::Mine, 1, 0, MergeReadiness::Ready),
+            ReviewWaiting::Answered {
+                feedback: feedback_from("ada"),
+                by: Answer::Push(chrono::DateTime::UNIX_EPOCH),
+            },
+        );
+
+        assert_eq!(
+            reason(&TurnReading::of(&answered)),
+            Some(TurnReason::ReadyToMerge)
+        );
+    }
+
+    #[rstest]
+    #[case::not_approved(0, MergeReadiness::NotYetKnown)]
+    #[case::ready_to_merge(1, MergeReadiness::Ready)]
+    fn my_pull_request_is_undecided_while_my_last_push_is_unknown(
+        #[case] approvals: u32,
+        #[case] merge: MergeReadiness,
+    ) {
+        let unknown = with_review(
+            pr(PrKind::Mine, approvals, 0, merge),
+            ReviewWaiting::PushUnknown(feedback_from("ada")),
+        );
+
+        assert_eq!(TurnReading::of(&unknown), TurnReading::Undecided);
+    }
+
+    #[test]
+    fn a_review_waiting_on_my_draft_is_not_my_turn() {
+        let draft = with_review(
+            pr(PrKind::MyDraft, 0, 0, MergeReadiness::Ready),
+            ReviewWaiting::Waiting(feedback_from("ada")),
+        );
+
+        assert_eq!(TurnReading::of(&draft), TurnReading::NotMyTurn);
+    }
+
+    #[test]
+    fn a_reviewed_card_names_the_repository_number_and_reviewer() {
+        let card = turn(TurnReason::Reviewed {
+            by: "ada".to_string(),
+        })
+        .card();
+
+        assert_eq!(card.title, "PR reviewed");
+        assert_eq!(card.subtitle, "hub #344 · @ada");
+    }
+
     #[test]
     fn my_approved_pull_request_is_undecided_until_github_works_out_the_merge() {
         let reading = TurnReading::of(&pr(PrKind::Mine, 1, 0, MergeReadiness::NotYetKnown));
@@ -283,6 +395,7 @@ mod tests {
     #[rstest]
     #[case(TurnReason::ReviewRequested, "review requested")]
     #[case(TurnReason::ReadyToMerge, "ready to merge")]
+    #[case(TurnReason::Reviewed { by: "ada".to_string() }, "reviewed")]
     fn a_cards_title_is_pr_followed_by_its_reasons_label(
         #[case] reason: TurnReason,
         #[case] label: &str,

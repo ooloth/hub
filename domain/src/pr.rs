@@ -265,6 +265,9 @@ pub struct PullRequest {
     /// Whether the PR can be merged right now, as far as GitHub has worked it out.
     #[serde(default)]
     pub merge_readiness: MergeReadiness,
+    /// Whether a review waits on me. Only read for my own pull requests; `NoReview` otherwise.
+    #[serde(default)]
+    pub review_waiting: crate::review_waiting::ReviewWaiting,
 }
 
 #[cfg(test)]
@@ -328,6 +331,7 @@ mod tests {
             review_threads: vec![],
             pr_comments: vec![],
             merge_readiness: MergeReadiness::NotYetKnown,
+            review_waiting: crate::review_waiting::ReviewWaiting::NoReview,
         }
     }
 
