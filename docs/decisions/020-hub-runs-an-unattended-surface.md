@@ -2,6 +2,7 @@
 number: 020
 status: accepted
 date: 2026-09-16
+amended: 2026-10-18
 ---
 
 # 020 — Hub runs an unattended surface
@@ -74,3 +75,13 @@ interruption costs more than the missed turn, and it reopens whether hub should 
       re-scopes it rather than settling it.
 - [x] vision.md — "What hub is not" no longer promises that hub does not interrupt, and the
       daemon joins the surfaces section.
+
+## Addendum (2026-10-18) — health in the status bar
+
+The Risk section requires daemon health in the TUI status bar permanently. #364 built that as a
+check the status bar runs on every frame, whose quiet result shows nothing: while the daemon
+refreshes on schedule the bar says nothing about it, and every other state shows a warning naming
+what stopped, such as `! no refresh in 47m, notifications paused`. The case the requirement guards
+against, a disabled or dead daemon, always shows. A healthy daemon takes no space, because the daemon
+is an implementation detail until it affects the signals or the notifications, and the bar already
+truncates its key hints on a narrow terminal.

@@ -28,7 +28,7 @@ pub(crate) fn params(config: &config::Config) -> StatusParams {
 ///
 /// # Errors
 /// Returns an error if the refresh cannot be run at all. Individual source
-/// failures are collected into `Refresh::failures` instead.
+/// failures are collected into `Refresh::sources` instead.
 pub(crate) async fn fetch(params: StatusParams) -> Result<Refresh> {
     workflows::status::run(params)
         .await

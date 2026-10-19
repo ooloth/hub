@@ -4,7 +4,8 @@ use super::domain_purity::rust_files_under;
 use super::workspace::WorkspaceMember;
 use crate::repo_root::repo_root;
 
-/// The table whose only writer is `store::daemon_health::record`.
+/// The table whose SQL only `store/src/daemon_health.rs` may hold, so its writes stay beside the
+/// payload's.
 const TABLE: &str = "daemon_health";
 
 /// The file that owns the table, and the only one allowed to name it in SQL.

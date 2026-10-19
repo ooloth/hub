@@ -119,11 +119,14 @@ into a decision record._
   (`StatusReport` in `workflows/src/status.rs`). `StatusItem` is an enum over PR, issue, CI, Linear,
   Loki and GCP variants plus private media variants, so a category is recoverable from an item but
   is not a key anything is stored under.
-- *Sourced*: freshness is computed in Rust, not SQL. `read_if_fresh` compares `Utc::now() -
-  refreshed_at` against a `max_age` argument (`read_if_fresh` in `store/src/status_cache.rs`), so a
-  move away from SQL loses no query capability that is in use.
+- *Sourced*: freshness is computed in Rust, not SQL. The TUI compares `Utc::now() - refreshed_at`
+  against its refresh interval (`ui/tui/src/main.rs`), so a move away from SQL loses no query
+  capability that is in use. One thing SQL does provide: the cached signals and the daemon's health
+  record are read in one transaction
+  ([invariant](../invariants/the-daemons-health-and-the-signals-are-only-read-together.md)), which a
+  file per category would have to replace.
 - *Sourced*: schema changes are handled by discard, not migration. `SCHEMA_VERSION` is an integer
-  constant (`SCHEMA_VERSION` in `workflows/src/status.rs`, currently 18); a caller comparing it
+  constant (`SCHEMA_VERSION` in `workflows/src/status.rs`, currently 19); a caller comparing it
   against the stored value drops the row and refetches on mismatch (the `schema_version` check in
   `ui/tui/src/main.rs`). Any option here inherits
   that mechanism rather than needing a new one.

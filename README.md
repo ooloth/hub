@@ -13,12 +13,12 @@ prioritized view with agentic capabilities built in:
 - **Urgency-ranked** — items sorted by `(urgency, age)`; the top item is always the most pressing
 - **Cross-domain triage** — signals from GitHub, Linear, Loki, home servers, and any other
   source appear in one ranked list; hub is the only place their urgency is compared
-- **Pre-loaded investigation** — a keypress on any signal opens the right Claude Code skill
-  with `hub.toml` context already loaded (endpoint, query, project name); investigation
-  starts immediately, not after setup
-- **Keypress execution** — for issues labelled `status:ready-for-agent`, a keypress in the
-  TUI launches an agent in a git worktree; hub handles setup so the focus is on reviewing
-  the result, not orchestrating the run
+- **Pre-loaded investigation** — `i` on any signal opens a Claude Code session in its own
+  tmux window with `hub.toml` context already loaded (endpoint, query, project name), and `v`
+  on a pull request picks a review skill to run; investigation starts immediately, not after
+  setup
+- **Agent hand-off** — `a` on an agent-filed issue approves it, relabelling it
+  `status:ready-for-agent` for the agent workflows that pick it up
 - **Trust-building flywheel** — every agent run is visible, reviewable, and mined to
   improve the next one's context and instructions; the goal is agents you can delegate to
   at scale, not steer one at a time; see [Vision](docs/vision.md)

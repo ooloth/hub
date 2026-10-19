@@ -114,7 +114,8 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
     };
 
     // Before credentials are resolved, which can wait on a 1Password prompt for up to 90 seconds
-    // an attempt: a startup line with nothing after it is a daemon in its first attempt.
+    // an attempt, and up to 65 more while a Touch ID prompt is on screen: a startup line with
+    // nothing after it is a daemon in its first attempt.
     println!(
         "{}",
         startup::Startup {

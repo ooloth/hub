@@ -376,4 +376,49 @@ mod tests {
         let pr = pr_with_review_state(Some(ReviewDecision::Approved), 3, 0);
         assert_eq!(pr.review_status(), ReviewStatus::Approved(Some(3)));
     }
+
+    // ── repo_slug ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn repo_slug_new_formats_owner_and_repo() {
+        let slug = RepoSlug::new("ooloth", "hub");
+        assert_eq!(slug.to_string(), "ooloth/hub");
+    }
+
+    #[test]
+    #[should_panic(expected = "owner must not be empty")]
+    fn repo_slug_new_panics_on_empty_owner() {
+        let _ = RepoSlug::new("", "hub");
+    }
+
+    #[test]
+    #[should_panic(expected = "repo must not be empty")]
+    fn repo_slug_new_panics_on_empty_repo() {
+        let _ = RepoSlug::new("ooloth", "");
+    }
+
+    // ── merge_readiness serde default ─────────────────────────────────────────
+
+    #[rstest::rstest]
+    #[case(
+        Some(r#"{"Blocked":"Conflict"}"#),
+        MergeReadiness::Blocked(MergeBlocker::Conflict)
+    )]
+    #[case(Some(r#""Ready""#), MergeReadiness::Ready)]
+    #[case(Some(r#""NotYetKnown""#), MergeReadiness::NotYetKnown)]
+    #[case(None, MergeReadiness::NotYetKnown)]
+    fn merge_readiness_deserializes_with_default(
+        #[case] field_value: Option<&str>,
+        #[case] expected: MergeReadiness,
+    ) {
+        let blocker_field = match field_value {
+            Some(v) => format!(r#","merge_readiness":{v}"#),
+            None => String::new(),
+        };
+        let json = format!(
+            r#"{{"number":1,"title":"t","repo":"o/r","url":"u","age":0,"urgency":"Low","kind":"Mine","author":"a","head_branch":"h","base_branch":"b"{blocker_field}}}"#
+        );
+        let pr: PullRequest = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(pr.merge_readiness, expected);
+    }
 }

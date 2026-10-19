@@ -12,10 +12,17 @@ Local SQLite access. Reads and writes domain entities to the local database.
 ## Tables
 
 - `status_cache` (`status_cache.rs`): one row holding the serialized status payload the TUI reads.
-- `daemon_health` (`daemon_health.rs`): one row describing the daemon's last pass. `record` writes
-  it in the same transaction as the payload when the pass replaced it, and it is the table's only
-  writer, which `only_the_store_names_the_daemon_health_table` in `scripts/` checks. See
-  [Decision 026](../docs/decisions/026-daemon-health-is-one-row-in-its-own-table.md).
+- `daemon_health` (`daemon_health.rs`): one row describing the daemon's last pass, or its last
+  failed attempt to obtain credentials. `record` writes it in the same transaction as the payload
+  when the pass replaced it, and `record_credential_attempt` writes it alone.
+  `only_the_store_names_the_daemon_health_table` in `scripts/` keeps the table's SQL inside this
+  file. See [Decision 026](../docs/decisions/026-daemon-health-is-one-row-in-its-own-table.md).
+
+## Reading
+
+`snapshot::read` (`snapshot.rs`) is the only public read of either table. It returns the cached
+signals and the daemon's last record from one read transaction, so the two always come from the same
+moment. See [the invariant](../docs/invariants/the-daemons-health-and-the-signals-are-only-read-together.md).
 
 ## Database path
 

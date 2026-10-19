@@ -7,7 +7,8 @@ present ([Decision 020](../docs/decisions/020-hub-runs-an-unattended-surface.md)
 
 - An entry point, like `ui/`: bootstraps config, wires deps, calls workflows
 - Sits beside `ui/` rather than inside it, because `ui/` means user interface and this has no user
-- Every I/O call is written in `main`; nothing below it opens a socket or a database on its own
+- I/O lives in `main.rs` and the edge files named under Files; the rest computes from what it is
+  handed
 
 **Lives here:** the refresh sequence, the rule for when a refresh may replace the cache, and
 recording each pass: the payload when it replaced it, and the health record always.
@@ -33,14 +34,14 @@ the turn begins, and removed at the first pass after it ends. A pull request tha
 not posted again while the daemon runs, even after its card is dismissed. A restart posts the ones
 still my turn once more. Clicking a card opens the pull request. Cards are removed only when both
 pull request sources answered, so a source that failed never takes one away. Posting happens beside
-the passes, so no pass waits on `terminal-notifier`. The socket the TUI will read, which is also
-where health is first shown, is a later phase of
-[#327](https://github.com/ooloth/hub/issues/327) (Phase 5).
+the passes, so no pass waits on `terminal-notifier`. The TUI's status bar warns when the daemon's
+refreshes stop, reading the health record from the database (#364). The TUI asking the daemon for a
+pass is [#365](https://github.com/ooloth/hub/issues/365).
 
 ## Files
 
 - `main.rs` — parses flags, takes the lock, prints the startup line, reads `hub.toml`, obtains
-  credentials once, then runs passes. Every I/O call is here, including each pass's fetch and write
+  credentials once, then runs passes. It calls each edge, including each pass's fetch and write
 - `credentials.rs` — `obtain`, which resolves credentials until they arrive, `Backoff`, the waits
   between attempts, and `AttemptReport`, the log line for a failed attempt. No I/O of its own
 - `startup.rs` — `Startup`, the line printed before credentials load. Pure
@@ -97,7 +98,8 @@ including a restart, so a daemon that restarts while nobody is there waits on pr
 answers.
 
 Before resolving credentials the daemon prints one line, so a start with nothing after it is a
-daemon in its first `op read`, which ends within 90 seconds:
+daemon in its first `op read`, which ends within 90 seconds, or up to 65 seconds later while a
+Touch ID prompt is on screen:
 
 ```
 hub-daemon start at=2026-10-03T23:15:55Z pid=4242 profile=default
@@ -201,8 +203,8 @@ notification whenever the plist is rewritten, even with identical content.
 **macOS can disallow the daemon** from System Settings > General > Login Items & Extensions,
 where it is listed as `hub-daemon`. `just daemon-start` checks that launchd loaded the job after
 starting it, and fails naming Login Items when it did not. Whether a disallowed job reaches that
-check, or fails earlier in `launchctl bootstrap`, has not been observed. Nothing reports a daemon
-disallowed later until Phase 5 shows health in the TUI.
+check, or fails earlier in `launchctl bootstrap`, has not been observed. A daemon disallowed later
+stops passing, and the TUI's status bar warns once its last pass is overdue.
 
 ## Observing it work
 

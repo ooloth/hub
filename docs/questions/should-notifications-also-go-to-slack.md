@@ -44,4 +44,7 @@ context.
 _Findings are working evidence, not settled fact. Nothing here binds a decision until it
 graduates into a decision record._
 
-...
+- *Sourced* (2026-10-18): [Decision 028](../decisions/028-macos-focus-decides-when-hubs-notifications-reach-me.md)
+  leaves when notifications reach me to macOS Focus, and reopens if they go somewhere macOS does not
+  govern. Options B and C would reopen it, so answering this also means deciding how a Slack message
+  respects quiet hours and pausing.

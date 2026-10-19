@@ -12,7 +12,7 @@ auto-refreshes from SQLite, and opens items in the browser via keyboard shortcut
 ## Architecture
 
 On launch: load config → open SQLite → read the cached signals and the daemon's health record
-together with `store::snapshot::read`. If the cache is fresh (≤ 30 min, matching `SCHEMA_VERSION`),
+together with `store::snapshot::read`. If the cache is fresh (under 30 min old, matching `SCHEMA_VERSION`),
 render immediately from it. Otherwise render an empty list and kick off a live fetch in the
 background.
 
@@ -47,7 +47,7 @@ is mutated:
    key event to an `Action` variant. Universal keys (quit, help, back) are
    handled first; the remainder delegates to a per-view function
    (`unified_list_keys` or `merge_confirm_key`). Returns `None` for unmapped keys.
-2. `App::update(action) -> Vec<Effect>` (`state.rs`) — applies the action
+2. `App::update(action) -> Vec<Effect>` (`state/update/mod.rs`) — applies the action
    to app state and returns zero or more `Effect` values describing required
    side effects (`OpenUrl`, `LaunchCi`, `Quit`).
 3. The event loop in `main.rs` iterates the effects — opens a URL, opens a
@@ -56,13 +56,13 @@ is mutated:
 
 **Adding a new interactive behavior:**
 
-1. Add a variant to `Action` in `state.rs`
+1. Add a variant to `Action` in `state/types.rs`
 2. Map one or more keys to it in the appropriate per-view function in
    `input.rs` (`unified_list_keys`, `merge_confirm_key`, or a new function for a new view)
-3. Handle it in `App::update()` in `state.rs` — mutate state and/or return
+3. Handle it in `App::update()` in `state/update/mod.rs` — mutate state and/or return
    one or more `Effect` values
-4. If a new `Effect` variant is needed, add it to the enum in `state.rs`,
-   handle it in `run_loop()` in `main.rs`, and if it launches an
+4. If a new `Effect` variant is needed, add it to the enum in `state/types.rs`,
+   handle it in `handle_effect()` in `main.rs`, and if it launches an
    investigation add a file in `investigations/` (see below)
 
 ## Render model
@@ -87,9 +87,9 @@ Visual constants live in `render/theme.rs` (`urgency_color` and `urgency_style` 
 
 **Adding a new view:**
 
-1. Add a variant to `Screen` in `state/types.rs`; include a `ListState` field if
+1. Add a variant to `Screen` in `state/types.rs`; include a `selected: usize` field if
    the view has a scrollable list
-2. Push the new view from `App::update(Action::Enter)` when appropriate
+2. Switch to the new view in `App::update` from the action that opens it
 3. Add a render function in `render/`; extract any decision logic (what to
    show, what hint to display) into a pure function alongside it
 4. Dispatch to it in `render()` in `render/mod.rs`
@@ -125,6 +125,7 @@ The test suite keeps one full-screen snapshot per major screen state:
 | `full_screen_unified_list_scrolled` | 15 items, last selected, scroll offset visible |
 | `full_screen_unified_list_help_popup` | keybind popup overlaid on list |
 | `full_screen_unified_list_dev_profile` | `dev` profile label at the right of the status bar |
+| `full_screen_unified_list_refreshes_overdue` | the daemon warning crowding the key hints at 80 columns |
 | `full_screen_merging_pr` | merge confirmation prompt over the PR body |
 | `full_screen_detail_view_first_selected` | group expanded, first item selected |
 | `full_screen_detail_view_last_selected` | group expanded, last item selected |
@@ -135,7 +136,7 @@ style), or a new layout mode. The snapshot is the acceptance test for
 the visual change.
 
 **Use a unit test instead** for pure functions (`wrap_text`,
-`right_status_text`, `action_hints`) where the interesting variation is
+`right_status_text`, `daemon_warning`) where the interesting variation is
 parameterised logic or time-sensitive data that cannot go in a
 deterministic snapshot.
 
@@ -174,7 +175,8 @@ is PR-specific.
 `~/.hub/repos/<project>/<branch>/` is reset unconditionally with
 `git reset --hard origin/<branch>` in two places:
 
-1. The background fetch loop fires every 30 minutes while the TUI is open.
+1. The TUI's own refresh runs at startup, on `r`, and every 30 minutes while the signals on screen
+   are older than that, which happens only when the daemon has stopped writing the cache.
 2. `sync_default_branch_worktree` runs at the start of every `EphemeralFresh`
    worktree creation (it fetches latest refs before spawning the investigation).
 
@@ -213,11 +215,12 @@ cannot drift apart because there is only one table.
 
 The cache is a single SQLite row (see `store::status_cache`). `SCHEMA_VERSION` is a
 constant in `workflows::status`. When the TUI reads a cached row, it checks
-`schema_version == SCHEMA_VERSION` before deserializing. A mismatch triggers a
-live fetch, discarding the stale row.
+`schema_version == SCHEMA_VERSION` before deserializing. At startup a mismatch triggers a
+live fetch, discarding the stale row. The once-a-minute database read skips a mismatched row and
+keeps the signals on screen.
 
-Today both the TUI (its own refresh, every `REFRESH_INTERVAL_SECS`) and `hub-daemon` write this
-same row. Phase 5 of [#327](https://github.com/ooloth/hub/issues/327) removes the TUI's fetch
+Today both the TUI (its own refresh, when the signals on screen are older than
+`REFRESH_INTERVAL_SECS`) and `hub-daemon` write this same row. Phase 5 of [#327](https://github.com/ooloth/hub/issues/327) removes the TUI's fetch
 (Decision 022), leaving the daemon as the only writer.
 
 **Bump `SCHEMA_VERSION` whenever `StatusReport` or any nested type changes in

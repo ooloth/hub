@@ -14,9 +14,8 @@ outage produces a perfectly well-formed report with an empty `items` list.
 
 Writing that report is data loss. The cache is a single row and every write replaces it, so the
 twelve pull requests it held a minute ago are gone, and nothing can recover them until a later
-refresh succeeds. The TUI reads that row, and the notification work in
-[#327](https://github.com/ooloth/hub/issues/327) will read it too, so a wiped row is a queue that
-silently reports nothing to notify about.
+refresh succeeds. The TUI reads that row, so a wiped row is a list that silently shows nothing
+waiting.
 
 The daemon is what makes this sharp. A human watching the TUI sees the error banner and knows to
 distrust the empty list. Nobody is watching the daemon, so an empty row written at 3am is
