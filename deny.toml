@@ -3,6 +3,8 @@
   # Transitive conflicts across rusqlite, ratatui, reqwest, and their dependency trees.
   # These are cross-major-version splits not controllable without upstream changes.
   skip = [
+    # plist (scripts) uses base64 0.23; reqwest's hyper stack and wiremock use 0.22.
+    { name = "base64" },
     { name = "core-foundation" },
     { name = "getrandom" },
     { name = "hashbrown" },
