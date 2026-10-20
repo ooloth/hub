@@ -49,10 +49,11 @@ is mutated:
    (`unified_list_keys` or `merge_confirm_key`). Returns `None` for unmapped keys.
 2. `App::update(action) -> Vec<Effect>` (`state/update/mod.rs`) — applies the action
    to app state and returns zero or more `Effect` values describing required
-   side effects (`OpenUrl`, `LaunchCi`, `Quit`).
-3. The event loop in `main.rs` iterates the effects — opens a URL, opens a
-   named tmux window, or breaks the loop. `Quit` short-circuits any remaining
-   effects in the same vec.
+   side effects, one variant per kind, such as `OpenUrl`, `LaunchPr` or `Quit`
+   (`state/types.rs`).
+3. The event loop in `main.rs` carries out each effect: it opens a URL or a
+   named tmux window, merges or labels on GitHub, or breaks the loop. `Quit`
+   short-circuits any remaining effects in the same vec.
 
 **Adding a new interactive behavior:**
 
@@ -149,11 +150,12 @@ just test-update
 
 ## Investigations
 
-Investigation types live in `investigations/`. Each type is a separate file;
-`mod.rs` provides the shared tmux launcher. Each file exposes a `config()`
-function that returns a `LaunchConfig` with a system prompt (loaded via
-`include_str!` from `prompts/`), a context-specific prompt string,
-and tool/model settings.
+Investigation types live in `investigations/`, one file per type. Each exposes
+a function that returns a `LaunchConfig` (`config()` for most; `ask_config()`
+and `review_config()` for pull requests) with a system prompt (loaded via
+`include_str!` from `prompts/`), a context-specific prompt string, and
+tool/model settings. `launch.rs` holds the shared tmux launcher, and
+`command.rs` builds the tmux invocation it runs.
 
 Use the existing types in `investigations/` as templates when adding a new one.
 
@@ -238,7 +240,7 @@ Rules of thumb:
 
 ## Navigation
 
-One screen (`UnifiedList`) with an optional split detail pane. `Enter` opens the pane; `Esc` closes it.
+The list (`UnifiedList`), with an optional split detail pane, and the merge confirmation (`MergingPr`) shown over it. `Enter` opens the pane; `Esc` closes it.
 
 **UnifiedList** — urgency-ranked flat list of all signals
 

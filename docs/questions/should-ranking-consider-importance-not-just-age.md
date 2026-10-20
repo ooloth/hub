@@ -4,21 +4,21 @@ status: open
 resolves_into: decision
 ---
 
-# Should the notified set be ranked by importance, not just age?
+# Should turns be ranked by importance, not just age?
 
 ## Why it matters
 
-Oldest-first is the v1 ranking rule for the notified top-N — simple, and it's already what
-`workflows/src/status.rs` computes today (`sort_by_key(|i| (i.urgency(), Reverse(i.age())))`, so
-urgency already outranks age in the existing sort). A genuinely more important item that's newer
-than everything else in the current top-N has to wait for the next detection pass under the
-shrink-in-place design. Whether that's a real problem worth solving, versus an acceptable trade-off
-for the simplicity of "finish what's active before grooming the list again," isn't yet known.
+Each pull request that is my turn gets its own card, so notifications take no order from ranking.
+Ranking matters where turns are read in order: the list, which sorts every signal by urgency tier,
+then age (`sort_by_key(|i| (i.urgency(), Reverse(i.age())))` in `workflows/src/status.rs`), and the
+order by how long each has been my turn that #374 adds. A genuinely more important turn that is
+newer sits below older ones under age alone. Whether that is a real problem worth solving, or an
+acceptable trade-off for an order that stays predictable, isn't yet known.
 
 ## What would settle it
 
-A concrete case, after living with oldest-first for a while, where a genuinely urgent item sat
-unaddressed specifically because the active set was already full of older, less important items.
+A concrete case, after living with oldest-first for a while, where an urgent turn sat unaddressed
+because older, less important turns were listed above it.
 
 ## Resolves into
 
@@ -35,9 +35,8 @@ context.
 - **A. Oldest-first only.** Current plan. Matches the existing sort's secondary key; no new
   ranking logic needed.
 - **B. Importance-first, oldest as tiebreak.** Already partially true of the existing sort
-  (`urgency` is the primary key) — the open question is really whether the top-N selection for
-  *this* milestone should lean on that more, or deliberately ignore it in favor of pure age to keep
-  the "shrink in place, favor finishing" behavior predictable.
+  (`urgency` is the primary key). The open question is whether turns should lean on that more, or
+  ignore it in favor of pure age to keep the order predictable.
 
 ## Findings
 

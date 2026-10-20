@@ -80,9 +80,9 @@ daemon/ → workflows/ → clients/ → domain/
                      → store/   → domain/
 ```
 
-`config/` is a direct dependency of `ui/cli`, `ui/tui` and `daemon/`. Config
-values are passed as function arguments into workflows and clients — those
-crates do not depend on `config/` directly.
+`config/` is a direct dependency of `ui/tui` and `daemon/`; `ui/cli` is a stub
+that depends only on `clap`. Config values are passed as function arguments
+into workflows and clients — those crates do not depend on `config/` directly.
 
 ## Stack
 

@@ -10,8 +10,9 @@ present ([Decision 020](../docs/decisions/020-hub-runs-an-unattended-surface.md)
 - I/O lives in `main.rs` and the edge files named under Files; the rest computes from what it is
   handed
 
-**Lives here:** the refresh sequence, the rule for when a refresh may replace the cache, and
-recording each pass: the payload when it replaced it, and the health record always.
+**Lives here:** the refresh sequence, applying the rule for when a refresh may replace the cache
+(the rule itself is `classify` in `workflows/src/freshness.rs`), recording each pass (the payload
+when it replaced it, and the health record always), and the pull request notifications.
 
 ## What it does today
 
@@ -156,7 +157,8 @@ failed, with `error`). `payload` says whether the cache was replaced: `written`,
 nothing that answered had any signals and something failed. `pid` changes when the daemon
 restarts.
 
-After each pass that reached its sources, the notifier prints one line saying what it changed:
+Each round of the notifier prints one line saying what it changed. A round works from the newest
+pass that reached its sources, so a pass that arrives while a round is still posting is skipped:
 
 ```
 hub-daemon notifications at=2026-10-17T23:15:55Z pid=4242 profile=default turns=3 coverage=complete posted="ooloth/hub#344" reposted="" removed="" failed=""

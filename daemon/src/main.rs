@@ -230,7 +230,7 @@ fn log_notification_removal(profile: Profile, removed: Result<()>) {
     );
 }
 
-/// The pull request cards `profile` has showing, logged. None when they cannot be listed, so a card
+/// The pull request cards `profile` has showing, logged. Empty when they cannot be listed, so a card
 /// whose turn ended before this start stays until dismissed.
 async fn cards_showing(profile: Profile) -> Notified {
     let found = notification::list_shown()
