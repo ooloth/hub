@@ -78,7 +78,9 @@ it:
    ```
 
 2. In System Settings › Notifications › terminal-notifier, turn on Allow Notifications and set
-   the style to Banners.
+   the style to Alerts, so hub's cards stay on screen until you dismiss them. macOS sets the
+   style once for terminal-notifier, so it applies to every card terminal-notifier posts,
+   whichever program calls it.
 3. Run `terminal-notifier -diagnose`. It reports the permission and the alert style, and lists
    anything still in the way under "Problems found".
 
