@@ -656,9 +656,7 @@ async fn fetch_file_patches(
 ) -> std::collections::HashMap<String, Option<String>> {
     let result: Result<Vec<PrFileEntry>> = async {
         let entries: Vec<PrFileEntry> = reqwest::Client::new()
-            .get(format!(
-                "https://api.github.com/repos/{repo}/pulls/{number}/files"
-            ))
+            .get(format!("{GITHUB_API}/repos/{repo}/pulls/{number}/files"))
             .query(&[("per_page", "100")])
             .bearer_auth(token)
             .header("User-Agent", "hub-cli")
@@ -773,7 +771,7 @@ async fn graphql_prs(
     );
 
     let response: GraphQlResponse = reqwest::Client::new()
-        .post("https://api.github.com/graphql")
+        .post(format!("{GITHUB_API}/graphql"))
         .bearer_auth(token)
         .header("User-Agent", "hub-cli")
         .json(&serde_json::json!({ "query": query }))
