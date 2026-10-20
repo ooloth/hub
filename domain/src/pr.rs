@@ -98,20 +98,6 @@ pub enum CiStatus {
     Neutral,
 }
 
-/// The resolution state of a pull request, as returned by GitHub's GraphQL API.
-///
-/// Used by the fold-back step to decide whether a PR-origin task should
-/// transition to `done` or `failed` when its linked PR leaves the open state.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub enum PrState {
-    /// Pull request is still open.
-    Open,
-    /// Merged into the base branch.
-    Merged,
-    /// Closed without merging.
-    Closed,
-}
-
 /// Why a pull request cannot be merged right now.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum MergeBlocker {
