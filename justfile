@@ -19,6 +19,7 @@ _daemon_features := if path_exists("clients/src/private") == "true" { "--feature
 export HUB_PROFILE := env_var_or_default("HUB_PROFILE", "dev")
 
 check:
+    @cargo run -q -p scripts -- check-prek-hooks
     taplo fmt
     taplo check
     cargo fmt

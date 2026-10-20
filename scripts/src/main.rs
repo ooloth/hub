@@ -11,6 +11,8 @@ mod daemon_agent;
 mod gh_post_guard;
 /// Clippy in every configuration the checkout can build.
 mod lint_configurations;
+/// Whether the git hooks prek.toml declares are installed.
+mod prek_hooks;
 /// Where the checkout this binary was built from lives.
 mod repo_root;
 #[cfg(test)]
@@ -47,6 +49,12 @@ enum Command {
     /// Reads the staged content of the repository in the current directory, including from a
     /// worktree, and finds the list beside the main checkout. Passes when there is no list.
     CheckStagedTerms,
+    /// What `just check` runs first: fail when a git hook `prek.toml` declares is not installed
+    /// in this clone.
+    ///
+    /// Reads `default_install_hook_types`, or only `pre-commit` when it is unset, and checks each
+    /// one in the hooks directory git reports, which follows worktrees and `core.hooksPath`.
+    CheckPrekHooks,
     /// Run hub-daemon under launchd for the `default` profile: what the `just daemon-*` recipes
     /// call.
     Daemon {
@@ -75,6 +83,7 @@ fn main() -> ExitCode {
     match Cli::parse().command {
         Command::GuardGhPosts { banned_terms } => gh_post_guard::run(&banned_terms),
         Command::CheckStagedTerms => staged_terms::run(),
+        Command::CheckPrekHooks => prek_hooks::run(),
         Command::Daemon { command } => daemon_agent::run(&command),
         Command::LintConfigurations => lint_configurations::run(),
         Command::SetupPrivate {

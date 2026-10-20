@@ -21,6 +21,13 @@ Not imported by anything.
 - `check-staged-terms` — the pre-commit check prek runs. Refuses a commit whose staged content
   holds a term from hub-private's list, naming each file and term. Reads the git index, not the
   working copy, and finds the list beside the main checkout, so it works in worktrees too.
+- `check-prek-hooks` — what `just check` runs first. Fails when a git hook type that `prek.toml`
+  declares in `default_install_hook_types` (only `pre-commit` when unset) is missing from this
+  clone, not executable, or not written by prek, and says to run `prek install`. It reads the hooks
+  directory git reports, so it works in worktrees and with `core.hooksPath`. That setting only
+  changes what the next `prek install` writes, so without this a hook type added to it never runs
+  in a clone that installed its hooks before. CI runs `cargo` directly, not `just check`, so it is
+  never asked there.
 - `lint-configurations` — what `just lint` runs. Clippy with `-D warnings` once per configuration
   whose sources this checkout has: without hub-private always, then with each linked module. Runs
   them all, then names the failures. hub-private's pre-commit check calls it too.
