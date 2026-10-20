@@ -36,8 +36,9 @@ turns begin and end, whatever the Focus. While a Focus holds cards, the daemon s
 whose turn ends, so when it lifts I see only the pull requests still waiting on me.
 
 Switching off terminal-notifier's notifications in System Settings is not a way to pause hub. A card
-posted while it is off is lost, and the daemon does not post a turn again while it keeps running, so
-a pull request that became my turn in that time is never notified until the daemon restarts.
+posted while it is off is lost, and the daemon does not post a turn again for the same reason while
+it keeps running, so a pull request that became my turn in that time is never notified until the
+daemon restarts.
 
 The option kept open: hub can still gain a pause or quiet hours of its own later. Nothing in the
 daemon assumes notifications are always delivered, because a card that never reaches the screen
@@ -58,9 +59,9 @@ already changes nothing about what the daemon records or does next.
   knowing the operating system already covers both. Reverses if this record's decision is reversed.
 - **Switching off terminal-notifier's notifications as the pause.** Its strongest case: it silences
   hub alone, leaving every other app's notifications alone. Rejected because it drops cards rather
-  than holding them, and the daemon does not post them again, as measured above. Reverses if the
-  daemon starts posting a turn again after its card was lost, which is the reminder question in
-  #344's Out of scope.
+  than holding them, and the daemon does not post them again for the same reason, as measured
+  above. Reverses if the daemon starts posting a turn again after its card was lost, which is the
+  reminder question in #344's Out of scope.
 
 ## Risk
 

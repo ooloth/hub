@@ -44,7 +44,8 @@ where
         }
     }
 
-    /// Posts a card for each new turn in `seen` and removes the card of each turn that ended.
+    /// Posts a card for each new turn in `seen`, posts again the card of each turn whose reason
+    /// changed, and removes the card of each turn that ended.
     pub(crate) async fn apply(&mut self, seen: &TurnsSeen) -> NotifierReport {
         let changes = self.notified.changes_for(seen);
         let mut outcomes =

@@ -237,7 +237,7 @@ pub struct PullRequest {
     /// Number of changes-requested reviews the PR has received.
     #[serde(default)]
     pub changes_requested_count: u32,
-    /// Number of review comments on the PR.
+    /// Number of comments on the PR: those in review threads and top-level ones together.
     #[serde(default)]
     pub comment_count: u32,
     /// Name of the source branch being merged.

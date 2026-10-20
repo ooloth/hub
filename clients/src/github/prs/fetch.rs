@@ -485,7 +485,7 @@ fn nodes_to_prs(
 
 /// Reduces raw review nodes to each author's most recently submitted review.
 ///
-/// `reviews(first: 50)` returns every review ever submitted, not one per
+/// `reviews(first: 50)` returns the oldest 50 reviews submitted, not one per
 /// reviewer — a reviewer who re-reviews (e.g. requests changes, then later
 /// approves) appears more than once. Counting raw nodes would count that
 /// reviewer twice; GitHub's own review decision counts only the latest

@@ -77,7 +77,7 @@ impl Feedback {
     /// The feedback `review` gives me, if it asks something of me.
     ///
     /// An approval, a dismissed review and my own reviews ask nothing. Nor does a review with no
-    /// inline comments from a bot, such as Copilot's overview, or one with no body.
+    /// inline comments that came from a bot, such as Copilot's overview, or that has no body.
     #[must_use]
     pub fn from_review(review: &Review) -> Option<Self> {
         let Reviewer::Other { login, kind } = &review.by else {

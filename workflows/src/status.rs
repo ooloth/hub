@@ -17,7 +17,8 @@ use domain::source_outcomes::SourceOutcomes;
 /// margin while a source that never answers still cannot hold back the rest. See #338.
 pub const SOURCE_TIMEOUT: Duration = Duration::from_mins(1);
 
-/// The source that reports my open pull requests, and so which of mine are ready to merge.
+/// The source that reports my open pull requests, and so which of mine are ready to merge or have
+/// a review waiting on me.
 pub const MY_OPEN_PRS: &str = "github my open prs";
 
 /// The source that reports pull requests whose review is requested from me.
@@ -35,7 +36,7 @@ pub const SCHEMA_VERSION: i32 = 20;
 pub enum StatusItem {
     /// A GitHub pull request.
     Pr(PullRequest),
-    /// A GitHub or Linear issue.
+    /// A GitHub issue.
     Issue(Issue),
     /// A failed CI run.
     Ci(CiFailure),
@@ -109,7 +110,7 @@ impl StatusItem {
 pub struct StatusReport {
     /// All signal items across every configured source.
     pub items: Vec<StatusItem>,
-    /// Names of API sources that failed during the refresh (e.g., "github ci").
+    /// Names of API sources that failed during the refresh (e.g., "github ci failures").
     #[serde(default)]
     pub errors: Vec<String>,
 }

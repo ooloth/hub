@@ -126,7 +126,7 @@ into a decision record._
   ([invariant](../invariants/the-daemons-health-and-the-signals-are-only-read-together.md)), which a
   file per category would have to replace.
 - *Sourced*: schema changes are handled by discard, not migration. `SCHEMA_VERSION` is an integer
-  constant (`SCHEMA_VERSION` in `workflows/src/status.rs`, currently 19); a caller comparing it
+  constant (`SCHEMA_VERSION` in `workflows/src/status.rs`); a caller comparing it
   against the stored value drops the row and refetches on mismatch (the `schema_version` check in
   `ui/tui/src/main.rs`). Any option here inherits
   that mechanism rather than needing a new one.

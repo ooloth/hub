@@ -1,8 +1,9 @@
 //! When the head of a pull request's branch was pushed, from GitHub's repository activity.
 //!
-//! GitHub's GraphQL API no longer says when a commit was pushed (`pushedDate` is null, measured
+//! GitHub's GraphQL API does not say when a commit was pushed (`pushedDate` is null, read
 //! 2026-10-19), and a review names the commit its reviewer was looking at rather than the head
-//! when it was submitted. The activity API records each push with its time.
+//! when it was submitted. The activity API records each push with its time. See
+//! `docs/constraints.md`.
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
