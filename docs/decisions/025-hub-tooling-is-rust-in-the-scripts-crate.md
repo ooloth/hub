@@ -32,9 +32,13 @@ binary are both named `scripts`, following the plain names of the library crates
 prefix marks binaries `cargo install` puts on a PATH, and this one is never installed.
 
 Checks over the repository's own state, such as every crate having a README, lint inheritance and
-`domain` staying pure, are `#[test]` functions, so `just test` runs them. Tools that act at a
-particular moment, such as the Claude Code hook, the commit-time banned-terms check and
+`domain` staying pure, are `#[test]` functions, so `just test` runs them, in CI too. Tools that act
+at a particular moment, such as the Claude Code hook, the commit-time banned-terms check and
 `setup-private`, are subcommands of the `scripts` binary.
+
+Checks over one clone's local state rather than the repository's content, such as whether the git
+hooks `prek.toml` declares are installed (`check-prek-hooks`), are subcommands too, run by
+`just check`. As tests they would also run in CI, where that state never exists.
 
 Shell remains only where a command string is required: `justfile` recipes, `prek.toml` entries and
 the hook command in `.claude/settings.json`.
