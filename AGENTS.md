@@ -239,6 +239,17 @@ Then clean up every time: `tmux kill-session -t qa`, remove any
   `ps -p $(tmux display-message -p -t qa:2.0 '#{pane_pid}') -wwE -o command=`.
 - **`#{pane_start_command}` is the exact command tmux was handed**, which is what
   to assert against when the change affects how an investigation is launched.
+- **An investigation can open at Claude Code's "trust this folder" prompt
+  instead of a session.** Each investigation runs in a new worktree, and Claude
+  Code checks the trust recorded for the worktree's repository, here the bare
+  repo under `~/.hub/repos/<project>`, not for the parent folder. Answering
+  "Yes" once records it under the bare repo's path in `~/.claude.json`, and
+  every later worktree of that repo skips the prompt. Running
+  `claude` in the bare repo itself never prompts, so it records nothing
+  (observed 2026-10-26). The prompt means the launch worked; it is not a
+  failure of the change. Trusting a repo also loads its `.claude/settings.json`
+  hooks in its investigations, so it is the user's call: leave the prompt
+  unanswered and report it rather than answering it yourself.
 
 **tmux send-keys pitfalls**
 
