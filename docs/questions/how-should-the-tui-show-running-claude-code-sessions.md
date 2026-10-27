@@ -92,6 +92,6 @@ into a decision record._
   `AgentSession` row was removed from the unified list along with the task model, because the task
   added a second lifecycle for work a signal already represents. Sessions started by hand have no
   signal, so that reason covers only some of the rows in option A.
-- *Sourced* (`ui/tui/src/tmux.rs`): hub lists and selects windows in its own tmux session only.
+- *Sourced* (`ui/tui/src/terminal/tmux.rs`): hub lists and selects windows in its own tmux session only.
   Attaching to a session elsewhere needs `switch-client` on one of the other tmux clients, and hub
   has to choose which one.

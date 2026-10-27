@@ -69,7 +69,7 @@ The **signal** is the unit of work — a PR to review, a CI failure to fix, an
 alert to investigate. Hub does not wrap a signal in a second identity (a
 TASK-XXXX); an agent **session** is simply work done *on* a signal, launched
 with `i`. A session makes that work **visible** (the signal row badges when
-sessions exist for it), **resumable** (its tmux window stays open — attach to
+sessions exist for it), **resumable** (its tmux window or Rex tab stays open — attach to
 course-correct), **reviewable** (its `report.md` and the artifact it produced
 lead me to the agent's reasoning), and **mineable** (its `prompt.md`,
 `report.md`, and transcript are raw material for improving future agents).
@@ -246,7 +246,7 @@ And, specifically, what the flywheel does **not** build:
   not in swim lanes.
 - **A bidirectional comment thread** — a session's `report.md` is an
   agent→human account, not a chat. Dialogue happens by attaching to the
-  session's tmux window, not by typing back. See
+  session's tmux window or Rex tab, not by typing back. See
   [Decision 019](decisions/019-drop-task-model-filesystem-sessions.md).
 - **A quality gate** — clearing a signal means "I acknowledged and closed
   this," not "I certify this is correct." GitHub PR review and merge is the

@@ -18,7 +18,7 @@ pub mod gcp;
 pub mod investigation_mcp_servers;
 /// Investigation prompts, assembled from parts that say where each came from.
 pub mod investigation_prompt;
-/// Deterministic tmux window names for the windows hub opens.
+/// Deterministic names for the windows hub opens, in tmux or Rex.
 pub mod investigation_window;
 /// GitHub and Linear issue types and label helpers.
 pub mod issue;
@@ -42,6 +42,8 @@ pub mod pr_turn;
 pub mod profile;
 /// Whether a review of my pull request is waiting on me, settled against my last push.
 pub mod review_waiting;
+/// The Rex session a terminal belongs to.
+pub mod rex_session_id;
 /// What the screen showed when an `op read` reached its deadline.
 pub mod screen_at_deadline;
 /// Serde helpers for non-standard wire formats (e.g. duration as seconds).
@@ -72,6 +74,7 @@ pub use issue::*;
 pub use loki::*;
 pub use pr::*;
 pub use profile::*;
+pub use rex_session_id::*;
 pub use session::*;
 pub use untrusted::*;
 pub use urgency::*;
