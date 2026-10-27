@@ -192,6 +192,12 @@ and the private workflows have been seen to fail through it; Linear, Loki and GC
 have not been tried. A TUI refresh through it leaves the cache and the screen as
 they were, and the status bar names the sources that failed.
 
+**Which terminal to drive it in.** hub opens its windows in whichever terminal
+encloses the TUI, so the terminal the loop runs the TUI in decides which path
+is exercised, whatever terminal the agent itself is in. A change under
+`ui/tui/src/terminal/` is driven live in both tmux and Rex. Every other change
+is driven in tmux, which exists wherever an agent runs and takes an exact size.
+
 **The loop.**
 
 ```bash
@@ -208,6 +214,27 @@ tmux list-panes -s -t qa -F '#{window_name} :: #{pane_start_command}'
 Then clean up every time: `tmux kill-session -t qa`, remove any
 `investigation-*` worktrees left under `~/.hub/repos/<project>/`, and delete
 `/tmp/hub-supporting-data-*.json`.
+
+**The loop in Rex.** The TUI gets its own tab, created with a fixed size so the
+status bar is not cut off:
+
+```bash
+just build
+S=$(rex new hub-qa --json | jq -r .session_id)
+B=$(rex api call -s "$S" session.new_window \
+  "{\"window_label\":\"tui\",\"layout\":{\"block\":{\"flavor\":\"com.superlogical.terminal.shell\",\"options\":{\"cwd\":\"$PWD\",\"size\":{\"columns\":200,\"rows\":50}}}}}" \
+  | jq -r '.block_ids[0]')
+rex send -s "$S" -b "$B" 'just tui' && rex send-key -s "$S" -b "$B" enter
+sleep 12                                          # wait for the first render
+rex capture -s "$S" -b "$B" --trim
+rex send -s "$S" -b "$B" i
+sleep 12
+rex window ls -s "$S" --json | jq -r '.windows[] | "\(.window_id) \(.label)"'
+```
+
+Clean up the same way, with `rex session kill "$S"` in place of the tmux one.
+Killing the session ends each investigation before its own cleanup runs, so
+its worktree is always left behind to remove.
 
 **Gotchas that cost time**
 
@@ -250,6 +277,25 @@ Then clean up every time: `tmux kill-session -t qa`, remove any
   failure of the change. Trusting a repo also loads its `.claude/settings.json`
   hooks in its investigations, so it is the user's call: leave the prompt
   unanswered and report it rather than answering it yourself.
+
+**Rex pitfalls**
+
+- **The tab `rex new` creates is 80×24 and owned by the Rex app,** so a later
+  `resize` on it does nothing. That is why the loop opens a second tab with
+  `size` set at creation.
+- **The Rex app can still take a sized tab over.** Once it does, the tab takes
+  the app window's size (150×43 was observed, 2026-10-26). If the status bar
+  reads cut off, check `rex block call -s "$S" -b "$B" size '{}'`.
+- **Text sent while the TUI is not running goes to the shell.** A key such as
+  `i` then shows as whatever zsh suggests from history, which looks like a
+  command nobody typed. Read the capture for the TUI before sending keys.
+- **There is no `#{pane_start_command}`.** Read an investigation's launch
+  command off its process. `pgrep -n` takes the newest, so an investigation
+  left open from earlier answers if this one did not start:
+
+  ```bash
+  ps -p $(ps -o ppid= -p $(pgrep -n -f "claude --permission-mode auto")) -ww -o command=
+  ```
 
 **tmux send-keys pitfalls**
 
