@@ -115,7 +115,7 @@ just build              # build all crates
 ## Verifying a change by hand
 
 Tests are not enough for anything that affects keybindings, navigation,
-subprocess launching, tmux integration or the cache format. Those are verified
+subprocess launching, tmux or Rex integration or the cache format. Those are verified
 by running the TUI and driving it.
 
 [AGENTS.md](AGENTS.md) has the full loop, including how to read what an

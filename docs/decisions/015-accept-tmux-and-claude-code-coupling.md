@@ -1,5 +1,7 @@
 # 015 — Accept tmux and Claude Code as baked-in dispatch dependencies
 
+> **⚠ The tmux section is superseded by [Decision 029](029-hub-opens-windows-in-whichever-of-tmux-or-rex-encloses-it.md) (accepted).** The Claude Code section still stands.
+
 ## Context
 
 During pre-implementation review of the task dispatch epic (#278–#282), a

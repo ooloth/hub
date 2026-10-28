@@ -28,7 +28,7 @@ mod investigations;
 mod markdown;
 mod render;
 mod state;
-mod tmux;
+mod terminal;
 
 #[cfg(feature = "private")]
 mod private;
@@ -425,12 +425,12 @@ fn open_pr_diff(app: &mut App, repo: &str, number: u64) {
 }
 
 fn show_pr_diff(repo: &str, number: u64) -> Result<()> {
-    let vacant = match tmux::claim(
+    let vacant = match terminal::claim(
         &domain::InvestigationWindow::diff(repo, number),
         "opening the diff",
     )? {
-        tmux::WindowClaim::Reused => return Ok(()),
-        tmux::WindowClaim::Vacant(vacant) => vacant,
+        terminal::WindowClaim::Reused => return Ok(()),
+        terminal::WindowClaim::Vacant(vacant) => vacant,
     };
 
     let cmd = format!("gh pr diff {number} -R {repo} | delta; read");

@@ -1,9 +1,9 @@
-//! Deterministic tmux window names for the windows hub opens.
+//! Deterministic names for the windows hub opens, in tmux or Rex.
 
 use uuid::Uuid;
 
-/// Longest window name hub will produce. Beyond this the tmux status bar
-/// crowds out everything else.
+/// Longest window name hub will produce. Beyond this the tmux status bar or
+/// Rex tab bar crowds out everything else.
 const MAX_LEN: usize = 40;
 
 /// Budgets for the three segments. They sum, with the two separators, to
@@ -55,7 +55,7 @@ impl AlertSource {
     }
 }
 
-/// The name of a tmux window hub opened, addressable afterwards.
+/// The name of a window hub opened, in tmux or Rex, addressable afterwards.
 ///
 /// Every name is `<project>:<kind>:<discriminator>`, built through one
 /// constructor per signal kind. The kind segment comes from the constructor

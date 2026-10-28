@@ -18,7 +18,7 @@ Its three binaries serve three distinct audiences:
 - **`hub`** (CLI) — the **agent's toolkit** (stub). The task subcommand (`hub task *`) was removed with the task model (ADR 019). Future agent-facing subcommands will be added here as the filesystem session model is built out.
 - **`hub-daemon`** — the **unattended surface** (ADR 020). Refreshes the signal cache with nobody present. It refreshes every 15 minutes (`--interval`), one daemon per profile, and `--once` runs a single pass. Each pass is recorded in a health record in the profile's database, and each pull request that becomes my turn gets a macOS notification through `terminal-notifier`. `just daemon-start` runs the installed binary under launchd at every login. The TUI's status bar warns when the daemon's refreshes stop. The TUI becoming a client of the daemon and the PR attention model are the rest of [#327](https://github.com/ooloth/hub/issues/327).
 
-The core value is cross-domain triage plus agent delegation: signals from different systems are ranked together in one list, and any signal can be investigated by pressing `i` to launch a Claude Code session with injected context. That session opens in its own tmux window, named after the signal by `domain::InvestigationWindow`, so several investigations run side by side and each stays reachable from tmux's window list.
+The core value is cross-domain triage plus agent delegation: signals from different systems are ranked together in one list, and any signal can be investigated by pressing `i` to launch a Claude Code session with injected context. That session opens in its own tmux window or Rex tab, whichever encloses the TUI, named after the signal by `domain::InvestigationWindow`, so several investigations run side by side and each stays reachable from the terminal's window list.
 
 See [README.md](README.md) for the full feature list and value proposition.
 
@@ -192,6 +192,12 @@ and the private workflows have been seen to fail through it; Linear, Loki and GC
 have not been tried. A TUI refresh through it leaves the cache and the screen as
 they were, and the status bar names the sources that failed.
 
+**Which terminal to drive it in.** hub opens its windows in whichever terminal
+encloses the TUI, so the terminal the loop runs the TUI in decides which path
+is exercised, whatever terminal the agent itself is in. A change under
+`ui/tui/src/terminal/` is driven live in both tmux and Rex. Every other change
+is driven in tmux, which exists wherever an agent runs and takes an exact size.
+
 **The loop.**
 
 ```bash
@@ -208,6 +214,27 @@ tmux list-panes -s -t qa -F '#{window_name} :: #{pane_start_command}'
 Then clean up every time: `tmux kill-session -t qa`, remove any
 `investigation-*` worktrees left under `~/.hub/repos/<project>/`, and delete
 `/tmp/hub-supporting-data-*.json`.
+
+**The loop in Rex.** The TUI gets its own tab, created with a fixed size so the
+status bar is not cut off:
+
+```bash
+just build
+S=$(rex new hub-qa --json | jq -r .session_id)
+B=$(rex api call -s "$S" session.new_window \
+  "{\"window_label\":\"tui\",\"layout\":{\"block\":{\"flavor\":\"com.superlogical.terminal.shell\",\"options\":{\"cwd\":\"$PWD\",\"size\":{\"columns\":200,\"rows\":50}}}}}" \
+  | jq -r '.block_ids[0]')
+rex send -s "$S" -b "$B" 'just tui' && rex send-key -s "$S" -b "$B" enter
+sleep 12                                          # wait for the first render
+rex capture -s "$S" -b "$B" --trim
+rex send -s "$S" -b "$B" i
+sleep 12
+rex window ls -s "$S" --json | jq -r '.windows[] | "\(.window_id) \(.label)"'
+```
+
+Clean up the same way, with `rex session kill "$S"` in place of the tmux one.
+Killing the session ends each investigation before its own cleanup runs, so
+its worktree is always left behind to remove.
 
 **Gotchas that cost time**
 
@@ -239,6 +266,36 @@ Then clean up every time: `tmux kill-session -t qa`, remove any
   `ps -p $(tmux display-message -p -t qa:2.0 '#{pane_pid}') -wwE -o command=`.
 - **`#{pane_start_command}` is the exact command tmux was handed**, which is what
   to assert against when the change affects how an investigation is launched.
+- **An investigation can open at Claude Code's "trust this folder" prompt
+  instead of a session.** Each investigation runs in a new worktree, and Claude
+  Code checks the trust recorded for the worktree's repository, here the bare
+  repo under `~/.hub/repos/<project>`, not for the parent folder. Answering
+  "Yes" once records it under the bare repo's path in `~/.claude.json`, and
+  every later worktree of that repo skips the prompt. Running
+  `claude` in the bare repo itself never prompts, so it records nothing
+  (observed 2026-10-26). The prompt means the launch worked; it is not a
+  failure of the change. Trusting a repo also loads its `.claude/settings.json`
+  hooks in its investigations, so it is the user's call: leave the prompt
+  unanswered and report it rather than answering it yourself.
+
+**Rex pitfalls**
+
+- **The tab `rex new` creates is 80×24 and owned by the Rex app,** so a later
+  `resize` on it does nothing. That is why the loop opens a second tab with
+  `size` set at creation.
+- **The Rex app can still take a sized tab over.** Once it does, the tab takes
+  the app window's size (150×43 was observed, 2026-10-26). If the status bar
+  reads cut off, check `rex block call -s "$S" -b "$B" size '{}'`.
+- **Text sent while the TUI is not running goes to the shell.** A key such as
+  `i` then shows as whatever zsh suggests from history, which looks like a
+  command nobody typed. Read the capture for the TUI before sending keys.
+- **There is no `#{pane_start_command}`.** Read an investigation's launch
+  command off its process. `pgrep -n` takes the newest, so an investigation
+  left open from earlier answers if this one did not start:
+
+  ```bash
+  ps -p $(ps -o ppid= -p $(pgrep -n -f "claude --permission-mode auto")) -ww -o command=
+  ```
 
 **tmux send-keys pitfalls**
 

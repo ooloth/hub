@@ -2,7 +2,7 @@
 
 The `hub-tui` binary — the **human-facing surface for hub**. This is where you
 read urgency-ranked signals, open them in the browser, and launch agent investigation sessions
-in their own tmux windows.
+in their own tmux windows or Rex tabs.
 
 Agents do not interact with the TUI — they use the `hub` CLI toolkit.
 
@@ -52,7 +52,7 @@ is mutated:
    side effects, one variant per kind, such as `OpenUrl`, `LaunchPr` or `Quit`
    (`state/types.rs`).
 3. The event loop in `main.rs` carries out each effect: it opens a URL or a
-   named tmux window, merges or labels on GitHub, or breaks the loop. `Quit`
+   named tmux window or Rex tab, merges or labels on GitHub, or breaks the loop. `Quit`
    short-circuits any remaining effects in the same vec.
 
 **Adding a new interactive behavior:**
@@ -154,8 +154,9 @@ Investigation types live in `investigations/`, one file per type. Each exposes
 a function that returns a `LaunchConfig` (`config()` for most; `ask_config()`
 and `review_config()` for pull requests) with a system prompt (loaded via
 `include_str!` from `prompts/`), a context-specific prompt string, and
-tool/model settings. `launch.rs` holds the shared tmux launcher, and
-`command.rs` builds the tmux invocation it runs.
+tool/model settings. `launch.rs` holds the shared launcher, and
+`command.rs` builds the command it runs. `src/terminal/` opens the window in tmux or Rex,
+whichever encloses the TUI ([Decision 029](../../docs/decisions/029-hub-opens-windows-in-whichever-of-tmux-or-rex-encloses-it.md)).
 
 Use the existing types in `investigations/` as templates when adding a new one.
 
@@ -283,7 +284,7 @@ The list (`UnifiedList`), with an optional split detail pane, and the merge conf
 
 | Key        | Action                                          |
 | ---------- | ----------------------------------------------- |
-| d          | show the PR diff in delta, in its own tmux window |
+| d          | show the PR diff in delta, in its own window    |
 | l          | open the PR in lazygit                          |
 | o          | open the PR in octo                             |
 | Esc / other| dismiss the submenu, keep the detail pane open  |

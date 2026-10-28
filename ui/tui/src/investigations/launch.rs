@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use domain::{InvestigationPrompt, UntrustedText};
 
-use crate::tmux::{claim, WindowClaim};
+use crate::terminal::{claim, WindowClaim};
 
 use super::command::compose;
 
@@ -85,16 +85,16 @@ pub(crate) enum WorktreeSpec {
     CurrentDir,
 }
 
-/// Opens an investigation in its own tmux window, or switches to the window
+/// Opens an investigation in its own tmux window or Rex tab, or switches to the window
 /// already investigating this signal.
 ///
 /// `window` names the window, and naming it is what makes it addressable
 /// afterwards: several investigations run side by side, each reachable from
-/// tmux's window list, without subdividing the TUI's own pane.
+/// the terminal's window list, without subdividing the TUI's own pane.
 ///
 /// The claim comes before `resolve_worktree`, and that ordering is load bearing.
 /// `WorktreeSpec::EphemeralFresh` and `Ephemeral` create a worktree whose only
-/// cleanup is appended to the command tmux runs, so one resolved for a launch
+/// cleanup is appended to the command the window runs, so one resolved for a launch
 /// that then switches instead would have nothing to remove it.
 pub(crate) async fn launch(
     config: LaunchConfig,
