@@ -15,6 +15,12 @@ established, so a reader can tell how far to trust it and when to check it again
   other than the branch head at the moment they were submitted, with the head at each moment read
   from the repository activity API. Some were submitted days after the newer push, as on
   astral-sh/ruff#26508.
+- **Hub's GitHub token has only the `repo` scope, and one field that needs another scope fails the
+  whole query.** On 2026-10-28 every pull request search failed because the query asked for a
+  requested team's `slug`, which needs `read:org` or `read:discussion`; GitHub answered with
+  `errors` and no data. A query checked through the `gh` CLI does not show this, since that token
+  has broader scopes: check a new field against hub's own token, or against GitHub's documented
+  scope for it, before adding it.
 - **GraphQL does not say when a commit was pushed.** `Commit.pushedDate` returns null (read
   2026-10-19 on ooloth/hub#53), and a commit's `committedDate` is set when it is made, not when it
   is pushed. The REST repository activity API,
