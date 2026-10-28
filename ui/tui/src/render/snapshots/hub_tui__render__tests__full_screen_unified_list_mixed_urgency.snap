@@ -1,11 +1,12 @@
 ---
 source: ui/tui/src/render/mod.rs
+assertion_line: 970
 expression: screen_text(&buf)
 ---
 ╭ All ─────────────────────────────────────────────────────────────────────────╮
-│CI · check / fmt · failed                                     ooloth/hub · now│
+│CI · check / fmt · failed                                            hub · now│
 ├──────────────────────────────────────────────────────────────────────────────┤
-│PR · review requested · Fix #1 · alice · no reviews           owner/repo · now│
+│PR · review requested · Fix #1 · alice · no reviews                 repo · now│
 │                                                                              │
 │                                                                              │
 │                                                                              │

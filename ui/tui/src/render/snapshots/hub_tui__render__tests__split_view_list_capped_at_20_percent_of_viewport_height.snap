@@ -1,15 +1,16 @@
 ---
 source: ui/tui/src/render/mod.rs
+assertion_line: 1600
 expression: screen_text(&buf)
 ---
 ╭ All ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│PR · review requested · Fix #1 · alice · no reviews                                                   owner/repo · now│
-│PR · review requested · Fix #1 · alice · no reviews                                                   owner/repo · now│
-│PR · review requested · Fix #1 · alice · no reviews                                                   owner/repo · now│
-│PR · review requested · Fix #1 · alice · no reviews                                                   owner/repo · now│
-│PR · review requested · Fix #1 · alice · no reviews                                                   owner/repo · now│
-│PR · review requested · Fix #1 · alice · no reviews                                                   owner/repo · now│
-│PR · review requested · Fix #1 · alice · no reviews                                                   owner/repo · now│
+│PR · review requested · Fix #1 · alice · no reviews                                                         repo · now│
+│PR · review requested · Fix #1 · alice · no reviews                                                         repo · now│
+│PR · review requested · Fix #1 · alice · no reviews                                                         repo · now│
+│PR · review requested · Fix #1 · alice · no reviews                                                         repo · now│
+│PR · review requested · Fix #1 · alice · no reviews                                                         repo · now│
+│PR · review requested · Fix #1 · alice · no reviews                                                         repo · now│
+│PR · review requested · Fix #1 · alice · no reviews                                                         repo · now│
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭───────────────────────────────────────────────────────────────────────┬──────────────────────────────────────────────╮
 │(no description)                                                       │ checks     (none)                            │

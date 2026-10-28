@@ -1,19 +1,20 @@
 ---
 source: ui/tui/src/render/mod.rs
+assertion_line: 1222
 expression: screen_text(&buf)
 ---
 ╭ All ─────────────────────────────────────────────────────────────────────────╮
-│PR · review requested · Fix #1 · alice · no reviews           owner/repo · now│
-│PR · review requested · Fix #1 · alice · no reviews           owner/repo · now│
-│PR · review requested · Fix #1 · alice · no reviews           owner/repo · now│
-│PR · review requested · Fix #1 · alice · no reviews           owner/repo · now│
-│PR · review requested · Fix #1 · alice · no reviews           owner/repo · now│
-│PR · review requested · Fix #1 · alice · no reviews           owner/repo · now│
-│PR · review requested · Fix #1 · alice · no reviews           owner/repo · now│
-│PR · review requested · Fix #1 · alice · no reviews           owner/repo · now│
-│PR · review requested · Fix #1 · alice · no reviews           owner/repo · now│
-│PR · review requested · Fix #1 · alice · no reviews           owner/repo · now│
-│PR · review requested · Fix #1 · alice · no reviews           owner/repo · now│
-│PR · review requested · Fix #1 · alice · no reviews           owner/repo · now│
+│PR · review requested · Fix #1 · alice · no reviews                 repo · now│
+│PR · review requested · Fix #1 · alice · no reviews                 repo · now│
+│PR · review requested · Fix #1 · alice · no reviews                 repo · now│
+│PR · review requested · Fix #1 · alice · no reviews                 repo · now│
+│PR · review requested · Fix #1 · alice · no reviews                 repo · now│
+│PR · review requested · Fix #1 · alice · no reviews                 repo · now│
+│PR · review requested · Fix #1 · alice · no reviews                 repo · now│
+│PR · review requested · Fix #1 · alice · no reviews                 repo · now│
+│PR · review requested · Fix #1 · alice · no reviews                 repo · now│
+│PR · review requested · Fix #1 · alice · no reviews                 repo · now│
+│PR · review requested · Fix #1 · alice · no reviews                 repo · now│
+│PR · review requested · Fix #1 · alice · no reviews                 repo · now│
 ╰──────────────────────────────────────────────────────────────────────────────╯
  15/15 · [↩] details · [p] prs · [O] issues · [e] errors · [/] search · [i] inv

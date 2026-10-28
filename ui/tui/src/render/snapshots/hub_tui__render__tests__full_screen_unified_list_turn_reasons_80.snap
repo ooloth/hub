@@ -1,15 +1,16 @@
 ---
 source: ui/tui/src/render/mod.rs
+assertion_line: 1145
 expression: screen_text(&buf)
 ---
 ╭ All ─────────────────────────────────────────────────────────────────────────╮
-│PR · review requested · Notify when a pull request is my tur…  ooloth/hub · 3h│
-│PR · no reviewer · The status bar shows when signals were la…  ooloth/hub · 3h│
-│PR · ready to merge · Investigation worktrees are removed ho…  ooloth/hub · 3h│
-│PR · feedback · A reply in a review thread I took part in ma…  ooloth/hub · 3h│
-│PR · draft · My pull request is my turn when someone leaves …  ooloth/hub · 3h│
-│PR · checks failing · Pull requests that are my turn are lis…  ooloth/hub · 3h│
-│PR · conflicts · An investigation tells the agent why it wai…  ooloth/hub · 3h│
+│PR · review requested · Notify when a pull request is my turn, with…  hub · 3h│
+│PR · no reviewer · The status bar shows when signals were last upda…  hub · 3h│
+│PR · ready to merge · Investigation worktrees are removed however t…  hub · 3h│
+│PR · feedback · A reply in a review thread I took part in makes it …  hub · 3h│
+│PR · draft · My pull request is my turn when someone leaves feedbac…  hub · 3h│
+│PR · checks failing · Pull requests that are my turn are listed by …  hub · 3h│
+│PR · conflicts · An investigation tells the agent why it waits on m…  hub · 3h│
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
  1/7 · [↩] details · [p] prs · [O] issues · [e] errors · [/] search · [i] inves

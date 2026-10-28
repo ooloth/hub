@@ -1,9 +1,10 @@
 ---
 source: ui/tui/src/render/mod.rs
+assertion_line: 1183
 expression: screen_text(&buf)
 ---
 ╭ All ─────────────────────────────────────────────────────────────────────────╮
-│CI · check / fmt · failed                                     ooloth/hub · now│
+│CI · check / fmt · failed                                            hub · now│
 │                                                                              │
 │             ┌ Keybinds ────────────────────────────────────────┐             │
 │             │  ?                 toggle help                   │             │

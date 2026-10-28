@@ -1,9 +1,10 @@
 ---
 source: ui/tui/src/render/mod.rs
+assertion_line: 981
 expression: screen_text(&buf)
 ---
 ╭ All ─────────────────────────────────────────────────────────────────────────╮
-│CI ▸ check / fmt · failed (1)                                 ooloth/hub · now│
+│CI ▸ check / fmt · failed (1)                                        hub · now│
 │                                                                              │
 │                                                                              │
 │                                                                              │

@@ -118,6 +118,9 @@ pub(crate) struct LineParts {
     pub(crate) primary: Vec<String>,
     pub(crate) dim_inline: Vec<String>,
     pub(crate) source: Option<String>,
+    /// Text the `/` filter matches but the row does not show, such as the
+    /// owner a repo row leaves out. Never rendered.
+    pub(crate) search_only: Vec<String>,
     pub(crate) category: String,
     pub(crate) subcategory: Option<String>,
     pub(crate) age: String,
@@ -136,6 +139,7 @@ impl LineParts {
         if let Some(s) = &self.source {
             parts.push(s);
         }
+        parts.extend(self.search_only.iter().map(String::as_str));
         parts.push(&self.age);
         parts.join(" ")
     }

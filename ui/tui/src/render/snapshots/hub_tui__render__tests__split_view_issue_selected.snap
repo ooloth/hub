@@ -1,9 +1,10 @@
 ---
 source: ui/tui/src/render/mod.rs
+assertion_line: 1448
 expression: screen_text(&buf)
 ---
 ╭ All ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│Issue · Fix logging in production #42 · status:needs-human-review                                     ooloth/hub · now│
+│Issue · Fix logging in production #42 · status:needs-human-review                                            hub · now│
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭ Fix logging in production ───────────────────────────────────────────────────────────────────────── ooloth/hub · #42 ╮
 │                                                                                                                      │

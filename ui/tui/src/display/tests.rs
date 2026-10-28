@@ -993,3 +993,63 @@ fn from_row_group_header_returns_other() {
     };
     assert_eq!(SelectedItemKind::from_row(&row), SelectedItemKind::Other);
 }
+
+/// The owner takes room on every row and says little once the repo is named,
+/// so the row shows only the repo.
+#[rstest]
+#[case::pr(pr())]
+#[case::issue(issue())]
+#[case::ci(ci())]
+fn a_repo_row_shows_only_the_repo_name(#[case] item: StatusItem) {
+    assert_eq!(item_line(&item).source.as_deref(), Some("repo"));
+}
+
+/// Filtering by owner is what the owner is still for once it is hidden.
+#[rstest]
+#[case::pr(pr())]
+#[case::issue(issue())]
+#[case::ci(ci())]
+fn a_repo_row_can_still_be_found_by_its_owner(#[case] item: StatusItem) {
+    let line = item_line(&item);
+
+    assert_eq!(line.search_only, vec!["owner/repo".to_string()]);
+    assert!(
+        line.all_text().contains("owner/repo"),
+        "{}",
+        line.all_text()
+    );
+}
+
+#[rstest]
+#[case("owner", 1)]
+#[case("owner/repo", 1)]
+#[case("-owner", 0)]
+fn searching_by_owner_finds_rows_that_no_longer_show_it(
+    #[case] query: &str,
+    #[case] expected: usize,
+) {
+    let result = build_unified(
+        vec![pr()],
+        &Filter {
+            category: None,
+            query: Some(query.to_string()),
+        },
+    );
+
+    assert_eq!(result.len(), expected);
+}
+
+/// Alert rows name their project and environment, which carry no owner.
+#[rstest]
+#[case::loki(loki())]
+#[case::gcp(gcp())]
+fn an_alert_row_still_shows_its_project_and_environment(#[case] item: StatusItem) {
+    let line = item_line(&item);
+
+    assert!(
+        line.source.as_deref().is_some_and(|s| s.contains(':')),
+        "{:?}",
+        line.source
+    );
+    assert!(line.search_only.is_empty());
+}
