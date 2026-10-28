@@ -50,7 +50,8 @@ what is fetched, and they are recorded in the issue that builds each one, starti
 The repository activity lookup goes, along with the undecided state a failed lookup causes, so a
 refresh makes one request fewer for each pull request that needed one. The query has to read the
 newest comments in each review thread rather than the first 10, which makes each search response
-larger. No new store or stored field is added.
+larger. No new store is added: the facts are cached on each pull request in the existing cache row,
+whose schema version moves.
 
 ## Rejected
 
@@ -86,6 +87,14 @@ an agent's included, answers it.
 
 Each search response grows, because every review thread brings its newest comments. GitHub limits
 how many nodes a GraphQL query may ask for, and a refresh that exceeds the limit fails as a whole.
+
+What one query reads is bounded, and the bounds are where the reading can be wrong. Only the newest
+50 threads of a pull request are read, so feedback in an older unresolved thread is missed. Who
+took part in a thread is read from its newest 10 comments, so a person who spoke only before them
+no longer holds the thread, and the pull request can read as `no reviewer`. And an approved pull
+request that GitHub reports as blocked while a check is running reads as ready to merge, because the
+merge state does not say whether the running check is what blocks it; if something else does, the
+turn ends again once the check finishes.
 
 ## Revisit when
 
