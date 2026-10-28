@@ -32,8 +32,12 @@ pub struct CredentialsToml {
 /// A project tracked by hub, from a `[[project]]` entry in `hub.toml`.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct Project {
-    /// Human-readable project name shown in the TUI.
-    pub name: String,
+    /// What the TUI calls the project. Defaults to the repository's name.
+    pub name: Option<String>,
+    /// What window and tab names call the project: lowercase letters, digits
+    /// and single hyphens, at most 20 characters. Defaults to the repository's
+    /// name as a window shows it.
+    pub short_name: Option<String>,
     /// GitHub repo slug in `owner/repo` form, validated when the file is read.
     pub repo: domain::RepoSlug,
     /// Workflows enabled at the repo level (e.g. PRs, CI).
@@ -489,7 +493,7 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(result.project.len(), 1);
-        assert_eq!(result.project[0].name, "hub");
+        assert_eq!(result.project[0].name.as_deref(), Some("hub"));
         assert_eq!(result.project[0].repo.to_string(), "ooloth/hub");
         assert_eq!(result.project[0].workflow, vec![]);
         assert_eq!(result.project[0].environment, vec![]);
@@ -565,7 +569,7 @@ mod tests {
                 "[credentials]\ngithub_token = \"tok\"\ngithub_username = \"user\"\n\n[[project]]\nname = \"{name}\"\nrepo = \"{owner}/{repo}\"\n"
             );
             let result = parse(&toml).unwrap();
-            prop_assert_eq!(&result.project[0].name, &name);
+            prop_assert_eq!(result.project[0].name.as_deref(), Some(name.as_str()));
             prop_assert_eq!(result.project[0].repo.to_string(), format!("{owner}/{repo}"));
         }
     }

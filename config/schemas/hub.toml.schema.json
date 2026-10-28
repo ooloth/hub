@@ -68,12 +68,19 @@
     "project": {
       "type": "object",
       "description": "A codebase and its associated workflows and environments.",
-      "required": ["name", "repo"],
+      "required": ["repo"],
       "additionalProperties": false,
       "properties": {
         "name": {
           "type": "string",
-          "description": "Human-readable label for this project."
+          "description": "What the TUI calls this project. Defaults to the repository's name.",
+          "pattern": "\\S"
+        },
+        "short_name": {
+          "type": "string",
+          "description": "What window and tab names call this project. Defaults to the repository's name as a window shows it. Must differ from every other project's.",
+          "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+          "maxLength": 20
         },
         "repo": {
           "type": "string",

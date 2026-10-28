@@ -1,6 +1,6 @@
 ---
 source: config/src/toml.rs
-assertion_line: 554
+assertion_line: 558
 expression: result
 ---
 HubToml {
@@ -15,7 +15,10 @@ HubToml {
     },
     project: [
         Project {
-            name: "myapp",
+            name: Some(
+                "myapp",
+            ),
+            short_name: None,
             repo: RepoSlug(
                 "org/myapp",
             ),

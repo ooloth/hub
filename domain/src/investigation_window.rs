@@ -13,7 +13,7 @@ const MAX_LEN: usize = 40;
 /// The project budget is set so that real repository names arrive intact:
 /// `michaeluloth-com` and `advent-of-code-2015` both fit, and shortening is
 /// the rare fallback rather than the common case.
-const MAX_PROJECT: usize = 20;
+const MAX_PROJECT: usize = crate::ProjectShortName::MAX_LEN;
 const MAX_KIND: usize = 5;
 const MAX_DISCRIMINATOR: usize = 13;
 
@@ -202,7 +202,7 @@ impl std::fmt::Display for InvestigationWindow {
 /// and `hub.toml`, where spaces, slashes and colons are all legitimate. They
 /// are rewritten rather than rejected, and text that reduces to nothing gets a
 /// placeholder, so no valid input can produce an empty name.
-fn segment(raw: &str) -> String {
+pub(crate) fn segment(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len());
     for ch in raw.chars() {
         if ch.is_ascii_alphanumeric() {
@@ -231,7 +231,7 @@ fn repo_name(repo: &str) -> &str {
 ///
 /// Segments are ASCII by the time they reach here, so slicing by byte index
 /// cannot split a character.
-fn clamp(seg: &str, max: usize) -> String {
+pub(crate) fn clamp(seg: &str, max: usize) -> String {
     assert!(
         max > TRUNCATION_HASH_LEN + 1,
         "segment budget {max} leaves no room for a hash"

@@ -18,7 +18,7 @@ pub struct Config {
     /// Additional named credentials for private integrations.
     pub extra_credentials: HashMap<String, Secret<String>>,
     /// Projects tracked in hub, sourced from `[[project]]` entries in `hub.toml`.
-    pub projects: Vec<toml::Project>,
+    pub projects: crate::Projects,
     /// Optional monitor configuration for polling workflows.
     pub monitor: Option<toml::Monitor>,
     /// The MCP servers investigations on this device get, from `[investigation.mcp_servers]`.
@@ -42,6 +42,7 @@ impl Config {
     #[must_use]
     pub fn github_pr_repos(&self) -> Vec<domain::GithubPrsRepo> {
         self.projects
+            .as_slice()
             .iter()
             .filter_map(|p| {
                 p.workflow.iter().find_map(|w| {
@@ -62,6 +63,7 @@ impl Config {
     #[must_use]
     pub fn github_issue_repos(&self) -> Vec<String> {
         self.projects
+            .as_slice()
             .iter()
             .filter_map(|p| {
                 p.workflow
@@ -76,6 +78,7 @@ impl Config {
     #[must_use]
     pub fn github_ci_repos(&self) -> Vec<(String, String)> {
         self.projects
+            .as_slice()
             .iter()
             .filter_map(|p| {
                 p.workflow.iter().find_map(|w| {
@@ -103,6 +106,7 @@ impl Config {
     #[must_use]
     pub fn loki_envs(&self) -> Vec<domain::LokiEnv> {
         self.projects
+            .as_slice()
             .iter()
             .flat_map(|p| {
                 p.environment.iter().filter_map(|env| {
@@ -152,6 +156,7 @@ impl Config {
     #[must_use]
     pub fn gcp_envs(&self) -> Vec<domain::GcpEnv> {
         self.projects
+            .as_slice()
             .iter()
             .flat_map(|p| {
                 p.environment.iter().filter_map(|env| {
@@ -203,7 +208,8 @@ mod tests {
 
     fn project(name: &str, repo: &str, workflows: Vec<toml::WorkflowConfig>) -> toml::Project {
         toml::Project {
-            name: name.into(),
+            name: Some(name.into()),
+            short_name: None,
             repo: repo.parse().unwrap(),
             workflow: workflows,
             environment: vec![],
@@ -216,7 +222,8 @@ mod tests {
         environments: Vec<toml::Environment>,
     ) -> toml::Project {
         toml::Project {
-            name: name.into(),
+            name: Some(name.into()),
+            short_name: None,
             repo: repo.parse().unwrap(),
             workflow: vec![],
             environment: environments,
@@ -271,7 +278,7 @@ mod tests {
             linear_token: None,
             loki_token: None,
             extra_credentials: HashMap::new(),
-            projects,
+            projects: crate::Projects::resolve(projects).unwrap(),
             monitor: None,
             investigation_mcp_servers: domain::InvestigationMcpServers::default(),
         }
@@ -284,7 +291,7 @@ mod tests {
             linear_token: None,
             loki_token: None,
             extra_credentials: HashMap::new(),
-            projects,
+            projects: crate::Projects::resolve(projects).unwrap(),
             monitor: Some(monitor),
             investigation_mcp_servers: domain::InvestigationMcpServers::default(),
         }

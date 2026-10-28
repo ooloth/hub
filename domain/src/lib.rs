@@ -40,6 +40,8 @@ pub mod pr_id;
 pub mod pr_turn;
 /// Which set of hub's own state a process reads and writes.
 pub mod profile;
+/// The label a project goes by in window and tab names.
+pub mod project_short_name;
 /// Whether a review of my pull request is waiting on me, settled against my last push.
 pub mod review_waiting;
 /// The Rex session a terminal belongs to.
@@ -74,6 +76,7 @@ pub use issue::*;
 pub use loki::*;
 pub use pr::*;
 pub use profile::*;
+pub use project_short_name::*;
 pub use rex_session_id::*;
 pub use session::*;
 pub use untrusted::*;

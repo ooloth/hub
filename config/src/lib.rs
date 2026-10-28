@@ -10,6 +10,9 @@ pub mod investigation;
 /// `hub.toml` as read, before any credential is resolved.
 pub mod config_file;
 
+/// Projects with every label settled, as the rest of hub sees them.
+pub mod project;
+
 /// Resolved, credential-injected configuration used at runtime.
 pub mod resolved;
 
@@ -17,4 +20,5 @@ pub mod resolved;
 pub mod profile;
 
 pub use config_file::ConfigFile;
+pub use project::{Project, Projects};
 pub use resolved::Config;

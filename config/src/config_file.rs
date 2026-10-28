@@ -19,7 +19,7 @@ use crate::toml;
 #[derive(Debug, Clone)]
 pub struct ConfigFile {
     credentials: toml::CredentialsToml,
-    projects: Vec<toml::Project>,
+    projects: crate::Projects,
     monitor: Option<toml::Monitor>,
     investigation_mcp_servers: domain::InvestigationMcpServers,
 }
@@ -28,14 +28,17 @@ impl ConfigFile {
     /// Reads `hub.toml` from the working directory.
     ///
     /// # Errors
-    /// Returns an error if `hub.toml` is missing or malformed, or lacks a required credential.
+    /// Returns an error if `hub.toml` is missing or malformed, lacks a required credential, or
+    /// gives a project a label hub refuses.
     pub fn read() -> Result<Self> {
         let hub_toml = toml::parse_file("hub.toml")?;
         validate_required(&hub_toml.credentials)?;
         let investigation_mcp_servers = hub_toml.investigation.mcp_servers()?;
+        let projects = crate::Projects::resolve(hub_toml.project)
+            .context("hub.toml has a [[project]] hub cannot use")?;
         Ok(Self {
             credentials: hub_toml.credentials,
-            projects: hub_toml.project,
+            projects,
             monitor: hub_toml.monitor,
             investigation_mcp_servers,
         })
@@ -338,7 +341,7 @@ mod tests {
         let _ = creds.extra.insert("media".into(), "key".into());
         let file = ConfigFile {
             credentials: creds,
-            projects: Vec::new(),
+            projects: crate::Projects::default(),
             monitor: None,
             investigation_mcp_servers: domain::InvestigationMcpServers::default(),
         };

@@ -174,6 +174,7 @@ fn spawn_fetch(config: &config::Config, tx: mpsc::Sender<Result<Refresh>>) {
 fn spawn_git_fetch(config: &config::Config) {
     let projects: Vec<(String, domain::RepoSlug)> = config
         .projects
+        .as_slice()
         .iter()
         .map(|p| (p.name.clone(), p.repo.clone()))
         .collect();
@@ -207,6 +208,7 @@ fn request_refresh(
         let git_params = include_git_fetch.then(|| {
             config
                 .projects
+                .as_slice()
                 .iter()
                 .map(|p| (p.name.clone(), p.repo.clone()))
                 .collect::<Vec<(String, domain::RepoSlug)>>()

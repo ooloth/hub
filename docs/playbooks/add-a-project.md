@@ -11,13 +11,30 @@ hub-private) and add a `[[project]]` block:
 
 ```toml
 [[project]]
-name = "my-app"
 repo = "org/my-app"
 ```
 
-`name` is the human-readable label shown in the UI. `repo` is the GitHub
-repository in `owner/name` format — workflows that talk to GitHub read it
-from here.
+`repo` is the GitHub repository in `owner/name` format. Workflows that talk to
+GitHub read it from here, and hub clones it into `~/.hub/repos/<repo name>/`.
+
+Two optional labels default to the repository's name:
+
+- **`name`** is what the TUI calls the project. It can be any text that is not
+  blank.
+- **`short_name`** is what the names of the windows and tabs hub opens call the
+  project, where space is short. It must be lowercase letters, digits and
+  single hyphens, at most 20 characters, so it appears exactly as written. Left
+  out, a long repository name is shortened and ends in a short hash.
+
+```toml
+[[project]]
+name = "Client Operations Site"
+repo = "org/client-operations-site"
+short_name = "clinops"
+```
+
+No two projects can share a short name, including one that comes from the
+default. hub refuses to start if they do, and the error names both projects.
 
 ## 2. Add codebase-level workflows
 
