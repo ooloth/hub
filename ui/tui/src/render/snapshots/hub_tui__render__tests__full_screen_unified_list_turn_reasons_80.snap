@@ -4,9 +4,10 @@ expression: screen_text(&buf)
 ---
 ╭ All ─────────────────────────────────────────────────────────────────────────╮
 │PR · review requested · Notify when a pull request is my tur…  ooloth/hub · 3h│
-│PR · The status bar shows when signals were last updated, ho…  ooloth/hub · 3h│
+│PR · no reviewer · The status bar shows when signals were la…  ooloth/hub · 3h│
 │PR · ready to merge · Investigation worktrees are removed ho…  ooloth/hub · 3h│
-│PR · reviewed · A reply in a review thread I took part in ma…  ooloth/hub · 3h│
+│PR · feedback · A reply in a review thread I took part in ma…  ooloth/hub · 3h│
+│PR · draft · My pull request is my turn when someone leaves …  ooloth/hub · 3h│
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- 1/4 · [↩] details · [p] prs · [O] issues · [e] errors · [/] search · [i] inves
+ 1/5 · [↩] details · [p] prs · [O] issues · [e] errors · [/] search · [i] inves

@@ -1,6 +1,8 @@
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
 
+use crate::pr_activity::{Opinion, PrActivity};
+
 /// A validated `owner/repo` identifier for a GitHub repository.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -26,10 +28,8 @@ impl std::fmt::Display for RepoSlug {
 /// How a pull request relates to the current user — used for filtering and urgency.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum PrKind {
-    /// Authored by the current user and ready for review.
+    /// Authored by the current user, whether or not it is a draft.
     Mine,
-    /// Authored by the current user but still a draft.
-    MyDraft,
     /// Opened by someone else and awaiting the current user's review.
     ToReview,
     /// Not directly involving the current user.
@@ -43,10 +43,12 @@ pub enum ReviewDecision {
     Approved,
     /// One or more reviewers requested changes.
     ChangesRequested,
+    /// Branch protection requires more approvals than it has.
+    ReviewRequired,
 }
 
-/// The review state of a pull request, resolved from `approval_count`,
-/// `changes_requested_count` and `review_decision` into one consistent value.
+/// The review state of a pull request, resolved from each reviewer's latest verdict and
+/// `review_decision` into one consistent value.
 ///
 /// Counts are trusted first since `review_decision` can be `null` even when
 /// reviews exist (e.g. no branch-protection policy requires one).
@@ -70,17 +72,18 @@ impl PullRequest {
     /// Resolves this PR's review state, preferring counted reviews over the
     /// aggregate `review_decision`, which can be `null` even when reviews exist.
     #[must_use]
-    pub const fn review_status(&self) -> ReviewStatus {
-        if self.changes_requested_count > 0 {
+    pub fn review_status(&self) -> ReviewStatus {
+        if self.activity.count(Opinion::ChangesRequested) > 0 {
             return ReviewStatus::ChangesRequested;
         }
-        if self.approval_count > 0 {
-            return ReviewStatus::Approved(Some(self.approval_count));
+        let approvals = self.activity.count(Opinion::Approved);
+        if approvals > 0 {
+            return ReviewStatus::Approved(Some(approvals));
         }
         match self.review_decision {
             Some(ReviewDecision::ChangesRequested) => ReviewStatus::ChangesRequested,
             Some(ReviewDecision::Approved) => ReviewStatus::Approved(None),
-            None => ReviewStatus::NoReviews,
+            Some(ReviewDecision::ReviewRequired) | None => ReviewStatus::NoReviews,
         }
     }
 }
@@ -213,16 +216,13 @@ pub struct PullRequest {
     pub urgency: crate::urgency::Urgency,
     /// How this PR relates to the current user.
     pub kind: PrKind,
+    /// Whether it is still a draft.
+    #[serde(default)]
+    pub draft: bool,
     /// GitHub username of the PR author.
     pub author: String,
     /// Aggregate review decision, if any reviewers have responded.
     pub review_decision: Option<ReviewDecision>,
-    /// Number of approvals the PR has received.
-    #[serde(default)]
-    pub approval_count: u32,
-    /// Number of changes-requested reviews the PR has received.
-    #[serde(default)]
-    pub changes_requested_count: u32,
     /// Number of comments on the PR: those in review threads and top-level ones together.
     #[serde(default)]
     pub comment_count: u32,
@@ -251,9 +251,10 @@ pub struct PullRequest {
     /// Whether the PR can be merged right now, as far as GitHub has worked it out.
     #[serde(default)]
     pub merge_readiness: MergeReadiness,
-    /// Whether a review waits on me. Only read for my own pull requests; `NoReview` otherwise.
-    #[serde(default)]
-    pub review_waiting: crate::review_waiting::ReviewWaiting,
+    /// Who is asked to review it, who spoke last in its open threads, and each reviewer's
+    /// latest verdict, as one refresh read them. Required, so a pull request whose activity was
+    /// never read cannot be mistaken for one with none.
+    pub activity: PrActivity,
 }
 
 #[cfg(test)]
@@ -304,9 +305,8 @@ mod tests {
             urgency: crate::urgency::Urgency::Medium,
             kind: PrKind::ToReview,
             author: "alice".to_string(),
+            draft: false,
             review_decision,
-            approval_count,
-            changes_requested_count,
             comment_count: 0,
             head_branch: "feat/thing".to_string(),
             base_branch: "main".to_string(),
@@ -317,8 +317,24 @@ mod tests {
             review_threads: vec![],
             pr_comments: vec![],
             merge_readiness: MergeReadiness::NotYetKnown,
-            review_waiting: crate::review_waiting::ReviewWaiting::NoReview,
+            activity: PrActivity {
+                verdicts: verdicts(Opinion::Approved, approval_count)
+                    .chain(verdicts(Opinion::ChangesRequested, changes_requested_count))
+                    .collect(),
+                ..PrActivity::default()
+            },
         }
+    }
+
+    fn verdicts(
+        opinion: Opinion,
+        count: u32,
+    ) -> impl Iterator<Item = crate::pr_activity::LatestVerdict> {
+        (0..count).map(move |n| crate::pr_activity::LatestVerdict {
+            by: crate::pr_activity::Participant::Person(format!("{opinion:?}-{n}")),
+            opinion,
+            at: chrono::DateTime::UNIX_EPOCH,
+        })
     }
 
     #[test]
@@ -359,6 +375,12 @@ mod tests {
     fn review_status_trusts_changes_requested_decision_when_counts_are_zero() {
         let pr = pr_with_review_state(Some(ReviewDecision::ChangesRequested), 0, 0);
         assert_eq!(pr.review_status(), ReviewStatus::ChangesRequested);
+    }
+
+    #[test]
+    fn review_status_reports_counted_approvals_when_branch_protection_wants_more() {
+        let pr = pr_with_review_state(Some(ReviewDecision::ReviewRequired), 1, 0);
+        assert_eq!(pr.review_status(), ReviewStatus::Approved(Some(1)));
     }
 
     #[test]
@@ -406,7 +428,7 @@ mod tests {
             None => String::new(),
         };
         let json = format!(
-            r#"{{"number":1,"title":"t","repo":"o/r","url":"u","age":0,"urgency":"Low","kind":"Mine","author":"a","head_branch":"h","base_branch":"b"{blocker_field}}}"#
+            r#"{{"number":1,"title":"t","repo":"o/r","url":"u","age":0,"urgency":"Low","kind":"Mine","author":"a","head_branch":"h","base_branch":"b","activity":{{"requests":[],"open_threads":[],"verdicts":[],"bodies":[],"my_latest":null}}{blocker_field}}}"#
         );
         let pr: PullRequest = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(pr.merge_readiness, expected);

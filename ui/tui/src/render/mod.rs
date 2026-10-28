@@ -452,10 +452,9 @@ mod tests {
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::Low,
             kind: domain::PrKind::ToReview,
+            draft: false,
             author: "alice".to_string(),
             review_decision: None,
-            approval_count: 0,
-            changes_requested_count: 0,
             comment_count: 0,
             head_branch: "feat/fix".to_string(),
             base_branch: "main".to_string(),
@@ -466,7 +465,7 @@ mod tests {
             review_threads: vec![],
             pr_comments: vec![],
             merge_readiness: domain::MergeReadiness::NotYetKnown,
-            review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
+            activity: domain::pr_activity::PrActivity::default(),
         })
     }
 
@@ -1034,13 +1033,12 @@ mod tests {
         StatusItem::Pr(domain::PullRequest {
             number,
             kind,
-            approval_count: approvals,
             title: title.to_string(),
             urgency: domain::Urgency::High,
             repo: domain::RepoSlug::new("ooloth", "hub"),
             age: chrono::Duration::hours(3),
             merge_readiness: domain::MergeReadiness::Ready,
-            review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
+            activity: crate::test_support::verdicts(approvals, 0),
             ..base
         })
     }
@@ -1071,30 +1069,39 @@ mod tests {
                 1,
                 "A reply in a review thread I took part in makes it my turn",
             ))),
+            DisplayItem::Single(draft(turn_pr(
+                373,
+                domain::PrKind::Mine,
+                0,
+                "My pull request is my turn when someone leaves feedback",
+            ))),
         ]
     }
 
-    /// `item` with a review from Ada waiting on me.
-    fn reviewed(item: StatusItem) -> StatusItem {
-        use domain::review_waiting::{
-            Feedback, Review, ReviewWaiting, Reviewer, ReviewerKind, Verdict,
-        };
+    /// `item`, still a draft.
+    fn draft(item: StatusItem) -> StatusItem {
         let StatusItem::Pr(pr) = item else {
             unreachable!()
         };
-        let feedback = Feedback::from_review(&Review {
-            by: Reviewer::Other {
-                login: "ada".to_string(),
-                kind: ReviewerKind::Person,
-            },
-            verdict: Verdict::ChangesRequested,
-            inline_comments: 1,
-            has_body: true,
-            submitted: chrono::DateTime::UNIX_EPOCH,
-        })
+        StatusItem::Pr(domain::PullRequest { draft: true, ..pr })
+    }
+
+    /// `item` with a thread whose newest comment is Ada's, waiting on me.
+    fn reviewed(item: StatusItem) -> StatusItem {
+        use domain::pr_activity::{OpenThread, Participant};
+        let StatusItem::Pr(pr) = item else {
+            unreachable!()
+        };
+        let thread = OpenThread::from_comments(&[(
+            Participant::Person("ada".to_string()),
+            chrono::DateTime::UNIX_EPOCH,
+        )])
         .unwrap();
         StatusItem::Pr(domain::PullRequest {
-            review_waiting: ReviewWaiting::Waiting(feedback),
+            activity: domain::pr_activity::PrActivity {
+                open_threads: vec![thread],
+                ..pr.activity
+            },
             ..pr
         })
     }
@@ -1104,7 +1111,7 @@ mod tests {
     #[case::wide(200, "full_screen_unified_list_turn_reasons_200")]
     fn full_screen_unified_list_turn_reasons(#[case] width: u16, #[case] snapshot: &str) {
         let mut app = unified_list_app(turn_rows());
-        let buf = draw(&mut app, width, 8);
+        let buf = draw(&mut app, width, 9);
         insta::assert_snapshot!(snapshot, screen_text(&buf));
     }
 
@@ -1240,10 +1247,9 @@ mod tests {
             age: chrono::Duration::days(1),
             urgency: domain::Urgency::Medium,
             kind: domain::PrKind::Mine,
+            draft: false,
             author: "ooloth".to_string(),
             review_decision: None,
-            approval_count: 0,
-            changes_requested_count: 0,
             comment_count: 2,
             head_branch: "feat/pr-detail".to_string(),
             base_branch: "main".to_string(),
@@ -1258,7 +1264,7 @@ mod tests {
             review_threads: vec![],
             pr_comments: vec![],
             merge_readiness: domain::MergeReadiness::NotYetKnown,
-            review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
+            activity: domain::pr_activity::PrActivity::default(),
         }
     }
 

@@ -1,7 +1,7 @@
 //! Which pull requests a refresh found waiting on me.
 use domain::turns_seen::{TurnCoverage, TurnsSeen};
 
-use crate::status::{Refresh, StatusItem, MY_OPEN_PRS, PRS_AWAITING_REVIEW};
+use crate::status::{Refresh, StatusItem, MY_DRAFT_PRS, MY_OPEN_PRS, PRS_AWAITING_REVIEW};
 
 /// The pull requests `refresh` found waiting on me.
 ///
@@ -15,7 +15,10 @@ pub fn turns_seen(refresh: &Refresh) -> TurnsSeen {
     });
     let answered = refresh.sources.answered();
     let heard_from = |source: &str| answered.iter().any(|name| name == source);
-    let coverage = if heard_from(MY_OPEN_PRS) && heard_from(PRS_AWAITING_REVIEW) {
+    let coverage = if [MY_OPEN_PRS, MY_DRAFT_PRS, PRS_AWAITING_REVIEW]
+        .into_iter()
+        .all(heard_from)
+    {
         TurnCoverage::Complete
     } else {
         TurnCoverage::Incomplete
@@ -43,10 +46,9 @@ mod tests {
             age: chrono::Duration::zero(),
             urgency: Urgency::High,
             kind,
+            draft: false,
             author: "someone".to_string(),
             review_decision: None,
-            approval_count: 1,
-            changes_requested_count: 0,
             comment_count: 0,
             head_branch: "h".to_string(),
             base_branch: "main".to_string(),
@@ -57,7 +59,7 @@ mod tests {
             review_threads: vec![],
             pr_comments: vec![],
             merge_readiness: MergeReadiness::Ready,
-            review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
+            activity: domain::pr_activity::PrActivity::default(),
         }
     }
 
@@ -95,12 +97,13 @@ mod tests {
     }
 
     #[rstest]
-    #[case::both_answered(&[MY_OPEN_PRS, PRS_AWAITING_REVIEW, "linear issues"], &[], TurnCoverage::Complete)]
-    #[case::other_sources_failing_do_not_matter(&[MY_OPEN_PRS, PRS_AWAITING_REVIEW], &["linear issues"], TurnCoverage::Complete)]
-    #[case::my_prs_failed(&[PRS_AWAITING_REVIEW], &[MY_OPEN_PRS], TurnCoverage::Incomplete)]
-    #[case::review_requests_failed(&[MY_OPEN_PRS], &[PRS_AWAITING_REVIEW], TurnCoverage::Incomplete)]
-    #[case::nothing_answered(&[], &[MY_OPEN_PRS, PRS_AWAITING_REVIEW], TurnCoverage::Incomplete)]
-    fn coverage_is_complete_only_when_both_pull_request_sources_answered(
+    #[case::all_answered(&[MY_OPEN_PRS, MY_DRAFT_PRS, PRS_AWAITING_REVIEW, "linear issues"], &[], TurnCoverage::Complete)]
+    #[case::other_sources_failing_do_not_matter(&[MY_OPEN_PRS, MY_DRAFT_PRS, PRS_AWAITING_REVIEW], &["linear issues"], TurnCoverage::Complete)]
+    #[case::my_prs_failed(&[MY_DRAFT_PRS, PRS_AWAITING_REVIEW], &[MY_OPEN_PRS], TurnCoverage::Incomplete)]
+    #[case::my_drafts_failed(&[MY_OPEN_PRS, PRS_AWAITING_REVIEW], &[MY_DRAFT_PRS], TurnCoverage::Incomplete)]
+    #[case::review_requests_failed(&[MY_OPEN_PRS, MY_DRAFT_PRS], &[PRS_AWAITING_REVIEW], TurnCoverage::Incomplete)]
+    #[case::nothing_answered(&[], &[MY_OPEN_PRS, MY_DRAFT_PRS, PRS_AWAITING_REVIEW], TurnCoverage::Incomplete)]
+    fn coverage_is_complete_only_when_every_source_of_turns_answered(
         #[case] answered: &[&str],
         #[case] failed: &[&str],
         #[case] expected: TurnCoverage,
