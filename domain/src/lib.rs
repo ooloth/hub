@@ -62,6 +62,8 @@ pub mod turns_seen;
 pub mod untrusted;
 /// Urgency ranking used across all signal types.
 pub mod urgency;
+/// The segments a window name is built from, and the hashes that keep them apart.
+mod window_segment;
 
 // At the crate root because hub-private's workflows name it as `domain::duration_secs` in their
 // `#[serde(with = ...)]` attributes. This repo's own types use `crate::serde_helpers::duration_secs`.

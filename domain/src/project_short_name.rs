@@ -1,6 +1,6 @@
 //! The label a project goes by where space is short: window and tab names.
 
-use crate::investigation_window::{clamp, segment};
+use crate::window_segment::{clamp, segment};
 use crate::RepoSlug;
 
 /// What a project is called in the windows and tabs hub opens for it.
