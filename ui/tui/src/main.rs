@@ -456,6 +456,24 @@ fn signal_repo(repo: &str) -> domain::RepoSlug {
         .unwrap_or_else(|err| unreachable!("signal carried a repo that is not a slug: {err}"))
 }
 
+/// The project tracking `repo`, or `None` with the reason it has none shown to the user.
+///
+/// Every launch that works in a clone goes through this, so a repository no
+/// `[[project]]` tracks is refused instead of reaching another's clone.
+fn tracked_project(
+    app: &mut App,
+    config: &config::Config,
+    repo: &domain::RepoSlug,
+) -> Option<config::Project> {
+    match config.projects.tracked(repo) {
+        Ok(project) => Some(project.clone()),
+        Err(err) => {
+            app.ui.flash = Some(err.to_string());
+            None
+        }
+    }
+}
+
 async fn handle_launch_ci(
     app: &mut App,
     config: &config::Config,
@@ -463,15 +481,14 @@ async fn handle_launch_ci(
     workflow: String,
     run_url: String,
 ) {
+    let Some(project) = tracked_project(app, config, &signal_repo(&repo)) else {
+        return;
+    };
+    let window = domain::InvestigationWindow::ci(&project.short_name, &workflow);
     if let Err(err) = investigations::launch(
         investigations::ci::config(&repo, &run_url),
-        &domain::InvestigationWindow::ci(
-            &config.projects.short_name_for(&signal_repo(&repo)),
-            &workflow,
-        ),
-        investigations::WorktreeSpec::EphemeralFresh {
-            repo: signal_repo(&repo),
-        },
+        &window,
+        investigations::WorktreeSpec::EphemeralFresh { project },
         config,
     )
     .await
@@ -481,15 +498,14 @@ async fn handle_launch_ci(
 }
 
 async fn handle_launch_issue(app: &mut App, config: &config::Config, repo: String, number: u64) {
+    let Some(project) = tracked_project(app, config, &signal_repo(&repo)) else {
+        return;
+    };
+    let window = domain::InvestigationWindow::issue(&project.short_name, number);
     if let Err(err) = investigations::launch(
         investigations::issue::config(&repo, number),
-        &domain::InvestigationWindow::issue(
-            &config.projects.short_name_for(&signal_repo(&repo)),
-            number,
-        ),
-        investigations::WorktreeSpec::EphemeralFresh {
-            repo: signal_repo(&repo),
-        },
+        &window,
+        investigations::WorktreeSpec::EphemeralFresh { project },
         config,
     )
     .await
@@ -506,14 +522,15 @@ async fn handle_launch_pr(
     author: PrAuthor,
     head_branch: String,
 ) {
+    let Some(project) = tracked_project(app, config, &signal_repo(&repo)) else {
+        return;
+    };
+    let window = domain::InvestigationWindow::pr(&project.short_name, number);
     if let Err(err) = investigations::launch(
         investigations::pr::ask_config(number, &repo, author),
-        &domain::InvestigationWindow::pr(
-            &config.projects.short_name_for(&signal_repo(&repo)),
-            number,
-        ),
+        &window,
         investigations::WorktreeSpec::PullRequest {
-            repo: signal_repo(&repo),
+            project,
             number,
             head_branch,
         },
@@ -531,14 +548,15 @@ async fn handle_review_pr(
     target: &PrReviewTarget,
     review: PrReview,
 ) {
+    let Some(project) = tracked_project(app, config, &signal_repo(&target.repo)) else {
+        return;
+    };
+    let window = domain::InvestigationWindow::pr(&project.short_name, target.number);
     if let Err(err) = investigations::launch(
         investigations::pr::review_config(target, review),
-        &domain::InvestigationWindow::pr(
-            &config.projects.short_name_for(&signal_repo(&target.repo)),
-            target.number,
-        ),
+        &window,
         investigations::WorktreeSpec::PullRequest {
-            repo: signal_repo(&target.repo),
+            project,
             number: target.number,
             head_branch: target.head_branch.clone(),
         },
@@ -564,6 +582,9 @@ async fn handle_launch_gcp(
     lookback: String,
     gcp_project: String,
 ) {
+    let Some(tracked) = tracked_project(app, config, &repo) else {
+        return;
+    };
     if let Err(err) = investigations::launch(
         investigations::gcp::config(
             &project,
@@ -576,12 +597,12 @@ async fn handle_launch_gcp(
             &gcp_project,
         ),
         &domain::InvestigationWindow::alert(
-            &config.projects.short_name_for(&repo),
+            &tracked.short_name,
             domain::AlertSource::Gcp,
             &env,
             message.expose(),
         ),
-        investigations::WorktreeSpec::Ephemeral { repo },
+        investigations::WorktreeSpec::Ephemeral { project: tracked },
         config,
     )
     .await
@@ -603,15 +624,18 @@ async fn handle_launch_loki(
     url: String,
     lookback: String,
 ) {
+    let Some(tracked) = tracked_project(app, config, &repo) else {
+        return;
+    };
     if let Err(err) = investigations::launch(
         investigations::loki::config(&project, &env, &title, &message, &line, &url, &lookback),
         &domain::InvestigationWindow::alert(
-            &config.projects.short_name_for(&repo),
+            &tracked.short_name,
             domain::AlertSource::Loki,
             &env,
             message.expose(),
         ),
-        investigations::WorktreeSpec::Ephemeral { repo },
+        investigations::WorktreeSpec::Ephemeral { project: tracked },
         config,
     )
     .await
@@ -627,9 +651,10 @@ async fn handle_open_in_octo(
     number: u64,
     head_branch: String,
 ) {
-    let repo = signal_repo(&repo);
-    let project = config.projects.short_name_for(&repo);
-    if let Err(err) = investigations::open_in_octo(&repo, &project, number, &head_branch).await {
+    let Some(project) = tracked_project(app, config, &signal_repo(&repo)) else {
+        return;
+    };
+    if let Err(err) = investigations::open_in_octo(&project, number, &head_branch).await {
         app.ui.flash = Some(err.to_string());
     }
 }
@@ -641,9 +666,10 @@ async fn handle_open_in_lazygit(
     number: u64,
     head_branch: String,
 ) {
-    let repo = signal_repo(&repo);
-    let project = config.projects.short_name_for(&repo);
-    if let Err(err) = investigations::open_in_lazygit(&repo, &project, number, &head_branch).await {
+    let Some(project) = tracked_project(app, config, &signal_repo(&repo)) else {
+        return;
+    };
+    if let Err(err) = investigations::open_in_lazygit(&project, number, &head_branch).await {
         app.ui.flash = Some(err.to_string());
     }
 }

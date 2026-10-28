@@ -85,18 +85,32 @@ impl Projects {
         Ok(Self(projects))
     }
 
+    /// The project tracking `repo`, which is what a launch needs before it can
+    /// have a clone to work in.
+    ///
+    /// # Errors
+    /// Returns an error naming `repo` if no `[[project]]` tracks it. A
+    /// repository sharing a tracked one's name is not tracked by it.
+    pub fn tracked(&self, repo: &RepoSlug) -> Result<&Project> {
+        self.0
+            .iter()
+            .find(|project| &project.repo == repo)
+            .ok_or_else(|| {
+                anyhow!(
+                    "{repo} is not a [[project]] in hub.toml, so hub has no clone of it to work in"
+                )
+            })
+    }
+
     /// What windows for `repo` are called: its project's short name, or, for
     /// a repository no project tracks, the name a project tracking it would
     /// get by default.
     #[must_use]
     pub fn short_name_for(&self, repo: &RepoSlug) -> ProjectShortName {
-        self.0
-            .iter()
-            .find(|project| &project.repo == repo)
-            .map_or_else(
-                || ProjectShortName::from_repo(repo),
-                |project| project.short_name.clone(),
-            )
+        self.tracked(repo).map_or_else(
+            |_| ProjectShortName::from_repo(repo),
+            |project| project.short_name.clone(),
+        )
     }
 
     /// The projects, in the order `hub.toml` lists them.
@@ -187,6 +201,31 @@ mod tests {
 
         assert!(error.contains(&a), "{error}");
         assert!(error.contains(&b), "{error}");
+    }
+
+    #[test]
+    fn a_tracked_repo_has_its_project() {
+        let projects = Projects::resolve(vec![raw("ooloth/hub", None, Some("h"))]).unwrap();
+
+        let project = projects.tracked(&"ooloth/hub".parse().unwrap()).unwrap();
+
+        assert_eq!(project.short_name.as_str(), "h");
+    }
+
+    /// A review request can come from a repository that shares a tracked one's
+    /// name, and launching it in the tracked clone would investigate the wrong
+    /// repository's pull request.
+    #[test]
+    fn a_repo_sharing_a_tracked_repos_name_is_not_tracked() {
+        let projects = Projects::resolve(vec![raw("ooloth/hub", None, Some("h"))]).unwrap();
+
+        let error = projects
+            .tracked(&"someone/hub".parse().unwrap())
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("someone/hub"), "{error}");
+        assert!(error.contains("[[project]]"), "{error}");
     }
 
     #[test]

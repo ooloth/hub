@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Result};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use domain::{InvestigationPrompt, RepoSlug, UntrustedText};
+use domain::{InvestigationPrompt, UntrustedText};
 
 use crate::terminal::{claim, WindowClaim};
 
@@ -68,17 +68,17 @@ pub(crate) enum WorktreeSpec {
     /// Fetch latest refs, then create a fresh detached-HEAD worktree from trunk.
     /// Cleaned up when the session exits. Use for investigations that need current
     /// trunk state but must not be disrupted by the background refresh (CI, Issue).
-    EphemeralFresh { repo: RepoSlug },
+    EphemeralFresh { project: config::Project },
     /// Create or reuse a persistent PR worktree.
     PullRequest {
-        repo: RepoSlug,
+        project: config::Project,
         number: u64,
         head_branch: String,
     },
     /// Create a fresh detached-HEAD worktree from the most recently fetched trunk
     /// state, cleaned up when the session exits. Use for read-only log/infra
     /// investigations where a fresh fetch is not critical (GCP, Loki).
-    Ephemeral { repo: RepoSlug },
+    Ephemeral { project: config::Project },
     /// Use the process's current directory (`MediaBlocked`, last-resort fallback).
     #[cfg(feature = "private")]
     CurrentDir,
@@ -135,20 +135,19 @@ pub(crate) async fn launch(
 }
 
 pub(crate) async fn open_in_lazygit(
-    repo: &RepoSlug,
-    project: &domain::ProjectShortName,
+    project: &config::Project,
     number: u64,
     head_branch: &str,
 ) -> Result<()> {
     let vacant = match claim(
-        &domain::InvestigationWindow::lazygit(project, number),
+        &domain::InvestigationWindow::lazygit(&project.short_name, number),
         "opening lazygit",
     )? {
         WindowClaim::Reused => return Ok(()),
         WindowClaim::Vacant(vacant) => vacant,
     };
 
-    let bare = synced_clone(repo)?;
+    let bare = synced_clone(project)?;
     let cwd = workflows::fetch::ensure_pr_worktree(&bare, number, head_branch)
         .await
         .context("Failed to create PR worktree")?;
@@ -157,20 +156,19 @@ pub(crate) async fn open_in_lazygit(
 }
 
 pub(crate) async fn open_in_octo(
-    repo: &RepoSlug,
-    project: &domain::ProjectShortName,
+    project: &config::Project,
     number: u64,
     head_branch: &str,
 ) -> Result<()> {
     let vacant = match claim(
-        &domain::InvestigationWindow::octo(project, number),
+        &domain::InvestigationWindow::octo(&project.short_name, number),
         "opening in neovim",
     )? {
         WindowClaim::Reused => return Ok(()),
         WindowClaim::Vacant(vacant) => vacant,
     };
 
-    let bare = synced_clone(repo)?;
+    let bare = synced_clone(project)?;
     let cwd = workflows::fetch::ensure_pr_worktree(&bare, number, head_branch)
         .await
         .context("Failed to create PR worktree")?;
@@ -184,8 +182,8 @@ pub(crate) async fn open_in_octo(
 
 async fn resolve_worktree(spec: WorktreeSpec) -> Result<(PathBuf, Option<String>)> {
     match spec {
-        WorktreeSpec::EphemeralFresh { repo } => {
-            let bare = synced_clone(&repo)?;
+        WorktreeSpec::EphemeralFresh { project } => {
+            let bare = synced_clone(&project)?;
             let worktree = workflows::fetch::fetch_and_create_investigation_worktree(&bare)
                 .await
                 .context("Failed to create investigation worktree")?;
@@ -197,18 +195,18 @@ async fn resolve_worktree(spec: WorktreeSpec) -> Result<(PathBuf, Option<String>
             Ok((worktree, Some(cleanup)))
         }
         WorktreeSpec::PullRequest {
-            repo,
+            project,
             number,
             head_branch,
         } => {
-            let bare = synced_clone(&repo)?;
+            let bare = synced_clone(&project)?;
             let cwd = workflows::fetch::ensure_pr_worktree(&bare, number, &head_branch)
                 .await
                 .context("Failed to create PR worktree")?;
             Ok((cwd, None))
         }
-        WorktreeSpec::Ephemeral { repo } => {
-            let bare = synced_clone(&repo)?;
+        WorktreeSpec::Ephemeral { project } => {
+            let bare = synced_clone(&project)?;
             let worktree = workflows::fetch::create_investigation_worktree(&bare)
                 .await
                 .context("Failed to create investigation worktree")?;
@@ -227,12 +225,12 @@ async fn resolve_worktree(spec: WorktreeSpec) -> Result<(PathBuf, Option<String>
     }
 }
 
-/// The bare clone of `repo`, which must already exist.
+/// The bare clone of a tracked project, which must already have been fetched.
 ///
-/// The error names the repo and the path because a missing clone has two
-/// causes the user tells apart differently: a tracked repo not fetched yet,
-/// or a repo that is not a `[[project]]` in `hub.toml` at all.
-fn synced_clone(repo: &RepoSlug) -> Result<PathBuf> {
+/// Taking the project rather than a repo is what keeps a launch for a
+/// repository hub does not track out of a tracked one's clone of the same name.
+fn synced_clone(project: &config::Project) -> Result<PathBuf> {
+    let repo = &project.repo;
     let bare = workflows::fetch::bare_clone(repo);
     if !bare.exists() {
         bail!(
@@ -246,14 +244,22 @@ fn synced_clone(repo: &RepoSlug) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use domain::RepoSlug;
 
-    /// A repo with no clone can be one hub does not track, so the error has to
-    /// say which repo and where it looked rather than only that it failed.
+    /// A tracked repo that has not been fetched yet has no clone, so the error
+    /// has to say which repo and where it looked rather than only that it failed.
     #[test]
-    fn a_repo_with_no_clone_is_an_error_naming_the_repo_and_the_path() {
+    fn a_tracked_repo_with_no_clone_is_an_error_naming_the_repo_and_the_path() {
         let repo: RepoSlug = "hub-tests/no-such-clone".parse().unwrap();
+        let project = config::Project {
+            name: "no-such-clone".to_string(),
+            short_name: domain::ProjectShortName::from_repo(&repo),
+            repo: repo.clone(),
+            workflow: vec![],
+            environment: vec![],
+        };
 
-        let error = synced_clone(&repo).unwrap_err().to_string();
+        let error = synced_clone(&project).unwrap_err().to_string();
 
         assert!(error.contains("hub-tests/no-such-clone"), "{error}");
         assert!(
