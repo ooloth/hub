@@ -121,6 +121,7 @@ fn loki() -> StatusItem {
     StatusItem::Loki(domain::LokiEntry {
         title: "MemoryError".to_string(),
         project: "project-x".to_string(),
+        repo: domain::RepoSlug::new("owner", "project-x"),
         env: "prod".to_string(),
         message: domain::UntrustedText::new("OOM killed"),
         line: domain::UntrustedText::new("{}"),
@@ -135,6 +136,7 @@ fn gcp() -> StatusItem {
     StatusItem::Gcp(domain::GcpEntry {
         title: "errors".to_string(),
         project: "web-app".to_string(),
+        repo: domain::RepoSlug::new("owner", "web-app"),
         env: "neuro".to_string(),
         message: domain::UntrustedText::new("something broke"),
         line: domain::UntrustedText::new("{}"),

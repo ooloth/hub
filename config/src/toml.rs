@@ -34,8 +34,8 @@ pub struct CredentialsToml {
 pub struct Project {
     /// Human-readable project name shown in the TUI.
     pub name: String,
-    /// GitHub repo slug in `owner/repo` form.
-    pub repo: String,
+    /// GitHub repo slug in `owner/repo` form, validated when the file is read.
+    pub repo: domain::RepoSlug,
     /// Workflows enabled at the repo level (e.g. PRs, CI).
     #[serde(default)]
     pub workflow: Vec<WorkflowConfig>,
@@ -454,6 +454,24 @@ mod tests {
         assert!(err.to_string().contains("failed to parse hub.toml"));
     }
 
+    /// A malformed slug fails at startup, naming itself, rather than later
+    /// when fetch or a launch first needs it.
+    #[test]
+    fn a_malformed_repo_fails_to_load_naming_it() {
+        let err = parse(&with_credentials(
+            r#"
+            [[project]]
+            name = "hub"
+            repo = "hub"
+        "#,
+        ))
+        .unwrap_err();
+        assert!(
+            format!("{err:#}").contains(r#"invalid repo slug "hub""#),
+            "{err:#}"
+        );
+    }
+
     #[test]
     fn missing_file_returns_error() {
         let err = parse_file("/nonexistent/path/hub.toml").unwrap_err();
@@ -472,7 +490,7 @@ mod tests {
         .unwrap();
         assert_eq!(result.project.len(), 1);
         assert_eq!(result.project[0].name, "hub");
-        assert_eq!(result.project[0].repo, "ooloth/hub");
+        assert_eq!(result.project[0].repo.to_string(), "ooloth/hub");
         assert_eq!(result.project[0].workflow, vec![]);
         assert_eq!(result.project[0].environment, vec![]);
     }
@@ -548,7 +566,7 @@ mod tests {
             );
             let result = parse(&toml).unwrap();
             prop_assert_eq!(&result.project[0].name, &name);
-            prop_assert_eq!(&result.project[0].repo, &format!("{owner}/{repo}"));
+            prop_assert_eq!(result.project[0].repo.to_string(), format!("{owner}/{repo}"));
         }
     }
 }

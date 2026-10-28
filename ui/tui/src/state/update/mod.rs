@@ -570,6 +570,7 @@ mod tests {
         StatusItem::Gcp(domain::GcpEntry {
             title: "errors".to_string(),
             project: "web-app".to_string(),
+            repo: domain::RepoSlug::new("owner", "web-app"),
             env: "neuro".to_string(),
             message: domain::UntrustedText::new("something broke"),
             line: domain::UntrustedText::new(r#"{"message":"something broke"}"#),
@@ -674,6 +675,7 @@ mod tests {
         let loki = StatusItem::Loki(domain::LokiEntry {
             title: "Error spike".to_string(),
             project: "hub".to_string(),
+            repo: domain::RepoSlug::new("owner", "hub"),
             env: "prod".to_string(),
             message: domain::UntrustedText::new("timeout"),
             line: domain::UntrustedText::new("{}"),

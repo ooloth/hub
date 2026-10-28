@@ -2,17 +2,22 @@ use chrono::Duration;
 use serde::{Deserialize, Serialize};
 
 /// A validated `owner/repo` identifier for a GitHub repository.
+///
+/// Deserializing validates exactly as parsing does, so a slug read from
+/// `hub.toml` or the cache is as trustworthy as one parsed in code.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
+#[serde(try_from = "String", into = "String")]
 pub struct RepoSlug(String);
 
 impl RepoSlug {
     /// # Panics
-    /// Panics if `owner` or `repo` is empty.
+    /// Panics if `owner` or `repo` is empty, or if `repo` is `.` or `..`,
+    /// which parsing also refuses.
     #[must_use]
     pub fn new(owner: &str, repo: &str) -> Self {
         assert!(!owner.is_empty(), "owner must not be empty");
         assert!(!repo.is_empty(), "repo must not be empty");
+        assert!(repo != "." && repo != "..", "repo must not be {repo:?}");
         Self(format!("{owner}/{repo}"))
     }
 }
@@ -141,13 +146,35 @@ impl std::str::FromStr for RepoSlug {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.split_once('/') {
-            Some((owner, repo)) if !owner.is_empty() && !repo.is_empty() && !repo.contains('/') => {
+            // `.` and `..` are names GitHub refuses, and a clone named after
+            // either would land outside `~/.hub/repos`.
+            Some((owner, repo))
+                if !owner.is_empty()
+                    && !repo.is_empty()
+                    && !repo.contains('/')
+                    && repo != "."
+                    && repo != ".." =>
+            {
                 Ok(Self(s.to_string()))
             }
             _ => Err(format!(
-                "invalid repo slug {s:?}: expected \"owner/repo\" with non-empty parts and no extra slashes"
+                "invalid repo slug {s:?}: expected \"owner/repo\" with non-empty parts, no extra slashes, and a repo name other than \".\" or \"..\""
             )),
         }
+    }
+}
+
+impl TryFrom<String> for RepoSlug {
+    type Error = String;
+
+    fn try_from(raw: String) -> Result<Self, Self::Error> {
+        raw.parse()
+    }
+}
+
+impl From<RepoSlug> for String {
+    fn from(slug: RepoSlug) -> Self {
+        slug.0
     }
 }
 
@@ -281,11 +308,24 @@ mod tests {
     #[case("ooloth/", "empty repo")]
     #[case("", "empty string")]
     #[case("a/b/c", "extra slash")]
+    #[case("ooloth/.", "repo name GitHub forbids")]
+    #[case("ooloth/..", "repo name that would leave the clone directory")]
     fn from_str_rejects_invalid_slugs(#[case] input: &str, #[case] _reason: &str) {
         assert!(
             input.parse::<RepoSlug>().is_err(),
             "expected error for {input:?}"
         );
+    }
+
+    proptest::proptest! {
+        /// Deserializing is the other way a slug enters the system, from
+        /// `hub.toml` and the cache, so it must accept exactly what parsing does.
+        #[test]
+        fn deserializing_accepts_exactly_what_parsing_accepts(raw in "[a-z./]{0,8}") {
+            let parsed = raw.parse::<RepoSlug>();
+            let deserialized = serde_json::from_value::<RepoSlug>(serde_json::Value::String(raw));
+            proptest::prop_assert_eq!(parsed.ok(), deserialized.ok());
+        }
     }
 
     // ── review_status ─────────────────────────────────────────────────────────

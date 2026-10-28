@@ -154,6 +154,7 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
         }),
         StatusItem::Gcp(g) => Some(InvestigationKind::Gcp {
             project: g.project.clone(),
+            repo: g.repo.clone(),
             env: g.env.clone(),
             title: g.title.clone(),
             message: g.message.clone(),
@@ -164,6 +165,7 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
         }),
         StatusItem::Loki(l) => Some(InvestigationKind::Loki {
             project: l.project.clone(),
+            repo: l.repo.clone(),
             env: l.env.clone(),
             title: l.title.clone(),
             message: l.message.clone(),

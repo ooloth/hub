@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Result};
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use domain::{InvestigationPrompt, UntrustedText};
+use domain::{InvestigationPrompt, RepoSlug, UntrustedText};
 
 use crate::terminal::{claim, WindowClaim};
 
@@ -52,7 +52,7 @@ pub(crate) struct LaunchConfig {
 /// # Choosing the right variant
 ///
 /// **Never route an investigation to the default-branch worktree directly.**
-/// That worktree (`~/.hub/repos/<project>/<branch>/`) is reset unconditionally
+/// That worktree (`~/.hub/repos/<repo name>/<branch>/`) is reset unconditionally
 /// to `origin/<branch>` every 30 minutes by the background fetch loop *and* again
 /// at every investigation launch. Any agent working there longer than the refresh
 /// interval — or running concurrently with another launch — will have its working
@@ -68,18 +68,17 @@ pub(crate) enum WorktreeSpec {
     /// Fetch latest refs, then create a fresh detached-HEAD worktree from trunk.
     /// Cleaned up when the session exits. Use for investigations that need current
     /// trunk state but must not be disrupted by the background refresh (CI, Issue).
-    EphemeralFresh { repo: String },
+    EphemeralFresh { repo: RepoSlug },
     /// Create or reuse a persistent PR worktree.
     PullRequest {
-        repo: String,
+        repo: RepoSlug,
         number: u64,
         head_branch: String,
     },
     /// Create a fresh detached-HEAD worktree from the most recently fetched trunk
     /// state, cleaned up when the session exits. Use for read-only log/infra
     /// investigations where a fresh fetch is not critical (GCP, Loki).
-    /// `project` is the directory name under `~/.hub/repos/`.
-    Ephemeral { project: String },
+    Ephemeral { repo: RepoSlug },
     /// Use the process's current directory (`MediaBlocked`, last-resort fallback).
     #[cfg(feature = "private")]
     CurrentDir,
@@ -107,7 +106,7 @@ pub(crate) async fn launch(
         WindowClaim::Vacant(vacant) => vacant,
     };
 
-    let (cwd, cleanup) = resolve_worktree(spec, hub_config).await?;
+    let (cwd, cleanup) = resolve_worktree(spec).await?;
 
     let supporting_data_path = match config.supporting_data {
         Some(ref data) => {
@@ -135,25 +134,16 @@ pub(crate) async fn launch(
     vacant.open(Some(&command.cwd), &command.env, &command.shell)
 }
 
-pub(crate) async fn open_in_lazygit(
-    repo: &str,
-    number: u64,
-    head_branch: &str,
-    hub_config: &config::Config,
-) -> Result<()> {
+pub(crate) async fn open_in_lazygit(repo: &RepoSlug, number: u64, head_branch: &str) -> Result<()> {
     let vacant = match claim(
-        &domain::InvestigationWindow::lazygit(repo, number),
+        &domain::InvestigationWindow::lazygit(&repo.to_string(), number),
         "opening lazygit",
     )? {
         WindowClaim::Reused => return Ok(()),
         WindowClaim::Vacant(vacant) => vacant,
     };
 
-    let name = project_name(&hub_config.projects, repo)?;
-    let bare = workflows::fetch::repos_dir().join(name);
-    if !bare.exists() {
-        bail!("repo not synced; open the TUI to fetch it");
-    }
+    let bare = synced_clone(repo)?;
     let cwd = workflows::fetch::ensure_pr_worktree(&bare, number, head_branch)
         .await
         .context("Failed to create PR worktree")?;
@@ -161,25 +151,16 @@ pub(crate) async fn open_in_lazygit(
     vacant.open(Some(&cwd), &[], "lazygit")
 }
 
-pub(crate) async fn open_in_octo(
-    repo: &str,
-    number: u64,
-    head_branch: &str,
-    hub_config: &config::Config,
-) -> Result<()> {
+pub(crate) async fn open_in_octo(repo: &RepoSlug, number: u64, head_branch: &str) -> Result<()> {
     let vacant = match claim(
-        &domain::InvestigationWindow::octo(repo, number),
+        &domain::InvestigationWindow::octo(&repo.to_string(), number),
         "opening in neovim",
     )? {
         WindowClaim::Reused => return Ok(()),
         WindowClaim::Vacant(vacant) => vacant,
     };
 
-    let name = project_name(&hub_config.projects, repo)?;
-    let bare = workflows::fetch::repos_dir().join(name);
-    if !bare.exists() {
-        bail!("repo not synced; open the TUI to fetch it");
-    }
+    let bare = synced_clone(repo)?;
     let cwd = workflows::fetch::ensure_pr_worktree(&bare, number, head_branch)
         .await
         .context("Failed to create PR worktree")?;
@@ -191,17 +172,10 @@ pub(crate) async fn open_in_octo(
     )
 }
 
-async fn resolve_worktree(
-    spec: WorktreeSpec,
-    hub_config: &config::Config,
-) -> Result<(PathBuf, Option<String>)> {
+async fn resolve_worktree(spec: WorktreeSpec) -> Result<(PathBuf, Option<String>)> {
     match spec {
         WorktreeSpec::EphemeralFresh { repo } => {
-            let name = project_name(&hub_config.projects, &repo)?;
-            let bare = workflows::fetch::repos_dir().join(name);
-            if !bare.exists() {
-                bail!("repo not synced; open the TUI to fetch it");
-            }
+            let bare = synced_clone(&repo)?;
             let worktree = workflows::fetch::fetch_and_create_investigation_worktree(&bare)
                 .await
                 .context("Failed to create investigation worktree")?;
@@ -217,21 +191,14 @@ async fn resolve_worktree(
             number,
             head_branch,
         } => {
-            let name = project_name(&hub_config.projects, &repo)?;
-            let bare = workflows::fetch::repos_dir().join(name);
-            if !bare.exists() {
-                bail!("repo not synced; open the TUI to fetch it");
-            }
+            let bare = synced_clone(&repo)?;
             let cwd = workflows::fetch::ensure_pr_worktree(&bare, number, &head_branch)
                 .await
                 .context("Failed to create PR worktree")?;
             Ok((cwd, None))
         }
-        WorktreeSpec::Ephemeral { project } => {
-            let bare = workflows::fetch::repos_dir().join(&project);
-            if !bare.exists() {
-                bail!("no repo at {}; open the TUI to fetch it", bare.display());
-            }
+        WorktreeSpec::Ephemeral { repo } => {
+            let bare = synced_clone(&repo)?;
             let worktree = workflows::fetch::create_investigation_worktree(&bare)
                 .await
                 .context("Failed to create investigation worktree")?;
@@ -250,43 +217,38 @@ async fn resolve_worktree(
     }
 }
 
-/// The configured name of the project whose repo is `repo`.
-fn project_name(projects: &[config::toml::Project], repo: &str) -> Result<String> {
-    projects
-        .iter()
-        .find(|p| p.repo == repo)
-        .map(|p| p.name.clone())
-        .ok_or_else(|| anyhow::anyhow!("No project found for {repo}"))
+/// The bare clone of `repo`, which must already exist.
+///
+/// The error names the repo and the path because a missing clone has two
+/// causes the user tells apart differently: a tracked repo not fetched yet,
+/// or a repo that is not a `[[project]]` in `hub.toml` at all.
+fn synced_clone(repo: &RepoSlug) -> Result<PathBuf> {
+    let bare = workflows::fetch::bare_clone(repo);
+    if !bare.exists() {
+        bail!(
+            "no clone of {repo} at {}: hub clones each [[project]] in hub.toml when it refreshes",
+            bare.display()
+        );
+    }
+    Ok(bare)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn project(name: &str, repo: &str) -> config::toml::Project {
-        config::toml::Project {
-            name: name.to_string(),
-            repo: repo.to_string(),
-            workflow: vec![],
-            environment: vec![],
-        }
-    }
-
+    /// A repo with no clone can be one hub does not track, so the error has to
+    /// say which repo and where it looked rather than only that it failed.
     #[test]
-    fn a_configured_repo_has_its_project_name() {
-        let projects = [project("hub", "ooloth/hub"), project("site", "ooloth/site")];
+    fn a_repo_with_no_clone_is_an_error_naming_the_repo_and_the_path() {
+        let repo: RepoSlug = "hub-tests/no-such-clone".parse().unwrap();
 
-        assert_eq!(project_name(&projects, "ooloth/site").unwrap(), "site");
-    }
+        let error = synced_clone(&repo).unwrap_err().to_string();
 
-    #[test]
-    fn an_unconfigured_repo_is_an_error_naming_the_repo() {
-        let projects = [project("hub", "ooloth/hub")];
-
-        let error = project_name(&projects, "ooloth/other")
-            .unwrap_err()
-            .to_string();
-
-        assert!(error.contains("ooloth/other"), "{error}");
+        assert!(error.contains("hub-tests/no-such-clone"), "{error}");
+        assert!(
+            error.contains(&workflows::fetch::bare_clone(&repo).display().to_string()),
+            "{error}"
+        );
     }
 }

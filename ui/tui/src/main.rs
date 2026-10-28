@@ -172,7 +172,7 @@ fn spawn_fetch(config: &config::Config, tx: mpsc::Sender<Result<Refresh>>) {
 }
 
 fn spawn_git_fetch(config: &config::Config) {
-    let projects: Vec<(String, String)> = config
+    let projects: Vec<(String, domain::RepoSlug)> = config
         .projects
         .iter()
         .map(|p| (p.name.clone(), p.repo.clone()))
@@ -209,7 +209,7 @@ fn request_refresh(
                 .projects
                 .iter()
                 .map(|p| (p.name.clone(), p.repo.clone()))
-                .collect::<Vec<(String, String)>>()
+                .collect::<Vec<(String, domain::RepoSlug)>>()
         });
         let tx = tx.clone();
         drop(tokio::spawn(async move {
@@ -363,17 +363,18 @@ async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &con
             number,
             head_branch,
         } => {
-            handle_open_in_octo(app, config, repo, number, head_branch).await;
+            handle_open_in_octo(app, repo, number, head_branch).await;
         }
         Effect::OpenInLazygit {
             repo,
             number,
             head_branch,
         } => {
-            handle_open_in_lazygit(app, config, repo, number, head_branch).await;
+            handle_open_in_lazygit(app, repo, number, head_branch).await;
         }
         Effect::LaunchGcp {
             project,
+            repo,
             env,
             title,
             message,
@@ -386,6 +387,7 @@ async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &con
                 app,
                 config,
                 project,
+                repo,
                 env,
                 title,
                 message,
@@ -398,6 +400,7 @@ async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &con
         }
         Effect::LaunchLoki {
             project,
+            repo,
             env,
             title,
             message,
@@ -406,7 +409,7 @@ async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &con
             lookback,
         } => {
             handle_launch_loki(
-                app, config, project, env, title, message, line, url, lookback,
+                app, config, project, repo, env, title, message, line, url, lookback,
             )
             .await;
         }
@@ -437,6 +440,17 @@ fn show_pr_diff(repo: &str, number: u64) -> Result<()> {
     vacant.open(None, &[], &cmd)
 }
 
+/// The slug of a repo a signal carried as text.
+///
+/// # Panics
+/// Panics if `repo` is not a slug. Every such string was written by a
+/// `RepoSlug`'s `Display`, from GitHub or from `hub.toml`, so only a bug in
+/// hub can produce one that does not parse.
+fn signal_repo(repo: &str) -> domain::RepoSlug {
+    repo.parse()
+        .unwrap_or_else(|err| unreachable!("signal carried a repo that is not a slug: {err}"))
+}
+
 async fn handle_launch_ci(
     app: &mut App,
     config: &config::Config,
@@ -447,7 +461,9 @@ async fn handle_launch_ci(
     if let Err(err) = investigations::launch(
         investigations::ci::config(&repo, &run_url),
         &domain::InvestigationWindow::ci(&repo, &workflow),
-        investigations::WorktreeSpec::EphemeralFresh { repo },
+        investigations::WorktreeSpec::EphemeralFresh {
+            repo: signal_repo(&repo),
+        },
         config,
     )
     .await
@@ -460,7 +476,9 @@ async fn handle_launch_issue(app: &mut App, config: &config::Config, repo: Strin
     if let Err(err) = investigations::launch(
         investigations::issue::config(&repo, number),
         &domain::InvestigationWindow::issue(&repo, number),
-        investigations::WorktreeSpec::EphemeralFresh { repo },
+        investigations::WorktreeSpec::EphemeralFresh {
+            repo: signal_repo(&repo),
+        },
         config,
     )
     .await
@@ -481,7 +499,7 @@ async fn handle_launch_pr(
         investigations::pr::ask_config(number, &repo, author),
         &domain::InvestigationWindow::pr(&repo, number),
         investigations::WorktreeSpec::PullRequest {
-            repo,
+            repo: signal_repo(&repo),
             number,
             head_branch,
         },
@@ -503,7 +521,7 @@ async fn handle_review_pr(
         investigations::pr::review_config(target, review),
         &domain::InvestigationWindow::pr(&target.repo, target.number),
         investigations::WorktreeSpec::PullRequest {
-            repo: target.repo.clone(),
+            repo: signal_repo(&target.repo),
             number: target.number,
             head_branch: target.head_branch.clone(),
         },
@@ -520,6 +538,7 @@ async fn handle_launch_gcp(
     app: &mut App,
     config: &config::Config,
     project: String,
+    repo: domain::RepoSlug,
     env: String,
     title: String,
     message: domain::UntrustedText,
@@ -545,7 +564,7 @@ async fn handle_launch_gcp(
             &env,
             message.expose(),
         ),
-        investigations::WorktreeSpec::Ephemeral { project },
+        investigations::WorktreeSpec::Ephemeral { repo },
         config,
     )
     .await
@@ -559,6 +578,7 @@ async fn handle_launch_loki(
     app: &mut App,
     config: &config::Config,
     project: String,
+    repo: domain::RepoSlug,
     env: String,
     title: String,
     message: domain::UntrustedText,
@@ -574,7 +594,7 @@ async fn handle_launch_loki(
             &env,
             message.expose(),
         ),
-        investigations::WorktreeSpec::Ephemeral { project },
+        investigations::WorktreeSpec::Ephemeral { repo },
         config,
     )
     .await
@@ -583,26 +603,17 @@ async fn handle_launch_loki(
     }
 }
 
-async fn handle_open_in_octo(
-    app: &mut App,
-    config: &config::Config,
-    repo: String,
-    number: u64,
-    head_branch: String,
-) {
-    if let Err(err) = investigations::open_in_octo(&repo, number, &head_branch, config).await {
+async fn handle_open_in_octo(app: &mut App, repo: String, number: u64, head_branch: String) {
+    if let Err(err) = investigations::open_in_octo(&signal_repo(&repo), number, &head_branch).await
+    {
         app.ui.flash = Some(err.to_string());
     }
 }
 
-async fn handle_open_in_lazygit(
-    app: &mut App,
-    config: &config::Config,
-    repo: String,
-    number: u64,
-    head_branch: String,
-) {
-    if let Err(err) = investigations::open_in_lazygit(&repo, number, &head_branch, config).await {
+async fn handle_open_in_lazygit(app: &mut App, repo: String, number: u64, head_branch: String) {
+    if let Err(err) =
+        investigations::open_in_lazygit(&signal_repo(&repo), number, &head_branch).await
+    {
         app.ui.flash = Some(err.to_string());
     }
 }

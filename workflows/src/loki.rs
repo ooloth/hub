@@ -1,6 +1,6 @@
 use anyhow::Result;
 use chrono::Utc;
-use domain::{LokiEntry, LokiEnv, UntrustedText, Urgency};
+use domain::{LokiEntry, LokiEnv, LokiQuery, UntrustedText, Urgency};
 use secrecy::ExposeSecret;
 
 /// Queries Loki for each configured query and returns matching log entries.
@@ -21,24 +21,35 @@ pub async fn run(env: &LokiEnv) -> Result<Vec<LokiEntry>> {
 
         let url = grafana_explore_url(env.grafana_url.as_deref(), &query.query, &query.lookback);
 
-        for entry in &entries {
-            let message = message_for_entry(entry, &query.message_field);
-
-            results.push(LokiEntry {
-                title: query.title.clone(),
-                project: env.project.clone(),
-                env: env.env.clone(),
-                message: UntrustedText::new(message),
-                line: UntrustedText::new(entry.line.clone()),
-                lookback: query.lookback.clone(),
-                age: age_from_entry(entry),
-                urgency: Urgency::High,
-                url: url.clone(),
-            });
-        }
+        results.extend(
+            entries
+                .iter()
+                .map(|entry| alert_entry(env, query, entry, &url)),
+        );
     }
 
     Ok(results)
+}
+
+/// The alert one log line raised, under the environment and query that found it.
+fn alert_entry(
+    env: &LokiEnv,
+    query: &LokiQuery,
+    entry: &clients::loki::LogEntry,
+    url: &str,
+) -> LokiEntry {
+    LokiEntry {
+        title: query.title.clone(),
+        project: env.project.clone(),
+        repo: env.repo.clone(),
+        env: env.env.clone(),
+        message: UntrustedText::new(message_for_entry(entry, &query.message_field)),
+        line: UntrustedText::new(entry.line.clone()),
+        lookback: query.lookback.clone(),
+        age: age_from_entry(entry),
+        urgency: Urgency::High,
+        url: url.to_string(),
+    }
 }
 
 fn message_for_entry(entry: &clients::loki::LogEntry, message_field: &str) -> String {
@@ -112,6 +123,31 @@ mod tests {
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect::<HashMap<_, _>>(),
         }
+    }
+
+    /// The alert's investigation finds its clone by this repo, so it must be
+    /// the configured project's, whatever the project is called.
+    #[test]
+    fn an_entry_carries_its_environments_repo() {
+        let env = LokiEnv {
+            project: "My App".to_string(),
+            repo: domain::RepoSlug::new("org", "myapp"),
+            env: "prod".to_string(),
+            endpoint: "https://loki.invalid".to_string(),
+            token: None,
+            grafana_url: None,
+            queries: vec![],
+        };
+        let query = domain::LokiQuery {
+            title: "errors".to_string(),
+            query: "{app=\"myapp\"}".to_string(),
+            lookback: "1h".to_string(),
+            message_field: "message".to_string(),
+        };
+
+        let entry = alert_entry(&env, &query, &make_entry(&[]), "https://grafana.invalid");
+
+        assert_eq!(entry.repo, domain::RepoSlug::new("org", "myapp"));
     }
 
     fn make_entry_with_line(labels: &[(&str, &str)], line: &str) -> clients::loki::LogEntry {

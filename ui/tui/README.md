@@ -176,7 +176,7 @@ is PR-specific.
 
 **Do not route investigations to the default-branch worktree directly.**
 
-`~/.hub/repos/<project>/<branch>/` is reset unconditionally with
+`~/.hub/repos/<repo name>/<branch>/` is reset unconditionally with
 `git reset --hard origin/<branch>` in two places:
 
 1. The TUI's own refresh runs at startup, on `r`, and every 30 minutes while the signals on screen
@@ -193,7 +193,7 @@ never touches, and that is cleaned up on exit.
 ### PR sessions
 
 Both `i` and `v` open an interactive Claude Code session in a per-PR git worktree
-(`~/.hub/repos/<project>/pr-<number>/`). They differ in whether a skill is chosen.
+(`~/.hub/repos/<repo name>/pr-<number>/`). They differ in whether a skill is chosen.
 
 `i` chooses nothing. It opens a session carrying the PR number, repo, and whether
 the PR is yours, with no task prompt, ready for a question. Routing `i` by PR kind

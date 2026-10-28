@@ -11,23 +11,23 @@ use tokio::process::Command;
 
 use crate::git::{add_worktree_or_recover, read_default_branch};
 
-/// Returns the `~/.hub/repos` directory where bare git repositories are stored.
-#[must_use]
-pub fn repos_dir() -> PathBuf {
+/// The `~/.hub/repos` directory where bare git repositories are stored.
+///
+/// Private so that nothing outside this module can build a clone path from
+/// anything but a repository: [`bare_clone`] is the only way in.
+fn repos_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
     PathBuf::from(home).join(".hub").join("repos")
 }
 
-/// Returns the path to the default-branch worktree for `name` if it exists.
+/// The bare clone of `repo`: where [`run`] clones it, and where every
+/// investigation looks for it.
 #[must_use]
-pub fn default_branch_worktree(repos_dir: &Path, name: &str) -> Option<PathBuf> {
-    let bare = repos_dir.join(name);
-    let branch = read_default_branch(&bare)?;
-    let worktree = bare.join(branch);
-    worktree.is_dir().then_some(worktree)
+pub fn bare_clone(repo: &RepoSlug) -> PathBuf {
+    bare_clone_path(&repos_dir(), repo)
 }
 
-/// Creates or updates a bare clone for each project under `~/.hub/repos/<name>/`.
+/// Creates or updates a bare clone for each project under `~/.hub/repos/<repo name>/`.
 ///
 /// On each call, fetches latest refs and prunes deleted remote branches. After
 /// fetching, removes any linked worktrees whose remote tracking ref is gone
@@ -36,7 +36,7 @@ pub fn default_branch_worktree(repos_dir: &Path, name: &str) -> Option<PathBuf> 
 ///
 /// # Errors
 /// Returns an error if any git operation fails.
-pub async fn run(projects: &[(String, String)]) -> Result<()> {
+pub async fn run(projects: &[(String, RepoSlug)]) -> Result<()> {
     let dir = repos_dir();
     tokio::fs::create_dir_all(&dir)
         .await
@@ -49,14 +49,26 @@ pub async fn run(projects: &[(String, String)]) -> Result<()> {
     Ok(())
 }
 
-fn bare_clone_path(repos_dir: &Path, repo: &str) -> Result<PathBuf> {
-    let slug: RepoSlug = repo.parse().map_err(|e: String| anyhow::anyhow!("{e}"))?;
-    Ok(repos_dir.join(slug.repo_name()))
+fn bare_clone_path(repos_dir: &Path, repo: &RepoSlug) -> PathBuf {
+    let path = repos_dir.join(repo.repo_name());
+    // Parsing refuses the slugs that would break these, so either firing
+    // means `RepoSlug` let one through.
+    assert_eq!(
+        path.parent(),
+        Some(repos_dir),
+        "clone of {repo} is not directly inside {}",
+        repos_dir.display()
+    );
+    assert_eq!(
+        path.file_name().and_then(|name| name.to_str()),
+        Some(repo.repo_name()),
+        "clone of {repo} is not named after the repository"
+    );
+    path
 }
 
-async fn fetch_project(name: &str, repo: &str, repos_dir: &Path) -> Result<()> {
-    let dir = bare_clone_path(repos_dir, repo)
-        .with_context(|| format!("invalid repo for project {name:?}"))?;
+async fn fetch_project(name: &str, repo: &RepoSlug, repos_dir: &Path) -> Result<()> {
+    let dir = bare_clone_path(repos_dir, repo);
     let dir_str = dir.to_string_lossy().into_owned();
 
     if dir.exists() {
@@ -427,19 +439,29 @@ mod tests {
     fn bare_clone_path_uses_repo_name_not_project_nickname() {
         let repos = PathBuf::from("/tmp/repos");
         assert_eq!(
-            bare_clone_path(&repos, "ooloth/hub").unwrap(),
+            bare_clone_path(&repos, &"ooloth/hub".parse().unwrap()),
             repos.join("hub")
         );
         assert_eq!(
-            bare_clone_path(&repos, "org/legacy-name").unwrap(),
+            bare_clone_path(&repos, &"org/legacy-name".parse().unwrap()),
             repos.join("legacy-name")
         );
     }
 
-    #[test]
-    fn bare_clone_path_rejects_invalid_slug() {
-        let repos = PathBuf::from("/tmp/repos");
-        assert!(bare_clone_path(&repos, "not-a-slug").is_err());
+    proptest::proptest! {
+        /// Every launch finds a clone by this path, so for any repository it
+        /// must be the repository's own directory, directly inside `repos_dir`.
+        #[test]
+        fn bare_clone_path_is_the_repo_name_inside_repos_dir(
+            owner in "[A-Za-z0-9_.-]{1,12}",
+            repo in "[A-Za-z0-9_.-]{1,12}",
+        ) {
+            let Ok(slug) = format!("{owner}/{repo}").parse::<RepoSlug>() else {
+                return Ok(());
+            };
+            let repos = PathBuf::from("/tmp/repos");
+            proptest::prop_assert_eq!(bare_clone_path(&repos, &slug), repos.join(&repo));
+        }
     }
 
     #[tokio::test]
@@ -491,40 +513,6 @@ mod tests {
         assert_eq!(remote_after, new_sha, "remote tracking ref must be updated");
         let wt_after = git_rev_parse(&worktree, "HEAD").await;
         assert_eq!(wt_after, new_sha, "worktree HEAD must be reset to latest");
-    }
-
-    #[test]
-    fn default_branch_worktree_returns_none_when_worktree_missing() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("HEAD"), "ref: refs/heads/main\n").unwrap();
-        // No main/ subdir created
-        assert!(default_branch_worktree(
-            dir.path().parent().unwrap(),
-            dir.path().file_name().unwrap().to_str().unwrap()
-        )
-        .is_none());
-    }
-
-    #[test]
-    fn default_branch_worktree_returns_path_when_worktree_exists() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("HEAD"), "ref: refs/heads/main\n").unwrap();
-        let worktree = dir.path().join("main");
-        std::fs::create_dir(&worktree).unwrap();
-        let result = default_branch_worktree(
-            dir.path().parent().unwrap(),
-            dir.path().file_name().unwrap().to_str().unwrap(),
-        );
-        assert_eq!(result, Some(worktree));
-    }
-
-    #[test]
-    fn parse_worktree_list_bare_only() {
-        let input = "worktree /home/user/.hub/repos/hub\nHEAD abc123\nbare\n\n";
-        let result = parse_worktree_list(input);
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].0, "/home/user/.hub/repos/hub");
-        assert!(result[0].1.is_none());
     }
 
     #[test]

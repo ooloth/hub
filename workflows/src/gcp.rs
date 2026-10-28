@@ -1,6 +1,6 @@
 use anyhow::Result;
 use chrono::Utc;
-use domain::{GcpEntry, GcpEnv, UntrustedText, Urgency};
+use domain::{GcpEntry, GcpEnv, GcpQuery, UntrustedText, Urgency};
 
 /// Queries GCP Logging for each configured query and returns matching log entries.
 ///
@@ -20,25 +20,36 @@ pub async fn run(env: &GcpEnv) -> Result<Vec<GcpEntry>> {
             &query.lookback,
         );
 
-        for entry in &entries {
-            let message = message_for_entry(entry, &query.message_field);
-
-            results.push(GcpEntry {
-                title: query.title.clone(),
-                project: env.project.clone(),
-                env: env.env.clone(),
-                message: UntrustedText::new(message),
-                line: UntrustedText::new(entry.raw.clone()),
-                lookback: query.lookback.clone(),
-                age: age_from_entry(entry),
-                urgency: Urgency::High,
-                url: url.clone(),
-                gcp_project: env.gcp_project.clone(),
-            });
-        }
+        results.extend(
+            entries
+                .iter()
+                .map(|entry| alert_entry(env, query, entry, &url)),
+        );
     }
 
     Ok(results)
+}
+
+/// The alert one log entry raised, under the environment and query that found it.
+fn alert_entry(
+    env: &GcpEnv,
+    query: &GcpQuery,
+    entry: &clients::gcp::LogEntry,
+    url: &str,
+) -> GcpEntry {
+    GcpEntry {
+        title: query.title.clone(),
+        project: env.project.clone(),
+        repo: env.repo.clone(),
+        env: env.env.clone(),
+        message: UntrustedText::new(message_for_entry(entry, &query.message_field)),
+        line: UntrustedText::new(entry.raw.clone()),
+        lookback: query.lookback.clone(),
+        age: age_from_entry(entry),
+        urgency: Urgency::High,
+        url: url.to_string(),
+        gcp_project: env.gcp_project.clone(),
+    }
 }
 
 fn message_for_entry(entry: &clients::gcp::LogEntry, message_field: &str) -> String {
@@ -144,6 +155,35 @@ mod tests {
             resource_labels: HashMap::new(),
             raw: String::new(),
         }
+    }
+
+    /// The alert's investigation finds its clone by this repo, so it must be
+    /// the configured project's, whatever the project is called.
+    #[test]
+    fn an_entry_carries_its_environments_repo() {
+        let env = GcpEnv {
+            project: "My App".to_string(),
+            repo: domain::RepoSlug::new("org", "myapp"),
+            env: "prod".to_string(),
+            gcp_project: "my-org-prod".to_string(),
+            gcp_region: None,
+            queries: vec![],
+        };
+        let query = domain::GcpQuery {
+            title: "errors".to_string(),
+            query: "severity>=ERROR".to_string(),
+            lookback: "1h".to_string(),
+            message_field: "message".to_string(),
+        };
+
+        let entry = alert_entry(
+            &env,
+            &query,
+            &make_entry(None, None),
+            "https://console.invalid",
+        );
+
+        assert_eq!(entry.repo, domain::RepoSlug::new("org", "myapp"));
     }
 
     fn make_entry_with_raw(

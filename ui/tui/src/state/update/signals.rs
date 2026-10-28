@@ -314,6 +314,7 @@ impl App {
             }],
             InvestigateAction::LaunchGcp {
                 project,
+                repo,
                 env,
                 title,
                 message,
@@ -323,6 +324,7 @@ impl App {
                 gcp_project,
             } => vec![Effect::LaunchGcp {
                 project,
+                repo,
                 env,
                 title,
                 message,
@@ -333,6 +335,7 @@ impl App {
             }],
             InvestigateAction::LaunchLoki {
                 project,
+                repo,
                 env,
                 title,
                 message,
@@ -341,6 +344,7 @@ impl App {
                 lookback,
             } => vec![Effect::LaunchLoki {
                 project,
+                repo,
                 env,
                 title,
                 message,
@@ -408,6 +412,7 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
         },
         Some(InvestigationKind::Gcp {
             project,
+            repo,
             env,
             title,
             message,
@@ -417,6 +422,7 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
             gcp_project,
         }) => InvestigateAction::LaunchGcp {
             project,
+            repo,
             env,
             title,
             message,
@@ -427,6 +433,7 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
         },
         Some(InvestigationKind::Loki {
             project,
+            repo,
             env,
             title,
             message,
@@ -435,6 +442,7 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
             lookback,
         }) => InvestigateAction::LaunchLoki {
             project,
+            repo,
             env,
             title,
             message,

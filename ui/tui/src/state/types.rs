@@ -306,6 +306,7 @@ pub(crate) enum InvestigateAction {
     },
     LaunchGcp {
         project: String,
+        repo: domain::RepoSlug,
         env: String,
         title: String,
         message: UntrustedText,
@@ -316,6 +317,7 @@ pub(crate) enum InvestigateAction {
     },
     LaunchLoki {
         project: String,
+        repo: domain::RepoSlug,
         env: String,
         title: String,
         message: UntrustedText,
@@ -408,6 +410,7 @@ pub(crate) enum Effect {
     },
     LaunchGcp {
         project: String,
+        repo: domain::RepoSlug,
         env: String,
         title: String,
         message: UntrustedText,
@@ -418,6 +421,7 @@ pub(crate) enum Effect {
     },
     LaunchLoki {
         project: String,
+        repo: domain::RepoSlug,
         env: String,
         title: String,
         message: UntrustedText,

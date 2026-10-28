@@ -122,6 +122,8 @@ mod tests {
             repo in "[A-Za-z0-9._-]{1,30}",
             number in 1..1_000_000_u64,
         ) {
+            // GitHub refuses these names, and so does `RepoSlug`.
+            prop_assume!(repo != "." && repo != "..");
             let pr = id(&owner, &repo, number);
             let line = format!("{}\tPR review requested\tx\ty\t2026-10-17 23:27:04 +0000", group_for(profile, &pr));
 

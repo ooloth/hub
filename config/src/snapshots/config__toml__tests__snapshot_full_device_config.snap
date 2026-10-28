@@ -1,5 +1,6 @@
 ---
 source: config/src/toml.rs
+assertion_line: 554
 expression: result
 ---
 HubToml {
@@ -15,7 +16,9 @@ HubToml {
     project: [
         Project {
             name: "myapp",
-            repo: "org/myapp",
+            repo: RepoSlug(
+                "org/myapp",
+            ),
             workflow: [
                 GithubPrs {
                     exclude_authors: [

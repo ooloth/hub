@@ -29,7 +29,7 @@ pub const PRS_AWAITING_REVIEW: &str = "github prs awaiting review";
 pub const LAST_PUSH: &str = "github last push";
 
 /// Bump when the serialized `StatusReport` format changes incompatibly.
-pub const SCHEMA_VERSION: i32 = 20;
+pub const SCHEMA_VERSION: i32 = 21;
 
 /// A single signal from any source, as stored in the unified status list.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -363,6 +363,7 @@ mod tests {
             private_workflow_names: vec![],
             loki_envs: vec![domain::LokiEnv {
                 project: "app".to_string(),
+                repo: domain::RepoSlug::new("ooloth", "app"),
                 env: "prod".to_string(),
                 endpoint: "https://loki.invalid".to_string(),
                 token: None,
@@ -371,6 +372,7 @@ mod tests {
             }],
             gcp_envs: vec![domain::GcpEnv {
                 project: "api".to_string(),
+                repo: domain::RepoSlug::new("ooloth", "api"),
                 env: "staging".to_string(),
                 gcp_project: "gcp-project".to_string(),
                 gcp_region: None,
@@ -599,7 +601,7 @@ mod tests {
     }
 
     #[test]
-    fn the_cache_schema_moved_past_pull_requests_without_review_waiting() {
-        assert_eq!(SCHEMA_VERSION, 20);
+    fn the_cache_schema_moved_past_alerts_without_their_repo() {
+        assert_eq!(SCHEMA_VERSION, 21);
     }
 }

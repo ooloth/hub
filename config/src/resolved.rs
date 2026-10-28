@@ -47,7 +47,7 @@ impl Config {
                 p.workflow.iter().find_map(|w| {
                     if let toml::WorkflowConfig::GithubPrs { exclude_authors } = w {
                         Some(domain::GithubPrsRepo {
-                            repo: p.repo.clone(),
+                            repo: p.repo.to_string(),
                             exclude_authors: exclude_authors.clone(),
                         })
                     } else {
@@ -67,7 +67,7 @@ impl Config {
                 p.workflow
                     .iter()
                     .find(|w| matches!(w, toml::WorkflowConfig::GithubIssues {}))
-                    .map(|_| p.repo.clone())
+                    .map(|_| p.repo.to_string())
             })
             .collect()
     }
@@ -81,7 +81,7 @@ impl Config {
                 p.workflow.iter().find_map(|w| {
                     if let toml::WorkflowConfig::GithubCi { lookback } = w {
                         let lb = lookback.clone().unwrap_or_else(|| "24h".into());
-                        Some((p.repo.clone(), lb))
+                        Some((p.repo.to_string(), lb))
                     } else {
                         None
                     }
@@ -136,6 +136,7 @@ impl Config {
                     }
                     Some(domain::LokiEnv {
                         project: p.name.clone(),
+                        repo: p.repo.clone(),
                         env: env.env.clone(),
                         endpoint,
                         token: self.loki_token.clone(),
@@ -184,6 +185,7 @@ impl Config {
                     }
                     Some(domain::GcpEnv {
                         project: p.name.clone(),
+                        repo: p.repo.clone(),
                         env: env.env.clone(),
                         gcp_project,
                         gcp_region: env.gcp_region.clone(),
@@ -202,7 +204,7 @@ mod tests {
     fn project(name: &str, repo: &str, workflows: Vec<toml::WorkflowConfig>) -> toml::Project {
         toml::Project {
             name: name.into(),
-            repo: repo.into(),
+            repo: repo.parse().unwrap(),
             workflow: workflows,
             environment: vec![],
         }
@@ -215,7 +217,7 @@ mod tests {
     ) -> toml::Project {
         toml::Project {
             name: name.into(),
-            repo: repo.into(),
+            repo: repo.parse().unwrap(),
             workflow: vec![],
             environment: environments,
         }
@@ -463,6 +465,27 @@ mod tests {
         assert_eq!(envs[0].queries[0].lookback, "30m");
     }
 
+    /// The clone an alert investigation runs in is found by repo, so the
+    /// repo has to reach the alert even when the project's name differs.
+    #[test]
+    fn loki_envs_carry_the_project_repo_not_its_name() {
+        let cfg = config(vec![project_with_envs(
+            "My App",
+            "org/myapp",
+            vec![loki_env(
+                "https://loki.example.com",
+                None,
+                vec![toml::WorkflowConfig::LokiLogs {
+                    title: "errors".into(),
+                    query: "{app=\"myapp\"}".into(),
+                    lookback: None,
+                    message_field: None,
+                }],
+            )],
+        )]);
+        assert_eq!(cfg.loki_envs()[0].repo.to_string(), "org/myapp");
+    }
+
     #[test]
     fn loki_envs_defaults_lookback_to_1h() {
         let cfg = config(vec![project_with_envs(
@@ -532,6 +555,25 @@ mod tests {
         assert_eq!(envs[0].gcp_project, "my-org-prod");
         assert_eq!(envs[0].queries[0].title, "errors");
         assert_eq!(envs[0].queries[0].lookback, "30m");
+    }
+
+    #[test]
+    fn gcp_envs_carry_the_project_repo_not_its_name() {
+        let cfg = config(vec![project_with_envs(
+            "My App",
+            "org/myapp",
+            vec![gcp_env(
+                "my-org-prod",
+                None,
+                vec![toml::WorkflowConfig::GcpLogs {
+                    title: "errors".into(),
+                    query: "severity>=ERROR".into(),
+                    lookback: None,
+                    message_field: None,
+                }],
+            )],
+        )]);
+        assert_eq!(cfg.gcp_envs()[0].repo.to_string(), "org/myapp");
     }
 
     #[test]

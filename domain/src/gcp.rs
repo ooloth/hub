@@ -24,6 +24,8 @@ pub struct GcpQuery {
 pub struct GcpEnv {
     /// Hub project name (e.g. "myapp"), used as the grouping key in signals.
     pub project: String,
+    /// Repository of the project this belongs to, which locates its clone.
+    pub repo: crate::RepoSlug,
     /// Deployment environment label (e.g. "prod", "staging").
     pub env: String,
     /// GCP project ID, used as the `resourceNames` scope for API calls.
@@ -42,6 +44,8 @@ pub struct GcpEntry {
     pub title: String,
     /// Hub project name this entry belongs to.
     pub project: String,
+    /// Repository of the project this entry belongs to, which locates its clone.
+    pub repo: crate::RepoSlug,
     /// Deployment environment this entry came from (e.g. "prod").
     pub env: String,
     /// Display + grouping key extracted from the log payload.

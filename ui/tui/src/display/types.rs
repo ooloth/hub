@@ -179,6 +179,7 @@ pub(crate) enum InvestigationKind {
     },
     Gcp {
         project: String,
+        repo: domain::RepoSlug,
         env: String,
         title: String,
         message: UntrustedText,
@@ -189,6 +190,7 @@ pub(crate) enum InvestigationKind {
     },
     Loki {
         project: String,
+        repo: domain::RepoSlug,
         env: String,
         title: String,
         message: UntrustedText,

@@ -212,7 +212,7 @@ tmux list-panes -s -t qa -F '#{window_name} :: #{pane_start_command}'
 ```
 
 Then clean up every time: `tmux kill-session -t qa`, remove any
-`investigation-*` worktrees left under `~/.hub/repos/<project>/`, and delete
+`investigation-*` worktrees left under `~/.hub/repos/<repo name>/`, and delete
 `/tmp/hub-supporting-data-*.json`.
 
 **The loop in Rex.** The TUI gets its own tab, created with a fixed size so the
@@ -269,7 +269,7 @@ its worktree is always left behind to remove.
 - **An investigation can open at Claude Code's "trust this folder" prompt
   instead of a session.** Each investigation runs in a new worktree, and Claude
   Code checks the trust recorded for the worktree's repository, here the bare
-  repo under `~/.hub/repos/<project>`, not for the parent folder. Answering
+  repo under `~/.hub/repos/<repo name>`, not for the parent folder. Answering
   "Yes" once records it under the bare repo's path in `~/.claude.json`, and
   every later worktree of that repo skips the prompt. Running
   `claude` in the bare repo itself never prompts, so it records nothing
