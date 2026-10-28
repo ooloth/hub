@@ -477,6 +477,33 @@ mod tests {
     }
 
     #[test]
+    fn a_project_can_set_a_short_name_and_leave_out_its_name() {
+        let result = parse(&with_credentials(
+            r#"
+            [[project]]
+            repo = "ooloth/michaeluloth.com"
+            short_name = "site"
+        "#,
+        ))
+        .unwrap();
+
+        assert_eq!(result.project[0].name, None);
+        assert_eq!(result.project[0].short_name.as_deref(), Some("site"));
+    }
+
+    /// The example is what a new device copies, so hub's own reader has to
+    /// accept it, not only the schema taplo checks it against.
+    #[test]
+    fn the_example_config_loads() {
+        let example = concat!(env!("CARGO_MANIFEST_DIR"), "/../hub.example.toml");
+        let hub_toml = parse_file(example).unwrap();
+
+        let projects = crate::Projects::resolve(hub_toml.project).unwrap();
+
+        assert!(!projects.as_slice().is_empty());
+    }
+
+    #[test]
     fn missing_file_returns_error() {
         let err = parse_file("/nonexistent/path/hub.toml").unwrap_err();
         assert!(err.to_string().contains("not found"));

@@ -53,8 +53,10 @@ impl Project {
     }
 }
 
-/// Every configured project, no two sharing a short name.
+/// Every configured project, no two sharing a clone directory or a short name.
 ///
+/// Two projects whose repositories share a name would fetch into one
+/// `~/.hub/repos/<repo name>`, so they are refused whatever their short names.
 /// A window is found again by building its name, and that name starts with the
 /// project's short name, so two projects sharing one would open each other's
 /// windows.
@@ -65,13 +67,29 @@ impl Projects {
     /// Resolves every `[[project]]` entry and checks the set as a whole.
     ///
     /// # Errors
-    /// Returns the first project whose labels are refused, or the first two
-    /// projects found sharing a short name.
+    /// Returns the first project whose labels are refused, a repo listed twice,
+    /// or the first two projects found sharing a clone directory or a short name.
     pub(crate) fn resolve(raw: Vec<toml::Project>) -> Result<Self> {
         let projects = raw
             .into_iter()
             .map(Project::resolve)
             .collect::<Result<Vec<_>>>()?;
+        // Clones live in ~/.hub/repos/<repo name>, and macOS treats names that
+        // differ only in case as one folder, so names are compared lowercased.
+        let mut clone_dirs = HashMap::new();
+        for project in &projects {
+            let dir = project.repo.repo_name().to_lowercase();
+            if let Some(earlier) = clone_dirs.insert(dir, &project.repo) {
+                if earlier == &project.repo {
+                    bail!("{earlier} is listed twice; keep one [[project]] for it");
+                }
+                bail!(
+                    "projects {earlier} and {} would share the clone directory ~/.hub/repos/{}; hub can track only one of them",
+                    project.repo,
+                    project.repo.repo_name()
+                );
+            }
+        }
         let mut seen = HashMap::new();
         for project in &projects {
             if let Some(earlier) = seen.insert(&project.short_name, &project.repo) {
@@ -188,7 +206,6 @@ mod tests {
         raw("ooloth/site", None, Some("hub")),
         raw("ooloth/hub", None, None)
     )]
-    #[case::both_fallback(raw("ooloth/hub", None, None), raw("work/hub", None, None))]
     fn two_projects_sharing_a_short_name_are_refused_naming_both(
         #[case] first: toml::Project,
         #[case] second: toml::Project,
@@ -250,6 +267,39 @@ mod tests {
             projects.short_name_for(&other),
             domain::ProjectShortName::from_repo(&other)
         );
+    }
+
+    #[test]
+    fn a_repo_listed_twice_is_refused_as_listed_twice() {
+        let error = Projects::resolve(vec![
+            raw("ooloth/hub", None, Some("a")),
+            raw("ooloth/hub", None, Some("b")),
+        ])
+        .unwrap_err()
+        .to_string();
+
+        assert!(error.contains("ooloth/hub is listed twice"), "{error}");
+    }
+
+    /// Both would clone into ~/.hub/repos/<repo name>, so a different
+    /// short_name cannot keep them apart.
+    #[rstest]
+    #[case::same_case("ooloth/hub", "work/hub")]
+    #[case::different_case("ooloth/Hub", "work/hub")]
+    fn two_repos_sharing_a_clone_directory_are_refused_naming_both(
+        #[case] first: &str,
+        #[case] second: &str,
+    ) {
+        let error = Projects::resolve(vec![
+            raw(first, None, Some("a")),
+            raw(second, None, Some("b")),
+        ])
+        .unwrap_err()
+        .to_string();
+
+        assert!(error.contains(first), "{error}");
+        assert!(error.contains(second), "{error}");
+        assert!(error.contains("clone directory"), "{error}");
     }
 
     #[test]
