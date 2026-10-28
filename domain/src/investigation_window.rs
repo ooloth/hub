@@ -61,9 +61,12 @@ impl AlertSource {
 ///
 /// Every name is `<project>:<kind>:<discriminator>`, built through one
 /// constructor per signal kind. The project segment is always a
-/// [`ProjectShortName`], so a configured `short_name` cannot be bypassed. The kind segment comes from the constructor
-/// rather than the caller, so a pull request and an issue sharing a number
-/// cannot produce the same name.
+/// [`ProjectShortName`], so a configured `short_name` cannot be bypassed.
+///
+/// The kind segment comes from the constructor rather than the caller. It is
+/// what keeps the windows one pull request can have apart: its investigation,
+/// lazygit, Octo and diff windows share a project and a number and differ
+/// only in kind.
 ///
 /// Construction is deterministic in its inputs. That is the property that lets
 /// a later launch find the window an earlier one opened, by building the same
@@ -378,14 +381,26 @@ mod tests {
         }
     }
 
-    /// The collision that motivated putting the kind in the name: a repository
-    /// numbers its pull requests and issues from one sequence.
-    #[test]
-    fn a_pull_request_and_an_issue_sharing_a_number_get_different_windows() {
-        assert_ne!(
-            InvestigationWindow::pr(&of("ooloth/hub"), 330),
-            InvestigationWindow::issue(&of("ooloth/hub"), 330),
-        );
+    proptest! {
+        /// One pull request can have four windows open at once, and an issue
+        /// window has the same shape, so the kind alone must tell them apart.
+        #[test]
+        fn every_window_kind_for_one_number_has_its_own_name(
+            project in short_names(),
+            number in 1u64..=u64::MAX,
+        ) {
+            let names: std::collections::HashSet<String> = [
+                InvestigationWindow::pr(&project, number),
+                InvestigationWindow::issue(&project, number),
+                InvestigationWindow::lazygit(&project, number),
+                InvestigationWindow::octo(&project, number),
+                InvestigationWindow::diff(&project, number),
+            ]
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+            prop_assert_eq!(names.len(), 5);
+        }
     }
 
     #[rstest]

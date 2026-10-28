@@ -178,13 +178,13 @@ mod tests {
         );
     }
 
-    /// A repository numbers its pull requests and issues from one sequence, so
-    /// the kind segment has to count.
+    /// A pull request's lazygit window shares its project and number with the
+    /// investigation, so only the kind segment stops a lookup switching to it.
     #[test]
-    fn an_issue_does_not_match_a_pull_request_with_the_same_number() {
-        let windows = open(&[&InvestigationWindow::pr(&hub(), 330).to_string()]);
+    fn a_pull_requests_lazygit_window_is_not_its_investigation_window() {
+        let windows = open(&[&InvestigationWindow::lazygit(&hub(), 330).to_string()]);
         assert_eq!(
-            find_window(&windows, &InvestigationWindow::issue(&hub(), 330)),
+            find_window(&windows, &InvestigationWindow::pr(&hub(), 330)),
             None
         );
     }
