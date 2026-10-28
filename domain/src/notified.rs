@@ -256,8 +256,8 @@ mod tests {
         Notified::default().record(&outcomes)
     }
 
-    fn reviewed_by(login: &str) -> TurnReason {
-        TurnReason::Reviewed {
+    fn feedback_from(login: &str) -> TurnReason {
+        TurnReason::Feedback {
             by: login.to_string(),
         }
     }
@@ -280,8 +280,9 @@ mod tests {
         prop_oneof![
             Just(TurnReason::ReviewRequested),
             Just(TurnReason::ReadyToMerge),
-            Just(reviewed_by("ada")),
-            Just(reviewed_by("bo")),
+            Just(TurnReason::NoReviewer),
+            Just(feedback_from("ada")),
+            Just(feedback_from("bo")),
         ]
     }
 
@@ -437,12 +438,12 @@ mod tests {
     #[test]
     fn a_turn_whose_reason_changes_is_posted_again_once() {
         let record = posted_for(&[(7, TurnReason::ReadyToMerge)]);
-        let reviewed = seen_for(&[(7, reviewed_by("ada"))]);
+        let reviewed = seen_for(&[(7, feedback_from("ada"))]);
 
         let changes = record.changes_for(&reviewed);
         let record = record.record(&[ChangeOutcome::Reposted {
             pr: id(7),
-            reason: reviewed_by("ada"),
+            reason: feedback_from("ada"),
         }]);
 
         assert_eq!(
@@ -458,9 +459,9 @@ mod tests {
 
     #[test]
     fn a_review_from_someone_else_is_a_new_reason() {
-        let record = posted_for(&[(7, reviewed_by("ada"))]);
+        let record = posted_for(&[(7, feedback_from("ada"))]);
 
-        let changes = record.changes_for(&seen_for(&[(7, reviewed_by("bo"))]));
+        let changes = record.changes_for(&seen_for(&[(7, feedback_from("bo"))]));
 
         assert_eq!(
             numbers(changes.repost.iter().map(|turn| &turn.pr)),
@@ -472,7 +473,7 @@ mod tests {
     fn a_card_found_showing_is_not_posted_again_whatever_its_reason() {
         let record = notified(&[7]);
 
-        let changes = record.changes_for(&seen_for(&[(7, reviewed_by("ada"))]));
+        let changes = record.changes_for(&seen_for(&[(7, feedback_from("ada"))]));
 
         assert_eq!(changes, NotificationChanges::default());
     }
@@ -485,7 +486,7 @@ mod tests {
                 reason: "timed out".to_string(),
             }]);
 
-        let next = record.changes_for(&seen_for(&[(7, reviewed_by("ada"))]));
+        let next = record.changes_for(&seen_for(&[(7, feedback_from("ada"))]));
 
         assert_eq!(
             numbers(next.repost.iter().map(|turn| &turn.pr)),

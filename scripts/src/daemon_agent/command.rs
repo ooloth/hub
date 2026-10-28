@@ -307,13 +307,17 @@ fn launchctl(args: &[&str]) -> Result<()> {
 }
 
 /// Git's shared directory for the repository at `repo`, the same from the main checkout and
-/// from any of its worktrees.
+/// from any of its worktrees. An inherited `GIT_DIR` or `GIT_COMMON_DIR`, as inside a git hook,
+/// would answer for another repository, so they are not passed on.
 ///
 /// # Errors
 /// Returns an error when git cannot say, or prints a path launchd could not use.
 fn git_common_dir(repo: &Path) -> Result<AbsolutePath> {
     let output = Command::new("git")
         .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_COMMON_DIR")
+        .env_remove("GIT_WORK_TREE")
         .current_dir(repo)
         .output()
         .context("failed to run git rev-parse")?;

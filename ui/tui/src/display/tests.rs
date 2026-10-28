@@ -47,10 +47,9 @@ fn pr() -> StatusItem {
         age: chrono::Duration::zero(),
         urgency: domain::Urgency::Medium,
         kind: domain::PrKind::ToReview,
+        draft: false,
         author: "alice".to_string(),
         review_decision: None,
-        approval_count: 0,
-        changes_requested_count: 0,
         comment_count: 0,
         head_branch: "feat/add-feature".to_string(),
         base_branch: "main".to_string(),
@@ -61,8 +60,17 @@ fn pr() -> StatusItem {
         review_threads: vec![],
         pr_comments: vec![],
         merge_readiness: domain::MergeReadiness::NotYetKnown,
-        review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
+        activity: domain::pr_activity::PrActivity::default(),
     })
+}
+
+/// My own draft.
+fn make_draft() -> StatusItem {
+    let StatusItem::Pr(mut pr) = make_pr(domain::PrKind::Mine) else {
+        unreachable!()
+    };
+    pr.draft = true;
+    StatusItem::Pr(pr)
 }
 
 fn issue() -> StatusItem {
@@ -210,17 +218,22 @@ fn snapshot_item_lines() {
             // Any changes-requested review shows the bare word, even with approvals.
             item_line(&make_pr_with(domain::PrKind::Mine, None, 2, 1)).flat()
         ),
-        format!(
-            "pr_draft:              {}",
-            item_line(&make_pr(domain::PrKind::MyDraft)).flat()
-        ),
+        format!("pr_draft:              {}", item_line(&make_draft()).flat()),
         format!(
             "pr_conflict:           {}",
             item_line(&make_pr_conflicting(domain::PrKind::Mine)).flat()
         ),
         format!(
             "pr_draft_conflict:     {}",
-            item_line(&make_pr_conflicting(domain::PrKind::MyDraft)).flat()
+            item_line(&{
+                let StatusItem::Pr(mut pr) = make_draft() else {
+                    unreachable!()
+                };
+                pr.merge_readiness =
+                    domain::MergeReadiness::Blocked(domain::MergeBlocker::Conflict);
+                StatusItem::Pr(pr)
+            })
+            .flat()
         ),
         format!("issue:       {}", item_line(&issue()).flat()),
         format!("issue_labels:{}", item_line(&issue_with_labels()).flat()),
@@ -330,13 +343,23 @@ fn make_pr_merging(
 #[rstest]
 #[case::my_review_is_requested(
     domain::PrKind::ToReview,
+    false,
     0,
     0,
     domain::MergeReadiness::NotYetKnown,
     Some("review requested")
 )]
+#[case::someone_elses_draft_asking_for_my_review(
+    domain::PrKind::ToReview,
+    true,
+    0,
+    0,
+    domain::MergeReadiness::NotYetKnown,
+    None
+)]
 #[case::mine_approved_and_nothing_blocks_the_merge(
     domain::PrKind::Mine,
+    false,
     1,
     0,
     domain::MergeReadiness::Ready,
@@ -344,6 +367,7 @@ fn make_pr_merging(
 )]
 #[case::mine_approved_before_github_decides_the_merge(
     domain::PrKind::Mine,
+    false,
     1,
     0,
     domain::MergeReadiness::NotYetKnown,
@@ -351,22 +375,39 @@ fn make_pr_merging(
 )]
 #[case::mine_approved_with_a_conflict(
     domain::PrKind::Mine,
+    false,
     1,
     0,
     domain::MergeReadiness::Blocked(domain::MergeBlocker::Conflict),
-    None
+    Some("conflicts")
 )]
-#[case::mine_with_no_reviews(domain::PrKind::Mine, 0, 0, domain::MergeReadiness::Ready, None)]
+#[case::mine_with_no_reviewer(
+    domain::PrKind::Mine,
+    false,
+    0,
+    0,
+    domain::MergeReadiness::Ready,
+    Some("no reviewer")
+)]
 #[case::mine_with_changes_requested(
     domain::PrKind::Mine,
+    false,
     1,
     1,
     domain::MergeReadiness::Ready,
-    None
+    Some("feedback")
 )]
-#[case::my_draft(domain::PrKind::MyDraft, 1, 0, domain::MergeReadiness::Ready, None)]
+#[case::my_draft(
+    domain::PrKind::Mine,
+    true,
+    1,
+    0,
+    domain::MergeReadiness::Ready,
+    Some("draft")
+)]
 #[case::someone_elses_not_awaiting_my_review(
     domain::PrKind::External,
+    false,
     1,
     0,
     domain::MergeReadiness::Ready,
@@ -374,12 +415,18 @@ fn make_pr_merging(
 )]
 fn a_pr_row_names_why_it_is_my_turn_exactly_when_it_is(
     #[case] kind: domain::PrKind,
+    #[case] draft: bool,
     #[case] approvals: u32,
     #[case] changes_requested: u32,
     #[case] merge: domain::MergeReadiness,
     #[case] expected: Option<&str>,
 ) {
-    let line = item_line(&make_pr_merging(kind, approvals, changes_requested, merge));
+    let StatusItem::Pr(mut pr) = make_pr_merging(kind, approvals, changes_requested, merge) else {
+        unreachable!()
+    };
+    pr.draft = draft;
+
+    let line = item_line(&StatusItem::Pr(pr));
 
     assert_eq!(line.subcategory.as_deref(), expected);
 }
@@ -400,7 +447,8 @@ fn searching_for_a_reason_finds_only_the_rows_that_show_it() {
     assert_eq!(result.len(), 1);
     assert!(matches!(
         &result[0],
-        DisplayItem::Single(StatusItem::Pr(pr)) if pr.approval_count == 1
+        DisplayItem::Single(StatusItem::Pr(pr))
+            if pr.activity.count(domain::pr_activity::Opinion::Approved) == 1
     ));
 }
 
@@ -426,10 +474,9 @@ fn make_pr_with(
         age: chrono::Duration::zero(),
         urgency: domain::Urgency::Medium,
         kind,
+        draft: false,
         author: "ooloth".to_string(),
         review_decision,
-        approval_count,
-        changes_requested_count,
         comment_count: 0,
         head_branch: "feat/add-feature".to_string(),
         base_branch: "main".to_string(),
@@ -440,7 +487,7 @@ fn make_pr_with(
         review_threads: vec![],
         pr_comments: vec![],
         merge_readiness: domain::MergeReadiness::NotYetKnown,
-        review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
+        activity: crate::test_support::verdicts(approval_count, changes_requested_count),
     })
 }
 

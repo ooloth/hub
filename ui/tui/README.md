@@ -204,7 +204,7 @@ to make `i` "smarter" as a change of direction rather than a fix.
 reviews it offers depends on who wrote the PR, because a session launched on
 someone else's branch must not edit it:
 
-| Key | Your PR (`Mine`, `MyDraft`)    | Someone else's (`ToReview`, `External`) |
+| Key | Your PR (`Mine`, drafts too)   | Someone else's (`ToReview`, `External`) |
 | --- | ------------------------------ | --------------------------------------- |
 | c   | `/review-code`                 | `/review-code`                          |
 | f   | `/review-converge`             | not offered                             |

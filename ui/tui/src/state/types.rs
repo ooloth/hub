@@ -32,7 +32,7 @@ pub(crate) enum PrAuthor {
 impl PrAuthor {
     pub(crate) const fn from_kind(kind: PrKind) -> Self {
         match kind {
-            PrKind::Mine | PrKind::MyDraft => Self::Me,
+            PrKind::Mine => Self::Me,
             PrKind::ToReview | PrKind::External => Self::Peer,
         }
     }
