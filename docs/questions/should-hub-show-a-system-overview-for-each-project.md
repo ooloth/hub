@@ -77,7 +77,7 @@ Nothing here is settled until it graduates into a decision record.
 - Per-repo dashboards were rejected for personal projects because each would rewrite the same
   category plugins. A shared multi-project tool was rejected for now because only one user and one
   codebase would use it, so plugin boundaries would be guesses. *Reasoned*
-- The `[[project.environment]]` section of `hub.toml.example` already carries per-environment
-  platform settings and log queries. *Sourced: hub.toml.example*
+- The `[[project.environment]]` section of `hub.example.toml` already carries per-environment
+  platform settings and log queries. *Sourced: hub.example.toml*
 - Decision 022 says the TUI renders the cache and never fetches, which rules out a live log tail as
   written. *Sourced: docs/decisions/022-tui-reads-cache-never-fetches.md*

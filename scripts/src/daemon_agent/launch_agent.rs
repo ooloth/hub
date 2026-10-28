@@ -152,7 +152,7 @@ impl MainCheckout {
         if !checkout.join("hub.toml").is_file() {
             bail!(
                 "{} has no hub.toml, which the daemon reads at startup: \
-                 run `just setup-private <device>` or copy hub.toml.example",
+                 run `just setup-private <device>` or copy hub.example.toml",
                 checkout.display()
             );
         }

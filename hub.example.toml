@@ -21,7 +21,7 @@ github_username = "your-github-username"
 # `name` (shown in the TUI) and `short_name` (shown in window and tab names)
 # both default to the repository's name; set either to shorten it.
 [[project]]
-repo = "ooloth/hub"
+repo       = "ooloth/hub"
 short_name = "hub"
 
 [[project.workflow]]

@@ -103,7 +103,7 @@ In `config/schemas/hub.toml.schema.json`:
 
 ## 7. Add to the example config
 
-Add an example entry to `hub.toml.example` showing how to enable the workflow
+Add an example entry to `hub.example.toml` showing how to enable the workflow
 under `[[project.workflow]]`, `[[project.environment.workflow]]`, or
 `[[monitor.workflow]]` as appropriate.
 

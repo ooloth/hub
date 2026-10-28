@@ -139,7 +139,7 @@ pub(crate) fn parse_file(path: &str) -> Result<HubToml> {
         {
             format!("failed to read {path}")
         } else {
-            format!("{path} not found — copy hub.toml.example to hub.toml and add a [credentials] section")
+            format!("{path} not found — copy hub.example.toml to hub.toml and add a [credentials] section")
         }
     })?;
     parse(&content)

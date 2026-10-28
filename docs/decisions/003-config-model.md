@@ -116,7 +116,7 @@ machine. When hub-private is in use, per-device configs live in
 - The `config` crate parses `hub.toml` and resolves credentials, delivering
   a single typed `Config` struct downstream. Secrets are wrapped in
   `Secret<String>` and exposed only at client call sites.
-- `hub.toml.example` is committed to the repo and kept up to date as
+- `hub.example.toml` is committed to the repo and kept up to date as
   credentials and workflows are added.
 - Missing required credentials (`github_token`, `github_username`) produce
   a clear startup error. Optional credentials produce no items when absent.

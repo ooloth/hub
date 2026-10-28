@@ -10,7 +10,20 @@
   reorder_keys = true
 
 [[rule]]
-  include = ["hub.toml", "hub.toml.example"]
+  include = ["hub.example.toml", "hub.toml"]
 
   [rule.schema]
     path = "config/schemas/hub.toml.schema.json"
+
+# The example is read as documentation, laid out by hand with aligned values
+# and unindented section comments, so it keeps that layout while still being
+# checked against the schema by the rule above.
+[[rule]]
+  include = ["hub.example.toml"]
+
+  [rule.formatting]
+    align_entries = true
+    indent_entries = false
+    indent_tables = false
+    reorder_arrays = false
+    reorder_keys = false

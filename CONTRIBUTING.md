@@ -26,7 +26,7 @@ workflows only (e.g. GitHub PRs). The `private` feature is silently skipped.
 
 ```bash
 git clone <repo> && cd hub
-cp hub.toml.example hub.toml
+cp hub.example.toml hub.toml
 # edit hub.toml — fill in [credentials] with your 1Password references or plain values
 just setup
 just build
