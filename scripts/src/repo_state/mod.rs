@@ -6,6 +6,8 @@ mod crate_readmes;
 mod daemon_health_writer;
 /// The daemon's launchd PATH reaches every program the daemon runs.
 mod daemon_tools;
+/// No two decision records share a number.
+mod decision_numbers;
 /// No superseded decision is listed as a design to build.
 mod decision_status;
 /// `domain/` reads no ambient state.
@@ -16,5 +18,7 @@ mod lint_inheritance;
 mod packed_debug_info;
 /// Every snapshot file is produced by a test.
 mod snapshot_coverage;
+/// No git hook's environment reaches the tests.
+mod test_isolation;
 /// The workspace's members, as cargo sees them.
 mod workspace;
