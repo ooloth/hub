@@ -516,6 +516,15 @@ mod tests {
     }
 
     #[test]
+    fn parse_worktree_list_bare_only() {
+        let input = "worktree /home/user/.hub/repos/hub\nHEAD abc123\nbare\n\n";
+        let result = parse_worktree_list(input);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, "/home/user/.hub/repos/hub");
+        assert!(result[0].1.is_none());
+    }
+
+    #[test]
     fn parse_worktree_list_with_linked_worktree() {
         let input = concat!(
             "worktree /home/user/.hub/repos/hub\n",
