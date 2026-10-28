@@ -85,6 +85,20 @@ impl Projects {
         Ok(Self(projects))
     }
 
+    /// What windows for `repo` are called: its project's short name, or, for
+    /// a repository no project tracks, the name a project tracking it would
+    /// get by default.
+    #[must_use]
+    pub fn short_name_for(&self, repo: &RepoSlug) -> ProjectShortName {
+        self.0
+            .iter()
+            .find(|project| &project.repo == repo)
+            .map_or_else(
+                || ProjectShortName::from_repo(repo),
+                |project| project.short_name.clone(),
+            )
+    }
+
     /// The projects, in the order `hub.toml` lists them.
     #[must_use]
     pub fn as_slice(&self) -> &[Project] {
@@ -173,6 +187,30 @@ mod tests {
 
         assert!(error.contains(&a), "{error}");
         assert!(error.contains(&b), "{error}");
+    }
+
+    #[test]
+    fn a_tracked_repo_is_called_by_its_projects_short_name() {
+        let projects = Projects::resolve(vec![raw("ooloth/hub", None, Some("h"))]).unwrap();
+
+        assert_eq!(
+            projects
+                .short_name_for(&"ooloth/hub".parse().unwrap())
+                .as_str(),
+            "h"
+        );
+    }
+
+    /// A review request can come from a repository hub does not track.
+    #[test]
+    fn an_untracked_repo_is_called_what_a_project_tracking_it_would_be_by_default() {
+        let projects = Projects::resolve(vec![raw("ooloth/hub", None, Some("h"))]).unwrap();
+        let other: domain::RepoSlug = "work/client-operations-site".parse().unwrap();
+
+        assert_eq!(
+            projects.short_name_for(&other),
+            domain::ProjectShortName::from_repo(&other)
+        );
     }
 
     #[test]

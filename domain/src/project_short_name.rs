@@ -72,7 +72,7 @@ impl std::fmt::Display for ProjectShortName {
 #[cfg(test)]
 mod tests {
     use super::ProjectShortName;
-    use crate::{InvestigationWindow, RepoSlug};
+    use crate::RepoSlug;
     use proptest::prelude::*;
     use rstest::rstest;
 
@@ -111,15 +111,6 @@ mod tests {
     }
 
     proptest! {
-        /// A project that sets no short name keeps the windows it has today.
-        #[test]
-        fn the_fallback_is_the_project_segment_windows_have_today(repo in slug()) {
-            let window = InvestigationWindow::pr(&repo.to_string(), 1).to_string();
-            let today = window.strip_suffix(":pr:1").unwrap();
-            let fallback = ProjectShortName::from_repo(&repo);
-            prop_assert_eq!(fallback.as_str(), today);
-        }
-
         /// The fallback obeys the rules a chosen short name does, so the rest
         /// of hub never has to know which kind it holds.
         #[test]

@@ -318,7 +318,7 @@ async fn handle_effect(
         Effect::OpenUrl(url) => {
             let _ = open::that_detached(url);
         }
-        Effect::OpenPrDiffInDelta { repo, number } => open_pr_diff(app, &repo, number),
+        Effect::OpenPrDiffInDelta { repo, number } => open_pr_diff(app, config, &repo, number),
         Effect::SetIssueLabels {
             repo,
             number,
@@ -367,14 +367,14 @@ async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &con
             number,
             head_branch,
         } => {
-            handle_open_in_octo(app, repo, number, head_branch).await;
+            handle_open_in_octo(app, config, repo, number, head_branch).await;
         }
         Effect::OpenInLazygit {
             repo,
             number,
             head_branch,
         } => {
-            handle_open_in_lazygit(app, repo, number, head_branch).await;
+            handle_open_in_lazygit(app, config, repo, number, head_branch).await;
         }
         Effect::LaunchGcp {
             project,
@@ -425,15 +425,16 @@ async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &con
     }
 }
 
-fn open_pr_diff(app: &mut App, repo: &str, number: u64) {
-    if let Err(err) = show_pr_diff(repo, number) {
+fn open_pr_diff(app: &mut App, config: &config::Config, repo: &str, number: u64) {
+    let project = config.projects.short_name_for(&signal_repo(repo));
+    if let Err(err) = show_pr_diff(repo, &project, number) {
         app.ui.flash = Some(err.to_string());
     }
 }
 
-fn show_pr_diff(repo: &str, number: u64) -> Result<()> {
+fn show_pr_diff(repo: &str, project: &domain::ProjectShortName, number: u64) -> Result<()> {
     let vacant = match terminal::claim(
-        &domain::InvestigationWindow::diff(repo, number),
+        &domain::InvestigationWindow::diff(project, number),
         "opening the diff",
     )? {
         terminal::WindowClaim::Reused => return Ok(()),
@@ -464,7 +465,10 @@ async fn handle_launch_ci(
 ) {
     if let Err(err) = investigations::launch(
         investigations::ci::config(&repo, &run_url),
-        &domain::InvestigationWindow::ci(&repo, &workflow),
+        &domain::InvestigationWindow::ci(
+            &config.projects.short_name_for(&signal_repo(&repo)),
+            &workflow,
+        ),
         investigations::WorktreeSpec::EphemeralFresh {
             repo: signal_repo(&repo),
         },
@@ -479,7 +483,10 @@ async fn handle_launch_ci(
 async fn handle_launch_issue(app: &mut App, config: &config::Config, repo: String, number: u64) {
     if let Err(err) = investigations::launch(
         investigations::issue::config(&repo, number),
-        &domain::InvestigationWindow::issue(&repo, number),
+        &domain::InvestigationWindow::issue(
+            &config.projects.short_name_for(&signal_repo(&repo)),
+            number,
+        ),
         investigations::WorktreeSpec::EphemeralFresh {
             repo: signal_repo(&repo),
         },
@@ -501,7 +508,10 @@ async fn handle_launch_pr(
 ) {
     if let Err(err) = investigations::launch(
         investigations::pr::ask_config(number, &repo, author),
-        &domain::InvestigationWindow::pr(&repo, number),
+        &domain::InvestigationWindow::pr(
+            &config.projects.short_name_for(&signal_repo(&repo)),
+            number,
+        ),
         investigations::WorktreeSpec::PullRequest {
             repo: signal_repo(&repo),
             number,
@@ -523,7 +533,10 @@ async fn handle_review_pr(
 ) {
     if let Err(err) = investigations::launch(
         investigations::pr::review_config(target, review),
-        &domain::InvestigationWindow::pr(&target.repo, target.number),
+        &domain::InvestigationWindow::pr(
+            &config.projects.short_name_for(&signal_repo(&target.repo)),
+            target.number,
+        ),
         investigations::WorktreeSpec::PullRequest {
             repo: signal_repo(&target.repo),
             number: target.number,
@@ -563,7 +576,7 @@ async fn handle_launch_gcp(
             &gcp_project,
         ),
         &domain::InvestigationWindow::alert(
-            &project,
+            &config.projects.short_name_for(&repo),
             domain::AlertSource::Gcp,
             &env,
             message.expose(),
@@ -593,7 +606,7 @@ async fn handle_launch_loki(
     if let Err(err) = investigations::launch(
         investigations::loki::config(&project, &env, &title, &message, &line, &url, &lookback),
         &domain::InvestigationWindow::alert(
-            &project,
+            &config.projects.short_name_for(&repo),
             domain::AlertSource::Loki,
             &env,
             message.expose(),
@@ -607,17 +620,30 @@ async fn handle_launch_loki(
     }
 }
 
-async fn handle_open_in_octo(app: &mut App, repo: String, number: u64, head_branch: String) {
-    if let Err(err) = investigations::open_in_octo(&signal_repo(&repo), number, &head_branch).await
-    {
+async fn handle_open_in_octo(
+    app: &mut App,
+    config: &config::Config,
+    repo: String,
+    number: u64,
+    head_branch: String,
+) {
+    let repo = signal_repo(&repo);
+    let project = config.projects.short_name_for(&repo);
+    if let Err(err) = investigations::open_in_octo(&repo, &project, number, &head_branch).await {
         app.ui.flash = Some(err.to_string());
     }
 }
 
-async fn handle_open_in_lazygit(app: &mut App, repo: String, number: u64, head_branch: String) {
-    if let Err(err) =
-        investigations::open_in_lazygit(&signal_repo(&repo), number, &head_branch).await
-    {
+async fn handle_open_in_lazygit(
+    app: &mut App,
+    config: &config::Config,
+    repo: String,
+    number: u64,
+    head_branch: String,
+) {
+    let repo = signal_repo(&repo);
+    let project = config.projects.short_name_for(&repo);
+    if let Err(err) = investigations::open_in_lazygit(&repo, &project, number, &head_branch).await {
         app.ui.flash = Some(err.to_string());
     }
 }

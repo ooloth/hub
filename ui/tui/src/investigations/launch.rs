@@ -134,9 +134,14 @@ pub(crate) async fn launch(
     vacant.open(Some(&command.cwd), &command.env, &command.shell)
 }
 
-pub(crate) async fn open_in_lazygit(repo: &RepoSlug, number: u64, head_branch: &str) -> Result<()> {
+pub(crate) async fn open_in_lazygit(
+    repo: &RepoSlug,
+    project: &domain::ProjectShortName,
+    number: u64,
+    head_branch: &str,
+) -> Result<()> {
     let vacant = match claim(
-        &domain::InvestigationWindow::lazygit(&repo.to_string(), number),
+        &domain::InvestigationWindow::lazygit(project, number),
         "opening lazygit",
     )? {
         WindowClaim::Reused => return Ok(()),
@@ -151,9 +156,14 @@ pub(crate) async fn open_in_lazygit(repo: &RepoSlug, number: u64, head_branch: &
     vacant.open(Some(&cwd), &[], "lazygit")
 }
 
-pub(crate) async fn open_in_octo(repo: &RepoSlug, number: u64, head_branch: &str) -> Result<()> {
+pub(crate) async fn open_in_octo(
+    repo: &RepoSlug,
+    project: &domain::ProjectShortName,
+    number: u64,
+    head_branch: &str,
+) -> Result<()> {
     let vacant = match claim(
-        &domain::InvestigationWindow::octo(&repo.to_string(), number),
+        &domain::InvestigationWindow::octo(project, number),
         "opening in neovim",
     )? {
         WindowClaim::Reused => return Ok(()),

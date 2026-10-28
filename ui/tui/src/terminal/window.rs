@@ -118,6 +118,14 @@ mod tests {
 
     /// Window ids are irrelevant to every test that only asks whether a name
     /// matched, so they are generated rather than spelled out.
+    fn hub() -> domain::ProjectShortName {
+        short("hub")
+    }
+
+    fn short(name: &str) -> domain::ProjectShortName {
+        domain::ProjectShortName::parse(name).unwrap()
+    }
+
     fn open(names: &[&str]) -> Vec<OpenWindow> {
         names
             .iter()
@@ -133,7 +141,7 @@ mod tests {
     fn a_window_already_open_is_found_by_its_id() {
         let windows = open(&["nvim", "hub:pr:330", "shell"]);
         assert_eq!(
-            find_window(&windows, &InvestigationWindow::pr("ooloth/hub", 330)),
+            find_window(&windows, &InvestigationWindow::pr(&hub(), 330)),
             Some("@1".to_string())
         );
     }
@@ -141,7 +149,7 @@ mod tests {
     #[test]
     fn an_empty_window_list_reports_not_open() {
         assert_eq!(
-            find_window(&[], &InvestigationWindow::pr("ooloth/hub", 330)),
+            find_window(&[], &InvestigationWindow::pr(&hub(), 330)),
             None
         );
     }
@@ -150,7 +158,7 @@ mod tests {
     fn an_unrelated_window_list_reports_not_open() {
         let windows = open(&["nvim", "claude.exe", "just-", "scripts:ci:lint"]);
         assert_eq!(
-            find_window(&windows, &InvestigationWindow::pr("ooloth/hub", 330)),
+            find_window(&windows, &InvestigationWindow::pr(&hub(), 330)),
             None
         );
     }
@@ -165,7 +173,7 @@ mod tests {
     fn a_neighbouring_window_name_is_not_a_match(#[case] open_name: &str) {
         let windows = open(&[open_name]);
         assert_eq!(
-            find_window(&windows, &InvestigationWindow::pr("ooloth/hub", 330)),
+            find_window(&windows, &InvestigationWindow::pr(&hub(), 330)),
             None
         );
     }
@@ -174,9 +182,9 @@ mod tests {
     /// the kind segment has to count.
     #[test]
     fn an_issue_does_not_match_a_pull_request_with_the_same_number() {
-        let windows = open(&[&InvestigationWindow::pr("ooloth/hub", 330).to_string()]);
+        let windows = open(&[&InvestigationWindow::pr(&hub(), 330).to_string()]);
         assert_eq!(
-            find_window(&windows, &InvestigationWindow::issue("ooloth/hub", 330)),
+            find_window(&windows, &InvestigationWindow::issue(&hub(), 330)),
             None
         );
     }
@@ -196,7 +204,7 @@ mod tests {
             },
         ];
         assert_eq!(
-            find_window(&windows, &InvestigationWindow::pr("ooloth/hub", 330)),
+            find_window(&windows, &InvestigationWindow::pr(&hub(), 330)),
             Some("@9".to_string())
         );
     }
@@ -206,11 +214,11 @@ mod tests {
         /// for is found when it is there.
         #[test]
         fn a_window_is_found_among_any_other_windows(
-            repo in "[a-z][a-z-]{0,18}",
+            repo in "[a-z]{1,8}(-[a-z]{1,4}){0,2}",
             number in 1u64..=100_000,
             others in prop::collection::vec("[a-z:0-9-]{0,20}", 0..6),
         ) {
-            let window = InvestigationWindow::pr(&repo, number);
+            let window = InvestigationWindow::pr(&short(&repo), number);
             let mut names: Vec<String> = others;
             names.push(window.to_string());
             let borrowed: Vec<&str> = names.iter().map(String::as_str).collect();
@@ -226,9 +234,9 @@ mod tests {
             b in 1u64..=400,
         ) {
             prop_assume!(a != b);
-            let present = InvestigationWindow::pr(&repo, a).to_string();
+            let present = InvestigationWindow::pr(&short(&repo), a).to_string();
             prop_assert!(
-                find_window(&open(&[&present]), &InvestigationWindow::pr(&repo, b)).is_none()
+                find_window(&open(&[&present]), &InvestigationWindow::pr(&short(&repo), b)).is_none()
             );
         }
     }

@@ -2,6 +2,8 @@
 
 use uuid::Uuid;
 
+use crate::ProjectShortName;
+
 /// Longest window name hub will produce. Beyond this the tmux status bar or
 /// Rex tab bar crowds out everything else.
 const MAX_LEN: usize = 40;
@@ -58,7 +60,8 @@ impl AlertSource {
 /// The name of a window hub opened, in tmux or Rex, addressable afterwards.
 ///
 /// Every name is `<project>:<kind>:<discriminator>`, built through one
-/// constructor per signal kind. The kind segment comes from the constructor
+/// constructor per signal kind. The project segment is always a
+/// [`ProjectShortName`], so a configured `short_name` cannot be bypassed. The kind segment comes from the constructor
 /// rather than the caller, so a pull request and an issue sharing a number
 /// cannot produce the same name.
 ///
@@ -71,13 +74,11 @@ pub struct InvestigationWindow(String);
 impl InvestigationWindow {
     /// Window for an investigation of a pull request.
     ///
-    /// `repo` may be an `owner/name` slug; only the name is used.
-    ///
     /// # Panics
     /// Panics if `number` is zero.
     #[must_use]
-    pub fn pr(repo: &str, number: u64) -> Self {
-        Self::numbered(repo, "pr", number)
+    pub fn pr(project: &ProjectShortName, number: u64) -> Self {
+        Self::numbered(project, "pr", number)
     }
 
     /// Window for an investigation of a GitHub issue.
@@ -85,8 +86,8 @@ impl InvestigationWindow {
     /// # Panics
     /// Panics if `number` is zero.
     #[must_use]
-    pub fn issue(repo: &str, number: u64) -> Self {
-        Self::numbered(repo, "issue", number)
+    pub fn issue(project: &ProjectShortName, number: u64) -> Self {
+        Self::numbered(project, "issue", number)
     }
 
     /// Window for an investigation of a failing CI workflow.
@@ -94,8 +95,8 @@ impl InvestigationWindow {
     /// Named by workflow rather than by run, so re-running a failing workflow
     /// maps to the window already investigating it.
     #[must_use]
-    pub fn ci(repo: &str, workflow: &str) -> Self {
-        Self::build(repo_name(repo), "ci", &segment(workflow))
+    pub fn ci(project: &ProjectShortName, workflow: &str) -> Self {
+        Self::for_project(project, "ci", &segment(workflow))
     }
 
     /// Window for an investigation of a log alert.
@@ -104,7 +105,12 @@ impl InvestigationWindow {
     /// title, which several distinct alerts share. Scoped by `env`, since the
     /// same error in two environments is two investigations.
     #[must_use]
-    pub fn alert(project: &str, source: AlertSource, env: &str, message: &str) -> Self {
+    pub fn alert(
+        project: &ProjectShortName,
+        source: AlertSource,
+        env: &str,
+        message: &str,
+    ) -> Self {
         // Uniqueness rests entirely on the hash, which covers the environment
         // as well as the message. The readable environment prefix is
         // decoration, so shortening it cannot make two alerts collide.
@@ -115,7 +121,7 @@ impl InvestigationWindow {
             readable.trim_end_matches('-'),
             short_hash(&format!("{env}\u{1}{message}"), IDENTITY_HASH_LEN),
         );
-        Self::build(project, source.kind(), &discriminator)
+        Self::for_project(project, source.kind(), &discriminator)
     }
 
     /// Window for an investigation of a blocked media item.
@@ -132,8 +138,8 @@ impl InvestigationWindow {
     /// # Panics
     /// Panics if `number` is zero.
     #[must_use]
-    pub fn lazygit(repo: &str, number: u64) -> Self {
-        Self::numbered(repo, "git", number)
+    pub fn lazygit(project: &ProjectShortName, number: u64) -> Self {
+        Self::numbered(project, "git", number)
     }
 
     /// Window for a pull request opened in neovim's Octo.
@@ -141,8 +147,8 @@ impl InvestigationWindow {
     /// # Panics
     /// Panics if `number` is zero.
     #[must_use]
-    pub fn octo(repo: &str, number: u64) -> Self {
-        Self::numbered(repo, "octo", number)
+    pub fn octo(project: &ProjectShortName, number: u64) -> Self {
+        Self::numbered(project, "octo", number)
     }
 
     /// Window for a pull request's diff.
@@ -150,13 +156,25 @@ impl InvestigationWindow {
     /// # Panics
     /// Panics if `number` is zero.
     #[must_use]
-    pub fn diff(repo: &str, number: u64) -> Self {
-        Self::numbered(repo, "diff", number)
+    pub fn diff(project: &ProjectShortName, number: u64) -> Self {
+        Self::numbered(project, "diff", number)
     }
 
-    fn numbered(repo: &str, kind: &str, number: u64) -> Self {
+    fn numbered(project: &ProjectShortName, kind: &str, number: u64) -> Self {
         assert!(number > 0, "signal number must be positive, got {number}");
-        Self::build(repo_name(repo), kind, &number.to_string())
+        Self::for_project(project, kind, &number.to_string())
+    }
+
+    /// A window named for `project`, whose short name already fits the
+    /// project segment and so must arrive in it unchanged.
+    fn for_project(project: &ProjectShortName, kind: &str, discriminator: &str) -> Self {
+        let window = Self::build(project.as_str(), kind, discriminator);
+        assert_eq!(
+            window.0.split(':').next(),
+            Some(project.as_str()),
+            "window {window} does not start with the short name {project}"
+        );
+        window
     }
 
     fn build(project: &str, kind: &str, discriminator: &str) -> Self {
@@ -220,12 +238,6 @@ pub(crate) fn segment(raw: &str) -> String {
     }
 }
 
-/// The repository half of an `owner/name` slug. Applied only to slugs, never
-/// to workflow names, where a slash is ordinary punctuation.
-fn repo_name(repo: &str) -> &str {
-    repo.rsplit('/').next().unwrap_or(repo)
-}
-
 /// Shortens a sanitised segment to `max`, ending it with a hash of the full
 /// segment so that two long inputs sharing a prefix stay distinguishable.
 ///
@@ -259,8 +271,23 @@ fn short_hash(raw: &str, len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::{AlertSource, InvestigationWindow, MAX_LEN};
+    use crate::ProjectShortName;
     use proptest::prelude::*;
     use rstest::rstest;
+
+    /// The short name a project tracking `repo` gets when it chooses none.
+    fn of(repo: &str) -> ProjectShortName {
+        ProjectShortName::from_repo(&repo.parse().unwrap())
+    }
+
+    fn short(name: &str) -> ProjectShortName {
+        ProjectShortName::parse(name).unwrap()
+    }
+
+    fn short_names() -> impl Strategy<Value = ProjectShortName> {
+        "[a-z0-9]{1,8}(-[a-z0-9]{1,4}){0,3}"
+            .prop_filter_map("too long", |raw| ProjectShortName::parse(&raw).ok())
+    }
 
     fn assert_well_formed(name: &str) {
         assert!(!name.is_empty(), "empty name");
@@ -269,23 +296,37 @@ mod tests {
     }
 
     proptest! {
-        /// The three postconditions hold for repositories the author did not
+        /// The three postconditions hold for short names the author did not
         /// imagine. Each case also exercises the assertions inside `build`.
         #[test]
-        fn pr_window_is_well_formed_for_any_repo(repo in ".*", number in 1u64..=u64::MAX) {
-            assert_well_formed(&InvestigationWindow::pr(&repo, number).to_string());
+        fn pr_window_is_well_formed_for_any_short_name(
+            project in short_names(),
+            number in 1u64..=u64::MAX,
+        ) {
+            assert_well_formed(&InvestigationWindow::pr(&project, number).to_string());
+        }
+
+        /// A short name is chosen to be what the window shows, so the window
+        /// must not rewrite or shorten it.
+        #[test]
+        fn the_project_segment_is_the_short_name_unchanged(
+            project in short_names(),
+            number in 1u64..=u64::MAX,
+        ) {
+            let name = InvestigationWindow::pr(&project, number).to_string();
+            prop_assert_eq!(name.split(':').next(), Some(project.as_str()));
         }
 
         /// Workflow names are the least constrained input: GitHub allows
         /// punctuation, emoji and considerable length.
         #[test]
-        fn ci_window_is_well_formed_for_any_workflow(repo in ".*", workflow in ".*") {
-            assert_well_formed(&InvestigationWindow::ci(&repo, &workflow).to_string());
+        fn ci_window_is_well_formed_for_any_workflow(project in short_names(), workflow in ".*") {
+            assert_well_formed(&InvestigationWindow::ci(&project, &workflow).to_string());
         }
 
         #[test]
         fn alert_window_is_well_formed_for_any_message(
-            project in ".*",
+            project in short_names(),
             env in ".*",
             message in ".*",
         ) {
@@ -296,10 +337,10 @@ mod tests {
         /// #331 finds an open window by building its name again, so equal
         /// inputs must always give equal names.
         #[test]
-        fn construction_is_deterministic(repo in ".*", workflow in ".*") {
+        fn construction_is_deterministic(project in short_names(), workflow in ".*") {
             prop_assert_eq!(
-                InvestigationWindow::ci(&repo, &workflow),
-                InvestigationWindow::ci(&repo, &workflow),
+                InvestigationWindow::ci(&project, &workflow),
+                InvestigationWindow::ci(&project, &workflow),
             );
         }
 
@@ -309,20 +350,20 @@ mod tests {
         fn distinct_alert_messages_get_distinct_windows(a in ".*", b in ".*") {
             prop_assume!(a != b);
             prop_assert_ne!(
-                InvestigationWindow::alert("api", AlertSource::Loki, "prod", &a),
-                InvestigationWindow::alert("api", AlertSource::Loki, "prod", &b),
+                InvestigationWindow::alert(&short("api"), AlertSource::Loki, "prod", &a),
+                InvestigationWindow::alert(&short("api"), AlertSource::Loki, "prod", &b),
             );
         }
 
-            /// A shortened segment must not leave a separator butting against the
+        /// A shortened segment must not leave a separator butting against the
         /// hash that follows it. The generator is biased towards long,
         /// separator-heavy names, since those are the only ones that truncate.
         #[test]
         fn no_window_name_has_a_doubled_separator(
-            repo in ".*",
+            project in short_names(),
             workflow in "[a-z]{1,4}([ /._-][a-z]{1,4}){0,12}",
         ) {
-            let name = InvestigationWindow::ci(&repo, &workflow).to_string();
+            let name = InvestigationWindow::ci(&project, &workflow).to_string();
             prop_assert!(!name.contains("--"), "{} has a doubled separator", name);
         }
 
@@ -331,8 +372,8 @@ mod tests {
         fn distinct_alert_environments_get_distinct_windows(a in ".*", b in ".*") {
             prop_assume!(a != b);
             prop_assert_ne!(
-                InvestigationWindow::alert("api", AlertSource::Loki, &a, "boom"),
-                InvestigationWindow::alert("api", AlertSource::Loki, &b, "boom"),
+                InvestigationWindow::alert(&short("api"), AlertSource::Loki, &a, "boom"),
+                InvestigationWindow::alert(&short("api"), AlertSource::Loki, &b, "boom"),
             );
         }
     }
@@ -342,22 +383,31 @@ mod tests {
     #[test]
     fn a_pull_request_and_an_issue_sharing_a_number_get_different_windows() {
         assert_ne!(
-            InvestigationWindow::pr("ooloth/hub", 330),
-            InvestigationWindow::issue("ooloth/hub", 330),
+            InvestigationWindow::pr(&of("ooloth/hub"), 330),
+            InvestigationWindow::issue(&of("ooloth/hub"), 330),
         );
     }
 
     #[rstest]
-    #[case(InvestigationWindow::pr("ooloth/hub", 330), "hub:pr:330")]
-    #[case(InvestigationWindow::issue("ooloth/hub", 412), "hub:issue:412")]
-    #[case(InvestigationWindow::lazygit("ooloth/hub", 330), "hub:git:330")]
-    #[case(InvestigationWindow::octo("ooloth/hub", 330), "hub:octo:330")]
-    #[case(InvestigationWindow::diff("ooloth/hub", 330), "hub:diff:330")]
+    #[case(InvestigationWindow::pr(&of("ooloth/hub"), 330), "hub:pr:330")]
+    #[case(InvestigationWindow::issue(&of("ooloth/hub"), 412), "hub:issue:412")]
+    #[case(InvestigationWindow::lazygit(&of("ooloth/hub"), 330), "hub:git:330")]
+    #[case(InvestigationWindow::octo(&of("ooloth/hub"), 330), "hub:octo:330")]
+    #[case(InvestigationWindow::diff(&of("ooloth/hub"), 330), "hub:diff:330")]
     fn the_owner_is_dropped_and_the_kind_names_the_window(
         #[case] window: InvestigationWindow,
         #[case] expected: &str,
     ) {
         assert_eq!(window.to_string(), expected);
+    }
+
+    /// A chosen short name is the whole point: it replaces the repository's.
+    #[test]
+    fn a_chosen_short_name_names_the_window() {
+        assert_eq!(
+            InvestigationWindow::pr(&short("h"), 7).to_string(),
+            "h:pr:7"
+        );
     }
 
     /// A slash inside a workflow name is punctuation, not an owner prefix.
@@ -370,7 +420,7 @@ mod tests {
         #[case] expected: &str,
     ) {
         assert_eq!(
-            InvestigationWindow::ci("hub", workflow).to_string(),
+            InvestigationWindow::ci(&short("hub"), workflow).to_string(),
             expected
         );
     }
@@ -378,7 +428,7 @@ mod tests {
     /// External text that sanitises to nothing must not produce an empty name.
     #[test]
     fn a_workflow_named_only_with_punctuation_falls_back() {
-        let name = InvestigationWindow::ci("hub", "!!! ///").to_string();
+        let name = InvestigationWindow::ci(&short("hub"), "!!! ///").to_string();
         assert_eq!(name, "hub:ci:unnamed");
     }
 
@@ -386,7 +436,8 @@ mod tests {
     /// saying what it is.
     #[test]
     fn a_long_project_keeps_its_kind_and_discriminator() {
-        let name = InvestigationWindow::pr("ooloth/a-very-long-repository-name", 330).to_string();
+        let name =
+            InvestigationWindow::pr(&of("ooloth/a-very-long-repository-name"), 330).to_string();
         assert!(name.ends_with(":pr:330"), "{name} lost its kind or number");
         assert!(name.len() <= MAX_LEN, "{name} is too long");
     }
@@ -395,7 +446,8 @@ mod tests {
     /// disambiguating hash is kept short enough to leave readable characters.
     #[test]
     fn a_shortened_repository_stays_recognisable() {
-        let name = InvestigationWindow::pr("ooloth/a-very-long-repository-name", 330).to_string();
+        let name =
+            InvestigationWindow::pr(&of("ooloth/a-very-long-repository-name"), 330).to_string();
         assert!(
             name.starts_with("a-very-long-rep"),
             "{name} is not recognisable"
@@ -409,14 +461,15 @@ mod tests {
     #[case("ooloth/hub-private", "hub-private:pr:12")]
     #[case("ooloth/config.nvim", "config-nvim:pr:12")]
     fn real_repository_names_survive_intact(#[case] repo: &str, #[case] expected: &str) {
-        assert_eq!(InvestigationWindow::pr(repo, 12).to_string(), expected);
+        assert_eq!(InvestigationWindow::pr(&of(repo), 12).to_string(), expected);
     }
 
     /// The case that surfaced this: the kept prefix ends on a separator, and
     /// the hash separator would double it.
     #[test]
     fn a_prefix_ending_in_a_separator_does_not_double_it() {
-        let name = InvestigationWindow::ci("hub", "build and test everything nightly").to_string();
+        let name =
+            InvestigationWindow::ci(&short("hub"), "build and test everything nightly").to_string();
         assert!(!name.contains("--"), "{name} has a doubled separator");
     }
 
@@ -424,8 +477,8 @@ mod tests {
     #[test]
     fn two_long_projects_sharing_a_prefix_get_different_windows() {
         assert_ne!(
-            InvestigationWindow::pr("ooloth/a-very-long-repository-name-one", 1),
-            InvestigationWindow::pr("ooloth/a-very-long-repository-name-two", 1),
+            InvestigationWindow::pr(&of("ooloth/a-very-long-repository-name-one"), 1),
+            InvestigationWindow::pr(&of("ooloth/a-very-long-repository-name-two"), 1),
         );
     }
 
@@ -442,6 +495,6 @@ mod tests {
     #[test]
     #[should_panic(expected = "signal number must be positive")]
     fn a_zero_signal_number_is_a_programmer_error() {
-        let _ = InvestigationWindow::pr("ooloth/hub", 0);
+        let _ = InvestigationWindow::pr(&of("ooloth/hub"), 0);
     }
 }
