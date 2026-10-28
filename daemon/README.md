@@ -29,23 +29,28 @@ closes or quits the app. After 10 minutes without credentials it posts a macOS n
 `terminal-notifier`, saying signals have paused and what's needed, then again every hour while they
 stay missing. Each replaces the last, and once credentials arrive the daemon removes it.
 
-It also posts a card for each pull request that is my turn: my review is requested, or it is mine
-and someone else reviewed it since my last push without my replying, or it is mine, approved, and
-GitHub says nothing blocks the merge. A review counts only when it asks something of me: an
-approval does not, nor does a bot's review with no inline comments, such as Copilot's overview. My
-last push is read from GitHub's repository activity, and only for a pull request with such a review.
-When it cannot be read, the turn neither starts nor ends, and the pass names `github last push` as
-a failed source. A card is posted once, at the first pass after
-the turn begins, and removed at the first pass after it ends. A pull request that stays my turn for
-the same reason is not posted again while the daemon runs, even after its card is dismissed. When
-the reason changes, such as a review arriving on my pull request that was ready to merge, its card
-is posted again in its own group, which replaces it. A restart posts again only the turns whose
-card is no longer showing, and a card found showing is not posted again whatever its reason, since
-hub does not read back what it says. Clicking a card opens the pull request. Cards are
-removed only when both pull request sources answered, so a source that failed never takes one away.
-Posting happens beside the passes, so no pass waits on `terminal-notifier`. The TUI's status bar
-warns when the daemon's refreshes stop, reading the health record from the database (#364). The
-TUI asking the daemon for a pass is [#365](https://github.com/ooloth/hub/issues/365).
+It also posts a card for each pull request that is my turn. Whose move it is is read from what one
+refresh saw of the pull request, never compared with a push or with an earlier refresh
+(`domain/src/pr_turn.rs`). Someone else's pull request is my turn when my review is requested,
+unless it is a draft. On my own, the move is mine unless a review request is pending or a thread I
+answered last waits on a person's reply, and anything waiting on me overrides that: a thread whose
+newest comment is someone else's, changes requested by a reviewer not asked again, or a person's
+review body newer than anything of mine. The card names the most useful next move, in this order:
+`feedback`, `checks failing`, `draft`, `ready to merge` or `conflicts` once it is approved, and
+`no reviewer` when nobody else is asked and nothing waits on anyone. Failing checks and an approval
+come before a pending request too, and an approved pull request blocked by anything but a running
+check is read as not approved. A card is posted once, at the first pass after the turn begins, and
+removed at the first pass after it ends. A pull request that stays my turn for the same reason is
+not posted again while the daemon runs, even after its card is dismissed. When the reason changes,
+such as feedback arriving on my pull request that was ready to merge, its card is posted again in
+its own group, which replaces it. A restart posts again only the turns whose card is no longer
+showing, and a card found showing is not posted again whatever its reason, since hub does not read
+back what it says. Clicking a card opens the pull request. Cards are removed only when every source
+of turns answered (my open pull requests, my drafts, and review requests), so a source that failed
+never takes one away. Posting happens beside the passes, so no pass waits on `terminal-notifier`.
+The TUI's status bar warns when the daemon's refreshes stop, reading the health record from the
+database (#364). The TUI asking the daemon for a pass is
+[#365](https://github.com/ooloth/hub/issues/365).
 
 ## Files
 

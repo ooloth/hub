@@ -32,6 +32,8 @@ pub mod notified;
 pub mod pass_failure;
 /// Pull request types and repository slug newtype.
 pub mod pr;
+/// Who is asked to review a pull request, who spoke last in its threads, and each verdict.
+pub mod pr_activity;
 /// The notification group a pull request's card is posted in, and reading groups back.
 pub mod pr_group;
 /// Which pull request something is about.
@@ -42,8 +44,6 @@ pub mod pr_turn;
 pub mod profile;
 /// The label a project goes by in window and tab names.
 pub mod project_short_name;
-/// Whether a review of my pull request is waiting on me, settled against my last push.
-pub mod review_waiting;
 /// The Rex session a terminal belongs to.
 pub mod rex_session_id;
 /// What the screen showed when an `op read` reached its deadline.

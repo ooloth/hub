@@ -29,6 +29,8 @@ mod markdown;
 mod render;
 mod state;
 mod terminal;
+#[cfg(test)]
+mod test_support;
 
 #[cfg(feature = "private")]
 mod private;

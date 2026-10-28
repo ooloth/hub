@@ -194,7 +194,7 @@ fn review_status_label(status: domain::ReviewStatus) -> String {
 
 fn pr_line(pr: &domain::PullRequest) -> LineParts {
     let review_status = review_status_label(pr.review_status());
-    let mut dim_inline = if pr.kind == domain::PrKind::MyDraft {
+    let mut dim_inline = if pr.draft {
         vec![
             format!(" #{}", pr.number),
             pr.author.clone(),

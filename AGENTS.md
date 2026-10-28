@@ -136,6 +136,12 @@ installed daemon, which always uses `default`.
 A Claude Code hook guards `gh` posts against hub-private's banned terms. It runs the built
 `scripts` binary, so it needs `just build` once per checkout (see `scripts/README.md`).
 
+**Finished work lands on `main` by a direct push, unless the user asks for a pull request.** This
+repo squash-merges pull requests and takes the commit message from the PR body, so a branch's own
+commits and the `Fixes #N` lines in them are lost, and the issues they fixed stay open (seen on
+#384, 2026-10-28). An independent review of the change still runs before the push, and the user
+sees its findings first.
+
 ## Verifying TUI changes
 
 **Every change that alters what the TUI shows or how it behaves is driven live

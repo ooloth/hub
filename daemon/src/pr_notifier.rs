@@ -233,10 +233,9 @@ mod tests {
             age: chrono::Duration::zero(),
             urgency: Urgency::High,
             kind: PrKind::ToReview,
+            draft: false,
             author: "someone".to_string(),
             review_decision: None,
-            approval_count: 0,
-            changes_requested_count: 0,
             comment_count: 0,
             head_branch: "h".to_string(),
             base_branch: "main".to_string(),
@@ -247,7 +246,7 @@ mod tests {
             review_threads: vec![],
             pr_comments: vec![],
             merge_readiness: MergeReadiness::NotYetKnown,
-            review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
+            activity: domain::pr_activity::PrActivity::default(),
         }
     }
 
@@ -386,31 +385,23 @@ mod tests {
         );
     }
 
-    /// My pull request `number`, approved with nothing blocking the merge, and a review from Ada
-    /// waiting on me when `reviewed`.
+    /// My pull request `number`, approved with nothing blocking the merge, and a thread whose
+    /// newest comment is Ada's waiting on me when `reviewed`.
     fn mine(number: u64, reviewed: bool) -> PullRequest {
-        use domain::review_waiting::{
-            Feedback, Review, ReviewWaiting, Reviewer, ReviewerKind, Verdict,
-        };
-        let feedback = Feedback::from_review(&Review {
-            by: Reviewer::Other {
-                login: "ada".to_string(),
-                kind: ReviewerKind::Person,
-            },
-            verdict: Verdict::ChangesRequested,
-            inline_comments: 1,
-            has_body: true,
-            submitted: chrono::DateTime::UNIX_EPOCH,
-        })
+        use domain::pr_activity::{OpenThread, Participant, PrActivity};
+        let thread = OpenThread::from_comments(&[(
+            Participant::Person("ada".to_string()),
+            chrono::DateTime::UNIX_EPOCH,
+        )])
         .unwrap();
         PullRequest {
             kind: PrKind::Mine,
-            approval_count: 1,
+            draft: false,
+            review_decision: Some(domain::ReviewDecision::Approved),
             merge_readiness: MergeReadiness::Ready,
-            review_waiting: if reviewed {
-                ReviewWaiting::Waiting(feedback)
-            } else {
-                ReviewWaiting::NoReview
+            activity: PrActivity {
+                open_threads: if reviewed { vec![thread] } else { vec![] },
+                ..PrActivity::default()
             },
             ..pr(number)
         }
@@ -458,7 +449,7 @@ mod tests {
                 ),
                 (
                     "hub-dev-pr-ooloth/hub#7".to_string(),
-                    "PR reviewed".to_string()
+                    "PR feedback".to_string()
                 ),
             ]
         );
@@ -488,7 +479,7 @@ mod tests {
                 },
                 ChangeOutcome::Reposted {
                     pr: id(5),
-                    reason: TurnReason::Reviewed {
+                    reason: TurnReason::Feedback {
                         by: "ada".to_string(),
                     },
                 },

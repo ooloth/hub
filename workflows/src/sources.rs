@@ -14,8 +14,9 @@ pub(crate) enum SourceAnswer {
     /// The source answered for itself, with the signals it found.
     Own(Vec<StatusItem>),
     /// The source runs several sources inside it, each of which answered or failed on its own.
-    /// The private workflows name only the sources inside them; my pull requests name themselves
-    /// as answered beside the failed lookups of my last push to them.
+    /// The private workflows name only the sources inside them.
+    // Only the private workflows answer this way, so a build without them never constructs it.
+    #[cfg_attr(not(feature = "private"), allow(dead_code))]
     Several {
         /// The signals from the sources inside it that answered.
         items: Vec<StatusItem>,

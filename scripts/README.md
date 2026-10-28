@@ -71,9 +71,10 @@ No output means allowed. A refusal prints the hook's deny JSON with the reason.
 - `src/repo_state/` — checks over the repository's own state, compiled only for tests:
   `crate_readmes` (every workspace member has a non-empty README), `lint_inheritance` (every
   member's manifest sets `[lints] workspace = true`), `domain_purity` (nothing under `domain/src`
-  names a way of reading ambient state), `decision_status` (no superseded decision record still
-  says "not yet implemented"), `snapshot_coverage` (every snapshot file is named by a test in its
-  crate), `daemon_tools` (every program the daemon's crates start by name is in `DAEMON_TOOLS`)
+  names a way of reading ambient state), `decision_numbers` (no two decision records share a
+  number), `decision_status` (no superseded decision record still says "not yet implemented"), `snapshot_coverage` (every snapshot file is named by a test in its
+  crate), `daemon_tools` (every program the daemon's crates start by name is in `DAEMON_TOOLS`),
+  `test_isolation` (`just test` and `just test-update` clear git's hook variables first)
   and `workspace` (the member list, from `cargo metadata`).
   Run them alone with `cargo nextest run -p scripts -E 'test(repo_state)'`
 - `src/banned_terms.rs`, `src/scanned_text.rs` — the one matching rule the guard and the

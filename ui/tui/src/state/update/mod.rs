@@ -423,10 +423,9 @@ mod tests {
                 age: chrono::Duration::zero(),
                 urgency: domain::Urgency::Low,
                 kind: domain::PrKind::ToReview,
+                draft: false,
                 author: "alice".to_string(),
                 review_decision: None,
-                approval_count: 0,
-                changes_requested_count: 0,
                 comment_count: 0,
                 head_branch: "feat/thing".to_string(),
                 base_branch: "main".to_string(),
@@ -437,7 +436,7 @@ mod tests {
                 review_threads: vec![],
                 pr_comments: vec![],
                 merge_readiness: domain::MergeReadiness::NotYetKnown,
-                review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
+                activity: domain::pr_activity::PrActivity::default(),
             },
         ))]);
         assert_eq!(
@@ -464,10 +463,9 @@ mod tests {
                 age: chrono::Duration::zero(),
                 urgency: domain::Urgency::Low,
                 kind: domain::PrKind::Mine,
+                draft: false,
                 author: "ooloth".to_string(),
                 review_decision: Some(domain::ReviewDecision::Approved),
-                approval_count: 1,
-                changes_requested_count: 0,
                 comment_count: 0,
                 head_branch: "feat/mine".to_string(),
                 base_branch: "main".to_string(),
@@ -478,7 +476,7 @@ mod tests {
                 review_threads: vec![],
                 pr_comments: vec![],
                 merge_readiness: domain::MergeReadiness::NotYetKnown,
-                review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
+                activity: crate::test_support::verdicts(1, 0),
             },
         ))]);
         assert_eq!(
@@ -504,11 +502,10 @@ mod tests {
                 url: "https://github.com/ooloth/hub/pull/9".to_string(),
                 age: chrono::Duration::zero(),
                 urgency: domain::Urgency::Low,
-                kind: domain::PrKind::MyDraft,
+                kind: domain::PrKind::Mine,
+                draft: true,
                 author: "ooloth".to_string(),
                 review_decision: Some(domain::ReviewDecision::ChangesRequested),
-                approval_count: 0,
-                changes_requested_count: 1,
                 comment_count: 0,
                 head_branch: "feat/draft".to_string(),
                 base_branch: "main".to_string(),
@@ -519,7 +516,7 @@ mod tests {
                 review_threads: vec![],
                 pr_comments: vec![],
                 merge_readiness: domain::MergeReadiness::NotYetKnown,
-                review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
+                activity: crate::test_support::verdicts(0, 1),
             },
         ))]);
         assert_eq!(
@@ -527,7 +524,7 @@ mod tests {
             InvestigateAction::LaunchPr {
                 repo: "ooloth/hub".to_string(),
                 number: 9,
-                kind: domain::PrKind::MyDraft,
+                kind: domain::PrKind::Mine,
                 author: "ooloth".to_string(),
                 head_branch: "feat/draft".to_string(),
                 base_branch: "main".to_string(),
@@ -1484,10 +1481,9 @@ mod tests {
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::Low,
             kind: domain::PrKind::Mine,
+            draft: false,
             author: "ooloth".to_string(),
             review_decision: None,
-            approval_count: 0,
-            changes_requested_count: 0,
             comment_count: 0,
             head_branch: "feat/thing".to_string(),
             base_branch: "main".to_string(),
@@ -1498,7 +1494,7 @@ mod tests {
             review_threads: vec![],
             pr_comments: vec![],
             merge_readiness: domain::MergeReadiness::NotYetKnown,
-            review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
+            activity: domain::pr_activity::PrActivity::default(),
         })
     }
 
@@ -1949,10 +1945,9 @@ mod tests {
             age: chrono::Duration::zero(),
             urgency: domain::Urgency::Low,
             kind: domain::PrKind::Mine,
+            draft: false,
             author: "ooloth".to_string(),
             review_decision: None,
-            approval_count: 0,
-            changes_requested_count: 0,
             comment_count: 0,
             head_branch: "feat/fix".to_string(),
             base_branch: "main".to_string(),
@@ -1963,7 +1958,7 @@ mod tests {
             review_threads: vec![],
             pr_comments: vec![],
             merge_readiness: domain::MergeReadiness::NotYetKnown,
-            review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
+            activity: domain::pr_activity::PrActivity::default(),
         })
     }
 

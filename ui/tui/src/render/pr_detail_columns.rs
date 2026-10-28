@@ -1,3 +1,4 @@
+use domain::pr_activity::Opinion;
 use domain::{CiStatus, PullRequest, ReviewStatus};
 use ratatui::{
     style::{Color, Style},
@@ -28,13 +29,15 @@ pub(super) fn pr_right_column_lines(
         review_status_spans(pr.review_status()),
     ));
 
-    let total_reviews = pr.approval_count + pr.changes_requested_count;
+    let approvals = pr.activity.count(Opinion::Approved);
+    let changes_requested = pr.activity.count(Opinion::ChangesRequested);
+    let total_reviews = approvals + changes_requested;
     if total_reviews > 0 {
-        let label = if pr.changes_requested_count == 0 {
-            if pr.approval_count == 1 {
+        let label = if changes_requested == 0 {
+            if approvals == 1 {
                 "1 approval".to_string()
             } else {
-                format!("{} approvals", pr.approval_count)
+                format!("{approvals} approvals")
             }
         } else if total_reviews == 1 {
             "1 review".to_string()
@@ -250,10 +253,9 @@ mod tests {
             age: Duration::days(3),
             urgency: Urgency::High,
             kind: PrKind::ToReview,
+            draft: false,
             author: "alice".to_string(),
             review_decision: Some(ReviewDecision::Approved),
-            approval_count: 2,
-            changes_requested_count: 0,
             comment_count: 5,
             head_branch: "feat/two-col".to_string(),
             base_branch: "main".to_string(),
@@ -277,7 +279,7 @@ mod tests {
             review_threads: vec![],
             pr_comments: vec![],
             merge_readiness: MergeReadiness::Blocked(MergeBlocker::Conflict),
-            review_waiting: domain::review_waiting::ReviewWaiting::NoReview,
+            activity: crate::test_support::verdicts(2, 0),
         }
     }
 
@@ -294,7 +296,7 @@ mod tests {
     #[test]
     fn pr_right_column_lines_omits_reviews_row_when_approval_count_is_zero() {
         let mut p = pr_with_all_fields();
-        p.approval_count = 0;
+        p.activity = crate::test_support::verdicts(0, 0);
         p.review_decision = None;
         let lines = pr_right_column_lines(&p, W, H, dim());
         let has_reviews_row = lines.iter().any(|l| line_text(l).contains("reviews "));
@@ -309,7 +311,7 @@ mod tests {
         #[case] expected: &str,
     ) {
         let mut p = pr_with_all_fields();
-        p.approval_count = count;
+        p.activity = crate::test_support::verdicts(count, 0);
         let lines = pr_right_column_lines(&p, W, H, dim());
         let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(
@@ -321,8 +323,7 @@ mod tests {
     #[test]
     fn pr_right_column_lines_reviews_row_sums_approvals_and_changes_requested() {
         let mut p = pr_with_all_fields();
-        p.approval_count = 1;
-        p.changes_requested_count = 1;
+        p.activity = crate::test_support::verdicts(1, 1);
         let lines = pr_right_column_lines(&p, W, H, dim());
         let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(
@@ -338,8 +339,7 @@ mod tests {
     #[test]
     fn pr_right_column_lines_status_row_shows_changes_requested_alongside_approvals() {
         let mut p = pr_with_all_fields();
-        p.approval_count = 1;
-        p.changes_requested_count = 1;
+        p.activity = crate::test_support::verdicts(1, 1);
         let lines = pr_right_column_lines(&p, W, H, dim());
         let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
         assert!(
