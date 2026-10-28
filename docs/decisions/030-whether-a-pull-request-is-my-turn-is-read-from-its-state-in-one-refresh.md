@@ -1,14 +1,10 @@
 ---
-number: 029
+number: 030
 status: accepted
 date: 2026-10-24
 ---
 
-# 029 — Whether a pull request is my turn is read from its state in one refresh, never from what happened since a push
-
-_Status: accepted; not yet implemented. `TurnReading::of` in `domain/src/pr_turn.rs` still reads
-`ReviewWaiting`, which `domain/src/review_waiting.rs` settles by comparing reviews with my last
-push from `clients/src/github/prs/last_push.rs`._
+# 030 — Whether a pull request is my turn is read from its state in one refresh, never from what happened since a push
 
 ## Forced by
 
@@ -104,5 +100,5 @@ the reading, not replace it.
       snoozable?](../questions/should-a-waiting-pull-request-be-snoozable.md) stays open, and this
       record leaves room for its answer
 - [x] vision.md — nothing defined or foreclosed; it does not describe how a turn is worked out
-- [ ] constraints.md — the repository activity entry stays, as a measured fact, but nothing will
-      use it once this is built. Change it in the change that removes the lookup
+- [x] constraints.md — the repository activity entry stays, as a measured fact, and now says
+      nothing in hub uses it
