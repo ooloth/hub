@@ -41,7 +41,8 @@ struct PrNode {
     title: String,
     url: String,
     body: Option<String>,
-    author: PrAuthor,
+    /// `None` when the author's account was deleted.
+    author: Option<PrAuthor>,
     #[serde(rename = "createdAt")]
     created_at: String,
     #[serde(rename = "isDraft")]
@@ -70,6 +71,14 @@ struct PrNode {
 #[derive(Deserialize)]
 struct PrAuthor {
     login: String,
+}
+
+/// The login GitHub shows for an account that was deleted.
+const DELETED_ACCOUNT: &str = "ghost";
+
+/// `author`'s login, or the one GitHub shows when the account was deleted.
+fn login_or_ghost(author: Option<PrAuthor>) -> String {
+    author.map_or_else(|| DELETED_ACCOUNT.to_string(), |a| a.login)
 }
 
 #[derive(Deserialize)]
@@ -137,7 +146,8 @@ struct PrCommentConnection {
 
 #[derive(Deserialize)]
 struct PrCommentNode {
-    author: PrAuthor,
+    /// `None` when the commenter's account was deleted.
+    author: Option<PrAuthor>,
     #[serde(rename = "createdAt")]
     created_at: String,
     body: String,
@@ -294,7 +304,13 @@ fn nodes_to_prs(
             let excluded = repos
                 .iter()
                 .find(|r| r.repo == node.repository.name_with_owner)
-                .is_some_and(|r| r.exclude_authors.iter().any(|a| a == &node.author.login));
+                .is_some_and(|r| {
+                    r.exclude_authors.iter().any(|a| {
+                        node.author
+                            .as_ref()
+                            .is_some_and(|author| a == &author.login)
+                    })
+                });
 
             !excluded
         })
@@ -356,7 +372,9 @@ fn node_to_pr(node: PrNode, search: &Search, me: &str) -> Result<PullRequest> {
                     .nodes
                     .into_iter()
                     .map(|c| ReviewComment {
-                        author: c.author.map_or_else(|| "ghost".to_string(), |a| a.login),
+                        author: c
+                            .author
+                            .map_or_else(|| DELETED_ACCOUNT.to_string(), |a| a.login),
                         age: age(&c.created_at),
                         body: c.body,
                     })
@@ -368,7 +386,7 @@ fn node_to_pr(node: PrNode, search: &Search, me: &str) -> Result<PullRequest> {
             .nodes
             .into_iter()
             .map(|c| ReviewComment {
-                author: c.author.login,
+                author: login_or_ghost(c.author),
                 age: age(&c.created_at),
                 body: c.body,
             })
@@ -377,7 +395,7 @@ fn node_to_pr(node: PrNode, search: &Search, me: &str) -> Result<PullRequest> {
         urgency: search.urgency,
         kind: search.kind,
         draft: node.is_draft,
-        author: node.author.login,
+        author: login_or_ghost(node.author),
         review_decision: parse_review_decision(node.review_decision.as_deref()),
         comment_count,
         head_branch: node.head_ref_name,
@@ -525,17 +543,17 @@ async fn graphql_prs(
 }
 
 /// The pull requests in `response`, or why GitHub refused the query.
+///
+/// GitHub can answer with data and errors together, when it could not resolve a field for one
+/// pull request. The data is still the answer then, so only a response without data fails.
 fn search_nodes(response: GraphQlResponse) -> Result<Vec<PrNode>> {
-    if !response.errors.is_empty() {
+    let Some(data) = response.data else {
         let messages: Vec<String> = response.errors.into_iter().map(|e| e.message).collect();
         anyhow::bail!(
             "GitHub refused the pull request query: {}",
             messages.join("; ")
         );
-    }
-    let data = response
-        .data
-        .context("GitHub's pull request response had neither data nor errors")?;
+    };
     Ok(data.search.nodes)
 }
 
@@ -797,5 +815,36 @@ mod tests {
             paths.contains(&"/repos/owner/repo/pulls/1/files".to_string()),
             "{paths:?}"
         );
+    }
+
+    /// A field GitHub could not resolve for one pull request comes back as an error beside the
+    /// data, and the rest of the search is still usable.
+    #[tokio::test]
+    async fn an_error_beside_data_still_returns_the_search() {
+        let server = github(serde_json::json!({
+            "data": { "search": { "nodes": [node_json("alice", "owner/repo", &[], false)] } },
+            "errors": [{ "type": "FORBIDDEN", "message": "Resource protected by organization SAML enforcement." }]
+        }))
+        .await;
+
+        let prs = fetch_mine(&server).await.unwrap();
+
+        assert_eq!(prs.len(), 1);
+    }
+
+    /// GitHub returns `null` for the author of a deleted account.
+    #[test]
+    fn a_pull_request_and_comment_from_deleted_accounts_still_parse() {
+        let mut json = node_json("alice", "owner/repo", &[], false);
+        json["author"] = serde_json::Value::Null;
+        json["comments"] = serde_json::json!({ "nodes": [
+            { "author": null, "createdAt": "2024-01-01T00:00:00Z", "body": "gone" }
+        ] });
+        let node: PrNode = serde_json::from_value(json).unwrap();
+
+        let pr = node_to_pr(node, &search(PrKind::External, false), "me").unwrap();
+
+        assert_eq!(pr.author, "ghost");
+        assert_eq!(pr.pr_comments[0].author, "ghost");
     }
 }

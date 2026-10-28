@@ -16,7 +16,7 @@ pub(super) const ACTIVITY_FIELDS: &str = "
             latestOpinionatedReviews(first: 100) { nodes { state author { __typename login } submittedAt } }
             reviewRequests(first: 20) { nodes { requestedReviewer { __typename
                 ... on User { login } ... on Bot { login } ... on Mannequin { login } } } }
-            reviewThreads(first: 50) { nodes { isResolved path line diffSide
+            reviewThreads(last: 50) { nodes { isResolved path line diffSide
                 comments(last: 10) { nodes { author { __typename login } createdAt body } }
             } }
             recentReviews: reviews(last: 100) { nodes { state author { __typename login } submittedAt body } }
@@ -155,12 +155,13 @@ pub(super) fn activity(nodes: &ActivityNodes, me: &str) -> PrActivity {
             .filter(|thread| !thread.is_resolved)
             .filter_map(|thread| open_thread(thread, me))
             .collect(),
-        verdicts: nodes
-            .latest_opinionated_reviews
-            .nodes
-            .iter()
-            .filter_map(|verdict| latest_verdict(verdict, me))
-            .collect(),
+        verdicts: newest_per_reviewer(
+            nodes
+                .latest_opinionated_reviews
+                .nodes
+                .iter()
+                .filter_map(|verdict| latest_verdict(verdict, me)),
+        ),
         bodies: nodes
             .recent_reviews
             .nodes
@@ -207,6 +208,20 @@ fn open_thread(thread: &ThreadNode, me: &str) -> Option<OpenThread> {
         })
         .collect();
     OpenThread::from_comments(&comments)
+}
+
+/// One verdict per reviewer, their newest. `latestOpinionatedReviews` already gives one each, so
+/// this only matters if GitHub ever repeats a reviewer.
+fn newest_per_reviewer(verdicts: impl Iterator<Item = LatestVerdict>) -> Vec<LatestVerdict> {
+    let mut newest: Vec<LatestVerdict> = Vec::new();
+    for verdict in verdicts {
+        match newest.iter_mut().find(|kept| kept.by == verdict.by) {
+            Some(kept) if verdict.at > kept.at => *kept = verdict,
+            Some(_) => {}
+            None => newest.push(verdict),
+        }
+    }
+    newest
 }
 
 fn latest_verdict(node: &VerdictNode, me: &str) -> Option<LatestVerdict> {
@@ -448,5 +463,34 @@ mod tests {
         }));
 
         assert_eq!(activity.open_threads, vec![]);
+    }
+
+    /// Unresolved threads are usually the newest, so a pull request with more threads than one
+    /// query reads keeps the ones that can still wait on me.
+    #[test]
+    fn the_query_reads_the_newest_threads() {
+        assert!(
+            ACTIVITY_FIELDS.contains("reviewThreads(last: 50)"),
+            "{ACTIVITY_FIELDS}"
+        );
+    }
+
+    #[test]
+    fn a_reviewer_listed_twice_keeps_only_their_newest_verdict() {
+        let activity = read(serde_json::json!({
+            "latestOpinionatedReviews": { "nodes": [
+                { "state": "CHANGES_REQUESTED", "author": { "__typename": "User", "login": "ada" }, "submittedAt": "2026-05-16T01:00:00Z" },
+                { "state": "APPROVED", "author": { "__typename": "User", "login": "ada" }, "submittedAt": "2026-05-16T02:00:00Z" }
+            ] }
+        }));
+
+        assert_eq!(
+            activity.verdicts,
+            vec![LatestVerdict {
+                by: Participant::Person("ada".to_string()),
+                opinion: Opinion::Approved,
+                at: at("2026-05-16T02:00:00Z"),
+            }]
+        );
     }
 }
