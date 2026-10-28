@@ -833,7 +833,12 @@ mod tests {
             pr in any_pr()
         ) {
             if TurnReading::of(&pr) == TurnReading::Undecided {
+                let approved = match pr.review_decision {
+                    Some(decision) => decision == ReviewDecision::Approved,
+                    None => matches!(pr.review_status(), ReviewStatus::Approved(_)),
+                };
                 prop_assert_eq!(pr.kind, PrKind::Mine);
+                prop_assert!(approved, "undecided though not approved: {:?}", pr.review_decision);
                 prop_assert_eq!(pr.merge_readiness, MergeReadiness::NotYetKnown);
             }
         }
@@ -845,17 +850,14 @@ mod tests {
         ) {
             let mut pr = pr;
             pr.kind = PrKind::Mine;
+            pr.activity.verdicts = vec![];
+            pr.activity.bodies = vec![];
             pr.activity.open_threads = vec![
-                thread(&[(person("ada"), at)]),
+                thread(&[(person("ada"), at), (Participant::Me, at + 1)]),
                 thread(&[(person("grace"), at)]),
             ];
-            let mut replied = pr.clone();
-            replied.activity.open_threads[0] = thread(&[(person("ada"), at), (Participant::Me, at + 1)]);
 
-            let before = matches!(reason(&TurnReading::of(&pr)), Some(TurnReason::Feedback { .. }));
-            let after = matches!(reason(&TurnReading::of(&replied)), Some(TurnReason::Feedback { .. }));
-            prop_assert!(before);
-            prop_assert!(after);
+            prop_assert_eq!(reason(&TurnReading::of(&pr)), feedback_from("grace"));
         }
 
         #[test]

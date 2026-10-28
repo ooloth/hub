@@ -1075,7 +1075,37 @@ mod tests {
                 0,
                 "My pull request is my turn when someone leaves feedback",
             ))),
+            DisplayItem::Single(with_pr(
+                turn_pr(
+                    374,
+                    domain::PrKind::Mine,
+                    0,
+                    "Pull requests that are my turn are listed by age",
+                ),
+                |pr| pr.ci_status = Some(domain::CiStatus::Failure),
+            )),
+            DisplayItem::Single(with_pr(
+                turn_pr(
+                    375,
+                    domain::PrKind::Mine,
+                    1,
+                    "An investigation tells the agent why it waits on me",
+                ),
+                |pr| {
+                    pr.merge_readiness =
+                        domain::MergeReadiness::Blocked(domain::MergeBlocker::Conflict);
+                },
+            )),
         ]
+    }
+
+    /// `item` after `change`.
+    fn with_pr(item: StatusItem, change: impl FnOnce(&mut domain::PullRequest)) -> StatusItem {
+        let StatusItem::Pr(mut pr) = item else {
+            unreachable!()
+        };
+        change(&mut pr);
+        StatusItem::Pr(pr)
     }
 
     /// `item`, still a draft.
@@ -1111,7 +1141,7 @@ mod tests {
     #[case::wide(200, "full_screen_unified_list_turn_reasons_200")]
     fn full_screen_unified_list_turn_reasons(#[case] width: u16, #[case] snapshot: &str) {
         let mut app = unified_list_app(turn_rows());
-        let buf = draw(&mut app, width, 9);
+        let buf = draw(&mut app, width, 11);
         insta::assert_snapshot!(snapshot, screen_text(&buf));
     }
 

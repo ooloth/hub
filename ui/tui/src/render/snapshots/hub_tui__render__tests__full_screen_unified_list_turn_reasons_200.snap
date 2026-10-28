@@ -8,6 +8,8 @@ expression: screen_text(&buf)
 │PR · ready to merge · Investigation worktrees are removed however their session ends #371 · alice · 1 approval                                                                         ooloth/hub · 3h│
 │PR · feedback · A reply in a review thread I took part in makes it my turn #372 · alice · 1 approval                                                                                   ooloth/hub · 3h│
 │PR · draft · My pull request is my turn when someone leaves feedback #373 · alice · draft                                                                                              ooloth/hub · 3h│
+│PR · checks failing · Pull requests that are my turn are listed by age #374 · alice · no reviews                                                                                       ooloth/hub · 3h│
+│PR · conflicts · An investigation tells the agent why it waits on me #375 · alice · 1 approval · conflict                                                                              ooloth/hub · 3h│
 │                                                                                                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- 1/5 · [↩] details · [p] prs · [O] issues · [e] errors · [/] search · [i] investigate
+ 1/7 · [↩] details · [p] prs · [O] issues · [e] errors · [/] search · [i] investigate
