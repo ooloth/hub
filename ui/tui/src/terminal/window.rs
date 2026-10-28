@@ -116,8 +116,6 @@ mod tests {
     use proptest::prelude::*;
     use rstest::rstest;
 
-    /// Window ids are irrelevant to every test that only asks whether a name
-    /// matched, so they are generated rather than spelled out.
     fn hub() -> domain::ProjectShortName {
         short("hub")
     }
@@ -126,6 +124,8 @@ mod tests {
         domain::ProjectShortName::parse(name).unwrap()
     }
 
+    /// Window ids are irrelevant to every test that only asks whether a name
+    /// matched, so they are generated rather than spelled out.
     fn open(names: &[&str]) -> Vec<OpenWindow> {
         names
             .iter()

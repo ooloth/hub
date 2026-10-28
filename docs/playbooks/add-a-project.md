@@ -19,7 +19,7 @@ GitHub read it from here, and hub clones it into `~/.hub/repos/<repo name>/`.
 
 Two optional labels default to the repository's name:
 
-- **`name`** is what the TUI calls the project. It can be any text that is not
+- **`name`** is what alert rows and the status bar call the project. It can be any text that is not
   blank.
 - **`short_name`** is what the names of the windows and tabs hub opens call the
   project, where space is short. It must be lowercase letters, digits and

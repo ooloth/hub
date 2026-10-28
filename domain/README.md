@@ -16,6 +16,7 @@ Types and pure business logic. The shared vocabulary of the system.
 - `Profile`, which set of hub's state a process uses (`profile.rs`)
 - `RepoSlug`, `UntrustedText` and the investigation types `InvestigationPrompt` and
   `InvestigationWindow`
+- `ProjectShortName`, what a project is called in window and tab names (`project_short_name.rs`)
 - session transcript parsing: `StreamBlock` (`session.rs`)
 
 Config structs are in `config/`, not here.

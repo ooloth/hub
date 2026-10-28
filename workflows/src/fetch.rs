@@ -31,8 +31,7 @@ pub fn bare_clone(repo: &RepoSlug) -> PathBuf {
 ///
 /// On each call, fetches latest refs and prunes deleted remote branches. After
 /// fetching, removes any linked worktrees whose remote tracking ref is gone
-/// (indicating a merged or closed PR branch). Logs a warning to stderr for any
-/// clone directory present in `~/.hub/repos/` but absent from `projects`.
+/// (indicating a merged or closed PR branch).
 ///
 /// # Errors
 /// Returns an error if any git operation fails.

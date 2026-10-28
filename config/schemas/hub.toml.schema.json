@@ -73,7 +73,7 @@
       "properties": {
         "name": {
           "type": "string",
-          "description": "What the TUI calls this project. Defaults to the repository's name.",
+          "description": "What alert rows and the status bar call this project. Defaults to the repository's name.",
           "pattern": "\\S"
         },
         "short_name": {
@@ -84,8 +84,8 @@
         },
         "repo": {
           "type": "string",
-          "description": "GitHub repository in owner/name format.",
-          "pattern": "^[^/]+/[^/]+$"
+          "description": "GitHub repository in owner/name format. The name cannot be . or .., which GitHub refuses.",
+          "pattern": "^[^/]+/(?!\\.{1,2}$)[^/]+$"
         },
         "workflow": {
           "type": "array",

@@ -18,11 +18,11 @@ github_username = "your-github-username"
 # ── Projects without deployments ──────────────────────────────────────────────
 # Use [[project.workflow]] for codebase-level observations (PRs, issues, CI).
 
-# `name` (shown in the TUI) and `short_name` (shown in window and tab names)
-# both default to the repository's name; set either to shorten it.
+# `name` (shown on alert rows and the status bar) and `short_name` (shown in
+# window and tab names) both default to the repository's name.
 [[project]]
-repo       = "ooloth/hub"
-short_name = "hub"
+repo = "ooloth/hub"
+# short_name = "h"  # windows read h:pr:12 instead of hub:pr:12
 
 [[project.workflow]]
 name = "github-prs"

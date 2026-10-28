@@ -20,9 +20,10 @@ for non-project observations. Credential values are either plain strings or
 
 ### Projects
 
-Each `[[project]]` has a `name`, a `repo` (`owner/name`), and workflows.
-Workflows are always objects — there is no string shorthand. `name` is the
-only required field; all other fields are workflow-defined.
+Each `[[project]]` has a `repo` (`owner/name`), optional `name` and
+`short_name` labels, and workflows. Workflows are always objects — there is
+no string shorthand. `repo` is the only required field; all other fields are
+workflow-defined.
 
 Projects that have no deployment concept (config repos, static sites, tools)
 list workflows directly under `[[project.workflow]]`:
