@@ -8,7 +8,7 @@ use std::future::Future;
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use domain::pr_group::waiting_group;
+use domain::pr_group::{leftover_cards, waiting_group};
 use domain::pr_id::PrId;
 use domain::profile::Profile;
 use domain::turns_seen::{TurnCoverage, TurnsSeen};
@@ -20,31 +20,65 @@ use crate::pass::one_line;
 
 /// Posts, removes or leaves the card to match the pull requests waiting on me, and removes the
 /// per-pull-request cards an earlier build left showing.
-pub(crate) struct PrNotifier<P, R> {
+pub(crate) struct PrNotifier<L, P, R> {
     profile: Profile,
     waiting: WaitingOnMe,
-    leftovers: Vec<String>,
+    leftovers: Leftovers,
+    list: L,
     post: P,
     remove: R,
 }
 
-impl<P, PostFut, R, RemoveFut> PrNotifier<P, R>
+/// The per-pull-request cards an earlier build left showing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Leftovers {
+    /// Not yet listed, so none can be removed.
+    NotYetListed,
+    /// Listed, and these are still to remove. Empty once every one is removed.
+    ToRemove(Vec<String>),
+}
+
+impl<L, ListFut, P, PostFut, R, RemoveFut> PrNotifier<L, P, R>
 where
+    L: FnMut() -> ListFut,
+    ListFut: Future<Output = Result<String>>,
     P: FnMut(String, WaitingCard) -> PostFut,
     PostFut: Future<Output = Result<()>>,
     R: FnMut(String) -> RemoveFut,
     RemoveFut: Future<Output = Result<()>>,
 {
-    /// A notifier for `profile` that has `leftovers` to remove, posting with `post` and removing
-    /// with `remove`, each given a group.
-    pub(crate) fn new(profile: Profile, leftovers: Vec<String>, post: P, remove: R) -> Self {
+    /// A notifier for `profile` that lists the cards showing with `list`, posts with `post` and
+    /// removes with `remove`, each of the last two given a group.
+    pub(crate) fn new(profile: Profile, list: L, post: P, remove: R) -> Self {
         Self {
             profile,
             waiting: WaitingOnMe::default(),
-            leftovers,
+            leftovers: Leftovers::NotYetListed,
+            list,
             post,
             remove,
         }
+    }
+
+    /// Lists the cards an earlier build left showing, unless a listing has already succeeded. A
+    /// listing that fails is made again next time.
+    pub(crate) async fn list_leftovers(&mut self) -> Option<CardsFound> {
+        if self.leftovers != Leftovers::NotYetListed {
+            return None;
+        }
+        let found = (self.list)()
+            .await
+            .map(|listed| leftover_cards(self.profile, &listed))
+            .map_err(|error| format!("{error:#}"));
+        if let Ok(leftovers) = &found {
+            self.leftovers = Leftovers::ToRemove(leftovers.clone());
+        }
+        Some(CardsFound {
+            at: Utc::now(),
+            pid: std::process::id(),
+            profile: self.profile,
+            found,
+        })
     }
 
     /// Counts the turns in `seen`, then posts, removes or leaves the card to match, and tries to
@@ -52,7 +86,7 @@ where
     pub(crate) async fn apply(&mut self, seen: &TurnsSeen) -> NotifierReport {
         self.waiting = std::mem::take(&mut self.waiting).after(seen);
         let group = waiting_group(self.profile);
-        let card = match CardChange::after(&self.waiting, seen) {
+        let card = match CardChange::after(&self.waiting, seen.coverage()) {
             CardChange::Show(card) => match (self.post)(group, card).await {
                 Ok(()) => CardOutcome::Posted,
                 Err(error) => CardOutcome::PostFailed(format!("{error:#}")),
@@ -65,16 +99,18 @@ where
         };
         let mut leftovers_removed = Vec::new();
         let mut leftovers_failed = Vec::new();
-        for leftover in std::mem::take(&mut self.leftovers) {
-            match (self.remove)(leftover.clone()).await {
-                Ok(()) => leftovers_removed.push(leftover),
-                Err(error) => leftovers_failed.push((leftover, format!("{error:#}"))),
+        if let Leftovers::ToRemove(leftovers) = &mut self.leftovers {
+            for leftover in std::mem::take(leftovers) {
+                match (self.remove)(leftover.clone()).await {
+                    Ok(()) => leftovers_removed.push(leftover),
+                    Err(error) => leftovers_failed.push((leftover, format!("{error:#}"))),
+                }
             }
+            *leftovers = leftovers_failed
+                .iter()
+                .map(|(group, _)| group.clone())
+                .collect();
         }
-        self.leftovers = leftovers_failed
-            .iter()
-            .map(|(group, _)| group.clone())
-            .collect();
         NotifierReport {
             at: Utc::now(),
             pid: std::process::id(),
@@ -93,6 +129,9 @@ where
         while turns.changed().await.is_ok() {
             let newest = turns.borrow_and_update().clone();
             if let Some(seen) = newest {
+                if let Some(found) = self.list_leftovers().await {
+                    println!("{found}");
+                }
                 println!("{}", self.apply(&seen).await);
             }
         }
@@ -185,7 +224,7 @@ impl fmt::Display for NotifierReport {
     }
 }
 
-/// The leftover per-pull-request cards found showing at startup, as it is logged.
+/// The leftover per-pull-request cards found showing, as it is logged.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct CardsFound {
     pub(crate) at: DateTime<Utc>,
@@ -265,30 +304,49 @@ pub(crate) mod tests {
         }
     }
 
-    /// Every card posted, as its group and title, and every group removed, in order.
+    /// A listing that finds no card showing.
+    fn nothing_showing() -> std::future::Ready<Result<String>> {
+        std::future::ready(Ok(String::new()))
+    }
+
+    /// Every listing made, every card posted, as its group and title, and every group removed, in
+    /// order.
     #[derive(Default)]
     struct Calls {
+        listings: usize,
         posted: Vec<(String, String)>,
         removed: Vec<String>,
     }
 
-    /// A notifier for the dev profile with `leftovers`, whose posts and removals are recorded in
-    /// the calls returned, and whose removals of the groups in `failing` fail.
+    /// A notifier for the dev profile whose listings, posts and removals are recorded in the calls
+    /// returned. Its listings fail as many times as `listing_fails`, then find the groups in
+    /// `showing`, and its removals of the groups in `failing` fail.
     fn recording(
-        leftovers: &[&str],
+        listing_fails: usize,
+        showing: &[&str],
         failing: &'static [&'static str],
     ) -> (
         Rc<RefCell<Calls>>,
         PrNotifier<
+            impl FnMut() -> std::future::Ready<Result<String>>,
             impl FnMut(String, WaitingCard) -> std::future::Ready<Result<()>>,
             impl FnMut(String) -> std::future::Ready<Result<()>>,
         >,
     ) {
         let calls = Rc::new(RefCell::new(Calls::default()));
-        let (posts, removes) = (Rc::clone(&calls), Rc::clone(&calls));
+        let (lists, posts, removes) = (Rc::clone(&calls), Rc::clone(&calls), Rc::clone(&calls));
+        let listed = showing.join("\n");
         let notifier = PrNotifier::new(
             Profile::Dev,
-            leftovers.iter().map(ToString::to_string).collect(),
+            move || {
+                let mut calls = lists.borrow_mut();
+                calls.listings += 1;
+                std::future::ready(if calls.listings <= listing_fails {
+                    Err(anyhow::anyhow!("listing the cards showing took too long"))
+                } else {
+                    Ok(listed.clone())
+                })
+            },
             move |group, card: WaitingCard| {
                 posts.borrow_mut().posted.push((group, card.title()));
                 std::future::ready(Ok(()))
@@ -308,7 +366,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn every_refresh_with_a_turn_posts_the_card_to_the_same_group() {
-        let (calls, mut notifier) = recording(&[], &[]);
+        let (calls, mut notifier) = recording(0, &[], &[]);
 
         let _ = notifier.apply(&complete(&[1, 2])).await;
         let _ = notifier.apply(&complete(&[1, 2])).await;
@@ -335,7 +393,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_complete_refresh_with_no_turn_removes_the_card() {
-        let (calls, mut notifier) = recording(&[], &[]);
+        let (calls, mut notifier) = recording(0, &[], &[]);
 
         let _ = notifier.apply(&complete(&[1])).await;
         let report = notifier.apply(&complete(&[])).await;
@@ -346,7 +404,7 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn an_incomplete_refresh_keeps_counting_what_it_could_not_check() {
-        let (calls, mut notifier) = recording(&[], &[]);
+        let (calls, mut notifier) = recording(0, &[], &[]);
 
         let _ = notifier.apply(&complete(&[1])).await;
         let report = notifier.apply(&seen(&[], TurnCoverage::Incomplete)).await;
@@ -359,10 +417,12 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn leftover_cards_are_removed_on_the_first_refresh_and_a_failed_one_again_on_the_next() {
         let (calls, mut notifier) = recording(
+            0,
             &["hub-dev-pr-ooloth/hub#1", "hub-dev-pr-ooloth/hub#2"],
             &["hub-dev-pr-ooloth/hub#2"],
         );
 
+        let _ = notifier.list_leftovers().await;
         let first = notifier.apply(&complete(&[3])).await;
         let second = notifier.apply(&complete(&[3])).await;
         let third = notifier.apply(&complete(&[3])).await;
@@ -388,12 +448,70 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn a_failed_listing_removes_nothing_and_the_next_refresh_lists_again() {
+        let (calls, mut notifier) = recording(1, &["hub-dev-pr-ooloth/hub#1"], &[]);
+
+        let failed = notifier.list_leftovers().await;
+        let first = notifier.apply(&complete(&[3])).await;
+        let listed = notifier.list_leftovers().await;
+        let second = notifier.apply(&complete(&[3])).await;
+
+        assert_eq!(
+            failed.map(|found| found.found),
+            Some(Err("listing the cards showing took too long".to_string()))
+        );
+        assert!(first.leftovers_removed.is_empty(), "{first}");
+        assert_eq!(
+            listed.map(|found| found.found),
+            Some(Ok(vec!["hub-dev-pr-ooloth/hub#1".to_string()]))
+        );
+        assert_eq!(second.leftovers_removed, vec!["hub-dev-pr-ooloth/hub#1"]);
+        assert_eq!(calls.borrow().listings, 2);
+    }
+
+    #[tokio::test]
+    async fn once_a_listing_succeeds_no_later_refresh_lists_again() {
+        let (calls, mut notifier) = recording(0, &[], &[]);
+
+        let first = notifier.list_leftovers().await;
+        let second = notifier.list_leftovers().await;
+
+        assert_eq!(first.map(|found| found.found), Some(Ok(vec![])));
+        assert_eq!(second, None);
+        assert_eq!(calls.borrow().listings, 1);
+    }
+
+    #[tokio::test]
+    async fn a_failed_removal_of_the_card_is_reported_and_made_again_on_the_next_refresh() {
+        let (calls, mut notifier) = recording(0, &[], &["hub-dev-turns"]);
+
+        let _ = notifier.apply(&complete(&[1])).await;
+        let report = notifier.apply(&complete(&[])).await;
+        let _ = notifier.apply(&complete(&[])).await;
+
+        assert_eq!(
+            report.card,
+            CardOutcome::RemoveFailed("removing the card took too long".to_string())
+        );
+        assert!(
+            report
+                .to_string()
+                .ends_with("card=remove_failed failed=\"remove: removing the card took too long\""),
+            "{report}"
+        );
+        assert_eq!(
+            calls.borrow().removed,
+            vec!["hub-dev-turns", "hub-dev-turns"]
+        );
+    }
+
+    #[tokio::test]
     async fn a_failed_post_is_reported_and_made_again_on_the_next_refresh() {
         let attempts = Rc::new(RefCell::new(0));
         let counted = Rc::clone(&attempts);
         let mut notifier = PrNotifier::new(
             Profile::Dev,
-            vec![],
+            nothing_showing,
             move |_, _| {
                 *counted.borrow_mut() += 1;
                 std::future::ready(Err(anyhow::anyhow!("posting the card took too long")))
@@ -414,12 +532,12 @@ pub(crate) mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_stuck_notifier_holds_up_no_pass_and_then_works_from_the_newest_turns() {
+    async fn a_notifier_busy_posting_skips_to_the_newest_turns() {
         let posted = Rc::new(RefCell::new(Vec::new()));
         let posts = Rc::clone(&posted);
         let notifier = PrNotifier::new(
             Profile::Dev,
-            vec![],
+            nothing_showing,
             move |_group, card: WaitingCard| {
                 let posts = Rc::clone(&posts);
                 async move {
@@ -500,7 +618,7 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn leftovers_found_at_startup_are_one_line() {
+    fn the_leftovers_found_are_one_line() {
         let found = CardsFound {
             at: Utc.with_ymd_and_hms(2026, 10, 28, 23, 15, 55).unwrap(),
             pid: 4242,

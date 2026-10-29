@@ -39,7 +39,8 @@ whose turn ends, so when it lifts I see only the pull requests still waiting on 
 Switching off terminal-notifier's notifications in System Settings is not a way to pause hub. A card
 posted while it is off is lost, and the daemon does not post a turn again for the same reason while
 it keeps running, so a pull request that became my turn in that time is never notified until the
-daemon restarts.
+daemon restarts. (The 2026-10-28 addendum below changes this: the card is now posted on every
+refresh.)
 
 The option kept open: hub can still gain a pause or quiet hours of its own later. Nothing in the
 daemon assumes notifications are always delivered, because a card that never reaches the screen

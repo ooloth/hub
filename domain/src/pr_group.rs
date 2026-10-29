@@ -2,7 +2,8 @@
 //!
 //! The group names the profile, so the dev daemon and the installed one never touch each other's
 //! card, and neither touches the missing-credentials card. Until #382 each pull request had a card
-//! in a group of its own, `hub-<profile>-pr-<owner>/<repo>#<number>`; those are removed at startup.
+//! in a group of its own, `hub-<profile>-pr-<owner>/<repo>#<number>`; the daemon removes those
+//! once it has listed them.
 use crate::profile::Profile;
 
 /// The group `profile`'s card is posted in: `hub-<profile>-turns`.

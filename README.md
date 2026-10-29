@@ -34,8 +34,8 @@ prioritized view with agentic capabilities built in:
   (`~/.hub/<profile>/hub.db`, [Decision 024](docs/decisions/024-hub-state-is-per-profile.md)) and
   runs independently
 - **Rust** — three binaries: `hub` (CLI), `hub-tui` (Ratatui dashboard) and `hub-daemon`
-  (refreshes the cache with nobody present, and posts a macOS notification for each pull request
-  that becomes my turn); not a web app
+  (refreshes the cache with nobody present, and posts one macOS notification counting the pull
+  requests that are my turn); not a web app
 
 ## Docs
 

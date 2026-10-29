@@ -9,7 +9,6 @@ use domain::daemon_health::Schedule;
 use domain::daemon_pass::{Pass, PassOutcome};
 use domain::known_secrets::KnownSecrets;
 use domain::pass_failure::PassFailure;
-use domain::pr_group::leftover_cards;
 use domain::profile::Profile;
 use domain::turns_seen::TurnsSeen;
 
@@ -173,10 +172,9 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
         log_notification_removal(profile, removed);
     }
 
-    // Before the first pass, which removes the per-pull-request cards an earlier build left.
     let mut pr_notifier = pr_notifier::PrNotifier::new(
         profile,
-        leftovers_showing(profile).await,
+        notification::list_shown,
         notification::post_waiting,
         notification::remove_group,
     );
@@ -185,6 +183,9 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
         let (report, turns) = run_pass(&config, profile, schedule).await;
         println!("{report}");
         if let Some(turns) = turns {
+            if let Some(found) = pr_notifier.list_leftovers().await {
+                println!("{found}");
+            }
             println!("{}", pr_notifier.apply(&turns).await);
         }
         return Ok(if report.wrote_the_cache() {
@@ -227,26 +228,6 @@ fn log_notification_removal(profile: Profile, removed: Result<()>) {
             error: removed.err().map(|error| format!("{error:#}")),
         }
     );
-}
-
-/// The per-pull-request cards an earlier build left showing for `profile`, logged. Empty when they
-/// cannot be listed, so those cards stay until dismissed.
-async fn leftovers_showing(profile: Profile) -> Vec<String> {
-    let found = notification::list_shown()
-        .await
-        .map(|listed| leftover_cards(profile, &listed))
-        .map_err(|error| format!("{error:#}"));
-    let leftovers = found.clone().unwrap_or_default();
-    println!(
-        "{}",
-        pr_notifier::CardsFound {
-            at: Utc::now(),
-            pid: std::process::id(),
-            profile,
-            found,
-        }
-    );
-    leftovers
 }
 
 /// Runs one pass: asks every source, replaces the cache if anything came back, and records the

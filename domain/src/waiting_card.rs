@@ -1,12 +1,13 @@
 //! The one card that says how many pull requests are waiting on me, and why.
 //!
-//! The card is posted after every refresh that finds a turn, so it shows again each time, and is
-//! removed once a refresh that heard from every source finds none. It names no pull request.
+//! The card is posted after every refresh while anything is counted, so it shows again each time,
+//! and is removed once a refresh that heard from every source leaves nothing counted. It names no
+//! pull request.
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
 
 use crate::reason_kind::ReasonKind;
-use crate::turns_seen::{TurnCoverage, TurnsSeen};
+use crate::turns_seen::TurnCoverage;
 use crate::waiting_on_me::WaitingOnMe;
 
 /// What the card says when the refresh behind it missed a pull request source. Every source a
@@ -68,21 +69,21 @@ pub enum CardChange {
 }
 
 impl CardChange {
-    /// What to do with the card now that `waiting` counts what `seen` and earlier refreshes found.
+    /// What to do with the card now that `waiting` counts what the latest refresh, whose
+    /// `coverage` is given, and earlier refreshes found.
     ///
     /// # Panics
-    /// When the change contradicts `waiting` or `seen`, which only a bug here can cause.
+    /// When the change contradicts `waiting` or `coverage`, which only a bug here can cause.
     #[must_use]
-    pub fn after(waiting: &WaitingOnMe, seen: &TurnsSeen) -> Self {
-        let mut rows: BTreeMap<ReasonKind, usize> = BTreeMap::new();
+    pub fn after(waiting: &WaitingOnMe, coverage: TurnCoverage) -> Self {
+        let mut rows: BTreeMap<ReasonKind, NonZeroUsize> = BTreeMap::new();
         for kind in waiting.reasons() {
-            *rows.entry(kind).or_default() += 1;
+            let _ = rows
+                .entry(kind)
+                .and_modify(|count| *count = count.saturating_add(1))
+                .or_insert(NonZeroUsize::MIN);
         }
-        let rows: BTreeMap<ReasonKind, NonZeroUsize> = rows
-            .into_iter()
-            .filter_map(|(kind, count)| NonZeroUsize::new(count).map(|count| (kind, count)))
-            .collect();
-        let change = match (rows.is_empty(), seen.coverage()) {
+        let change = match (rows.is_empty(), coverage) {
             (false, coverage) => Self::Show(WaitingCard { rows, coverage }),
             (true, TurnCoverage::Complete) => Self::Remove,
             (true, TurnCoverage::Incomplete) => Self::Leave,
@@ -94,10 +95,17 @@ impl CardChange {
                 waiting.len(),
                 "the card's total is not the number of pull requests counted"
             ),
-            Self::Remove => assert!(
-                waiting.is_empty() && seen.coverage() == TurnCoverage::Complete,
-                "removing the card while something is counted or a source is missing"
-            ),
+            Self::Remove => {
+                assert!(
+                    waiting.is_empty(),
+                    "removing the card while something is counted"
+                );
+                assert_eq!(
+                    coverage,
+                    TurnCoverage::Complete,
+                    "removing the card while a source is missing"
+                );
+            }
             Self::Leave => assert!(
                 waiting.is_empty(),
                 "leaving the card while something is counted"
@@ -120,7 +128,7 @@ mod tests {
 
     fn change(cases: &[(u64, TurnReason)], coverage: TurnCoverage) -> CardChange {
         let seen = seen(&turns(cases), &BTreeSet::new(), coverage);
-        CardChange::after(&WaitingOnMe::default().after(&seen), &seen)
+        CardChange::after(&WaitingOnMe::default().after(&seen), seen.coverage())
     }
 
     fn shown(change: CardChange) -> WaitingCard {
@@ -150,7 +158,7 @@ mod tests {
             let now = seen(&now, &BTreeSet::new(), coverage);
             let waiting = earlier.after(&now);
 
-            if let CardChange::Show(card) = CardChange::after(&waiting, &now) {
+            if let CardChange::Show(card) = CardChange::after(&waiting, now.coverage()) {
                 let sum: usize = card.rows.values().map(|count| count.get()).sum();
                 prop_assert_eq!(sum, waiting.len());
                 prop_assert_eq!(card.total(), waiting.len());
@@ -168,10 +176,10 @@ mod tests {
             TurnCoverage::Complete,
         );
         let first = WaitingOnMe::default().after(&refresh);
-        let first_change = CardChange::after(&first, &refresh);
+        let first_change = CardChange::after(&first, refresh.coverage());
         let second = first.after(&refresh);
 
-        let second_change = CardChange::after(&second, &refresh);
+        let second_change = CardChange::after(&second, refresh.coverage());
 
         assert!(
             matches!(first_change, CardChange::Show(_)),

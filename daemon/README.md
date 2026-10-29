@@ -49,9 +49,9 @@ every refresh that finds a turn, so it shows again each time even when nothing c
 request stops being counted only when every source of turns answered (my open pull requests, my
 drafts, and review requests), so a source that failed never takes one away; a card built from such
 a refresh says "GitHub didn't provide complete results". When a refresh that heard from every source
-finds no turn, the card is removed. At startup the daemon removes any per-pull-request cards an
-earlier build left showing. Posting happens beside the passes, so no pass waits on
-`terminal-notifier`.
+finds no turn, the card is removed. The daemon also removes any per-pull-request cards an earlier
+build left showing, listing them before each refresh until a listing succeeds. Listing and posting
+happen beside the passes, so no pass waits on `terminal-notifier`.
 The TUI's status bar warns when the daemon's refreshes stop, reading the health record from the
 database (#364). The TUI asking the daemon for a pass is
 [#365](https://github.com/ooloth/hub/issues/365).
@@ -181,9 +181,10 @@ request the card counted, including ones kept from earlier refreshes because a s
 (`coverage=incomplete`). `card` is `posted`, `removed`, `left` (nothing counted, but a source
 failed, so the card was not touched), `post_failed` or `remove_failed`; a failure is named in
 `failed` with the reason, and the next refresh tries again. `leftovers_removed` names the
-per-pull-request cards from an earlier build removed this round. At startup, before the first pass,
-a `hub-daemon notifications_found` line names those leftovers, read with
-`terminal-notifier -list ALL`, or the `error` that stopped it reading them.
+per-pull-request cards from an earlier build removed this round. Before that line, a
+`hub-daemon notifications_found` line names those leftovers, read with
+`terminal-notifier -list ALL`, or the `error` that stopped it reading them. It is printed before
+each round until a listing succeeds, and not again after.
 
 When the database refuses the write, the line ends with `recorded=as_failed record_error="..."`:
 the pass was recorded as `pass_failed` instead, health only. When it refuses that too, the line

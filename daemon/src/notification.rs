@@ -161,7 +161,7 @@ mod tests {
     /// The card for one pull request whose review is requested, from a refresh with `coverage`.
     fn card(coverage: TurnCoverage) -> WaitingCard {
         let seen = TurnsSeen::from_prs(&[crate::pr_notifier::tests::pr(344)], coverage);
-        match CardChange::after(&WaitingOnMe::default().after(&seen), &seen) {
+        match CardChange::after(&WaitingOnMe::default().after(&seen), seen.coverage()) {
             CardChange::Show(card) => card,
             change => panic!("expected a card, got {change:?}"),
         }
