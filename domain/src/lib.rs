@@ -26,24 +26,24 @@ pub mod issue;
 pub mod known_secrets;
 /// Loki query configuration and log entry types.
 pub mod loki;
-/// Which pull requests have a notification showing, and what to change when the turns change.
-pub mod notified;
 /// Why a whole refresh pass failed, in a form safe to log and store.
 pub mod pass_failure;
 /// Pull request types and repository slug newtype.
 pub mod pr;
 /// Who is asked to review a pull request, who spoke last in its threads, and each verdict.
 pub mod pr_activity;
-/// The notification group a pull request's card is posted in, and reading groups back.
+/// The notification group the card about waiting pull requests is posted in, and leftover cards.
 pub mod pr_group;
 /// Which pull request something is about.
 pub mod pr_id;
-/// Whether a pull request is waiting on me, and the card that says so.
+/// Whether a pull request is waiting on me, and why.
 pub mod pr_turn;
 /// Which set of hub's own state a process reads and writes.
 pub mod profile;
 /// The label a project goes by in window and tab names.
 pub mod project_short_name;
+/// Why a pull request is waiting on me, as the card counts it.
+pub mod reason_kind;
 /// The Rex session a terminal belongs to.
 pub mod rex_session_id;
 /// What the screen showed when an `op read` reached its deadline.
@@ -62,6 +62,10 @@ pub mod turns_seen;
 pub mod untrusted;
 /// Urgency ranking used across all signal types.
 pub mod urgency;
+/// The one card that says how many pull requests are waiting on me, and why.
+pub mod waiting_card;
+/// Which pull requests the card counts as waiting on me.
+pub mod waiting_on_me;
 /// The segments a window name is built from, and the hashes that keep them apart.
 mod window_segment;
 

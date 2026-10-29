@@ -8,29 +8,21 @@ resolves_into: decision
 
 ## Why it matters
 
-The daemon notifies a pull request once, when it becomes my turn, and does not notify it again
-while it stays my turn for the same reason and the daemon keeps running
-([#344](https://github.com/ooloth/hub/issues/344)). It notifies again only when the reason
-changes, such as a review arriving on my pull request that was ready to merge
-([#371](https://github.com/ooloth/hub/issues/371)). Nothing reminds me about a pull request whose
-notification I dismissed. So today nothing needs snoozing, and the cost falls the other way: a
-review request I dismiss and then forget stays forgotten until I open hub or the daemon restarts.
-
-If that happens, the fix is a reminder: notifying a pull request again after it has stayed my turn
-for a while. A reminder brings the snooze question back. It reminds me about a pull request I have
-parked on purpose as well as one I forgot, and reminders about something I have already decided on
-get dismissed unread. Routine dismissal is the condition under which
-[Decision 020](../decisions/020-hub-runs-an-unattended-surface.md) says hub should stop
-interrupting at all.
+Since [#382](https://github.com/ooloth/hub/issues/382), one card counts the pull requests that are
+my turn, and it is posted after every refresh that finds one, every 15 minutes. That is a reminder
+about every waiting pull request, so option B below is what hub does. A pull request I have parked
+on purpose keeps the card coming back as surely as one I forgot, and a draft of mine is always my
+turn ([Decision 030](../decisions/030-whether-a-pull-request-is-my-turn-is-read-from-its-state-in-one-refresh.md)).
+Reminders about something I have already decided on get dismissed unread. Routine dismissal is the
+condition under which [Decision 020](../decisions/020-hub-runs-an-unattended-surface.md) says hub
+should stop interrupting at all.
 
 ## What would settle it
 
-Two observations, in order. First, a pull request whose notification I dismissed and then forgot,
-which is what would justify reminders at all. Without it, the question stays open with nothing
-built. Second, once reminders exist, a pull request reminded about repeatedly after I had chosen to
-leave it, often enough that its reminders were dismissed without being read. If parked pull
-requests turn out to be rare, or are better handled by fixing what hub counts as my turn, the
-question closes with nothing built.
+Dismissing the card unread because of pull requests I parked on purpose, often enough to notice.
+A Focus quiets the card altogether, so what this needs is a way to leave out some pull requests
+while the rest are still counted. If parked pull requests turn out to be rare, or are better handled
+by fixing what hub counts as my turn, the question closes with nothing built.
 
 ## Resolves into
 
@@ -42,14 +34,15 @@ record of what is snoozed until when, which is new stored state.
 Raised 2026-10-05 while settling how often #344 reminds about a pull request that stays my turn.
 Revised 2026-10-17, when #344 dropped its hourly reminder: a pull request is notified once, and a
 reminder waits for a forgotten pull request to be seen (amendment on the
-[#327](https://github.com/ooloth/hub/issues/327) plan of record).
+[#327](https://github.com/ooloth/hub/issues/327) plan of record). Revised 2026-10-28, when #382
+replaced the cards with one count posted on every refresh.
 
 ## Options
 
-- **A. No reminder and no snooze.** What #344 builds. Strongest case: no interruption about
+- **A. No reminder and no snooze.** What #344 built, and #382 replaced. Strongest case: no interruption about
   anything I already know about. Cost: a dismissed and forgotten pull request is not raised again
   until the daemon restarts.
-- **B. Reminders, no snooze.** A pull request that stays my turn is notified again after a while.
+- **B. Reminders, no snooze.** What #382 builds: the card is posted after every refresh.
   Strongest case: a forgotten pull request comes back. Cost: reminders about deliberate delays,
   which train dismissal.
 - **C. Reminders, snoozed from the notification.** An action on the notification hides that pull

@@ -8,7 +8,8 @@ resolves_into: decision
 
 ## Why it matters
 
-Each pull request that is my turn gets its own card, so notifications take no order from ranking.
+The notification counts the pull requests that are my turn by reason and names none
+([#382](https://github.com/ooloth/hub/issues/382)), so it takes no order from ranking.
 Ranking matters where turns are read in order: the list, which sorts every signal by urgency tier,
 then age (`sort_by_key(|i| (i.urgency(), Reverse(i.age())))` in `workflows/src/status.rs`), and the
 order by how long each has been my turn that #374 adds. A genuinely more important turn that is

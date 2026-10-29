@@ -29,25 +29,29 @@ closes or quits the app. After 10 minutes without credentials it posts a macOS n
 `terminal-notifier`, saying signals have paused and what's needed, then again every hour while they
 stay missing. Each replaces the last, and once credentials arrive the daemon removes it.
 
-It also posts a card for each pull request that is my turn. Whose move it is is read from what one
-refresh saw of the pull request, never compared with a push or with an earlier refresh
+It also posts one card that counts the pull requests that are my turn. Whose move it is is read from
+what one refresh saw of the pull request, never compared with a push or with an earlier refresh
 (`domain/src/pr_turn.rs`). Someone else's pull request is my turn when my review is requested,
 unless it is a draft. On my own, the move is mine unless a review request is pending or a thread I
 answered last waits on a person's reply, and anything waiting on me overrides that: a thread whose
 newest comment is someone else's, changes requested by a reviewer not asked again, or a person's
-review body newer than anything of mine. The card names the most useful next move, in this order:
-`feedback`, `checks failing`, `draft`, `ready to merge` or `conflicts` once it is approved, and
-`no reviewer` when nobody else is asked and nothing waits on anyone. Failing checks and an approval
-come before a pending request too, and an approved pull request blocked by anything but a running
-check is read as not approved. A card is posted once, at the first pass after the turn begins, and
-removed at the first pass after it ends. A pull request that stays my turn for the same reason is
-not posted again while the daemon runs, even after its card is dismissed. When the reason changes,
-such as feedback arriving on my pull request that was ready to merge, its card is posted again in
-its own group, which replaces it. A restart posts again only the turns whose card is no longer
-showing, and a card found showing is not posted again whatever its reason, since hub does not read
-back what it says. Clicking a card opens the pull request. Cards are removed only when every source
-of turns answered (my open pull requests, my drafts, and review requests), so a source that failed
-never takes one away. Posting happens beside the passes, so no pass waits on `terminal-notifier`.
+review body newer than anything of mine. Each turn has the most useful next move as its reason, in
+this order: `feedback`, `checks failing`, `draft`, `ready to merge` or `conflicts` once it is
+approved, and `no reviewer` when nobody else is asked and nothing waits on anyone. Failing checks
+and an approval come before a pending request too, and an approved pull request blocked by anything
+but a running check is read as not approved.
+
+The card's title says how many pull requests are waiting, such as "3 PRs are waiting for you", and
+its message has one row per reason, such as "2 need your review", in a fixed order: review requests
+and feedback first, drafts last (`domain/src/waiting_card.rs`). It names no pull request, and
+clicking it opens nothing. It is posted in the profile's own group, `hub-<profile>-turns`, after
+every refresh that finds a turn, so it shows again each time even when nothing changed. A pull
+request stops being counted only when every source of turns answered (my open pull requests, my
+drafts, and review requests), so a source that failed never takes one away; a card built from such
+a refresh says "GitHub didn't provide complete results". When a refresh that heard from every source
+finds no turn, the card is removed. At startup the daemon removes any per-pull-request cards an
+earlier build left showing. Posting happens beside the passes, so no pass waits on
+`terminal-notifier`.
 The TUI's status bar warns when the daemon's refreshes stop, reading the health record from the
 database (#364). The TUI asking the daemon for a pass is
 [#365](https://github.com/ooloth/hub/issues/365).
@@ -65,10 +69,12 @@ database (#364). The TUI asking the daemon for a pass is
   itself, `domain::daemon_pass::Pass`, lives in `domain/` so the store can record it
 - `refresh.rs` — `params` and `fetch`, which asks all sources once and merges the answers. The
   network edge
-- `notification.rs` — the `terminal-notifier` commands: the missing-credentials notification, each
-  pull request's card, and listing the cards showing. The notification edge
-- `pr_notifier.rs` — `PrNotifier`, which posts and removes cards to match the turns each pass hands
-  it, and its log lines. Which cards to change is decided in `domain::notified`, purely
+- `notification.rs` — the `terminal-notifier` commands: the missing-credentials notification, the
+  card counting the pull requests waiting on me, and listing the cards showing. The notification
+  edge
+- `pr_notifier.rs` — `PrNotifier`, which posts, removes or leaves the card to match the turns each
+  pass hands it, removes leftover per-pull-request cards, and its log lines. What is counted is
+  decided in `domain::waiting_on_me` and what to do with the card in `domain::waiting_card`, purely
 - `cache.rs` — `open` and `record`, which writes the pass and its payload in one transaction and
   falls back to recording the pass as failed, and `record_credential_attempt`. The SQLite edge
 
@@ -162,18 +168,21 @@ failed, with `error`). `payload` says whether the cache was replaced: `written`,
 nothing that answered had any signals and something failed. `pid` changes when the daemon
 restarts.
 
-Each round of the notifier prints one line saying what it changed. A round works from the newest
-pass that reached its sources, so a pass that arrives while a round is still posting is skipped:
+Each round of the notifier prints one line saying what it did with the card. A round works from the
+newest pass that reached its sources, so a pass that arrives while a round is still posting is
+skipped:
 
 ```
-hub-daemon notifications at=2026-10-17T23:15:55Z pid=4242 profile=default turns=3 coverage=complete posted="ooloth/hub#344" reposted="" removed="" failed=""
+hub-daemon notifications at=2026-10-28T23:15:55Z pid=4242 profile=default turns=2 coverage=complete counted="ooloth/hub#344 ooloth/hub#345" card=posted
 ```
 
-`turns` is how many pull requests are my turn. `reposted` names cards posted again because the
-reason they are my turn changed. `coverage=incomplete` means a pull request source
-failed, so no card was removed. A card that could not be posted or removed is named in `failed`
-with the reason, and tried again on the next pass. At startup, before the first pass, a
-`hub-daemon notifications_found` line names the cards already showing, read with
+`turns` is how many pull requests this refresh found to be my turn, and `counted` names every pull
+request the card counted, including ones kept from earlier refreshes because a source failed
+(`coverage=incomplete`). `card` is `posted`, `removed`, `left` (nothing counted, but a source
+failed, so the card was not touched), `post_failed` or `remove_failed`; a failure is named in
+`failed` with the reason, and the next refresh tries again. `leftovers_removed` names the
+per-pull-request cards from an earlier build removed this round. At startup, before the first pass,
+a `hub-daemon notifications_found` line names those leftovers, read with
 `terminal-notifier -list ALL`, or the `error` that stopped it reading them.
 
 When the database refuses the write, the line ends with `recorded=as_failed record_error="..."`:

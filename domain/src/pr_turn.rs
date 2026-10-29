@@ -1,4 +1,4 @@
-//! Whether a pull request is waiting on me, and the card that says so.
+//! Whether a pull request is waiting on me, and why.
 //!
 //! The answer is read from what one refresh saw of the pull request (Decision 030). On a pull
 //! request I opened, the move is mine unless it is visibly waiting on someone else, and anything
@@ -8,7 +8,6 @@ use crate::pr::{
     CiStatus, MergeBlocker, MergeReadiness, PrKind, PullRequest, ReviewDecision, ReviewStatus,
 };
 use crate::pr_id::PrId;
-use crate::untrusted::UntrustedText;
 
 /// Why a pull request is waiting on me.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -49,19 +48,13 @@ impl TurnReason {
     }
 }
 
-/// A pull request that is waiting on me, with what a notification about it needs.
+/// A pull request that is waiting on me, and why.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Turn {
     /// Why it is waiting on me.
     pub reason: TurnReason,
     /// Which pull request it is.
     pub pr: PrId,
-    /// Who opened it.
-    pub author: String,
-    /// Its title, as its author wrote it.
-    pub title: UntrustedText,
-    /// Where it is on GitHub.
-    pub url: String,
 }
 
 /// What one refresh says about whether a pull request is waiting on me.
@@ -92,9 +85,6 @@ impl TurnReading {
             Ok(reason) => Self::Turn(Turn {
                 reason,
                 pr: PrId::of(pr),
-                author: pr.author.clone(),
-                title: UntrustedText::new(pr.title.clone()),
-                url: pr.url.clone(),
             }),
             Err(NoTurn::NotMyTurn) => Self::NotMyTurn,
             Err(NoTurn::Undecided) => Self::Undecided,
@@ -221,42 +211,6 @@ fn assert_agrees_with_facts(reading: &TurnReading, pr: &PullRequest) {
             );
         }
         TurnReading::NotMyTurn => {}
-    }
-}
-
-/// What a notification about a turn says.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TurnCard {
-    /// Why it is waiting on me.
-    pub title: String,
-    /// Which pull request, and who opened it when that is not me.
-    pub subtitle: String,
-    /// The pull request's title.
-    pub message: UntrustedText,
-    /// What clicking the notification opens.
-    pub url: String,
-}
-
-impl Turn {
-    /// The notification for this turn.
-    #[must_use]
-    pub fn card(&self) -> TurnCard {
-        let repo_and_number = format!("{} #{}", self.pr.repo.repo_name(), self.pr.number);
-        let subtitle = match &self.reason {
-            TurnReason::ReviewRequested => format!("{repo_and_number} · @{}", self.author),
-            TurnReason::Feedback { by } => format!("{repo_and_number} · @{by}"),
-            TurnReason::ChecksFailing
-            | TurnReason::Draft
-            | TurnReason::ReadyToMerge
-            | TurnReason::Conflicts
-            | TurnReason::NoReviewer => repo_and_number,
-        };
-        TurnCard {
-            title: format!("PR {}", self.reason.label()),
-            subtitle,
-            message: self.title.clone(),
-            url: self.url.clone(),
-        }
     }
 }
 
@@ -650,61 +604,6 @@ mod tests {
         };
 
         assert_eq!(turn.pr.to_string(), "ooloth/hub#344");
-        assert_eq!(turn.author, "someone");
-        assert_eq!(
-            turn.title.expose(),
-            "[WIP] Notify when a pull request is my turn"
-        );
-        assert_eq!(turn.url, "https://github.com/ooloth/hub/pull/344");
-    }
-
-    fn turn(reason: TurnReason) -> Turn {
-        Turn {
-            reason,
-            pr: PrId {
-                repo: RepoSlug::new("ooloth", "hub"),
-                number: 344,
-            },
-            author: "someone".to_string(),
-            title: UntrustedText::new("Notify when a pull request is my turn"),
-            url: "https://github.com/ooloth/hub/pull/344".to_string(),
-        }
-    }
-
-    #[test]
-    fn a_review_request_card_names_the_repository_number_and_author() {
-        let card = turn(TurnReason::ReviewRequested).card();
-
-        assert_eq!(card.title, "PR review requested");
-        assert_eq!(card.subtitle, "hub #344 · @someone");
-        assert_eq!(
-            card.message.expose(),
-            "Notify when a pull request is my turn"
-        );
-        assert_eq!(card.url, "https://github.com/ooloth/hub/pull/344");
-    }
-
-    #[test]
-    fn a_feedback_card_names_who_left_it() {
-        let card = turn(TurnReason::Feedback {
-            by: "ada".to_string(),
-        })
-        .card();
-
-        assert_eq!(card.title, "PR feedback");
-        assert_eq!(card.subtitle, "hub #344 · @ada");
-    }
-
-    #[rstest]
-    #[case(TurnReason::ChecksFailing)]
-    #[case(TurnReason::Draft)]
-    #[case(TurnReason::ReadyToMerge)]
-    #[case(TurnReason::Conflicts)]
-    #[case(TurnReason::NoReviewer)]
-    fn a_card_about_my_own_pull_request_leaves_out_the_author_who_is_me(
-        #[case] reason: TurnReason,
-    ) {
-        assert_eq!(turn(reason).card().subtitle, "hub #344");
     }
 
     #[rstest]
@@ -715,12 +614,8 @@ mod tests {
     #[case(TurnReason::ReadyToMerge, "ready to merge")]
     #[case(TurnReason::Conflicts, "conflicts")]
     #[case(TurnReason::NoReviewer, "no reviewer")]
-    fn a_cards_title_is_pr_followed_by_its_reasons_label(
-        #[case] reason: TurnReason,
-        #[case] label: &str,
-    ) {
+    fn each_reason_has_a_label(#[case] reason: TurnReason, #[case] label: &str) {
         assert_eq!(reason.label(), label);
-        assert_eq!(turn(reason).card().title, format!("PR {label}"));
     }
 
     // ── generated ─────────────────────────────────────────────────────────────

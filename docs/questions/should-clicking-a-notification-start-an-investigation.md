@@ -8,9 +8,12 @@ resolves_into: decision
 
 ## Why it matters
 
-Clicking a pull request's notification opens the pull request in the browser
-([#344](https://github.com/ooloth/hub/issues/344)). Starting an investigation means opening hub
-and pressing `i` on its row. If what I do after clicking is usually something else, such as
+Clicking the notification opens nothing. Since [#382](https://github.com/ooloth/hub/issues/382)
+it is one card that counts the pull requests that are my turn and names none, so a click could only
+act on the whole queue, such as opening hub. Before #382 each pull request had its own card, and
+clicking it opened the pull request in the browser
+([#344](https://github.com/ooloth/hub/issues/344)); the options below were written for that card.
+Starting an investigation means opening hub and pressing `i` on its row. If what I do after clicking is usually something else, such as
 reviewing it with an agent or replying in hub, the click lands one step short every time, and
 that step is the friction notifications exist to remove.
 

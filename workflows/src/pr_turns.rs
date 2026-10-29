@@ -3,6 +3,10 @@ use domain::turns_seen::{TurnCoverage, TurnsSeen};
 
 use crate::status::{Refresh, StatusItem, MY_DRAFT_PRS, MY_OPEN_PRS, PRS_AWAITING_REVIEW};
 
+/// The sources a turn is read from. The card says "GitHub didn't provide complete results" when
+/// one of them fails, so each is a GitHub query.
+const TURN_SOURCES: [&str; 3] = [MY_OPEN_PRS, MY_DRAFT_PRS, PRS_AWAITING_REVIEW];
+
 /// The pull requests `refresh` found waiting on me.
 ///
 /// This is the one place a signal becomes something to notify about. Only pull requests are
@@ -15,10 +19,7 @@ pub fn turns_seen(refresh: &Refresh) -> TurnsSeen {
     });
     let answered = refresh.sources.answered();
     let heard_from = |source: &str| answered.iter().any(|name| name == source);
-    let coverage = if [MY_OPEN_PRS, MY_DRAFT_PRS, PRS_AWAITING_REVIEW]
-        .into_iter()
-        .all(heard_from)
-    {
+    let coverage = if TURN_SOURCES.into_iter().all(heard_from) {
         TurnCoverage::Complete
     } else {
         TurnCoverage::Incomplete
@@ -111,5 +112,15 @@ mod tests {
         let seen = turns_seen(&refresh(vec![], answered, failed));
 
         assert_eq!(seen.coverage(), expected);
+    }
+
+    #[test]
+    fn every_source_a_turn_is_read_from_is_a_github_query() {
+        for source in TURN_SOURCES {
+            assert!(
+                source.starts_with("github "),
+                "{source} is not a GitHub query, so the card's note would be wrong"
+            );
+        }
     }
 }

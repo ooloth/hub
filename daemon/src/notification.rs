@@ -2,13 +2,14 @@
 //!
 //! `terminal-notifier` notifications stay on screen until dismissed. Every notification about
 //! missing credentials is in one group, so each replaces the last and all of them can be removed at
-//! once. Each pull request's card is in a group of its own. Measured under launchd on 2026-10-17:
+//! once. The card about pull requests waiting on me is in a group per profile, so posting it again
+//! replaces it and shows it again (measured 2026-10-28). Measured under launchd on 2026-10-17:
 //! `osascript` notifications from the daemon never reached the screen.
 use std::time::Duration;
 
 use anyhow::{Context, Result};
 use domain::credential_notification::Notification;
-use domain::pr_turn::TurnCard;
+use domain::waiting_card::WaitingCard;
 
 /// How long `terminal-notifier` may take before posting or removing counts as failed. Its
 /// first-run permission prompt once blocked it for over two minutes.
@@ -35,30 +36,15 @@ fn remove_command() -> tokio::process::Command {
     command
 }
 
-/// `-message`, `-title` and `-subtitle` values are read as text only when they do not start with
-/// one of these. Measured 2026-10-17: a message starting with `[` made terminal-notifier 3.1.0 exit
-/// 2 with "Could not read the -message value", and `\[` showed as `[`. Its error names the others.
-const NEEDS_ESCAPING: [char; 5] = ['[', '(', '{', '"', '\''];
-
-/// `text` as terminal-notifier will show it unchanged.
-fn shown_as_written(text: &str) -> String {
-    match text.chars().next() {
-        Some(first) if NEEDS_ESCAPING.contains(&first) => format!("\\{text}"),
-        _ => text.to_string(),
-    }
-}
-
-fn post_turn_command(group: &str, card: &TurnCard) -> tokio::process::Command {
+fn post_waiting_command(group: &str, card: &WaitingCard) -> tokio::process::Command {
     let mut command = tokio::process::Command::new("terminal-notifier");
+    let _ = command.arg("-title").arg(card.title());
+    if let Some(note) = card.note() {
+        let _ = command.arg("-subtitle").arg(note);
+    }
     let _ = command
-        .arg("-title")
-        .arg(shown_as_written(&card.title))
-        .arg("-subtitle")
-        .arg(shown_as_written(&card.subtitle))
         .arg("-message")
-        .arg(shown_as_written(card.message.expose()))
-        .arg("-open")
-        .arg(&card.url)
+        .arg(card.message())
         .arg("-group")
         .arg(group)
         .kill_on_drop(true);
@@ -118,15 +104,15 @@ pub(crate) async fn remove() -> Result<()> {
 ///
 /// # Errors
 /// As [`post`].
-pub(crate) async fn post_turn(group: String, card: TurnCard) -> Result<()> {
-    run(post_turn_command(&group, &card), "posting the card").await
+pub(crate) async fn post_waiting(group: String, card: WaitingCard) -> Result<()> {
+    run(post_waiting_command(&group, &card), "posting the card").await
 }
 
-/// Removes the card in `group`.
+/// Removes the card in `group`. Succeeds when there is none.
 ///
 /// # Errors
 /// As [`post`].
-pub(crate) async fn remove_turn(group: String) -> Result<()> {
+pub(crate) async fn remove_group(group: String) -> Result<()> {
     run(remove_group_command(&group), "removing the card").await
 }
 
@@ -140,6 +126,9 @@ pub(crate) async fn list_shown() -> Result<String> {
 
 #[cfg(test)]
 mod tests {
+    use domain::turns_seen::{TurnCoverage, TurnsSeen};
+    use domain::waiting_card::CardChange;
+    use domain::waiting_on_me::WaitingOnMe;
     use proptest::prelude::*;
 
     use super::*;
@@ -169,60 +158,57 @@ mod tests {
         }
     }
 
-    fn card(title: &str, subtitle: &str, message: &str) -> TurnCard {
-        TurnCard {
-            title: title.to_string(),
-            subtitle: subtitle.to_string(),
-            message: domain::UntrustedText::new(message),
-            url: "https://github.com/ooloth/hub/pull/344".to_string(),
+    /// The card for one pull request whose review is requested, from a refresh with `coverage`.
+    fn card(coverage: TurnCoverage) -> WaitingCard {
+        let seen = TurnsSeen::from_prs(&[crate::pr_notifier::tests::pr(344)], coverage);
+        match CardChange::after(&WaitingOnMe::default().after(&seen), &seen) {
+            CardChange::Show(card) => card,
+            change => panic!("expected a card, got {change:?}"),
         }
     }
 
-    proptest! {
-        #[test]
-        fn a_card_reaches_terminal_notifier_as_written_in_its_own_group(
-            message in r#"[^\x00\[({"'][^\x00]{0,200}"#,
-            group in "hub-(default|dev)-pr-[a-z]{1,10}/[a-z]{1,10}#[0-9]{1,6}",
-        ) {
-            let command = post_turn_command(&group, &card("PR review requested", "hub #344 · @someone", &message));
+    #[test]
+    fn the_card_reaches_terminal_notifier_in_its_group_and_opens_nothing() {
+        let command = post_waiting_command("hub-dev-turns", &card(TurnCoverage::Complete));
 
-            prop_assert_eq!(command.as_std().get_program(), "terminal-notifier");
-            prop_assert_eq!(
-                args(&command),
-                vec!["-title".to_string(), "PR review requested".to_string(),
-                     "-subtitle".to_string(), "hub #344 · @someone".to_string(),
-                     "-message".to_string(), message,
-                     "-open".to_string(), "https://github.com/ooloth/hub/pull/344".to_string(),
-                     "-group".to_string(), group]
-            );
-        }
+        assert_eq!(command.as_std().get_program(), "terminal-notifier");
+        assert_eq!(
+            args(&command),
+            vec![
+                "-title",
+                "1 PR is waiting for you",
+                "-message",
+                "1 needs your review",
+                "-group",
+                "hub-dev-turns"
+            ]
+        );
     }
 
-    #[rstest::rstest]
-    #[case::bracket("[WIP] a title", "\\[WIP] a title")]
-    #[case::parenthesis("(maybe) a title", "\\(maybe) a title")]
-    #[case::brace("{x} a title", "\\{x} a title")]
-    #[case::double_quote("\"quoted\" title", "\\\"quoted\" title")]
-    #[case::single_quote("'quoted' title", "\\'quoted' title")]
-    #[case::later_bracket("a [WIP] title", "a [WIP] title")]
-    #[case::empty("", "")]
-    fn a_title_terminal_notifier_would_misread_is_escaped(
-        #[case] message: &str,
-        #[case] sent: &str,
-    ) {
-        let command = post_turn_command("g", &card(message, message, message));
+    #[test]
+    fn a_card_that_may_be_short_says_so_as_its_subtitle() {
+        let command = post_waiting_command("hub-dev-turns", &card(TurnCoverage::Incomplete));
 
-        let sent_args = args(&command);
-        assert_eq!(sent_args[1], sent, "title");
-        assert_eq!(sent_args[3], sent, "subtitle");
-        assert_eq!(sent_args[5], sent, "message");
+        assert_eq!(
+            args(&command),
+            vec![
+                "-title",
+                "1 PR is waiting for you",
+                "-subtitle",
+                "GitHub didn't provide complete results",
+                "-message",
+                "1 needs your review",
+                "-group",
+                "hub-dev-turns"
+            ]
+        );
     }
 
     #[test]
     fn removing_a_card_clears_only_its_group() {
-        let command = remove_group_command("hub-dev-pr-ooloth/hub#344");
+        let command = remove_group_command("hub-dev-turns");
 
-        assert_eq!(args(&command), vec!["-remove", "hub-dev-pr-ooloth/hub#344"]);
+        assert_eq!(args(&command), vec!["-remove", "hub-dev-turns"]);
     }
 
     #[test]

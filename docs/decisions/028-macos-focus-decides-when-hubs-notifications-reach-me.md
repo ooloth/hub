@@ -2,6 +2,7 @@
 number: 028
 status: accepted
 date: 2026-10-18
+amended: 2026-10-28
 ---
 
 # 028 — macOS Focus decides when hub's notifications reach me, and hub has no quiet hours or pause of its own
@@ -83,3 +84,19 @@ that turning on a Focus gets in the way, or want hub to hold back some turns and
 - [x] vision.md — nothing defined or foreclosed. "A notification firehose" already says hub
       interrupts only when the ball lands in my court; this record says when that interruption is
       allowed to arrive.
+
+## Addendum (2026-10-28) — one card, posted on every refresh
+
+Since [#382](https://github.com/ooloth/hub/issues/382), hub posts one card that counts the pull
+requests that are my turn, after every refresh that finds one, instead of a card per pull request
+posted once. The decision stands: a Focus still decides when the card reaches me. Two things above
+no longer hold as written:
+
+- **A card lost while terminal-notifier's notifications are switched off comes back.** The next
+  refresh after they are switched on posts the card again, within one 15-minute interval. The
+  third rejected option's reversal condition, "the daemon starts posting a turn again after its card
+  was lost", is met. Switching them off now works as a pause that drops what arrives during it and
+  shows the current count once it ends, which a Focus still does better by holding the card.
+- **"Hub keeps posting and removing cards as turns begin and end"** now reads: hub posts the card
+  after every refresh that finds a turn, and removes it after a refresh that heard from every
+  source and found none.
