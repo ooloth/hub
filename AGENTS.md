@@ -40,15 +40,21 @@ gh issue view <epic> --comments
 
 The plan lives in a **comment**. `gh issue view <epic>` on its own prints the body and stops, and
 the body can predate the plan, so reading it alone can give you a superseded design. The comment
-carries the settled architecture, the measured spike findings, and the full phase sequence.
+carries the settled architecture, the measured spike findings, and the order the work is planned in.
 
-**Only issues on an epic's critical path carry a phase number.** An issue is on the critical path
-when the epic's "Done when" cannot be reached without it. Those are titled `Phase N.M — ...`, and
-the numbering is their work order. Every other sub-issue of the epic has a plain title and is taken
-whenever it is convenient. Hard dependencies are recorded separately as GitHub `blockedBy`
-relationships, which `gh issue view N --json blockedBy` prints. Everything else the numbering
-implies is sequence, not blocking. An issue body does not name its parent or its phase: read the
-parent with `gh issue view N --json parent`, as above.
+Hard dependencies between issues are recorded as GitHub `blockedBy` relationships, which
+`gh issue view N --json blockedBy` prints. Beyond those, which sub-issue comes next is a judgement
+made from the plan and the current state of the code. An issue body does not name its parent: read
+it with `gh issue view N --json parent`, as above.
+
+## What to work on next
+
+Work is ranked by its cost of delay. In hub that cost is high when:
+
+- hub shows a wrong signal or misses one, because ranking signals correctly is the product, and the
+  notifications carry the same failure to the user
+- a credential, or anything else the user did not mean to share, can leave the machine
+- the cache, an investigation session or a worktree can be lost
 
 ## Project Structure
 
