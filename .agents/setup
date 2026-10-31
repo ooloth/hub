@@ -49,12 +49,23 @@ fi
 
 step "hub-private"
 # Without hub-private, the banned-terms hook finds no list and passes everything, and
-# `just lint` checks only one of the three configurations. So a failed clone fails setup.
+# `just lint` checks only one of the three configurations. So a missing hub-private fails setup.
+# Setup has no GitHub credential, so it cannot clone hub-private itself. Amp clones it before
+# setup because the michael-uloth/hub project lists it as an additional repository.
+cloned="$repo_root/../repos/hub-private"
+if [[ ! -d "$cloned" ]]; then
+  echo "error: $cloned is missing. Add https://github.com/ooloth/hub-private to the" >&2
+  echo "michael-uloth/hub project's additional repositories." >&2
+  exit 1
+fi
+# The banned-terms check and `just setup-private` look for hub-private beside hub.
 hub_private="$repo_root/../hub-private"
-if [[ -d "$hub_private/.git" ]]; then
-  git -C "$hub_private" pull --ff-only --quiet
-else
-  git clone --quiet https://github.com/ooloth/hub-private "$hub_private"
+if [[ ! -L "$hub_private" ]]; then
+  if [[ -e "$hub_private" ]]; then
+    echo "error: $hub_private exists and is not a symlink to repos/hub-private." >&2
+    exit 1
+  fi
+  ln -s repos/hub-private "$hub_private"
 fi
 # home-laptop also links the media module, so `just lint` checks every configuration.
 just setup-private home-laptop
