@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Runs each time an Amp orb wakes. A snapshot can be days old, so this brings hub-private's
+# banned-terms list and modules up to date. See https://ampcode.com/docs/orbs
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+timeout 8 git -C "$repo_root/../hub-private" pull --ff-only --quiet

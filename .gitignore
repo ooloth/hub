@@ -1,6 +1,7 @@
 # Theirs
 target/
 proptest-regressions/
+.amp/portals/*
 
 # Mine
 hub.toml

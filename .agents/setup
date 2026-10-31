@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Prepares a fresh Amp orb to build, test and lint hub. Runs once per fresh orb and again
+# on a stale snapshot, so every step skips work that is already done.
+# See https://ampcode.com/docs/orbs
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_root"
+
+step() {
+  printf '\n==> %s (%ss)\n' "$1" "$SECONDS"
+}
+
+step "Rust toolchain"
+if [[ ! -x "$HOME/.cargo/bin/rustup" ]]; then
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs |
+    sh -s -- -y --no-modify-path --profile default --default-toolchain none
+fi
+# rustup's installer cannot change this running script's environment.
+# shellcheck source=/dev/null
+source "$HOME/.cargo/env"
+# Installs the channel and components rust-toolchain.toml pins; a no-op when present.
+rustup toolchain install
+
+# Amp and orb services start in non-interactive login shells, which read ~/.bash_profile.
+# shellcheck disable=SC2016 # $HOME expands when the profile runs, not here.
+profile_line='. "$HOME/.cargo/env"'
+if ! grep -Fqx "$profile_line" "$HOME/.bash_profile" 2>/dev/null; then
+  printf '\n# Rust toolchain for hub (.agents/setup)\n%s\n' "$profile_line" >>"$HOME/.bash_profile"
+fi
+
+step "cargo tools"
+if ! command -v cargo-binstall >/dev/null; then
+  curl -L --proto '=https' --tlsv1.2 -sSf \
+    https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh |
+    bash
+fi
+# The tools `just setup`, the justfile and prek.toml run, as prebuilt binaries.
+for tool in just prek cargo-nextest cargo-audit cargo-deny; do
+  command -v "$tool" >/dev/null ||
+    cargo binstall --no-confirm --locked --disable-telemetry "$tool"
+done
+# taplo-cli has no binstall metadata, so binstall would compile it (about 90 seconds).
+if ! command -v taplo >/dev/null; then
+  curl -fsSL https://github.com/tamasfe/taplo/releases/latest/download/taplo-linux-x86_64.gz |
+    gunzip >"$HOME/.cargo/bin/taplo"
+  chmod +x "$HOME/.cargo/bin/taplo"
+fi
+
+step "hub-private"
+# Without hub-private, the banned-terms hook finds no list and passes everything, and
+# `just lint` checks only one of the three configurations. So a failed clone fails setup.
+hub_private="$repo_root/../hub-private"
+if [[ -d "$hub_private/.git" ]]; then
+  git -C "$hub_private" pull --ff-only --quiet
+else
+  git clone --quiet https://github.com/ooloth/hub-private "$hub_private"
+fi
+# home-laptop also links the media module, so `just lint` checks every configuration.
+just setup-private home-laptop
+prek install
+(cd "$hub_private" && prek install)
+
+step "Crates, test build and lint"
+# Builds what `just test` and `just lint` run, so the snapshot starts with a warm target/.
+cargo nextest run --no-run --locked --features private,hub-tui/media
+just lint
+
+step "Done"
