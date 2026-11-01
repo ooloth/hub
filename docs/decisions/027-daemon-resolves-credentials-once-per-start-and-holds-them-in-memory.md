@@ -2,7 +2,7 @@
 number: 027
 status: accepted
 date: 2026-10-12
-amended: 2026-10-17
+amended: 2026-11-01
 ---
 
 # 027 — The daemon resolves its credentials through 1Password once per start and holds them only in memory
@@ -156,3 +156,93 @@ that clear by themselves usually do so within 10 minutes. It goes out through `t
 whose notifications stay on screen until dismissed, in one group, so each replaces the last, and the
 daemon removes it once credentials arrive. `osascript` was tried first: from the daemon under
 launchd its notification never reached the screen, though `osascript` exited 0.
+
+## Addendum (2026-11-01) — spawning `op` so it answers for itself
+
+_Status: accepted; not yet implemented. `config/src/config_file.rs` still starts `op` with
+`tokio::process::Command`, which leaves `hub-daemon` responsible for it._
+
+On macOS 27 the decision above stops working. [#389](https://github.com/ooloth/hub/issues/389)
+holds the failure; this addendum records how the daemon starts `op` so that it works again.
+
+### Forced by
+
+Measured on macOS 27.2 with `op` 2.41.1 and 1Password 8.12.42, each run a one-off LaunchAgent
+running a single `op read` (2026-11-01):
+
+- With `/bin/sh` as the job's program, `op read` succeeds.
+- With an ad-hoc-signed binary as the job's program, `op read` fails within about 50 ms with
+  `No accounts configured for use with 1Password CLI`, the daemon's error word for word. The linker
+  signs `hub-daemon` ad hoc, so every daemon start fails this way.
+- Putting `/bin/sh` in front of the ad-hoc binary fails the same way, both when `sh` stays its
+  parent and when `sh` execs it.
+- When the ad-hoc binary spawns `op` with responsibility disclaimed
+  (`responsibility_spawnattrs_setdisclaim`), `op read` succeeds. 1Password's Touch ID prompt
+  names the binary that spawned `op`, and no macOS "access data from other apps" dialog appears.
+- `responsibility_spawnattrs_setdisclaim` is exported by `libquarantine` in the macOS 12.1, 15.4,
+  26.5 and 27.2 SDKs, so a daemon calling it links and loads on macOS 26 too.
+
+From a terminal, `op` succeeds whatever starts it, so the TUI is unaffected.
+
+### Properties
+
+Each comes from the decision above or from the account holder on 2026-11-01:
+
+- The daemon obtains its credentials under launchd on macOS 27 and on macOS 26, the versions on
+  the account holder's two machines.
+- Credentials still come from `op read` through the desktop app and live only in memory, as the
+  decision above requires.
+- A start costs at most the approvals the decision above accepts.
+- Nothing has to be set up or renewed on each machine, and no reinstall can silently undo the fix.
+- If the fix stops working, the health record and the status bar show it.
+
+### Decision
+
+The daemon spawns each `op` process with responsibility disclaimed, so `op`, which 1Password
+signs, answers to macOS for itself rather than through `hub-daemon`. A start costs one Touch ID
+prompt naming `hub-daemon`. This is done on every macOS version rather than only on 27, because a
+version check would exist only to cover a test not yet run, and a failure on 26 would show in the
+health record and the status bar rather than pass unnoticed.
+
+The TUI keeps starting `op` as it does today. It works from a terminal on both versions, and the
+issue asks nothing of it. Changing how its prompts are attributed would be a new behaviour nobody
+asked for. That choice is cheap to reverse and fails visibly, so it is taken here and not argued
+further.
+
+Calling the function needs `unsafe`, which the workspace forbids. The call lives in a crate of its
+own whose only job is the disclaimed spawn, and that crate alone allows `unsafe` in its lint table,
+so every crate that handles credentials still forbids it. The crate depends on no published crate
+that disclaims, because the one that exists, `disclaim` 0.1.1, cannot pipe a child's output, and
+writing `op`'s output to a file would break the rule above that nothing reaches the disk.
+
+None of the four resources binds: this changes how one process is started, not how often or with
+what data.
+
+### Rejected
+
+- **Putting `/bin/sh` in front of `hub-daemon` in the LaunchAgent**, because it was measured to
+  fail on macOS 27 in both forms. Reverses only if a later macOS makes it succeed.
+- **Signing `hub-daemon` with a real identity at install**, because it needs a signing identity
+  set up and kept on every machine, which the properties exclude. Whether macOS 27 would accept
+  one is unverified. Reverses if the private function below stops working and no other way to
+  disclaim exists.
+- **A 1Password service account**, rejected by the decision above for a reason this does not
+  change: its token would have to be stored on the machine.
+
+### Risk
+
+`responsibility_spawnattrs_setdisclaim` is not public API. Apple can change or remove it in any
+release, and the daemon then fails to start `op` or fails as it does today. Chromium
+(`base/process/launch_mac.cc`) and LLDB (`lldb/source/Host/macosx/objcxx/PosixSpawnResponsible.h`)
+call the same function (read 2026-11-01), which makes a removal without notice less likely but is
+no guarantee. LLDB looks it up at runtime with `dlsym`, so its absence is a failure it can report
+rather than one that stops the program loading.
+
+On macOS 26 this is unverified. The prediction is that it works and also removes the "access
+data from other apps" dialog, because `op` and the 1Password app are signed by the same team. It
+is checked the next time the account holder runs the daemon on the macOS 26 machine.
+
+### Revisit when
+
+The macOS 26 check fails, or a macOS update makes the disclaimed `op` fail or prompt more than
+once per start.
