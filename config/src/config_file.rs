@@ -578,8 +578,10 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(200)).await;
 
         assert!(timed.is_err(), "sleep 30 finished within 200 ms");
+        // Options before the pattern: BSD pgrep stops reading options at the pattern, so a `-P`
+        // after it is taken as another pattern, and any `sleep` on the machine would match.
         let children = std::process::Command::new("pgrep")
-            .args(["-x", "sleep", "-P", &std::process::id().to_string()])
+            .args(["-P", &std::process::id().to_string(), "-x", "sleep"])
             .output()
             .unwrap();
         assert!(
