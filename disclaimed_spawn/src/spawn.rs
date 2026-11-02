@@ -1,20 +1,29 @@
 use std::ffi::{CString, OsStr};
 use std::io;
-use std::os::fd::{FromRawFd, OwnedFd};
+use std::os::fd::OwnedFd;
 use std::os::unix::ffi::OsStrExt;
 
 use tokio::net::unix::pipe;
 
 use crate::disclaim_function;
+use crate::errno::check;
+use crate::file_actions::FileActions;
 use crate::running_child::RunningChild;
-use crate::spawn_attributes::{check, FileActions, SpawnAttributes};
+use crate::spawn_attributes::SpawnAttributes;
 use crate::unreaped::Unreaped;
 
 /// Starts `program` with `args`, its stdin reading nothing and its stdout and stderr piped back.
 ///
 /// The child is its own responsible process, so macOS judges what it may reach by its own
 /// signature rather than by the signature of the program that started it, and it receives no
-/// descriptor of ours except those pipes.
+/// descriptor of ours except those pipes. It inherits our environment, as it is when `spawn`
+/// runs, and our working directory.
+///
+/// Each pipe is created and then marked close-on-exec, because macOS has no call that does both
+/// at once. A program another thread starts in between, the ordinary way, could inherit an end of
+/// one: a read end would let it read what the child writes, and a write end would keep the read
+/// from ending until the caller's deadline. A child started through this crate cannot, because it
+/// closes every descriptor it is not given.
 ///
 /// Must be called within a tokio runtime, which watches the pipes.
 ///
@@ -22,11 +31,11 @@ use crate::unreaped::Unreaped;
 /// Returns why the child could not be started, such as `NotFound` when `program` is not on the
 /// `PATH`, or `Unsupported` when macOS lacks the function that disclaims responsibility.
 #[allow(unsafe_code)]
-pub fn spawn<S: AsRef<OsStr>>(program: S, args: &[S]) -> io::Result<RunningChild> {
+pub fn spawn(program: impl AsRef<OsStr>, args: &[impl AsRef<OsStr>]) -> io::Result<RunningChild> {
     let attributes = SpawnAttributes::disclaiming(disclaim_function::lookup()?)?;
-    let (stdout_read, stdout_write) = pipe_pair()?;
-    let (stderr_read, stderr_write) = pipe_pair()?;
-    let actions = FileActions::stdio(&stdout_write, &stderr_write)?;
+    let (stdout_read, stdout_write) = io::pipe()?;
+    let (stderr_read, stderr_write) = io::pipe()?;
+    let actions = FileActions::stdio(stdout_write, stderr_write)?;
 
     let program = c_string(program.as_ref().as_bytes())?;
     let arguments = std::iter::once(Ok(program.clone()))
@@ -54,33 +63,13 @@ pub fn spawn<S: AsRef<OsStr>>(program: S, args: &[S]) -> io::Result<RunningChild
     })?;
     // From here an early return drops `child`, which kills the process.
     let child = Unreaped::new(pid);
-    drop((stdout_write, stderr_write));
+    // The child has its copies of the write ends; closing ours lets each read end when it exits.
+    drop(actions);
     Ok(RunningChild::new(
         child,
-        pipe::Receiver::from_owned_fd(stdout_read)?,
-        pipe::Receiver::from_owned_fd(stderr_read)?,
+        pipe::Receiver::from_owned_fd(OwnedFd::from(stdout_read))?,
+        pipe::Receiver::from_owned_fd(OwnedFd::from(stderr_read))?,
     ))
-}
-
-/// A pipe's read and write ends, both closed on exec, so a child some other code starts at the
-/// same moment cannot hold a write end open and keep our read from ever ending.
-#[allow(unsafe_code)]
-fn pipe_pair() -> io::Result<(OwnedFd, OwnedFd)> {
-    let mut fds = [0 as libc::c_int; 2];
-    // SAFETY: `fds` has room for the two descriptors pipe writes.
-    if unsafe { libc::pipe(fds.as_mut_ptr()) } == -1 {
-        return Err(io::Error::last_os_error());
-    }
-    let [read, write] = fds;
-    // SAFETY: pipe succeeded, so both are open descriptors nothing else owns.
-    let ends = unsafe { (OwnedFd::from_raw_fd(read), OwnedFd::from_raw_fd(write)) };
-    for fd in [read, write] {
-        // SAFETY: `fd` is open and owned by `ends` for the length of this call.
-        if unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) } == -1 {
-            return Err(io::Error::last_os_error());
-        }
-    }
-    Ok(ends)
 }
 
 fn c_string(bytes: &[u8]) -> io::Result<CString> {

@@ -8,6 +8,8 @@
 #![warn(clippy::undocumented_unsafe_blocks)]
 
 mod disclaim_function;
+mod errno;
+mod file_actions;
 mod running_child;
 mod spawn;
 mod spawn_attributes;

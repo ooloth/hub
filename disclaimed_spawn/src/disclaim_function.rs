@@ -1,7 +1,8 @@
+use std::ffi::CStr;
 use std::io;
 
 /// The name of the libSystem function that marks a spawn as disclaiming responsibility.
-pub(crate) const NAME: &str = "responsibility_spawnattrs_setdisclaim";
+pub(crate) const NAME: &CStr = c"responsibility_spawnattrs_setdisclaim";
 
 /// `responsibility_spawnattrs_setdisclaim`: sets or clears the disclaim flag on spawn attributes,
 /// returning 0 or an errno. Apple publishes no header for it; LLDB declares it this way in
@@ -18,11 +19,9 @@ pub(crate) type DisclaimFn = unsafe extern "C" fn(
 /// Returns `Unsupported`, naming the function, when it is not there.
 #[allow(unsafe_code)]
 pub(crate) fn lookup() -> io::Result<DisclaimFn> {
-    let symbol = c"responsibility_spawnattrs_setdisclaim";
-    debug_assert_eq!(symbol.to_bytes(), NAME.as_bytes());
-    // SAFETY: `symbol` is a NUL-terminated string that outlives the call, and RTLD_DEFAULT asks
+    // SAFETY: `NAME` is a NUL-terminated string that outlives the call, and RTLD_DEFAULT asks
     // every image already loaded. dlsym reads nothing else of ours.
-    let address = unsafe { libc::dlsym(libc::RTLD_DEFAULT, symbol.as_ptr()) };
+    let address = unsafe { libc::dlsym(libc::RTLD_DEFAULT, NAME.as_ptr()) };
     let found = (!address.is_null()).then(|| {
         // SAFETY: a non-null address dlsym returned for this name is that function, whose
         // signature `DisclaimFn` declares as LLDB does.
@@ -39,7 +38,10 @@ pub(crate) fn from_lookup<F>(found: Option<F>) -> io::Result<F> {
     found.ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::Unsupported,
-            format!("{NAME} is not available on this macOS, so the child cannot answer for itself"),
+            format!(
+                "{} is not available on this macOS, so the child cannot answer for itself",
+                NAME.to_string_lossy()
+            ),
         )
     })
 }
@@ -58,7 +60,10 @@ mod tests {
         let error = from_lookup::<u8>(None).unwrap_err();
 
         assert_eq!(error.kind(), io::ErrorKind::Unsupported);
-        assert!(error.to_string().contains(NAME), "{error}");
+        assert!(
+            error.to_string().contains(&*NAME.to_string_lossy()),
+            "{error}"
+        );
     }
 
     #[test]

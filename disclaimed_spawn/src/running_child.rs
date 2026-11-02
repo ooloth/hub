@@ -13,24 +13,26 @@ pub struct RunningChild {
     child: Unreaped,
     stdout: pipe::Receiver,
     stderr: pipe::Receiver,
-    pid: u32,
 }
 
 impl RunningChild {
-    pub(crate) fn new(child: Unreaped, stdout: pipe::Receiver, stderr: pipe::Receiver) -> Self {
-        let pid = u32::try_from(child.pid()).unwrap_or_default();
+    pub(crate) const fn new(
+        child: Unreaped,
+        stdout: pipe::Receiver,
+        stderr: pipe::Receiver,
+    ) -> Self {
         Self {
             child,
             stdout,
             stderr,
-            pid,
         }
     }
 
     /// The child's process id.
     #[must_use]
     pub const fn pid(&self) -> u32 {
-        self.pid
+        // Lossless: `Unreaped` holds only a pid above 0.
+        self.child.pid().cast_unsigned()
     }
 
     /// Waits for the child to exit and returns everything it wrote to stdout and stderr.
@@ -47,7 +49,6 @@ impl RunningChild {
             mut child,
             mut stdout,
             mut stderr,
-            ..
         } = self;
         let mut out = Vec::new();
         let mut err = Vec::new();

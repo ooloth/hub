@@ -67,8 +67,23 @@ async fn dropping_output_before_the_child_exits_ends_the_child() {
 }
 
 #[tokio::test]
+async fn a_program_given_as_a_path_takes_arguments_given_as_strings() {
+    let program = std::path::PathBuf::from("/bin/echo");
+
+    let output = disclaimed_spawn::spawn(program, &["hi"])
+        .unwrap()
+        .output()
+        .await
+        .unwrap();
+
+    assert_eq!(output.stdout, b"hi\n");
+}
+
+#[tokio::test]
 async fn a_program_that_does_not_exist_is_not_found() {
-    let error = disclaimed_spawn::spawn("hub-no-such-program", &[]).unwrap_err();
+    let no_arguments: [&str; 0] = [];
+
+    let error = disclaimed_spawn::spawn("hub-no-such-program", &no_arguments).unwrap_err();
 
     assert_eq!(error.kind(), io::ErrorKind::NotFound);
 }
@@ -115,20 +130,25 @@ mod responsibility_and_descriptors {
         assert_ne!(child_answers_to, i32::try_from(child.id()).unwrap());
     }
 
-    /// Duplicates a file onto descriptor 50 without close-on-exec, so an ordinary spawn passes it
-    /// to the child.
+    /// A copy of `file` on the lowest free descriptor from 50 up, without close-on-exec, so an
+    /// ordinary spawn passes it to the child. Taking a free number, rather than forcing 50, never
+    /// closes a descriptor something else in the process holds.
     #[allow(unsafe_code)]
-    fn inheritable_descriptor_50(file: &std::fs::File) {
-        // SAFETY: both descriptors are plain integers; `file` stays open for the test's length,
-        // and descriptor 50 is not one this test process otherwise uses.
-        let duplicated = unsafe { libc::dup2(file.as_raw_fd(), 50) };
-        assert_eq!(duplicated, 50);
+    fn inheritable_copy(file: &std::fs::File) -> std::os::fd::OwnedFd {
+        use std::os::fd::FromRawFd;
+        // SAFETY: F_DUPFD reads `file`'s descriptor, which stays open for the call, and returns a
+        // new one or -1.
+        let copy = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_DUPFD, 50) };
+        assert!(copy >= 50, "{}", std::io::Error::last_os_error());
+        // SAFETY: `copy` was just created and nothing else owns it.
+        unsafe { std::os::fd::OwnedFd::from_raw_fd(copy) }
     }
 
     #[tokio::test]
     async fn a_descriptor_the_parent_left_inheritable_does_not_reach_the_child() {
         let file = std::fs::File::open("/dev/null").unwrap();
-        inheritable_descriptor_50(&file);
+        let copy = inheritable_copy(&file);
+        let number = copy.as_raw_fd().to_string();
         let listing = "ls /dev/fd";
 
         let ordinary = std::process::Command::new("/bin/sh")
@@ -141,13 +161,17 @@ mod responsibility_and_descriptors {
             .await
             .unwrap();
 
-        let has_50 = |stdout: &[u8]| String::from_utf8_lossy(stdout).lines().any(|l| l == "50");
+        let has_copy = |stdout: &[u8]| {
+            String::from_utf8_lossy(stdout)
+                .lines()
+                .any(|line| line == number)
+        };
         assert!(
-            has_50(&ordinary.stdout),
-            "the ordinary spawn did not inherit 50, so this proves nothing"
+            has_copy(&ordinary.stdout),
+            "the ordinary spawn did not inherit {number}, so this proves nothing"
         );
         assert!(
-            !has_50(&disclaimed.stdout),
+            !has_copy(&disclaimed.stdout),
             "{}",
             String::from_utf8_lossy(&disclaimed.stdout)
         );
