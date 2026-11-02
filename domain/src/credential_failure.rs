@@ -259,7 +259,16 @@ mod tests {
 
     #[rstest]
     #[case::bad_reference("could not read secret 'op://Nope/x/y': \"Nope\" isn't a vault")]
-    #[case::no_op("failed to run `op read`: No such file or directory (os error 2)")]
+    #[case::no_op(
+        "`op` is not on the PATH; is the 1Password CLI installed?: No such file or directory (os \
+         error 2)"
+    )]
+    #[case::no_disclaim(
+        "macOS cannot start `op` so that it answers for itself: \
+         responsibility_spawnattrs_setdisclaim is not available on this macOS, so the child cannot \
+         answer for itself"
+    )]
+    #[case::other_start_failure("failed to start `op read`: Too many open files (os error 24)")]
     fn any_other_message_is_other(#[case] stderr: &str) {
         assert_eq!(from_op(stderr).cause(), CredentialCause::Other);
     }

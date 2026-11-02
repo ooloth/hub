@@ -12,7 +12,7 @@ const STARTS: [&str; 2] = ["Command::new", "disclaimed_spawn::spawn"];
 /// The functions that pass the program they are given on to a start, so the program the daemon
 /// runs is named where they are called. A function that does this and is missing here fails the
 /// check, and so does a name here that no longer does it.
-const WRAPPERS: [&str; 2] = ["killed_on_drop", "start_disclaimed"];
+const WRAPPERS: [&str; 3] = ["killed_on_drop", "start_disclaimed", "start_op"];
 
 /// What a call to a start or a wrapper is given as its program.
 #[derive(Debug, Clone, PartialEq, Eq)]

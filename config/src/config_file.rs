@@ -205,11 +205,12 @@ async fn read_credential(value: &str, responsibility: OpResponsibility) -> Resul
     if !value.starts_with("op://") {
         return Ok(value.to_string());
     }
-    let output = match responsibility {
-        OpResponsibility::Inherited => killed_on_drop("op").args(["read", value]).output().await,
-        OpResponsibility::Disclaimed => start_disclaimed("op", &["read", value]).await,
-    }
-    .context("failed to run `op read` — is the 1Password CLI installed?")?;
+    let output = start_op("op", &["read", value], responsibility)
+        .await
+        .map_err(|error| {
+            let why = why_op_did_not_start(&error);
+            anyhow::Error::new(error).context(why)
+        })?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!(
@@ -321,10 +322,29 @@ fn the_app_is_among(executables: &str) -> bool {
     })
 }
 
-/// A command whose process is killed when the future running it is dropped.
-///
-/// A read gives up on `op` at its deadline by dropping its future. Without this, an `op` that never
-/// answers would keep running after the attempt that gave up on it.
+/// Runs `program` with `args` the way `responsibility` asks, and returns everything it wrote and
+/// its status. This is the one place the choice between the two spawns is made.
+async fn start_op(
+    program: &str,
+    args: &[&str],
+    responsibility: OpResponsibility,
+) -> std::io::Result<std::process::Output> {
+    match responsibility {
+        OpResponsibility::Inherited => killed_on_drop(program).args(args).output().await,
+        OpResponsibility::Disclaimed => start_disclaimed(program, args).await,
+    }
+}
+
+/// What starting `op` failed on, in words that point at the fix. `op`'s own error follows it.
+fn why_op_did_not_start(error: &std::io::Error) -> &'static str {
+    match error.kind() {
+        std::io::ErrorKind::NotFound => "`op` is not on the PATH; is the 1Password CLI installed?",
+        // Only the disclaimed spawn reports this, when macOS lacks the function that disclaims.
+        std::io::ErrorKind::Unsupported => "macOS cannot start `op` so that it answers for itself",
+        _ => "failed to start `op read`",
+    }
+}
+
 /// Runs `program` so that it answers for itself, and returns everything it wrote and its status.
 ///
 /// On macOS that means disclaiming responsibility, because macOS otherwise judges a child by the
@@ -338,6 +358,10 @@ async fn start_disclaimed(program: &str, args: &[&str]) -> std::io::Result<std::
     output
 }
 
+/// A command whose process is killed when the future running it is dropped.
+///
+/// A read gives up on `op` at its deadline by dropping its future. Without this, an `op` that never
+/// answers would keep running after the attempt that gave up on it.
 fn killed_on_drop(program: &str) -> tokio::process::Command {
     let mut command = tokio::process::Command::new(program);
     let _ = command.kill_on_drop(true);
@@ -361,12 +385,10 @@ mod tests {
         }
     }
 
-    #[rstest::rstest]
     #[tokio::test]
-    async fn plain_credentials_resolve_without_asking_1password(
-        #[values(OpResponsibility::Inherited, OpResponsibility::Disclaimed)]
-        responsibility: OpResponsibility,
-    ) {
+    async fn plain_credentials_resolve_without_asking_1password() {
+        // A plain value never reaches a spawn, so either responsibility will do.
+        let responsibility = OpResponsibility::Inherited;
         let mut creds = credentials("tok", "user");
         creds.linear_token = Some("lin".into());
         let _ = creds.extra.insert("media".into(), "key".into());
@@ -618,6 +640,93 @@ mod tests {
         assert!(err.to_string().contains("github_username"));
     }
 
+    #[rstest::rstest]
+    #[case::not_found(
+        std::io::ErrorKind::NotFound,
+        "`op` is not on the PATH; is the 1Password CLI installed?"
+    )]
+    #[case::unsupported(
+        std::io::ErrorKind::Unsupported,
+        "macOS cannot start `op` so that it answers for itself"
+    )]
+    #[case::anything_else(std::io::ErrorKind::PermissionDenied, "failed to start `op read`")]
+    fn a_failed_start_is_named_by_its_kind(#[case] kind: std::io::ErrorKind, #[case] name: &str) {
+        assert_eq!(why_op_did_not_start(&std::io::Error::from(kind)), name);
+    }
+
+    /// The pid of a shell started the way `responsibility` asks, and the process macOS holds
+    /// responsible for a `sleep` that shell started, asked while the shell is still running:
+    /// once a disclaimed shell exits, macOS holds the `sleep` responsible for itself instead.
+    #[cfg(target_os = "macos")]
+    async fn who_a_child_of_the_started_program_answers_to(
+        responsibility: OpResponsibility,
+    ) -> (u32, u32) {
+        let pids_file = std::env::temp_dir().join(format!(
+            "hub-config-responsibility-{}-{responsibility:?}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&pids_file);
+        let script = format!(
+            "sleep 5 >/dev/null 2>&1 & echo $$ $! > '{}'; sleep 2",
+            pids_file.display()
+        );
+        let shell =
+            tokio::spawn(
+                async move { start_op("/bin/sh", &["-c", &script], responsibility).await },
+            );
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let text = loop {
+            match std::fs::read_to_string(&pids_file) {
+                Ok(text) if text.ends_with('\n') => break text,
+                _ => {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "the shell wrote no pids"
+                    );
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+            }
+        };
+        let pids: Vec<u32> = text
+            .split_whitespace()
+            .map(|pid| pid.parse().unwrap())
+            .collect();
+        let [shell_pid, child] = pids[..] else {
+            panic!("expected two pids, got {text:?}");
+        };
+        let answers_to = disclaimed_spawn::responsible_for(child);
+        let _ = std::process::Command::new("kill")
+            .arg(child.to_string())
+            .status();
+        let _ = shell.await.unwrap().unwrap();
+        let _ = std::fs::remove_file(&pids_file);
+        (shell_pid, answers_to.unwrap())
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn a_child_of_a_program_started_disclaimed_answers_to_that_program() {
+        let test_answers_to = disclaimed_spawn::responsible_for(std::process::id()).unwrap();
+
+        let (shell, answers_to) =
+            who_a_child_of_the_started_program_answers_to(OpResponsibility::Disclaimed).await;
+
+        assert_eq!(answers_to, shell);
+        assert_ne!(answers_to, test_answers_to);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn a_child_of_a_program_started_inherited_answers_to_what_the_test_answers_to() {
+        let test_answers_to = disclaimed_spawn::responsible_for(std::process::id()).unwrap();
+
+        let (_, answers_to) =
+            who_a_child_of_the_started_program_answers_to(OpResponsibility::Inherited).await;
+
+        assert_eq!(answers_to, test_answers_to);
+    }
+
     #[tokio::test]
     async fn a_disclaimed_start_returns_the_programs_exit_status_and_output() {
         let output = start_disclaimed("/bin/sh", &["-c", "printf out; printf err >&2; exit 3"])
@@ -629,12 +738,10 @@ mod tests {
         assert_eq!(output.stderr, b"err");
     }
 
-    #[rstest::rstest]
     #[tokio::test]
-    async fn a_plain_value_is_its_own_credential(
-        #[values(OpResponsibility::Inherited, OpResponsibility::Disclaimed)]
-        responsibility: OpResponsibility,
-    ) {
+    async fn a_plain_value_is_its_own_credential() {
+        // A plain value never reaches a spawn, so either responsibility will do.
+        let responsibility = OpResponsibility::Inherited;
         assert_eq!(
             read_credential("plain-value", responsibility)
                 .await
@@ -643,12 +750,10 @@ mod tests {
         );
     }
 
-    #[rstest::rstest]
     #[tokio::test]
-    async fn an_empty_value_is_its_own_credential(
-        #[values(OpResponsibility::Inherited, OpResponsibility::Disclaimed)]
-        responsibility: OpResponsibility,
-    ) {
+    async fn an_empty_value_is_its_own_credential() {
+        // A plain value never reaches a spawn, so either responsibility will do.
+        let responsibility = OpResponsibility::Inherited;
         assert_eq!(read_credential("", responsibility).await.unwrap(), "");
     }
 }

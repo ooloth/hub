@@ -10,10 +10,12 @@
 mod disclaim_function;
 mod errno;
 mod file_actions;
+mod responsible;
 mod running_child;
 mod spawn;
 mod spawn_attributes;
 mod unreaped;
 
+pub use responsible::responsible_for;
 pub use running_child::RunningChild;
 pub use spawn::spawn;

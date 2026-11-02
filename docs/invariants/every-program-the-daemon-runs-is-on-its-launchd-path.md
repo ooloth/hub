@@ -21,9 +21,9 @@ starts. If it is a source's tool, that source fails on every pass.
 ## What it forbids
 
 - Starting a program by a new name in any crate `hub-daemon` is built from, without adding the
-  name to `DAEMON_TOOLS`. A program is started by a start (`Command::new`,
-  `disclaimed_spawn::spawn`) or by a wrapper that passes it on to one (`killed_on_drop`,
-  `start_disclaimed`).
+  name to `DAEMON_TOOLS`. A program is started by a start, such as `Command::new`, or by a
+  wrapper that passes it on to one, such as `killed_on_drop`. `STARTS` and `WRAPPERS` in
+  `scripts/src/repo_state/daemon_tools.rs` list them.
 - A start or wrapper given its program as anything but a literal, or the first parameter of the
   function it sits in, because then no name is written where the check can read it.
 - A function that passes its own parameter on to a start without being listed as a wrapper, and a

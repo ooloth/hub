@@ -92,15 +92,13 @@ mod responsibility_and_descriptors {
     use std::os::fd::AsRawFd;
     use std::time::Duration;
 
-    /// The process macOS holds responsible for `pid`.
-    #[allow(unsafe_code)]
-    fn responsible_for(pid: u32) -> i32 {
-        extern "C" {
-            fn responsibility_get_pid_responsible_for_pid(pid: libc::pid_t) -> libc::pid_t;
-        }
-        let pid = libc::pid_t::try_from(pid).unwrap();
-        // SAFETY: the function takes a pid by value and returns one; it touches no memory of ours.
-        unsafe { responsibility_get_pid_responsible_for_pid(pid) }
+    use disclaimed_spawn::responsible_for;
+
+    #[test]
+    fn a_running_process_has_a_responsible_process() {
+        let answers_to = responsible_for(std::process::id()).unwrap();
+
+        assert!(answers_to > 0, "{answers_to}");
     }
 
     #[tokio::test]
@@ -109,7 +107,7 @@ mod responsibility_and_descriptors {
         let pid = child.pid();
         tokio::time::sleep(Duration::from_millis(100)).await;
 
-        assert_eq!(responsible_for(pid), i32::try_from(pid).unwrap());
+        assert_eq!(responsible_for(pid).unwrap(), pid);
     }
 
     /// Without this, the test above could pass because the oracle answers every pid with itself.
@@ -121,13 +119,13 @@ mod responsibility_and_descriptors {
             .unwrap();
         std::thread::sleep(Duration::from_millis(100));
 
-        let child_answers_to = responsible_for(child.id());
-        let parent_answers_to = responsible_for(std::process::id());
+        let child_answers_to = responsible_for(child.id()).unwrap();
+        let parent_answers_to = responsible_for(std::process::id()).unwrap();
         child.kill().unwrap();
         let _ = child.wait().unwrap();
 
         assert_eq!(child_answers_to, parent_answers_to);
-        assert_ne!(child_answers_to, i32::try_from(child.id()).unwrap());
+        assert_ne!(child_answers_to, child.id());
     }
 
     /// A copy of `file` on the lowest free descriptor from 50 up, without close-on-exec, so an
