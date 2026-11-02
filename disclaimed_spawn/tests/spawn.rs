@@ -13,16 +13,6 @@ fn exists(pid: u32) -> bool {
         .success()
 }
 
-/// Whether `pid` has stopped running: gone, or a zombie nobody has reaped yet.
-fn ended(pid: u32) -> bool {
-    let out = std::process::Command::new("ps")
-        .args(["-o", "stat=", "-p", &pid.to_string()])
-        .output()
-        .unwrap();
-    let stat = String::from_utf8_lossy(&out.stdout);
-    stat.trim().is_empty() || stat.trim_start().starts_with('Z')
-}
-
 #[tokio::test]
 async fn output_returns_what_the_child_wrote_and_its_exit_code() {
     let child =
@@ -61,18 +51,10 @@ async fn dropping_output_before_the_child_exits_ends_the_child() {
     let unfinished = tokio::time::timeout(Duration::from_millis(200), child.output()).await;
     assert!(unfinished.is_err(), "sleep 30 finished within 200ms");
 
-    // On macOS the child is also reaped, so its pid leaves the process table. On Linux the
-    // fallback is tokio's kill_on_drop, which reaps on a best-effort basis, so ending is the
-    // promise there.
+    // The child is killed and reaped, so its pid leaves the process table: a zombie would still
+    // answer `kill -0`.
     let deadline = Instant::now() + Duration::from_secs(5);
-    let gone = |pid| {
-        if cfg!(target_os = "macos") {
-            !exists(pid)
-        } else {
-            ended(pid)
-        }
-    };
-    while !gone(pid) {
+    while exists(pid) {
         assert!(
             Instant::now() < deadline,
             "pid {pid} still there 5s after the drop"
@@ -88,8 +70,7 @@ async fn a_program_that_does_not_exist_is_not_found() {
     assert_eq!(error.kind(), io::ErrorKind::NotFound);
 }
 
-#[cfg(target_os = "macos")]
-mod macos {
+mod responsibility_and_descriptors {
     use std::os::fd::AsRawFd;
     use std::time::Duration;
 

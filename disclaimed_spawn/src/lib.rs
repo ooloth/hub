@@ -3,13 +3,13 @@
 
 #![warn(clippy::undocumented_unsafe_blocks)]
 
-#[cfg(target_os = "macos")]
+#[cfg(not(target_os = "macos"))]
+compile_error!("disclaimed_spawn runs only on macOS: hub has no other platform");
+
 mod disclaim_function;
 mod running_child;
 mod spawn;
-#[cfg(target_os = "macos")]
 mod spawn_attributes;
-#[cfg(target_os = "macos")]
 mod unreaped;
 
 pub use running_child::RunningChild;

@@ -21,8 +21,8 @@ addendum of 2026-11-01 holds the measurements.
 
 Disclaiming goes through `responsibility_spawnattrs_setdisclaim`, a libSystem function Apple does not
 document. It is looked up at runtime, so a macOS without it gives `Unsupported`, naming it, rather
-than a binary that fails to load. On other platforms there is no responsibility to disclaim, and
-`spawn` is an ordinary `tokio::process::Command`, which is what CI on Linux runs.
+than a binary that fails to load. hub runs only on macOS, so the crate fails to compile anywhere
+else rather than fall back to a spawn that does not disclaim.
 
 ## Using it
 
@@ -36,11 +36,11 @@ enforces a deadline by dropping the future, as `config`'s credential deadline do
 
 ## Seeing it work
 
-`just test` on a Mac runs the tests that only a real spawn can answer, in `tests/spawn.rs`: that the
-child is its own responsible process (asked through `responsibility_get_pid_responsible_for_pid`,
-with an ordinary spawn as the control), that a dropped child is gone within 5 seconds, and that a
-descriptor the parent left inheritable never reaches the child. CI runs on Linux, where the
-macOS-only tests do not compile, so a change here is not checked until it runs on a Mac.
+`just test`, and CI on `macos-latest`, run the tests that only a real spawn can answer, in
+`tests/spawn.rs`: that the child is its own responsible process (asked through
+`responsibility_get_pid_responsible_for_pid`, with an ordinary spawn as the control), that a dropped
+child is gone within 5 seconds, and that a descriptor the parent left inheritable never reaches the
+child.
 
 To see it in the daemon, install and restart it (`just install`, then `just daemon-restart`). One
 Touch ID prompt naming `hub-daemon` appears, and `just daemon-logs` shows a `pass` line with

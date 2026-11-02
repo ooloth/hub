@@ -1,28 +1,23 @@
 use std::io;
 use std::process::Output;
 
+use tokio::io::AsyncReadExt;
+use tokio::net::unix::pipe;
+
+use crate::unreaped::Unreaped;
+
 /// A child started by [`crate::spawn`] that has not been waited for. Dropping it, or the future
 /// [`RunningChild::output`] returns, before the child exits ends the child.
 #[derive(Debug)]
 pub struct RunningChild {
-    #[cfg(target_os = "macos")]
-    child: crate::unreaped::Unreaped,
-    #[cfg(target_os = "macos")]
-    stdout: tokio::net::unix::pipe::Receiver,
-    #[cfg(target_os = "macos")]
-    stderr: tokio::net::unix::pipe::Receiver,
-    #[cfg(not(target_os = "macos"))]
-    child: tokio::process::Child,
+    child: Unreaped,
+    stdout: pipe::Receiver,
+    stderr: pipe::Receiver,
     pid: u32,
 }
 
 impl RunningChild {
-    #[cfg(target_os = "macos")]
-    pub(crate) fn new(
-        child: crate::unreaped::Unreaped,
-        stdout: tokio::net::unix::pipe::Receiver,
-        stderr: tokio::net::unix::pipe::Receiver,
-    ) -> Self {
+    pub(crate) fn new(child: Unreaped, stdout: pipe::Receiver, stderr: pipe::Receiver) -> Self {
         let pid = u32::try_from(child.pid()).unwrap_or_default();
         Self {
             child,
@@ -30,12 +25,6 @@ impl RunningChild {
             stderr,
             pid,
         }
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    pub(crate) fn new(child: tokio::process::Child) -> Self {
-        let pid = child.id().unwrap_or_default();
-        Self { child, pid }
     }
 
     /// The child's process id.
@@ -53,10 +42,7 @@ impl RunningChild {
     ///
     /// # Errors
     /// Returns an error when reading the child's output fails.
-    #[cfg(target_os = "macos")]
     pub async fn output(self) -> io::Result<Output> {
-        use tokio::io::AsyncReadExt;
-
         let Self {
             mut child,
             mut stdout,
@@ -80,14 +66,5 @@ impl RunningChild {
             stdout: out,
             stderr: err,
         })
-    }
-
-    /// Waits for the child to exit and returns everything it wrote to stdout and stderr.
-    ///
-    /// # Errors
-    /// Returns an error when reading the child's output fails.
-    #[cfg(not(target_os = "macos"))]
-    pub async fn output(self) -> io::Result<Output> {
-        self.child.wait_with_output().await
     }
 }
