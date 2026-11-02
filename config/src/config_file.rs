@@ -207,10 +207,7 @@ async fn read_credential(value: &str, responsibility: OpResponsibility) -> Resul
     }
     let output = match responsibility {
         OpResponsibility::Inherited => killed_on_drop("op").args(["read", value]).output().await,
-        OpResponsibility::Disclaimed => match disclaimed_spawn::spawn("op", &["read", value]) {
-            Ok(child) => child.output().await,
-            Err(error) => Err(error),
-        },
+        OpResponsibility::Disclaimed => start_disclaimed("op", &["read", value]).await,
     }
     .context("failed to run `op read` — is the 1Password CLI installed?")?;
     if !output.status.success() {
@@ -328,6 +325,19 @@ fn the_app_is_among(executables: &str) -> bool {
 ///
 /// A read gives up on `op` at its deadline by dropping its future. Without this, an `op` that never
 /// answers would keep running after the attempt that gave up on it.
+/// Runs `program` so that it answers for itself, and returns everything it wrote and its status.
+///
+/// On macOS that means disclaiming responsibility, because macOS otherwise judges a child by the
+/// process that started it (decision 027's addendum of 2026-11-01). Linux holds no process
+/// responsible for another, so there an ordinary child already answers for itself (decision 031).
+async fn start_disclaimed(program: &str, args: &[&str]) -> std::io::Result<std::process::Output> {
+    #[cfg(target_os = "macos")]
+    let output = disclaimed_spawn::spawn(program, args)?.output().await;
+    #[cfg(not(target_os = "macos"))]
+    let output = killed_on_drop(program).args(args).output().await;
+    output
+}
+
 fn killed_on_drop(program: &str) -> tokio::process::Command {
     let mut command = tokio::process::Command::new(program);
     let _ = command.kill_on_drop(true);
@@ -606,6 +616,17 @@ mod tests {
     fn validate_required_fails_on_empty_github_username() {
         let err = validate_required(&credentials("tok", "")).unwrap_err();
         assert!(err.to_string().contains("github_username"));
+    }
+
+    #[tokio::test]
+    async fn a_disclaimed_start_returns_the_programs_exit_status_and_output() {
+        let output = start_disclaimed("/bin/sh", &["-c", "printf out; printf err >&2; exit 3"])
+            .await
+            .unwrap();
+
+        assert_eq!(output.status.code(), Some(3));
+        assert_eq!(output.stdout, b"out");
+        assert_eq!(output.stderr, b"err");
     }
 
     #[rstest::rstest]

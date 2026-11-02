@@ -7,8 +7,13 @@ on:
 
 jobs:
   check:
-    # hub runs only on macOS, and disclaimed_spawn compiles nowhere else.
-    runs-on: macos-latest
+    # hub runs on macOS and is also developed in Linux sandboxes, so every push is checked on
+    # both (decision 031). Neither run cancels the other, so each platform's result is reported.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 

@@ -201,6 +201,10 @@ prompt naming `hub-daemon`. This is done on every macOS version rather than only
 version check would exist only to cover a test not yet run, and a failure on 26 would show in the
 health record and the status bar rather than pass unnoticed.
 
+Linux, where hub is also built and tested ([031](031-hub-builds-and-tests-on-macos-and-linux.md)),
+holds no process responsible for another, so there is nothing to disclaim and the daemon starts
+`op` the ordinary way there.
+
 The TUI keeps starting `op` as it does today. It works from a terminal on both versions, and the
 issue asks nothing of it. Changing how its prompts are attributed would be a new behaviour nobody
 asked for. That choice is cheap to reverse and fails visibly, so it is taken here and not argued

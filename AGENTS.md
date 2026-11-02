@@ -4,8 +4,10 @@
 
 If `../hub-private/CLAUDE.md` exists, read it before writing or editing any files — it lists terms that must never appear in committed hub files.
 
-Every change must build on devices with and without each hub-private module, not only on the
-device it was written on. `just lint` checks every configuration the checkout can build. See
+Every change must build on macOS and Linux, and on devices with and without each hub-private
+module, not only on the device it was written on. hub runs on macOS and is also developed in Linux
+Amp orbs ([decision 031](docs/decisions/031-hub-builds-and-tests-on-macos-and-linux.md)). CI checks
+both platforms, and `just lint` checks every configuration the checkout can build. See
 [the invariant](docs/invariants/hub-builds-with-and-without-each-private-module.md).
 
 ## What This Is

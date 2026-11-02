@@ -6,9 +6,6 @@ date: 2026-11-01
 
 # 031 — hub builds and tests on macOS and Linux, and runs on macOS
 
-_Status: accepted; not yet implemented. `disclaimed_spawn/src/lib.rs` still fails to compile off
-macOS, and `.github/workflows/ci.yml` runs on `macos-latest` alone._
-
 ## Forced by
 
 - hub is developed in Amp orbs as well as on the account holder's Macs. An orb is a Linux sandbox,
@@ -76,6 +73,6 @@ hub is no longer developed in Amp orbs, or hub needs a dependency that does not 
 
 - [x] questions/README.md: no open question concerns which platforms hub builds on
 - [x] vision.md: nothing defined or foreclosed; it names no platform
-- [ ] docs/invariants/hub-builds-with-and-without-each-private-module.md: add the platform axis,
+- [x] docs/invariants/hub-builds-with-and-without-each-private-module.md: add the platform axis,
       with the CI matrix as its check
-- [ ] AGENTS.md: the build rule names both platforms
+- [x] AGENTS.md: the build rule names both platforms

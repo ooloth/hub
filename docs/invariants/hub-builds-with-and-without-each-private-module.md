@@ -3,7 +3,9 @@
 ## The invariant
 
 Every commit builds and passes clippy in every private-module configuration: without hub-private,
-with hub-private but without the media module, and with both.
+with hub-private but without the media module, and with both. It does so on macOS and on Linux,
+and its tests pass on both
+([decision 031](../decisions/031-hub-builds-and-tests-on-macos-and-linux.md)).
 
 ## Why it must hold
 
@@ -19,6 +21,11 @@ hub calls it with the same arguments in both cases, so the two signatures must a
 laptop compiles only the real one and the work laptop compiles only the stub. A signature change
 made on one laptop therefore fails to compile on the other.
 
+The same holds across platforms. hub runs on macOS but is also developed in Amp orbs, which are
+Linux, and an orb's setup builds the tests and runs `just lint` with every private module linked.
+Code that only macOS can compile, such as the disclaimed spawn of decision 027's addendum, leaves
+an orb unable to build hub at all, and the orb is then the one place that cannot fix it.
+
 ## What it forbids
 
 - A change to the real `media.rs` signature without the same change to `media_stub.rs`.
@@ -30,6 +37,9 @@ made on one laptop therefore fails to compile on the other.
   call site. The generic `Media*` vocabulary is what hub uses instead.
 - A device-specific module added without a feature to select it, a tracked stub, and a
   configuration in `scripts/src/lint_configurations.rs`.
+- Code, a dependency or a test that compiles on only one of macOS and Linux without
+  `cfg(target_os = …)` keeping it to that platform. What only macOS can do, such as
+  `disclaimed_spawn`, compiles to nothing or to a stand-in elsewhere, never to a build error.
 
 ## How it is enforced
 
@@ -40,13 +50,18 @@ builds `-p hub-tui --features media` when `ui/tui/src/investigations/media.rs` e
 runs it, `just check` runs `just lint`, and prek runs `just lint` before every commit. When it
 fails, it names the configurations that failed and points here.
 
-Public CI checks only the first configuration, because it has no hub-private.
+Public CI checks only the first configuration, because it has no hub-private. It checks it on
+both platforms: `.github/workflows/ci.yml` runs fmt, clippy, the tests, audit and deny on
+`macos-latest` and on `ubuntu-latest` for every push.
 
 What the check misses:
 
 - **A configuration whose sources are absent.** A laptop without the media symlink cannot build the
   media configuration, so a change made there to a caller of `media::config` is checked against
   the stub alone. The home laptop's next commit or `just check` catches it.
+- **A private configuration on the other platform.** Public CI has no hub-private, so a private
+  module that compiles on macOS but not on Linux is found only when an orb next sets up and runs
+  `just lint`, and the reverse only on the next Mac commit.
 - **Test code.** The check lints library and binary targets, not tests, because hub's test code has
   never been linted and fails clippy's `unwrap_used` and `indexing_slicing` rules. A test that
   compiles only in one configuration fails in `just test`, which runs by hand and before a push.

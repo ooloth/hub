@@ -1,5 +1,8 @@
 //! What a child started by `disclaimed_spawn::spawn` gets, observed in real processes.
 
+// The crate is empty off macOS (decision 031), so there is nothing here to test.
+#![cfg(target_os = "macos")]
+
 use std::io;
 use std::time::{Duration, Instant};
 

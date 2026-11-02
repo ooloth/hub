@@ -21,8 +21,12 @@ addendum of 2026-11-01 holds the measurements.
 
 Disclaiming goes through `responsibility_spawnattrs_setdisclaim`, a libSystem function Apple does not
 document. It is looked up at runtime, so a macOS without it gives `Unsupported`, naming it, rather
-than a binary that fails to load. hub runs only on macOS, so the crate fails to compile anywhere
-else rather than fall back to a spawn that does not disclaim.
+than a binary that fails to load.
+
+The crate is empty on every other platform. hub also builds and tests on Linux, where it is
+developed in Amp orbs ([decision 031](../docs/decisions/031-hub-builds-and-tests-on-macos-and-linux.md)).
+Linux holds no process responsible for another, so there `config` starts `op` the ordinary way, and
+no macOS build can take that path.
 
 ## Using it
 

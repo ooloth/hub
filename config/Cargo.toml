@@ -5,12 +5,16 @@
 
 [dependencies]
   anyhow = "1"
-  disclaimed-spawn = { path = "../disclaimed_spawn" }
   domain = { path = "../domain" }
   secrecy = "0.8"
   serde = { version = "1", features = ["derive"] }
   tokio = { version = "1", features = ["full"] }
   toml = "0.8"
+
+# Only macOS holds a child responsible for the process that started it, so only macOS needs a
+# spawn that disclaims it (decisions 027 and 031).
+[target.'cfg(target_os = "macos")'.dependencies]
+  disclaimed-spawn = { path = "../disclaimed_spawn" }
 
 [dev-dependencies]
   insta = "1"
