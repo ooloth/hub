@@ -5,6 +5,7 @@
 
 [dependencies]
   anyhow = "1"
+  disclaimed-spawn = { path = "../disclaimed_spawn" }
   domain = { path = "../domain" }
   secrecy = "0.8"
   serde = { version = "1", features = ["derive"] }

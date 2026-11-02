@@ -18,7 +18,8 @@ loki_token      = "op://Scripts/Loki/token"        # optional
 // config/src/config_file.rs — the file, read once; credentials resolved from it
 impl ConfigFile {
     pub fn read() -> Result<Self> { /* parse hub.toml, check required keys */ }
-    pub async fn resolve(&self) -> Result<Config, CredentialFailure> { /* op read each reference */ }
+    pub async fn resolve(&self, responsibility: OpResponsibility)
+        -> Result<Config, CredentialFailure> { /* op read each reference */ }
 }
 
 // config/src/resolved.rs
@@ -38,6 +39,15 @@ preventing accidental logging.
 The TUI and CLI call `config::Config::load()`, which reads the file and
 resolves it in one step, once in `main()`, and pass the struct down as an
 argument. Nothing else calls `op read` or knows about 1Password.
+
+Every caller of `resolve` says which process macOS holds responsible for the
+`op` it starts (`config::OpResponsibility`). The TUI passes `Inherited`, so its
+`op` answers to the terminal it runs in. The daemon passes `Disclaimed`, so its
+`op` is started through `disclaimed_spawn` and answers for itself. Under
+launchd on macOS 27, an `op` that answers to the ad-hoc-signed `hub-daemon`
+cannot reach the 1Password desktop app and reports "No accounts configured"
+([Decision 027](../decisions/027-daemon-resolves-credentials-once-per-start-and-holds-them-in-memory.md),
+addendum of 2026-11-01).
 
 The daemon reads the file and resolves it as two steps
 ([Decision 027](../decisions/027-daemon-resolves-credentials-once-per-start-and-holds-them-in-memory.md)).

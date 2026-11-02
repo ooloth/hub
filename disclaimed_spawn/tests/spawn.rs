@@ -1,0 +1,171 @@
+//! What a child started by `disclaimed_spawn::spawn` gets, observed in real processes.
+
+use std::io;
+use std::time::{Duration, Instant};
+
+/// Whether `pid` is still in the process table, as a running process or a zombie.
+fn exists(pid: u32) -> bool {
+    std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stderr(std::process::Stdio::null())
+        .status()
+        .unwrap()
+        .success()
+}
+
+/// Whether `pid` has stopped running: gone, or a zombie nobody has reaped yet.
+fn ended(pid: u32) -> bool {
+    let out = std::process::Command::new("ps")
+        .args(["-o", "stat=", "-p", &pid.to_string()])
+        .output()
+        .unwrap();
+    let stat = String::from_utf8_lossy(&out.stdout);
+    stat.trim().is_empty() || stat.trim_start().starts_with('Z')
+}
+
+#[tokio::test]
+async fn output_returns_what_the_child_wrote_and_its_exit_code() {
+    let child =
+        disclaimed_spawn::spawn("/bin/sh", &["-c", "printf out; printf err >&2; exit 3"]).unwrap();
+
+    let output = child.output().await.unwrap();
+
+    assert_eq!(output.stdout, b"out");
+    assert_eq!(output.stderr, b"err");
+    assert_eq!(output.status.code(), Some(3));
+}
+
+#[tokio::test]
+async fn a_mebibyte_on_each_stream_comes_back_whole() {
+    // stderr is written first and in full, so a reader that drains stdout before stderr would
+    // leave the child blocked on a full stderr pipe and never see stdout's end.
+    let script = "head -c 1048576 /dev/zero >&2; head -c 1048576 /dev/zero";
+    let child = disclaimed_spawn::spawn("/bin/sh", &["-c", script]).unwrap();
+
+    let output = tokio::time::timeout(Duration::from_secs(20), child.output())
+        .await
+        .expect("output stalled on a full pipe")
+        .unwrap();
+
+    assert_eq!(output.stdout.len(), 1_048_576);
+    assert_eq!(output.stderr.len(), 1_048_576);
+    assert!(output.status.success());
+}
+
+#[tokio::test]
+async fn dropping_output_before_the_child_exits_ends_the_child() {
+    let child = disclaimed_spawn::spawn("/bin/sleep", &["30"]).unwrap();
+    let pid = child.pid();
+    assert!(exists(pid), "the child was not running to begin with");
+
+    let unfinished = tokio::time::timeout(Duration::from_millis(200), child.output()).await;
+    assert!(unfinished.is_err(), "sleep 30 finished within 200ms");
+
+    // On macOS the child is also reaped, so its pid leaves the process table. On Linux the
+    // fallback is tokio's kill_on_drop, which reaps on a best-effort basis, so ending is the
+    // promise there.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let gone = |pid| {
+        if cfg!(target_os = "macos") {
+            !exists(pid)
+        } else {
+            ended(pid)
+        }
+    };
+    while !gone(pid) {
+        assert!(
+            Instant::now() < deadline,
+            "pid {pid} still there 5s after the drop"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+#[tokio::test]
+async fn a_program_that_does_not_exist_is_not_found() {
+    let error = disclaimed_spawn::spawn("hub-no-such-program", &[]).unwrap_err();
+
+    assert_eq!(error.kind(), io::ErrorKind::NotFound);
+}
+
+#[cfg(target_os = "macos")]
+mod macos {
+    use std::os::fd::AsRawFd;
+    use std::time::Duration;
+
+    /// The process macOS holds responsible for `pid`.
+    #[allow(unsafe_code)]
+    fn responsible_for(pid: u32) -> i32 {
+        extern "C" {
+            fn responsibility_get_pid_responsible_for_pid(pid: libc::pid_t) -> libc::pid_t;
+        }
+        let pid = libc::pid_t::try_from(pid).unwrap();
+        // SAFETY: the function takes a pid by value and returns one; it touches no memory of ours.
+        unsafe { responsibility_get_pid_responsible_for_pid(pid) }
+    }
+
+    #[tokio::test]
+    async fn a_spawned_child_is_its_own_responsible_process() {
+        let child = disclaimed_spawn::spawn("/bin/sleep", &["5"]).unwrap();
+        let pid = child.pid();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        assert_eq!(responsible_for(pid), i32::try_from(pid).unwrap());
+    }
+
+    /// Without this, the test above could pass because the oracle answers every pid with itself.
+    #[test]
+    fn a_child_started_the_ordinary_way_answers_to_its_parents_responsible_process() {
+        let mut child = std::process::Command::new("/bin/sleep")
+            .arg("5")
+            .spawn()
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+
+        let child_answers_to = responsible_for(child.id());
+        let parent_answers_to = responsible_for(std::process::id());
+        child.kill().unwrap();
+        let _ = child.wait().unwrap();
+
+        assert_eq!(child_answers_to, parent_answers_to);
+        assert_ne!(child_answers_to, i32::try_from(child.id()).unwrap());
+    }
+
+    /// Duplicates a file onto descriptor 50 without close-on-exec, so an ordinary spawn passes it
+    /// to the child.
+    #[allow(unsafe_code)]
+    fn inheritable_descriptor_50(file: &std::fs::File) {
+        // SAFETY: both descriptors are plain integers; `file` stays open for the test's length,
+        // and descriptor 50 is not one this test process otherwise uses.
+        let duplicated = unsafe { libc::dup2(file.as_raw_fd(), 50) };
+        assert_eq!(duplicated, 50);
+    }
+
+    #[tokio::test]
+    async fn a_descriptor_the_parent_left_inheritable_does_not_reach_the_child() {
+        let file = std::fs::File::open("/dev/null").unwrap();
+        inheritable_descriptor_50(&file);
+        let listing = "ls /dev/fd";
+
+        let ordinary = std::process::Command::new("/bin/sh")
+            .args(["-c", listing])
+            .output()
+            .unwrap();
+        let disclaimed = disclaimed_spawn::spawn("/bin/sh", &["-c", listing])
+            .unwrap()
+            .output()
+            .await
+            .unwrap();
+
+        let has_50 = |stdout: &[u8]| String::from_utf8_lossy(stdout).lines().any(|l| l == "50");
+        assert!(
+            has_50(&ordinary.stdout),
+            "the ordinary spawn did not inherit 50, so this proves nothing"
+        );
+        assert!(
+            !has_50(&disclaimed.stdout),
+            "{}",
+            String::from_utf8_lossy(&disclaimed.stdout)
+        );
+    }
+}

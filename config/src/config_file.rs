@@ -8,6 +8,7 @@ use domain::known_secrets::KnownSecrets;
 use domain::screen_at_deadline::{OnScreenWindow, ScreenAtDeadline};
 use secrecy::Secret;
 
+use crate::op_responsibility::OpResponsibility;
 use crate::resolved::Config;
 use crate::toml;
 
@@ -44,14 +45,18 @@ impl ConfigFile {
         })
     }
 
-    /// Resolves every credential, asking 1Password for each `op://` reference.
+    /// Resolves every credential, asking 1Password for each `op://` reference through an `op`
+    /// that answers to `responsibility`.
     ///
     /// # Errors
     /// Returns why the first credential that could not be resolved failed, redacted of every
     /// credential resolved before it.
-    pub async fn resolve(&self) -> Result<Config, CredentialFailure> {
+    pub async fn resolve(
+        &self,
+        responsibility: OpResponsibility,
+    ) -> Result<Config, CredentialFailure> {
         let creds = &self.credentials;
-        let mut so_far = ResolvedSoFar::default();
+        let mut so_far = ResolvedSoFar::new(responsibility);
         let github_token = so_far.read(&creds.github_token).await?;
         let linear_token = match &creds.linear_token {
             Some(value) => Some(so_far.read(value).await?),
@@ -103,19 +108,27 @@ const _: () = assert!(
 );
 
 /// The credentials one call to [`ConfigFile::resolve`] has resolved so far, which a later failure
-/// in the same call must not repeat.
-#[derive(Debug, Default)]
+/// in the same call must not repeat, and how that call starts `op`.
+#[derive(Debug)]
 struct ResolvedSoFar {
+    responsibility: OpResponsibility,
     values: Vec<String>,
 }
 
 impl ResolvedSoFar {
+    const fn new(responsibility: OpResponsibility) -> Self {
+        Self {
+            responsibility,
+            values: Vec::new(),
+        }
+    }
+
     /// Resolves `value`, remembering it, or fails redacted of everything remembered before it.
     async fn read(&mut self, value: &str) -> Result<Secret<String>, CredentialFailure> {
         self.answered_within(
             value,
             OP_DEADLINE,
-            read_credential(value),
+            read_credential(value, self.responsibility),
             look_at_screen_and_app,
         )
         .await
@@ -186,16 +199,20 @@ fn validate_required(creds: &toml::CredentialsToml) -> Result<()> {
     Ok(())
 }
 
-/// `value` itself, or for an `op://` reference, what `op read` returns for it.
-async fn read_credential(value: &str) -> Result<String> {
+/// `value` itself, or for an `op://` reference, what `op read` returns for it, from an `op` that
+/// answers to `responsibility`.
+async fn read_credential(value: &str, responsibility: OpResponsibility) -> Result<String> {
     if !value.starts_with("op://") {
         return Ok(value.to_string());
     }
-    let output = killed_on_drop("op")
-        .args(["read", value])
-        .output()
-        .await
-        .context("failed to run `op read` — is the 1Password CLI installed?")?;
+    let output = match responsibility {
+        OpResponsibility::Inherited => killed_on_drop("op").args(["read", value]).output().await,
+        OpResponsibility::Disclaimed => match disclaimed_spawn::spawn("op", &["read", value]) {
+            Ok(child) => child.output().await,
+            Err(error) => Err(error),
+        },
+    }
+    .context("failed to run `op read` — is the 1Password CLI installed?")?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!(
@@ -334,8 +351,12 @@ mod tests {
         }
     }
 
+    #[rstest::rstest]
     #[tokio::test]
-    async fn plain_credentials_resolve_without_asking_1password() {
+    async fn plain_credentials_resolve_without_asking_1password(
+        #[values(OpResponsibility::Inherited, OpResponsibility::Disclaimed)]
+        responsibility: OpResponsibility,
+    ) {
         let mut creds = credentials("tok", "user");
         creds.linear_token = Some("lin".into());
         let _ = creds.extra.insert("media".into(), "key".into());
@@ -346,7 +367,7 @@ mod tests {
             investigation_mcp_servers: domain::InvestigationMcpServers::default(),
         };
 
-        let config = file.resolve().await.unwrap();
+        let config = file.resolve(responsibility).await.unwrap();
 
         assert_eq!(config.github_token.expose_secret(), "tok");
         assert_eq!(config.github_username, "user");
@@ -362,7 +383,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_failure_never_repeats_a_credential_resolved_before_it() {
-        let mut so_far = ResolvedSoFar::default();
+        let mut so_far = ResolvedSoFar::new(OpResponsibility::Inherited);
         let _ = so_far.read("tok-4f9a").await.unwrap();
 
         let failure = so_far.failed(&anyhow::anyhow!("op echoed tok-4f9a back"));
@@ -376,7 +397,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_read_unfinished_at_the_deadline_names_who_the_screen_says_was_not_answering() {
-        let mut so_far = ResolvedSoFar::default();
+        let mut so_far = ResolvedSoFar::new(OpResponsibility::Inherited);
         let _ = so_far.read("tok-4f9a").await.unwrap();
 
         let failure = so_far
@@ -401,7 +422,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_read_that_finishes_never_looks_at_the_screen() {
-        let mut so_far = ResolvedSoFar::default();
+        let mut so_far = ResolvedSoFar::new(OpResponsibility::Inherited);
 
         let read = so_far
             .answered_within(
@@ -482,7 +503,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_touch_id_prompt_on_screen_at_the_deadline_lets_the_read_finish() {
-        let mut so_far = ResolvedSoFar::default();
+        let mut so_far = ResolvedSoFar::new(OpResponsibility::Inherited);
         let late = async {
             tokio::time::sleep(OP_DEADLINE + Duration::from_secs(30)).await;
             Ok("value".to_string())
@@ -499,7 +520,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_touch_id_prompt_still_up_after_the_extra_wait_ends_the_read() {
-        let mut so_far = ResolvedSoFar::default();
+        let mut so_far = ResolvedSoFar::new(OpResponsibility::Inherited);
 
         let failure = so_far
             .answered_within(
@@ -585,13 +606,26 @@ mod tests {
         assert!(err.to_string().contains("github_username"));
     }
 
+    #[rstest::rstest]
     #[tokio::test]
-    async fn a_plain_value_is_its_own_credential() {
-        assert_eq!(read_credential("plain-value").await.unwrap(), "plain-value");
+    async fn a_plain_value_is_its_own_credential(
+        #[values(OpResponsibility::Inherited, OpResponsibility::Disclaimed)]
+        responsibility: OpResponsibility,
+    ) {
+        assert_eq!(
+            read_credential("plain-value", responsibility)
+                .await
+                .unwrap(),
+            "plain-value"
+        );
     }
 
+    #[rstest::rstest]
     #[tokio::test]
-    async fn an_empty_value_is_its_own_credential() {
-        assert_eq!(read_credential("").await.unwrap(), "");
+    async fn an_empty_value_is_its_own_credential(
+        #[values(OpResponsibility::Inherited, OpResponsibility::Disclaimed)]
+        responsibility: OpResponsibility,
+    ) {
+        assert_eq!(read_credential("", responsibility).await.unwrap(), "");
     }
 }

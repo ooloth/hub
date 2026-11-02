@@ -316,6 +316,7 @@ name = "config"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "disclaimed-spawn",
  "domain",
  "insta",
  "proptest",
@@ -475,6 +476,14 @@ dependencies = [
  "option-ext",
  "redox_users",
  "windows-sys 0.48.0",
+]
+
+[[package]]
+name = "disclaimed-spawn"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "tokio",
 ]
 
 [[package]]

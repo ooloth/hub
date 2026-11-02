@@ -62,6 +62,7 @@ Work is ranked by its cost of delay. In hub that cost is high when:
 clients/     # external API wrappers — one file (or subdirectory) per external service
 config/      # reads hub.toml and resolves credentials into typed domain structs
 daemon/      # hub-daemon binary — refreshes the cache with nobody present
+disclaimed_spawn/ # starts a program macOS holds responsible for itself; hub's only unsafe code
 domain/      # types + pure logic; no I/O; no imports from other hub crates
 store/       # local SQLite reads/writes
 workflows/   # orchestrated operations; the "what hub does"
@@ -82,6 +83,7 @@ Import direction (never import rightward's left neighbor):
 
 ```
 ui/     → config/               → domain/
+          config/               → disclaimed_spawn/
 daemon/ → workflows/ → clients/ → domain/
                      → store/   → domain/
 ```

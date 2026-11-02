@@ -113,7 +113,10 @@ just daemon --once             # one pass, then exit
 ```
 
 Expect fingerprint prompts at startup if 1Password has not been touched recently: every `op://`
-reference resolves once, before the first pass, and later passes reuse them. Each start asks again,
+reference resolves once, before the first pass, and later passes reuse them. Each `op` starts with
+responsibility disclaimed (`../disclaimed_spawn/`), so macOS judges it by 1Password's signature
+rather than by `hub-daemon`'s ad-hoc one, which on macOS 27 it refuses. 1Password's prompt still
+names `hub-daemon`, as the program that started `op`. Each start asks again,
 including a restart, so a daemon that restarts while nobody is there waits on prompts nobody
 answers.
 
@@ -139,7 +142,7 @@ health record, with `cause` one of:
   60 seconds. A Touch ID prompt on screen at the 90-second deadline gets up to 65 seconds more, so
   it isn't cut short
 - `macos_prompt_waiting_for_you`: `op` had not answered after 90 seconds and a macOS alert is on
-  screen, under launchd usually "hub-daemon would like to access data from other apps"
+  screen, such as one asking to "access data from other apps"
 - `app_running_not_answering`: `op` had not answered after 90 seconds, no alert is on screen, and
   the 1Password app is running
 - `app_not_running`, `unreachable` or `other`

@@ -1,4 +1,5 @@
 use crate::config_file::ConfigFile;
+use crate::op_responsibility::OpResponsibility;
 use crate::toml;
 use anyhow::{anyhow, Result};
 use secrecy::Secret;
@@ -26,14 +27,15 @@ pub struct Config {
 }
 
 impl Config {
-    /// Reads `hub.toml` and resolves every credential in it.
+    /// Reads `hub.toml` and resolves every credential in it, through an `op` that answers to
+    /// whatever is responsible for hub, as a terminal is for the TUI.
     ///
     /// # Errors
     /// Returns an error if `hub.toml` is missing or malformed, or if any credential
     /// reference (e.g. an `op://` URI) cannot be resolved.
     pub async fn load() -> Result<Self> {
         ConfigFile::read()?
-            .resolve()
+            .resolve(OpResponsibility::Inherited)
             .await
             .map_err(|failure| anyhow!("{}", failure.reason()))
     }

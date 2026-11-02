@@ -3,6 +3,7 @@
     "clients",
     "config",
     "daemon",
+    "disclaimed_spawn",
     "domain",
     "scripts",
     "store",

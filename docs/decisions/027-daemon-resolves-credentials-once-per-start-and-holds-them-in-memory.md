@@ -159,9 +159,6 @@ launchd its notification never reached the screen, though `osascript` exited 0.
 
 ## Addendum (2026-11-01) — spawning `op` so it answers for itself
 
-_Status: accepted; not yet implemented. `config/src/config_file.rs` still starts `op` with
-`tokio::process::Command`, which leaves `hub-daemon` responsible for it._
-
 On macOS 27 the decision above stops working. [#389](https://github.com/ooloth/hub/issues/389)
 holds the failure; this addendum records how the daemon starts `op` so that it works again.
 

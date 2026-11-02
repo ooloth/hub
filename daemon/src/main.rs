@@ -129,7 +129,9 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
     // Once, at startup: every pass reuses these credentials, so passes raise no prompts. A failed
     // attempt is recorded and tried again in this process, because a restart would raise fresh
     // prompts. With --once there is one attempt.
-    let resolve = || file.resolve();
+    // op answers for itself: under launchd on macOS 27, an op that answers to the ad-hoc signed
+    // hub-daemon cannot reach 1Password's desktop app (decision 027, addendum of 2026-11-01).
+    let resolve = || file.resolve(config::OpResponsibility::Disclaimed);
     let schedule = cli.schedule();
     let record = |attempt: &CredentialAttempt| {
         let record_error =

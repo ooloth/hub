@@ -10,6 +10,9 @@ pub mod investigation;
 /// `hub.toml` as read, before any credential is resolved.
 pub mod config_file;
 
+/// Which process macOS holds responsible for each `op` hub starts.
+pub mod op_responsibility;
+
 /// Projects with every label settled, as the rest of hub sees them.
 pub mod project;
 
@@ -20,5 +23,6 @@ pub mod resolved;
 pub mod profile;
 
 pub use config_file::ConfigFile;
+pub use op_responsibility::OpResponsibility;
 pub use project::{Project, Projects};
 pub use resolved::Config;
