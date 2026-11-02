@@ -16,16 +16,15 @@ pub enum CredentialCause {
     /// 1Password's Touch ID prompt was on screen and nobody approved it, so `op` gave up after 60
     /// seconds. Clears once someone approves the next prompt.
     TouchIdPromptUnanswered,
-    /// `op` had not answered by its deadline and a macOS alert was on screen, waiting for someone:
-    /// under launchd, usually "hub-daemon would like to access data from other apps".
+    /// `op` had not answered by its deadline and a macOS alert was on screen, waiting for someone.
     MacosPromptWaitingForYou,
     /// `op` had not answered by its deadline, no macOS alert was on screen, and the 1Password app
     /// was running: the app is what was not answering. Also recorded when the screen could not be
     /// checked, with the reason saying so.
     AppRunningNotAnswering,
     /// `op`'s CLI integration can see no 1Password account. Either "Integrate with 1Password CLI"
-    /// is off in the desktop app, or macOS is judging `op` by a process 1Password does not trust,
-    /// which is what decision 027's addendum of 2026-11-01 fixes for the daemon.
+    /// is off in the desktop app, or `op` answers to a process 1Password does not trust, which
+    /// `disclaimed_spawn` prevents for the daemon.
     NoAccounts,
     /// Anything `op` said that hub does not recognise. The reason keeps its words.
     Other,
@@ -48,8 +47,10 @@ impl CredentialCause {
 
     /// The cause `op`'s message names, matched without regard to case.
     ///
-    /// The desktop app and the unanswered prompt are checked first, because their messages come
-    /// from a failed connection or a timeout too. A message that names none is [`Self::Other`],
+    /// The desktop app and the unanswered prompt are checked before an unreachable server, because
+    /// their messages come from a failed connection or a timeout too. No accounts is checked
+    /// first; its message shares no words with the others, so its place decides nothing today. A
+    /// message that names none is [`Self::Other`],
     /// never a guess. The causes a deadline finds are never named here: only the deadline and the
     /// screen know them.
     fn named_in(message: &str) -> Self {

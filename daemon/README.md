@@ -113,12 +113,13 @@ just daemon --once             # one pass, then exit
 ```
 
 Expect fingerprint prompts at startup if 1Password has not been touched recently: every `op://`
-reference resolves once, before the first pass, and later passes reuse them. Each `op` starts with
-responsibility disclaimed (`../disclaimed_spawn/`), so macOS judges it by 1Password's signature
-rather than by `hub-daemon`'s ad-hoc one, which on macOS 27 it refuses. 1Password's prompt still
-names `hub-daemon`, as the program that started `op`. Each start asks again,
+reference resolves once, before the first pass, and later passes reuse them. Each start asks again,
 including a restart, so a daemon that restarts while nobody is there waits on prompts nobody
 answers.
+
+On macOS the daemon starts each `op` so that it answers for itself, because under launchd an `op`
+that answers to the ad-hoc-signed `hub-daemon` cannot reach 1Password. 1Password's prompt still
+names `hub-daemon`. [`disclaimed_spawn`](../disclaimed_spawn/README.md) explains how and why.
 
 Before resolving credentials the daemon prints one line, so a start with nothing after it is a
 daemon in its first `op read`, which ends within 90 seconds, or up to 65 seconds later while a

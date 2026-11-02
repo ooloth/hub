@@ -43,11 +43,8 @@ argument. Nothing else calls `op read` or knows about 1Password.
 Every caller of `resolve` says which process macOS holds responsible for the
 `op` it starts (`config::OpResponsibility`). The TUI passes `Inherited`, so its
 `op` answers to the terminal it runs in. The daemon passes `Disclaimed`, so its
-`op` is started through `disclaimed_spawn` and answers for itself. Under
-launchd on macOS 27, an `op` that answers to the ad-hoc-signed `hub-daemon`
-cannot reach the 1Password desktop app and reports "No accounts configured"
-([Decision 027](../decisions/027-daemon-resolves-credentials-once-per-start-and-holds-them-in-memory.md),
-addendum of 2026-11-01).
+`op` answers for itself, which is what lets it reach 1Password under launchd.
+[`disclaimed_spawn`](../../disclaimed_spawn/README.md) explains how and why.
 
 The daemon reads the file and resolves it as two steps
 ([Decision 027](../decisions/027-daemon-resolves-credentials-once-per-start-and-holds-them-in-memory.md)).

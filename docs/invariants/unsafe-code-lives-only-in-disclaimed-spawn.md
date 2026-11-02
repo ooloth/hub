@@ -41,8 +41,13 @@ runs it.
 What the check misses:
 
 - **What `disclaimed_spawn` does with `unsafe`.** Each block is allowed where it is written and
-  carries a `// SAFETY:` comment, which clippy's `undocumented_unsafe_blocks` requires, but whether
-  the comment is true is for review.
+  carries a `// SAFETY:` comment, but whether the comment is true is for review. Clippy's
+  `undocumented_unsafe_blocks` requires the comment in the crate's library code only: `just lint`
+  and CI lint library and binary targets, not tests, and the lint is set in `lib.rs`, which the
+  integration tests in `tests/` do not compile. The comments on the test code's blocks are kept
+  by review alone.
 - **A dependency's `unsafe`.** Third-party crates are outside the workspace lints.
 - **The fourth item above.** Whether code in `disclaimed_spawn` is still only the spawn is for
-  review.
+  review. One addition has been reviewed and accepted: `responsible_for`, which asks macOS who is
+  responsible for a process, so that tests can prove the spawn disclaims
+  ([#389](https://github.com/ooloth/hub/issues/389)).

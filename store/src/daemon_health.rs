@@ -378,7 +378,7 @@ pub struct RecordedPass {
     /// One of `ok`, `partial`, `no_source_answered` or `pass_failed`, or for a failed attempt to
     /// obtain credentials, `credentials_unreachable`, `credentials_app_not_running`,
     /// `credentials_touch_id_prompt_unanswered`, `credentials_macos_prompt_waiting_for_you`,
-    /// `credentials_app_running_not_answering` or `credentials_failed`.
+    /// `credentials_app_running_not_answering`, `credentials_no_accounts` or `credentials_failed`.
     pub outcome: String,
     /// Whether the pass replaced the payload.
     pub payload_written: bool,
