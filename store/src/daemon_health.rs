@@ -13,12 +13,27 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBe
 
 use crate::status_cache::{self, Payload};
 
-/// The shape of the `daemon_health` table.
+/// The shape of the `daemon_health` table: a fingerprint of [`CREATE_TABLE`]'s text, so that any
+/// change to the table changes it, with nothing to remember.
 ///
-/// Bump it in the change that alters the `CREATE TABLE` below. [`ensure_table`] then drops the
-/// old table and creates the new one, which loses at most one pass's record, because the daemon
-/// rewrites the row on every pass.
-const SCHEMA_VERSION: i32 = 8;
+/// [`ensure_table`] drops a table made for another version and creates this one, which loses at
+/// most one pass's record, because the daemon rewrites the row on every pass.
+const SCHEMA_VERSION: i64 = fingerprint(CREATE_TABLE);
+
+/// A 32-bit FNV-1a hash of `text`, computed at compile time, so the same text always gives the
+/// same number and any edit to it gives another.
+const fn fingerprint(text: &str) -> i64 {
+    const OFFSET_BASIS: u32 = 0x811c_9dc5;
+    const PRIME: u32 = 0x0100_0193;
+    let mut rest = text.as_bytes();
+    let mut hash = OFFSET_BASIS;
+    while let [byte, after @ ..] = rest {
+        hash ^= *byte as u32;
+        hash = hash.wrapping_mul(PRIME);
+        rest = after;
+    }
+    hash as i64
+}
 
 /// Every rule that ties a row's outcome to the rest of it, so a row that contradicts itself cannot
 /// be stored, however it is written.
@@ -86,7 +101,7 @@ pub fn ensure_table(conn: &Connection) -> Result<()> {
             .query_row(
                 "SELECT schema_version FROM daemon_health WHERE id = 1",
                 [],
-                |row| row.get::<_, i32>(0),
+                |row| row.get::<_, i64>(0),
             )
             .ok();
         if stored.is_some_and(|version| version == SCHEMA_VERSION) {
@@ -292,7 +307,7 @@ pub(crate) fn last_record(conn: &Connection) -> Result<DaemonRecord> {
         return Ok(DaemonRecord::NoneRecorded);
     }
     // Read alone first: a table of another version may lack the columns this build selects.
-    let version: Option<Option<i32>> = conn
+    let version: Option<Option<i64>> = conn
         .query_row(
             "SELECT schema_version FROM daemon_health WHERE id = 1",
             [],
@@ -1004,6 +1019,42 @@ mod tests {
         let result = insert_credential_row(&conn, changes);
 
         assert!(result.is_err(), "{changes:?} was accepted");
+    }
+
+    #[test]
+    fn the_same_text_always_has_the_same_fingerprint() {
+        assert_eq!(fingerprint(CREATE_TABLE), fingerprint(CREATE_TABLE));
+        assert_eq!(fingerprint(CREATE_TABLE), SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn texts_that_differ_in_one_check_value_have_different_fingerprints() {
+        let older = CREATE_TABLE.replace("'credentials_no_accounts', ", "");
+        assert_ne!(older, CREATE_TABLE, "the older text should lack an outcome");
+
+        assert_ne!(fingerprint(&older), fingerprint(CREATE_TABLE));
+    }
+
+    #[test]
+    fn a_table_made_from_an_older_text_is_recreated_and_accepts_what_this_one_allows() {
+        let conn = Connection::open_in_memory().unwrap();
+        status_cache::ensure_table(&conn).unwrap();
+        let older = CREATE_TABLE.replace("'credentials_no_accounts', ", "");
+        conn.execute_batch(&older).unwrap();
+        let _ = insert_with(&conn, "schema_version", &fingerprint(&older).to_string()).unwrap();
+
+        ensure_table(&conn).unwrap();
+
+        record_credential_attempt(
+            &conn,
+            &credential_attempt(
+                "No accounts configured for use with 1Password CLI.",
+                Some(Duration::from_secs(4)),
+            ),
+            SCHEDULE,
+        )
+        .unwrap();
+        assert_eq!(recorded_row(&conn).outcome, "credentials_no_accounts");
     }
 
     #[test]
