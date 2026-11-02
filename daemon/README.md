@@ -145,6 +145,8 @@ health record, with `cause` one of:
   screen, such as one asking to "access data from other apps"
 - `app_running_not_answering`: `op` had not answered after 90 seconds, no alert is on screen, and
   the 1Password app is running
+- `no_accounts`: `op` sees no 1Password account, so either "Integrate with 1Password CLI" is off in
+  1Password's Developer settings, or macOS is judging `op` by a process 1Password does not trust
 - `app_not_running`, `unreachable` or `other`
 
 When the daemon opened the app after an attempt, the line also says `opened_app=yes`, or

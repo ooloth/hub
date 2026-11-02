@@ -23,6 +23,10 @@ pub enum CredentialCause {
     /// was running: the app is what was not answering. Also recorded when the screen could not be
     /// checked, with the reason saying so.
     AppRunningNotAnswering,
+    /// `op`'s CLI integration can see no 1Password account. Either "Integrate with 1Password CLI"
+    /// is off in the desktop app, or macOS is judging `op` by a process 1Password does not trust,
+    /// which is what decision 027's addendum of 2026-11-01 fixes for the daemon.
+    NoAccounts,
     /// Anything `op` said that hub does not recognise. The reason keeps its words.
     Other,
 }
@@ -37,6 +41,7 @@ impl CredentialCause {
             Self::TouchIdPromptUnanswered => "touch_id_prompt_unanswered",
             Self::MacosPromptWaitingForYou => "macos_prompt_waiting_for_you",
             Self::AppRunningNotAnswering => "app_running_not_answering",
+            Self::NoAccounts => "no_accounts",
             Self::Other => "other",
         }
     }
@@ -50,7 +55,9 @@ impl CredentialCause {
     fn named_in(message: &str) -> Self {
         let message = message.to_lowercase();
         let names = |markers: &[&str]| markers.iter().any(|marker| message.contains(marker));
-        if names(APP_NOT_RUNNING) {
+        if names(NO_ACCOUNTS) {
+            Self::NoAccounts
+        } else if names(APP_NOT_RUNNING) {
             Self::AppNotRunning
         } else if names(TOUCH_ID_PROMPT_UNANSWERED) {
             Self::TouchIdPromptUnanswered
@@ -61,6 +68,10 @@ impl CredentialCause {
         }
     }
 }
+
+/// What `op` says when its CLI integration can see no 1Password account, lowercased. Measured with
+/// `op` 2.41.1 on 2026-11-01.
+const NO_ACCOUNTS: &[&str] = &["no accounts configured for use with 1password cli"];
 
 /// What `op` says when it cannot reach the desktop app, lowercased.
 const APP_NOT_RUNNING: &[&str] = &["couldn't connect to the 1password desktop app"];
@@ -164,6 +175,19 @@ mod tests {
     #[case::any_case("1PASSWORD CLI COULDN'T CONNECT TO THE 1PASSWORD DESKTOP APP")]
     fn a_message_naming_the_desktop_app_is_the_app_not_running(#[case] stderr: &str) {
         assert_eq!(from_op(stderr).cause(), CredentialCause::AppNotRunning);
+    }
+
+    #[rstest]
+    // Measured with op 2.41.1 on macOS 27.2, 2026-11-01, under launchd with an ad-hoc-signed parent.
+    #[case::macos_27_launchd(
+        "No accounts configured for use with 1Password CLI.\n\n - Turn on the 1Password desktop \
+         app integration to sign in with the accounts you've added to the app: \
+         https://www.1password.dev/cli/app-integration/ for details.\n[ERROR] 2026/11/01 16:48:54 \
+         could not read secret 'op://Scripts/GitHub/token': error initializing client: "
+    )]
+    #[case::any_case("NO ACCOUNTS CONFIGURED FOR USE WITH 1PASSWORD CLI")]
+    fn a_message_saying_no_accounts_are_configured_is_no_accounts(#[case] stderr: &str) {
+        assert_eq!(from_op(stderr).cause(), CredentialCause::NoAccounts);
     }
 
     #[rstest]

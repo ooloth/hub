@@ -18,7 +18,7 @@ use crate::status_cache::{self, Payload};
 /// Bump it in the change that alters the `CREATE TABLE` below. [`ensure_table`] then drops the
 /// old table and creates the new one, which loses at most one pass's record, because the daemon
 /// rewrites the row on every pass.
-const SCHEMA_VERSION: i32 = 7;
+const SCHEMA_VERSION: i32 = 8;
 
 /// Every rule that ties a row's outcome to the rest of it, so a row that contradicts itself cannot
 /// be stored, however it is written.
@@ -38,7 +38,7 @@ const CREATE_TABLE: &str = "CREATE TABLE daemon_health (
                                        'credentials_touch_id_prompt_unanswered',
                                        'credentials_macos_prompt_waiting_for_you',
                                        'credentials_app_running_not_answering',
-                                       'credentials_failed')),
+                                       'credentials_no_accounts', 'credentials_failed')),
     payload_written INTEGER NOT NULL CHECK (payload_written IN (0, 1)),
     items           INTEGER CHECK (items >= 0),
     answered        TEXT NOT NULL CHECK (json_valid(answered) AND json_type(answered) = 'array'),
@@ -154,6 +154,7 @@ pub fn record_credential_attempt(
         CredentialCause::TouchIdPromptUnanswered => "credentials_touch_id_prompt_unanswered",
         CredentialCause::MacosPromptWaitingForYou => "credentials_macos_prompt_waiting_for_you",
         CredentialCause::AppRunningNotAnswering => "credentials_app_running_not_answering",
+        CredentialCause::NoAccounts => "credentials_no_accounts",
         CredentialCause::Other => "credentials_failed",
     };
     let duration_ms = i64::try_from(attempt.duration.as_millis())
@@ -342,6 +343,7 @@ fn activity(outcome: &str) -> Result<LastActivity> {
         | "credentials_touch_id_prompt_unanswered"
         | "credentials_macos_prompt_waiting_for_you"
         | "credentials_app_running_not_answering"
+        | "credentials_no_accounts"
         | "credentials_failed" => return Ok(LastActivity::WaitingForCredentials),
         unknown => bail!("the daemon recorded an outcome this build does not know: {unknown}"),
     };
@@ -756,6 +758,10 @@ mod tests {
         "error initializing client: authorization timeout",
         "credentials_touch_id_prompt_unanswered"
     )]
+    #[case::no_accounts(
+        "No accounts configured for use with 1Password CLI.",
+        "credentials_no_accounts"
+    )]
     #[case::other("\"Nope\" isn't a vault", "credentials_failed")]
     fn a_recorded_credential_attempt_reads_back_as_it_was_recorded(
         #[case] message: &str,
@@ -789,6 +795,10 @@ mod tests {
                 notify_error: None,
             }
         );
+        let DaemonRecord::Recorded(health) = last_record(&conn).unwrap() else {
+            panic!("the attempt was not read back as a recorded pass");
+        };
+        assert_eq!(health.activity, LastActivity::WaitingForCredentials);
     }
 
     #[rstest]

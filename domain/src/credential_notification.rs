@@ -34,6 +34,10 @@ impl Notification {
             CredentialCause::Unreachable => {
                 "1Password can't be reached. Check the internet connection."
             }
+            CredentialCause::NoAccounts => {
+                "1Password's CLI sees no accounts. Check that Settings › Developer › \"Integrate \
+                 with 1Password CLI\" is on, then see the hub-daemon log."
+            }
             CredentialCause::Other => "Couldn't read a credential. See the hub-daemon log.",
         };
         Self {
@@ -69,6 +73,11 @@ mod tests {
     #[case::unreachable(
         CredentialCause::Unreachable,
         "1Password can't be reached. Check the internet connection."
+    )]
+    #[case::no_accounts(
+        CredentialCause::NoAccounts,
+        "1Password's CLI sees no accounts. Check that Settings › Developer › \"Integrate with \
+         1Password CLI\" is on, then see the hub-daemon log."
     )]
     #[case::other(
         CredentialCause::Other,

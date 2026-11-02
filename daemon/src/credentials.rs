@@ -77,7 +77,13 @@ impl Retries {
                 | CredentialCause::MacosPromptWaitingForYou
                 | CredentialCause::AppRunningNotAnswering,
             ) => Some(after_not_answering(took)),
-            (Self::UntilObtained(backoff), _) => backoff.next(),
+            (
+                Self::UntilObtained(backoff),
+                CredentialCause::Unreachable
+                | CredentialCause::AppNotRunning
+                | CredentialCause::NoAccounts
+                | CredentialCause::Other,
+            ) => backoff.next(),
         }
     }
 }
@@ -448,6 +454,7 @@ mod tests {
     #[rstest]
     #[case::unreachable(CredentialCause::Unreachable)]
     #[case::app_not_running(CredentialCause::AppNotRunning)]
+    #[case::no_accounts(CredentialCause::NoAccounts)]
     #[case::other(CredentialCause::Other)]
     fn every_fast_failure_waits_on_the_backoff(#[case] cause: CredentialCause) {
         let mut retries = Retries::until_obtained();
@@ -978,6 +985,14 @@ mod tests {
         #[case] line: &str,
     ) {
         assert_eq!(report.to_string(), line);
+    }
+
+    #[test]
+    fn an_attempt_op_answers_with_no_accounts_logs_no_accounts() {
+        let mut line = report(Some(Duration::from_secs(1)), None);
+        line.attempt.failure = failure("No accounts configured for use with 1Password CLI.");
+
+        assert!(line.to_string().contains(" cause=no_accounts "), "{line}");
     }
 
     #[test]
