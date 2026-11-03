@@ -22,7 +22,7 @@ impl Notification {
     pub fn for_cause(cause: CredentialCause) -> Self {
         let body = match cause {
             CredentialCause::MacosPromptWaitingForYou => {
-                "Approve the macOS prompt: hub-daemon would like to access data from other apps."
+                "Approve the macOS prompt asking to access data from other apps."
             }
             CredentialCause::TouchIdPromptUnanswered => {
                 "Approve 1Password's Touch ID prompt for hub-daemon."
@@ -56,7 +56,7 @@ mod tests {
     #[rstest]
     #[case::macos_prompt(
         CredentialCause::MacosPromptWaitingForYou,
-        "Approve the macOS prompt: hub-daemon would like to access data from other apps."
+        "Approve the macOS prompt asking to access data from other apps."
     )]
     #[case::touch_id(
         CredentialCause::TouchIdPromptUnanswered,
