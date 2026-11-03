@@ -511,6 +511,7 @@ mod tests {
     use domain::credential_failure::CredentialFailure;
     use domain::daemon_pass::PassOutcome;
     use domain::known_secrets::KnownSecrets;
+    use domain::op_spawn::OpSpawn;
     use domain::pass_failure::PassFailure;
     use domain::screen_at_deadline::ScreenAtDeadline;
     use domain::source_failure::SourceFailure;
@@ -753,7 +754,11 @@ mod tests {
             duration: Duration::from_millis(812),
             pid: 4242,
             attempt: 3,
-            failure: CredentialFailure::new(&anyhow::anyhow!("{cause_text}"), &no_secrets()),
+            failure: CredentialFailure::new(
+                &anyhow::anyhow!("{cause_text}"),
+                &no_secrets(),
+                OpSpawn::Inherited,
+            ),
             opened_app: None,
             notified: None,
             retry_in,
@@ -834,6 +839,7 @@ mod tests {
             Duration::from_secs(90),
             &screen,
             &no_secrets(),
+            OpSpawn::Inherited,
         );
 
         record_credential_attempt(&conn, &attempt, SCHEDULE).unwrap();

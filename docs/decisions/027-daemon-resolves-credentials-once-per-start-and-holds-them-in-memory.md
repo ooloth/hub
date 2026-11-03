@@ -2,7 +2,7 @@
 number: 027
 status: accepted
 date: 2026-10-12
-amended: 2026-11-01
+amended: 2026-11-03
 ---
 
 # 027 — The daemon resolves its credentials through 1Password once per start and holds them only in memory
@@ -195,6 +195,9 @@ Each comes from the decision above or from the account holder on 2026-11-01:
 
 ### Decision
 
+The addendum of 2026-11-03 replaces this decision on every macOS version: the daemon now starts
+`op` the ordinary way first and disclaims only a read 1Password refuses.
+
 The daemon spawns each `op` process with responsibility disclaimed, so `op`, which 1Password
 signs, answers to macOS for itself rather than through `hub-daemon`. A start costs one Touch ID
 prompt naming `hub-daemon`. This is done on every macOS version rather than only on 27, because a
@@ -239,11 +242,71 @@ call the same function (read 2026-11-01), which makes a removal without notice l
 no guarantee. LLDB looks it up at runtime with `dlsym`, so its absence is a failure it can report
 rather than one that stops the program loading.
 
-On macOS 26 this is unverified. The prediction is that it works and also removes the "access
-data from other apps" dialog, because `op` and the 1Password app are signed by the same team. It
-is checked the next time the account holder runs the daemon on the macOS 26 machine.
+On macOS 26 the prediction was that it works and also removes the "access data from other apps"
+dialog, because `op` and the 1Password app are signed by the same team. It works, but the dialog
+comes back for every `op` process, as the addendum of 2026-11-03 records.
 
 ### Revisit when
 
 The macOS 26 check fails, or a macOS update makes the disclaimed `op` fail or prompt more than
 once per start.
+
+## Addendum (2026-11-03) — the ordinary spawn first, disclaimed only when refused
+
+The addendum above disclaims every `op` the daemon starts, on every macOS version, and predicted
+that on macOS 26 this would also remove the "access data from other apps" dialog. On macOS 26 it
+did the opposite. [#393](https://github.com/ooloth/hub/issues/393) holds the failure; this
+addendum records how the daemon starts `op` now.
+
+### Forced by
+
+Measured on the work laptop, macOS 26.7.1 with `op` 2.41.1 (2026-11-03):
+
+- With every `op` disclaimed, the dialog names `op` instead of `hub-daemon`, and approving it does
+  not cover the next `op` process. A login on 2026-11-03 put about a dozen dialogs on screen over
+  five minutes: three attempts each waited 90 seconds on one before the fourth got the
+  credentials.
+- With the ordinary spawn, every daemon start on that laptop from 2026-10-26 to 2026-11-02 reached
+  its first pass within 15 seconds but one, and none logged a macOS alert at a deadline. An
+  ad-hoc-signed probe started by launchd reached 1Password through an ordinary `op read`.
+- One daemon started on 2026-10-29 was refused the ordinary way, with the message `op` gives on
+  macOS 27, `No accounts configured for use with 1Password CLI`, on 137 attempts over two hours.
+  The next daemon process was not. The cause is unknown. Replacing a running binary on disk by a
+  rename did not reproduce it.
+- On macOS 27.2 the ordinary spawn fails within about 50 ms with that message and raises no
+  prompt (the addendum above).
+
+### Decision
+
+The daemon starts each `op read` the ordinary way first. When 1Password refuses it with "No
+accounts configured", the daemon reads that one credential again through an `op` that answers for
+itself, with its own 90-second deadline. Any other outcome of the ordinary read stands, so a dialog
+waiting on `hub-daemon` is never joined by one waiting on `op`. The TUI starts `op` as before.
+
+Each failed attempt's log line names how its `op` was started (`spawn=`), and a
+`credentials_obtained` line names which ways answered once credentials arrive (`spawns=`). The
+health record does not change.
+
+The account holder accepted the tradeoff on 2026-11-03: on macOS 26, when 1Password refuses the
+ordinary spawn, a start can cost one dialog per `op` process per attempt, and it gets its
+credentials. Disclaiming only on macOS 27 and later would keep that case to one dialog with no
+credentials, as on 2026-10-29.
+
+### Rejected
+
+- **Disclaiming only on macOS 27 and later**, because a refusal of the ordinary spawn on macOS 26,
+  seen once, then stops all signals until the daemon restarts. Reverses if the refusal on macOS 26
+  is shown never to happen.
+- **Keeping the same `op` waiting while a macOS alert is on screen**, because each disclaimed `op`
+  process still raises its own dialog, and the 2026-10-17 addendum measured that a blocked `op`
+  can stay blocked.
+- **Staying disclaimed for the rest of a process after one refusal**, because once the refusal
+  clears every later attempt would keep paying a dialog per `op`.
+- **Signing `hub-daemon` with a real identity**, for the reason the addendum above gives.
+
+### Revisit when
+
+A `credentials_obtained` line written on the macOS 26 machine has `disclaimed` among its `spawns`,
+which means the refusal has happened again and has a cost. The line names no macOS version, so this
+is read from the work laptop's log. Or a macOS or 1Password update makes the ordinary spawn on macOS 26
+raise more than one dialog per start.

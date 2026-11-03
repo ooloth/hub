@@ -26,6 +26,8 @@ pub mod issue;
 pub mod known_secrets;
 /// Loki query configuration and log entry types.
 pub mod loki;
+/// How hub started an `op` process.
+pub mod op_spawn;
 /// Why a whole refresh pass failed, in a form safe to log and store.
 pub mod pass_failure;
 /// Pull request types and repository slug newtype.

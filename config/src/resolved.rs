@@ -2,8 +2,18 @@ use crate::config_file::ConfigFile;
 use crate::op_responsibility::OpResponsibility;
 use crate::toml;
 use anyhow::{anyhow, Result};
+use domain::op_spawn::OpSpawnsUsed;
 use secrecy::Secret;
 use std::collections::HashMap;
+
+/// A [`Config`] and every way of starting `op` that answered for its credentials.
+#[derive(Debug)]
+pub struct Resolved {
+    /// The configuration, every credential resolved.
+    pub config: Config,
+    /// How each `op` that answered was started; empty when every credential was a plain value.
+    pub spawns: OpSpawnsUsed,
+}
 
 /// Resolved runtime configuration, with all credential references expanded.
 #[derive(Debug)]
@@ -37,6 +47,7 @@ impl Config {
         ConfigFile::read()?
             .resolve(OpResponsibility::Inherited)
             .await
+            .map(|resolved| resolved.config)
             .map_err(|failure| anyhow!("{}", failure.reason()))
     }
 

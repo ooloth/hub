@@ -19,6 +19,10 @@ judged by 1Password's own signature and succeeds. [Decision
 027](../docs/decisions/027-daemon-resolves-credentials-once-per-start-and-holds-them-in-memory.md)'s
 addendum of 2026-11-01 holds the measurements.
 
+On macOS 26 a disclaimed `op` costs one macOS "access data from other apps" dialog per `op`
+process, where an ordinary one costs one dialog for the whole daemon. So the daemon disclaims only a
+read that 1Password refused the ordinary way (the addendum of 2026-11-03).
+
 Disclaiming goes through `responsibility_spawnattrs_setdisclaim`, a libSystem function Apple does not
 document. It is looked up at runtime, so a macOS without it gives `Unsupported`, naming it, rather
 than a binary that fails to load.
@@ -46,6 +50,8 @@ enforces a deadline by dropping the future, as `config`'s credential deadline do
 child is gone within 5 seconds, and that a descriptor the parent left inheritable never reaches the
 child.
 
-To see it in the daemon, install and restart it (`just install`, then `just daemon-restart`). One
-Touch ID prompt naming `hub-daemon` appears, and `just daemon-logs` shows a `pass` line with
-`outcome=ok` once it is approved.
+To see it in the daemon on macOS 27, install and restart it (`just install`, then
+`just daemon-restart`). One Touch ID prompt naming `hub-daemon` appears, and `just daemon-logs`
+shows a `credentials_obtained` line with `spawns=disclaimed` and a `pass` line with `outcome=ok`
+once it is approved. On macOS 26 the same line says `spawns=inherited`, because the disclaimed
+spawn is used only after a refusal.

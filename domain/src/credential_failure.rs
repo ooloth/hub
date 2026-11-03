@@ -2,6 +2,7 @@
 use std::time::Duration;
 
 use crate::known_secrets::KnownSecrets;
+use crate::op_spawn::OpSpawn;
 use crate::screen_at_deadline::ScreenAtDeadline;
 use crate::source_failure::FailureReason;
 
@@ -23,8 +24,9 @@ pub enum CredentialCause {
     /// checked, with the reason saying so.
     AppRunningNotAnswering,
     /// `op`'s CLI integration can see no 1Password account. Either "Integrate with 1Password CLI"
-    /// is off in the desktop app, or `op` answers to a process 1Password does not trust, which
-    /// `disclaimed_spawn` prevents for the daemon.
+    /// is off in the desktop app, or `op` answers to a process 1Password does not trust. The
+    /// daemon answers this by reading the credential again through an `op` that answers for
+    /// itself, so it reaches the log only when that read is refused too.
     NoAccounts,
     /// Anything `op` said that hub does not recognise. The reason keeps its words.
     Other,
@@ -95,24 +97,29 @@ const UNREACHABLE: &[&str] = &[
 pub struct CredentialFailure {
     cause: CredentialCause,
     reason: FailureReason,
+    spawn: OpSpawn,
 }
 
 impl CredentialFailure {
-    /// The failure `error` describes, its reason redacted of every value in `secrets`: the
-    /// credentials the same attempt had already resolved.
+    /// The failure `error` describes, from an `op` started as `spawn`, its reason redacted of
+    /// every value in `secrets`: the credentials the same attempt had already resolved.
     ///
     /// # Panics
     /// If the redacted reason still holds a known secret, spans lines, or is too long. Only a bug
     /// in redaction can cause any of these.
     #[must_use]
-    pub fn new(error: &anyhow::Error, secrets: &KnownSecrets) -> Self {
+    pub fn new(error: &anyhow::Error, secrets: &KnownSecrets, spawn: OpSpawn) -> Self {
         let reason = FailureReason::redacted(error, secrets, "the credentials");
         let cause = CredentialCause::named_in(reason.as_str());
-        Self { cause, reason }
+        Self {
+            cause,
+            reason,
+            spawn,
+        }
     }
 
-    /// `op` had not answered for `reference` after `after`, so it was ended, and `screen` is what
-    /// was then on screen. Known from the deadline and the screen, never read back from text.
+    /// The `op` started as `spawn` had not answered for `reference` after `after`, so it was
+    /// ended, and `screen` is what was then on screen. Known from the deadline and the screen, never read back from text.
     ///
     /// # Panics
     /// As [`Self::new`].
@@ -122,6 +129,7 @@ impl CredentialFailure {
         after: Duration,
         screen: &ScreenAtDeadline,
         secrets: &KnownSecrets,
+        spawn: OpSpawn,
     ) -> Self {
         let error = anyhow::anyhow!(
             "1Password did not answer within {}s reading {reference}; {}",
@@ -131,6 +139,7 @@ impl CredentialFailure {
         Self {
             cause: screen.cause(),
             reason: FailureReason::redacted(&error, secrets, "the credentials"),
+            spawn,
         }
     }
 
@@ -138,6 +147,12 @@ impl CredentialFailure {
     #[must_use]
     pub const fn cause(&self) -> CredentialCause {
         self.cause
+    }
+
+    /// How the `op` that failed was started.
+    #[must_use]
+    pub const fn spawn(&self) -> OpSpawn {
+        self.spawn
     }
 
     /// The error, as `op` and hub described it.
@@ -163,7 +178,7 @@ mod tests {
     /// `op`'s stderr as hub wraps it when `op read` exits non-zero.
     fn from_op(stderr: &str) -> CredentialFailure {
         let error = anyhow!("failed to resolve credential from 1Password: {stderr}");
-        CredentialFailure::new(&error, &no_secrets())
+        CredentialFailure::new(&error, &no_secrets(), OpSpawn::Inherited)
     }
 
     #[rstest]
@@ -238,9 +253,11 @@ mod tests {
             Duration::from_secs(90),
             &ScreenAtDeadline::MacosAlert { windows: 1 },
             &no_secrets(),
+            OpSpawn::Disclaimed,
         );
 
         assert_eq!(failure.cause(), CredentialCause::MacosPromptWaitingForYou);
+        assert_eq!(failure.spawn(), OpSpawn::Disclaimed);
         assert_eq!(
             failure.reason().as_str(),
             "1Password did not answer within 90s reading op://Scripts/GitHub/token; 1 macOS \
@@ -315,7 +332,7 @@ mod tests {
         fn no_resolved_credential_survives_into_the_reason(
             hidden in hidden_secrets::strategy()
         ) {
-            let failure = CredentialFailure::new(&hidden.error(), &hidden.secrets());
+            let failure = CredentialFailure::new(&hidden.error(), &hidden.secrets(), OpSpawn::Inherited);
             let text = failure.reason().as_str();
 
             prop_assert!(hidden.survives_in(text).is_none(), "{:?} in {}", hidden.secret, text);

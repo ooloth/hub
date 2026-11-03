@@ -46,6 +46,7 @@ mod tests {
     use domain::daemon_health::{DaemonHealth, LastActivity, Schedule};
     use domain::daemon_pass::{Pass, PassOutcome, PassStatus};
     use domain::known_secrets::KnownSecrets;
+    use domain::op_spawn::OpSpawn;
     use domain::source_failure::SourceFailure;
     use domain::source_outcomes::SourceOutcomes;
     use rstest::rstest;
@@ -93,7 +94,11 @@ mod tests {
             duration: Duration::from_millis(812),
             pid: 4242,
             attempt: 1,
-            failure: CredentialFailure::new(&anyhow::anyhow!("dial tcp"), &no_secrets()),
+            failure: CredentialFailure::new(
+                &anyhow::anyhow!("dial tcp"),
+                &no_secrets(),
+                OpSpawn::Inherited,
+            ),
             opened_app: None,
             notified: None,
             retry_in: Some(Duration::from_secs(1)),

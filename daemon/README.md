@@ -61,7 +61,8 @@ database (#364). The TUI asking the daemon for a pass is
 - `main.rs` — parses flags, takes the lock, prints the startup line, reads `hub.toml`, obtains
   credentials once, then runs passes. It calls each edge, including each pass's fetch and write
 - `credentials.rs` — `obtain`, which resolves credentials until they arrive, `Backoff`, the waits
-  between attempts, and `AttemptReport`, the log line for a failed attempt. No I/O of its own
+  between attempts, `AttemptReport`, the log line for a failed attempt, and `ObtainedReport`, the
+  line once they arrive. No I/O of its own
 - `startup.rs` — `Startup`, the line printed before credentials load. Pure
 - `instance_lock.rs` — one daemon per profile: the `flock` on `~/.hub/<profile>/daemon.lock`
 - `schedule.rs` — `every`, which runs a pass now and then once per period, never catching up
@@ -117,13 +118,23 @@ reference resolves once, before the first pass, and later passes reuse them. Eac
 including a restart, so a daemon that restarts while nobody is there waits on prompts nobody
 answers.
 
-On macOS the daemon starts each `op` so that it answers for itself, because under launchd an `op`
-that answers to the ad-hoc-signed `hub-daemon` cannot reach 1Password. 1Password's prompt still
-names `hub-daemon`. [`disclaimed_spawn`](../disclaimed_spawn/README.md) explains how and why.
+The daemon starts each `op` the ordinary way first, so on macOS 26 one macOS dialog naming
+`hub-daemon` covers every `op` a start makes. A credential 1Password refuses with "No accounts
+configured", as it did every time it was measured on macOS 27 for an `op` that answers to the ad-hoc-signed
+`hub-daemon`, is read again through an `op` that answers for itself. On macOS 26 that costs one
+dialog naming `op` per `op` process. Each failed attempt's `credentials` line says which way its
+`op` was started (`spawn=inherited` or `spawn=disclaimed`), and once credentials arrive a
+`credentials_obtained` line says which ways answered:
+
+```
+hub-daemon credentials_obtained at=2026-11-03T13:59:01Z pid=4242 profile=default attempt=1 spawns=inherited
+```
+
+[`disclaimed_spawn`](../disclaimed_spawn/README.md) explains how and why.
 
 Before resolving credentials the daemon prints one line, so a start with nothing after it is a
-daemon in its first `op read`, which ends within 90 seconds, or up to 65 seconds later while a
-Touch ID prompt is on screen:
+daemon in its first attempt. Each `op read` in it ends within 90 seconds, or up to 65 seconds later
+while a Touch ID prompt is on screen, and a refused credential is read twice:
 
 ```
 hub-daemon start at=2026-10-03T23:15:55Z pid=4242 profile=default
@@ -146,8 +157,9 @@ health record, with `cause` one of:
   screen, such as one asking to "access data from other apps"
 - `app_running_not_answering`: `op` had not answered after 90 seconds, no alert is on screen, and
   the 1Password app is running
-- `no_accounts`: `op` sees no 1Password account, so either "Integrate with 1Password CLI" is off in
-  1Password's Developer settings, or macOS is judging `op` by a process 1Password does not trust
+- `no_accounts`: `op` sees no 1Password account. The daemon logs it only with `spawn=disclaimed`,
+  after the ordinary `op` was refused the same way and the one that answers for itself was too, so
+  "Integrate with 1Password CLI" is most likely off in 1Password's Developer settings
 - `app_not_running`, `unreachable` or `other`
 
 When the daemon opened the app after an attempt, the line also says `opened_app=yes`, or
@@ -159,7 +171,7 @@ When the daemon opened the app after an attempt, the line also says `opened_app=
 `retry_in` is absent with `--once`, which makes one attempt and exits 1:
 
 ```
-hub-daemon credentials at=2026-10-12T08:59:03Z pid=4242 profile=default attempt=3 cause=app_not_running duration_ms=812 retry_in=4s error="failed to resolve credential from 1Password: ... couldn't connect to the 1Password desktop app."
+hub-daemon credentials at=2026-10-12T08:59:03Z pid=4242 profile=default attempt=3 cause=app_not_running spawn=inherited duration_ms=812 retry_in=4s error="failed to resolve credential from 1Password: ... couldn't connect to the 1Password desktop app."
 ```
 
 Each pass prints one line to stdout:

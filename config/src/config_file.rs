@@ -3,13 +3,14 @@ use std::future::Future;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use domain::credential_failure::CredentialFailure;
+use domain::credential_failure::{CredentialCause, CredentialFailure};
 use domain::known_secrets::KnownSecrets;
+use domain::op_spawn::{OpSpawn, OpSpawnsUsed};
 use domain::screen_at_deadline::{OnScreenWindow, ScreenAtDeadline};
 use secrecy::Secret;
 
 use crate::op_responsibility::OpResponsibility;
-use crate::resolved::Config;
+use crate::resolved::{Config, Resolved};
 use crate::toml;
 
 /// `hub.toml`, read and checked, with its credentials still as written: plain values or `op://`
@@ -46,7 +47,7 @@ impl ConfigFile {
     }
 
     /// Resolves every credential, asking 1Password for each `op://` reference through an `op`
-    /// that answers to `responsibility`.
+    /// started as `responsibility` allows, and says which ways of starting `op` answered.
     ///
     /// # Errors
     /// Returns why the first credential that could not be resolved failed, redacted of every
@@ -54,7 +55,7 @@ impl ConfigFile {
     pub async fn resolve(
         &self,
         responsibility: OpResponsibility,
-    ) -> Result<Config, CredentialFailure> {
+    ) -> Result<Resolved, CredentialFailure> {
         let creds = &self.credentials;
         let mut so_far = ResolvedSoFar::new(responsibility);
         let github_token = so_far.read(&creds.github_token).await?;
@@ -70,7 +71,7 @@ impl ConfigFile {
         for (name, value) in &creds.extra {
             let _ = extra_credentials.insert(name.clone(), so_far.read(value).await?);
         }
-        Ok(Config {
+        let config = Config {
             github_token,
             github_username: creds.github_username.clone(),
             linear_token,
@@ -79,6 +80,10 @@ impl ConfigFile {
             projects: self.projects.clone(),
             monitor: self.monitor.clone(),
             investigation_mcp_servers: self.investigation_mcp_servers.clone(),
+        };
+        Ok(Resolved {
+            config,
+            spawns: so_far.spawns,
         })
     }
 }
@@ -108,40 +113,113 @@ const _: () = assert!(
 );
 
 /// The credentials one call to [`ConfigFile::resolve`] has resolved so far, which a later failure
-/// in the same call must not repeat, and how that call starts `op`.
+/// in the same call must not repeat, how that call may start `op`, and which ways answered.
 #[derive(Debug)]
 struct ResolvedSoFar {
     responsibility: OpResponsibility,
     values: Vec<String>,
+    spawns: OpSpawnsUsed,
 }
 
 impl ResolvedSoFar {
-    const fn new(responsibility: OpResponsibility) -> Self {
+    fn new(responsibility: OpResponsibility) -> Self {
         Self {
             responsibility,
             values: Vec::new(),
+            spawns: OpSpawnsUsed::default(),
         }
     }
 
     /// Resolves `value`, remembering it, or fails redacted of everything remembered before it.
     async fn read(&mut self, value: &str) -> Result<Secret<String>, CredentialFailure> {
-        self.answered_within(
+        self.read_with(
             value,
-            OP_DEADLINE,
-            read_credential(value, self.responsibility),
+            |spawn| read_reference(value, spawn),
             look_at_screen_and_app,
         )
         .await
     }
 
-    /// What `read` gave for `reference`, or when it had not finished by `deadline`, a
-    /// [`CredentialFailure::no_answer`] naming what `look` then found. When `look` finds 1Password's
+    /// Resolves `value` as [`Self::read`] does, asking `read` for an `op://` reference's value
+    /// through an `op` started each way, and `look` what is on screen at a deadline.
+    ///
+    /// The reference is first read through an `op` started the ordinary way. Under
+    /// [`OpResponsibility::InheritedUnlessRefused`], a refusal with "No accounts configured" reads
+    /// it once more through an `op` that answers for itself. Anything else the first read gives
+    /// stands, so a dialog waiting on hub is never joined by one waiting on `op`.
+    async fn read_with<Read, Answer, Look, Seen>(
+        &mut self,
+        value: &str,
+        mut read: Read,
+        mut look: Look,
+    ) -> Result<Secret<String>, CredentialFailure>
+    where
+        Read: FnMut(OpSpawn) -> Answer,
+        Answer: Future<Output = Result<String>>,
+        Look: FnMut() -> Seen,
+        Seen: Future<Output = ScreenAtDeadline>,
+    {
+        if !is_reference(value) {
+            self.values.push(value.to_string());
+            return Ok(Secret::new(value.to_string()));
+        }
+        let ordinary = self
+            .answered_within(
+                value,
+                OP_DEADLINE,
+                OpSpawn::Inherited,
+                read(OpSpawn::Inherited),
+                &mut look,
+            )
+            .await;
+        match ordinary {
+            Err(refusal)
+                if refusal.cause() == CredentialCause::NoAccounts
+                    && self.responsibility == OpResponsibility::InheritedUnlessRefused =>
+            {
+                self.read_disclaimed_after(&refusal, value, read(OpSpawn::Disclaimed), look)
+                    .await
+            }
+            answered => answered,
+        }
+    }
+
+    /// Reads `reference` through an `op` that answers for itself, after `refusal` from the
+    /// ordinary one.
+    async fn read_disclaimed_after<Look, Seen>(
+        &mut self,
+        refusal: &CredentialFailure,
+        reference: &str,
+        read: impl Future<Output = Result<String>>,
+        look: Look,
+    ) -> Result<Secret<String>, CredentialFailure>
+    where
+        Look: FnMut() -> Seen,
+        Seen: Future<Output = ScreenAtDeadline>,
+    {
+        assert_eq!(
+            refusal.cause(),
+            CredentialCause::NoAccounts,
+            "a disclaimed read followed something other than a refusal"
+        );
+        assert_eq!(
+            refusal.spawn(),
+            OpSpawn::Inherited,
+            "a disclaimed read followed a disclaimed one"
+        );
+        self.answered_within(reference, OP_DEADLINE, OpSpawn::Disclaimed, read, look)
+            .await
+    }
+
+    /// What `read`, from an `op` started as `spawn`, gave for `reference`, or when it had not
+    /// finished by `deadline`, a [`CredentialFailure::no_answer`] naming what `look` then found. When `look` finds 1Password's
     /// Touch ID prompt, `read` gets [`TOUCH_ID_GRACE`] longer instead, since `op` gives up on that
     /// prompt by itself. Dropping `read` ends the `op` it started.
     async fn answered_within<Look, Seen>(
         &mut self,
         reference: &str,
         deadline: Duration,
+        spawn: OpSpawn,
         read: impl Future<Output = Result<String>>,
         mut look: Look,
     ) -> Result<Secret<String>, CredentialFailure>
@@ -149,13 +227,19 @@ impl ResolvedSoFar {
         Look: FnMut() -> Seen,
         Seen: Future<Output = ScreenAtDeadline>,
     {
+        assert!(
+            spawn == OpSpawn::Inherited
+                || self.responsibility == OpResponsibility::InheritedUnlessRefused,
+            "an op was disclaimed under {:?}, which never disclaims",
+            self.responsibility
+        );
         let mut read = std::pin::pin!(read);
         let mut waited = deadline;
         let mut answered = tokio::time::timeout(deadline, &mut read).await;
         if answered.is_err() {
             let seen = look().await;
             if seen != ScreenAtDeadline::TouchIdPrompt {
-                return Err(self.no_answer(reference, waited, &seen));
+                return Err(self.no_answer(reference, waited, &seen, spawn));
             }
             // op gives up on a Touch ID prompt by itself within a minute, so let it.
             waited += TOUCH_ID_GRACE;
@@ -164,10 +248,11 @@ impl ResolvedSoFar {
         match answered {
             Ok(Ok(resolved)) => {
                 self.values.push(resolved.clone());
+                self.spawns.add(spawn);
                 Ok(Secret::new(resolved))
             }
-            Ok(Err(error)) => Err(self.failed(&error)),
-            Err(_elapsed) => Err(self.no_answer(reference, waited, &look().await)),
+            Ok(Err(error)) => Err(self.failed(&error, spawn)),
+            Err(_elapsed) => Err(self.no_answer(reference, waited, &look().await, spawn)),
         }
     }
 
@@ -176,12 +261,13 @@ impl ResolvedSoFar {
         reference: &str,
         waited: Duration,
         seen: &ScreenAtDeadline,
+        spawn: OpSpawn,
     ) -> CredentialFailure {
-        CredentialFailure::no_answer(reference, waited, seen, &self.known_secrets())
+        CredentialFailure::no_answer(reference, waited, seen, &self.known_secrets(), spawn)
     }
 
-    fn failed(&self, error: &anyhow::Error) -> CredentialFailure {
-        CredentialFailure::new(error, &self.known_secrets())
+    fn failed(&self, error: &anyhow::Error, spawn: OpSpawn) -> CredentialFailure {
+        CredentialFailure::new(error, &self.known_secrets(), spawn)
     }
 
     fn known_secrets(&self) -> KnownSecrets {
@@ -199,13 +285,14 @@ fn validate_required(creds: &toml::CredentialsToml) -> Result<()> {
     Ok(())
 }
 
-/// `value` itself, or for an `op://` reference, what `op read` returns for it, from an `op` that
-/// answers to `responsibility`.
-async fn read_credential(value: &str, responsibility: OpResponsibility) -> Result<String> {
-    if !value.starts_with("op://") {
-        return Ok(value.to_string());
-    }
-    let output = start_op("op", &["read", value], responsibility)
+/// Whether `value` is an `op://` reference for 1Password to resolve, rather than a plain value.
+fn is_reference(value: &str) -> bool {
+    value.starts_with("op://")
+}
+
+/// What `op read` returns for `reference`, from an `op` started as `spawn`.
+async fn read_reference(reference: &str, spawn: OpSpawn) -> Result<String> {
+    let output = start_op("op", &["read", reference], spawn)
         .await
         .map_err(|error| {
             let why = why_op_did_not_start(&error);
@@ -322,16 +409,16 @@ fn the_app_is_among(executables: &str) -> bool {
     })
 }
 
-/// Runs `program` with `args` the way `responsibility` asks, and returns everything it wrote and
-/// its status. This is the one place the choice between the two spawns is made.
+/// Runs `program` with `args`, started as `spawn`, and returns everything it wrote and its
+/// status. This is the one place the two spawns part.
 async fn start_op(
     program: &str,
     args: &[&str],
-    responsibility: OpResponsibility,
+    spawn: OpSpawn,
 ) -> std::io::Result<std::process::Output> {
-    match responsibility {
-        OpResponsibility::Inherited => killed_on_drop(program).args(args).output().await,
-        OpResponsibility::Disclaimed => start_disclaimed(program, args).await,
+    match spawn {
+        OpSpawn::Inherited => killed_on_drop(program).args(args).output().await,
+        OpSpawn::Disclaimed => start_disclaimed(program, args).await,
     }
 }
 
@@ -399,8 +486,10 @@ mod tests {
             investigation_mcp_servers: domain::InvestigationMcpServers::default(),
         };
 
-        let config = file.resolve(responsibility).await.unwrap();
+        let resolved = file.resolve(responsibility).await.unwrap();
+        let config = resolved.config;
 
+        assert_eq!(resolved.spawns.to_string(), "none");
         assert_eq!(config.github_token.expose_secret(), "tok");
         assert_eq!(config.github_username, "user");
         assert_eq!(
@@ -418,7 +507,10 @@ mod tests {
         let mut so_far = ResolvedSoFar::new(OpResponsibility::Inherited);
         let _ = so_far.read("tok-4f9a").await.unwrap();
 
-        let failure = so_far.failed(&anyhow::anyhow!("op echoed tok-4f9a back"));
+        let failure = so_far.failed(
+            &anyhow::anyhow!("op echoed tok-4f9a back"),
+            OpSpawn::Inherited,
+        );
 
         assert!(
             !failure.reason().as_str().contains("tok-4f9a"),
@@ -436,6 +528,7 @@ mod tests {
             .answered_within(
                 "op://Scripts/GitHub/token",
                 OP_DEADLINE,
+                OpSpawn::Inherited,
                 std::future::pending::<Result<String>>(),
                 || async { ScreenAtDeadline::MacosAlert { windows: 1 } },
             )
@@ -460,6 +553,7 @@ mod tests {
             .answered_within(
                 "op://x/y/z",
                 OP_DEADLINE,
+                OpSpawn::Inherited,
                 async { Ok("value".to_string()) },
                 || async { panic!("looked at the screen for a read that answered") },
             )
@@ -542,9 +636,13 @@ mod tests {
         };
 
         let read = so_far
-            .answered_within("op://x/y/z", OP_DEADLINE, late, || async {
-                ScreenAtDeadline::TouchIdPrompt
-            })
+            .answered_within(
+                "op://x/y/z",
+                OP_DEADLINE,
+                OpSpawn::Inherited,
+                late,
+                || async { ScreenAtDeadline::TouchIdPrompt },
+            )
             .await;
 
         assert!(read.is_ok(), "{read:?}");
@@ -558,6 +656,7 @@ mod tests {
             .answered_within(
                 "op://x/y/z",
                 OP_DEADLINE,
+                OpSpawn::Inherited,
                 std::future::pending::<Result<String>>(),
                 || async { ScreenAtDeadline::TouchIdPrompt },
             )
@@ -654,26 +753,19 @@ mod tests {
         assert_eq!(why_op_did_not_start(&std::io::Error::from(kind)), name);
     }
 
-    /// The pid of a shell started the way `responsibility` asks, and the process macOS holds
+    /// The pid of a shell started as `spawn`, and the process macOS holds
     /// responsible for a `sleep` that shell started, asked while the shell is still running:
     /// once a disclaimed shell exits, macOS holds the `sleep` responsible for itself instead.
     #[cfg(target_os = "macos")]
-    async fn who_a_child_of_the_started_program_answers_to(
-        responsibility: OpResponsibility,
-    ) -> (u32, u32) {
-        let pids_file = std::env::temp_dir().join(format!(
-            "hub-config-responsibility-{}-{responsibility:?}",
-            std::process::id()
-        ));
+    async fn who_a_child_of_the_started_program_answers_to(spawn: OpSpawn) -> (u32, u32) {
+        let pids_file =
+            std::env::temp_dir().join(format!("hub-config-spawn-{}-{spawn:?}", std::process::id()));
         let _ = std::fs::remove_file(&pids_file);
         let script = format!(
             "sleep 5 >/dev/null 2>&1 & echo $$ $! > '{}'; sleep 2",
             pids_file.display()
         );
-        let shell =
-            tokio::spawn(
-                async move { start_op("/bin/sh", &["-c", &script], responsibility).await },
-            );
+        let shell = tokio::spawn(async move { start_op("/bin/sh", &["-c", &script], spawn).await });
 
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         let text = loop {
@@ -710,7 +802,7 @@ mod tests {
         let test_answers_to = disclaimed_spawn::responsible_for(std::process::id()).unwrap();
 
         let (shell, answers_to) =
-            who_a_child_of_the_started_program_answers_to(OpResponsibility::Disclaimed).await;
+            who_a_child_of_the_started_program_answers_to(OpSpawn::Disclaimed).await;
 
         assert_eq!(answers_to, shell);
         assert_ne!(answers_to, test_answers_to);
@@ -722,7 +814,7 @@ mod tests {
         let test_answers_to = disclaimed_spawn::responsible_for(std::process::id()).unwrap();
 
         let (_, answers_to) =
-            who_a_child_of_the_started_program_answers_to(OpResponsibility::Inherited).await;
+            who_a_child_of_the_started_program_answers_to(OpSpawn::Inherited).await;
 
         assert_eq!(answers_to, test_answers_to);
     }
@@ -739,21 +831,270 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_plain_value_is_its_own_credential() {
+    async fn a_plain_value_is_its_own_credential_and_starts_no_op() {
         // A plain value never reaches a spawn, so either responsibility will do.
-        let responsibility = OpResponsibility::Inherited;
-        assert_eq!(
-            read_credential("plain-value", responsibility)
+        for value in ["plain-value", ""] {
+            let mut so_far = ResolvedSoFar::new(OpResponsibility::InheritedUnlessRefused);
+
+            let read = so_far
+                .read_with(
+                    value,
+                    |spawn| async move { panic!("started op {spawn:?} for a plain value") },
+                    || async { panic!("looked at the screen for a plain value") },
+                )
                 .await
-                .unwrap(),
-            "plain-value"
-        );
+                .unwrap();
+
+            assert_eq!(read.expose_secret(), value);
+            assert_eq!(so_far.spawns.to_string(), "none");
+        }
+    }
+
+    /// What hub makes of `op read` exiting non-zero with `stderr`.
+    fn op_said(stderr: &str) -> anyhow::Error {
+        anyhow::anyhow!("failed to resolve credential from 1Password: {stderr}")
+    }
+
+    const NO_ACCOUNTS: &str = "[ERROR] 2026/11/01 12:00:00 No accounts configured for use with \
+                               1Password CLI. - Turn on the 1Password desktop app integration";
+
+    /// Every spawn a read asked for, in order.
+    type Spawned = std::rc::Rc<std::cell::RefCell<Vec<OpSpawn>>>;
+
+    /// A `read` for [`ResolvedSoFar::read_with`] that answers with `inherited` or `disclaimed`
+    /// depending on the spawn, and remembers each spawn it was asked for in `spawned`.
+    fn op_answering(
+        spawned: &Spawned,
+        inherited: fn() -> Result<String>,
+        disclaimed: fn() -> Result<String>,
+    ) -> impl FnMut(OpSpawn) -> std::future::Ready<Result<String>> {
+        let spawned = spawned.clone();
+        move |spawn| {
+            spawned.borrow_mut().push(spawn);
+            std::future::ready(match spawn {
+                OpSpawn::Inherited => inherited(),
+                OpSpawn::Disclaimed => disclaimed(),
+            })
+        }
+    }
+
+    fn never() -> Result<String> {
+        panic!("a disclaimed op was started")
+    }
+
+    async fn nothing_on_screen() -> ScreenAtDeadline {
+        ScreenAtDeadline::AppRunningNoAlert
     }
 
     #[tokio::test]
-    async fn an_empty_value_is_its_own_credential() {
-        // A plain value never reaches a spawn, so either responsibility will do.
-        let responsibility = OpResponsibility::Inherited;
-        assert_eq!(read_credential("", responsibility).await.unwrap(), "");
+    async fn the_daemon_uses_an_ordinary_answer_and_never_disclaims() {
+        let spawned = Spawned::default();
+        let mut so_far = ResolvedSoFar::new(OpResponsibility::InheritedUnlessRefused);
+
+        let read = so_far
+            .read_with(
+                "op://x/y/z",
+                op_answering(&spawned, || Ok("value".into()), never),
+                nothing_on_screen,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(read.expose_secret(), "value");
+        assert_eq!(*spawned.borrow(), vec![OpSpawn::Inherited]);
+        assert_eq!(so_far.spawns.to_string(), "inherited");
+    }
+
+    #[tokio::test]
+    async fn the_daemon_reads_a_refused_credential_again_through_a_disclaimed_op() {
+        let spawned = Spawned::default();
+        let mut so_far = ResolvedSoFar::new(OpResponsibility::InheritedUnlessRefused);
+
+        let read = so_far
+            .read_with(
+                "op://x/y/z",
+                op_answering(
+                    &spawned,
+                    || Err(op_said(NO_ACCOUNTS)),
+                    || Ok("value".into()),
+                ),
+                nothing_on_screen,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(read.expose_secret(), "value");
+        assert_eq!(
+            *spawned.borrow(),
+            vec![OpSpawn::Inherited, OpSpawn::Disclaimed]
+        );
+        assert_eq!(so_far.spawns.to_string(), "disclaimed");
+    }
+
+    #[tokio::test]
+    async fn a_disclaimed_read_that_fails_after_a_refusal_reports_its_own_cause() {
+        let spawned = Spawned::default();
+        let mut so_far = ResolvedSoFar::new(OpResponsibility::InheritedUnlessRefused);
+
+        let failure = so_far
+            .read_with(
+                "op://x/y/z",
+                op_answering(
+                    &spawned,
+                    || Err(op_said(NO_ACCOUNTS)),
+                    || {
+                        Err(op_said(
+                            "error initializing client: 1Password CLI couldn't connect to the \
+                             1Password desktop app.",
+                        ))
+                    },
+                ),
+                nothing_on_screen,
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(failure.cause(), CredentialCause::AppNotRunning);
+        assert_eq!(failure.spawn(), OpSpawn::Disclaimed);
+    }
+
+    #[rstest::rstest]
+    #[case::app_not_running(
+        "error initializing client: 1Password CLI couldn't connect to the 1Password desktop app."
+    )]
+    #[case::touch_id_unanswered("error initializing client: authorization timeout")]
+    #[case::unreachable("dial tcp: lookup my.1password.com: no such host")]
+    #[case::anything_else("isn't a vault in this account")]
+    #[tokio::test]
+    async fn the_daemon_keeps_any_other_ordinary_failure(#[case] stderr: &'static str) {
+        let spawned = Spawned::default();
+        let mut so_far = ResolvedSoFar::new(OpResponsibility::InheritedUnlessRefused);
+        let read = {
+            let spawned = spawned.clone();
+            move |spawn| {
+                spawned.borrow_mut().push(spawn);
+                std::future::ready(Err::<String, _>(op_said(stderr)))
+            }
+        };
+
+        let failure = so_far
+            .read_with("op://x/y/z", read, nothing_on_screen)
+            .await
+            .unwrap_err();
+
+        assert_ne!(failure.cause(), CredentialCause::NoAccounts);
+        assert_eq!(failure.spawn(), OpSpawn::Inherited);
+        assert_eq!(*spawned.borrow(), vec![OpSpawn::Inherited]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_read_silent_at_the_deadline_with_a_macos_alert_up_is_not_read_again_disclaimed() {
+        let spawned = Spawned::default();
+        let mut so_far = ResolvedSoFar::new(OpResponsibility::InheritedUnlessRefused);
+        let read = {
+            let spawned = spawned.clone();
+            move |spawn| {
+                spawned.borrow_mut().push(spawn);
+                std::future::pending::<Result<String>>()
+            }
+        };
+
+        let failure = so_far
+            .read_with("op://x/y/z", read, || async {
+                ScreenAtDeadline::MacosAlert { windows: 1 }
+            })
+            .await
+            .unwrap_err();
+
+        assert_eq!(failure.cause(), CredentialCause::MacosPromptWaitingForYou);
+        assert_eq!(failure.spawn(), OpSpawn::Inherited);
+        assert_eq!(*spawned.borrow(), vec![OpSpawn::Inherited]);
+    }
+
+    #[tokio::test]
+    async fn the_tui_never_disclaims_a_refused_credential() {
+        let spawned = Spawned::default();
+        let mut so_far = ResolvedSoFar::new(OpResponsibility::Inherited);
+
+        let failure = so_far
+            .read_with(
+                "op://x/y/z",
+                op_answering(&spawned, || Err(op_said(NO_ACCOUNTS)), never),
+                nothing_on_screen,
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(failure.cause(), CredentialCause::NoAccounts);
+        assert_eq!(failure.spawn(), OpSpawn::Inherited);
+        assert_eq!(*spawned.borrow(), vec![OpSpawn::Inherited]);
+    }
+
+    #[tokio::test]
+    async fn a_refusal_of_a_later_credential_never_reads_an_earlier_one_again() {
+        let first = Spawned::default();
+        let second = Spawned::default();
+        let mut so_far = ResolvedSoFar::new(OpResponsibility::InheritedUnlessRefused);
+
+        let _ = so_far
+            .read_with(
+                "op://x/first/z",
+                op_answering(&first, || Ok("one".into()), never),
+                nothing_on_screen,
+            )
+            .await
+            .unwrap();
+        let _ = so_far
+            .read_with(
+                "op://x/second/z",
+                op_answering(&second, || Err(op_said(NO_ACCOUNTS)), || Ok("two".into())),
+                nothing_on_screen,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(*first.borrow(), vec![OpSpawn::Inherited]);
+        assert_eq!(
+            *second.borrow(),
+            vec![OpSpawn::Inherited, OpSpawn::Disclaimed]
+        );
+        assert_eq!(so_far.spawns.to_string(), "inherited,disclaimed");
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn no_failure_from_either_read_holds_a_credential_resolved_before_it(
+            secret in "[A-Za-z0-9]{12,24}",
+        ) {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .build()
+                .unwrap();
+            let failure = runtime.block_on(async {
+                let mut so_far = ResolvedSoFar::new(OpResponsibility::InheritedUnlessRefused);
+                let _ = so_far
+                    .read_with(&secret, |_| async { unreachable!() }, nothing_on_screen)
+                    .await
+                    .unwrap();
+                let echoed = secret.clone();
+                so_far
+                    .read_with(
+                        "op://x/y/z",
+                        move |spawn| {
+                            let said = match spawn {
+                                OpSpawn::Inherited => format!("{NO_ACCOUNTS} {echoed}"),
+                                OpSpawn::Disclaimed => format!("isn't a vault: {echoed}"),
+                            };
+                            std::future::ready(Err::<String, _>(op_said(&said)))
+                        },
+                        nothing_on_screen,
+                    )
+                    .await
+                    .unwrap_err()
+            });
+
+            proptest::prop_assert_eq!(failure.spawn(), OpSpawn::Disclaimed);
+            proptest::prop_assert!(!failure.reason().as_str().contains(&secret));
+        }
     }
 }

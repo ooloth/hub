@@ -19,10 +19,15 @@ loki_token      = "op://Scripts/Loki/token"        # optional
 impl ConfigFile {
     pub fn read() -> Result<Self> { /* parse hub.toml, check required keys */ }
     pub async fn resolve(&self, responsibility: OpResponsibility)
-        -> Result<Config, CredentialFailure> { /* op read each reference */ }
+        -> Result<Resolved, CredentialFailure> { /* op read each reference */ }
 }
 
 // config/src/resolved.rs
+pub struct Resolved {
+    pub config: Config,
+    pub spawns: OpSpawnsUsed, // how each op that answered was started
+}
+
 pub struct Config {
     pub github_token: Secret<String>,
     pub github_username: String,
@@ -36,14 +41,17 @@ and `StatusParams`. `.expose_secret()` is called only at client call sites —
 every access point is explicit and grep-able. `Debug` output prints `[REDACTED]`,
 preventing accidental logging.
 
-The TUI and CLI call `config::Config::load()`, which reads the file and
+The TUI calls `config::Config::load()`, which reads the file and
 resolves it in one step, once in `main()`, and pass the struct down as an
 argument. Nothing else calls `op read` or knows about 1Password.
 
-Every caller of `resolve` says which process macOS holds responsible for the
+Every caller of `resolve` says which process macOS may hold responsible for the
 `op` it starts (`config::OpResponsibility`). The TUI passes `Inherited`, so its
-`op` answers to the terminal it runs in. The daemon passes `Disclaimed`, so its
-`op` answers for itself, which is what lets it reach 1Password under launchd.
+`op` answers to the terminal it runs in. The daemon passes
+`InheritedUnlessRefused`: its `op` answers to `hub-daemon`, and a credential
+1Password refuses with "No accounts configured" is read again through an `op`
+that answers for itself, which is what lets it reach 1Password under launchd on
+macOS 27, where the ordinary `op` was refused every time it was measured.
 [`disclaimed_spawn`](../../disclaimed_spawn/README.md) explains how and why.
 
 The daemon reads the file and resolves it as two steps
@@ -52,13 +60,13 @@ A broken `hub.toml` ends the start. Each `op read` has a 90-second
 deadline, and an `op` still silent at the deadline is ended. A credential
 that fails is a `CredentialFailure` naming its cause: a Touch ID prompt
 nobody answered, a macOS prompt waiting for you, the app running but not
-answering, the desktop app not running, 1Password unreachable, or something
-else, with `op`'s message redacted of every credential resolved before it.
+answering, the desktop app not running, 1Password unreachable, no 1Password
+account visible to `op` ("No accounts configured"), or something else, with `op`'s message redacted of every credential resolved before it.
 At the deadline the daemon reads which programs own the windows on screen,
 through `osascript`, to tell those apart. The daemon records it and resolves again in
 the same process, so a restart never raises fresh prompts. Credentials are
-held in memory only, for the life of the process. The TUI and CLI get the
-same deadline through `Config::load`.
+held in memory only, for the life of the process. The TUI gets the same
+deadline through `Config::load`.
 
 ## Per-device config
 

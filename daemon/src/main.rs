@@ -111,9 +111,10 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
         }
     };
 
-    // Before credentials are resolved, which can wait on a 1Password prompt for up to 90 seconds
-    // an attempt, and up to 65 more while a Touch ID prompt is on screen: a startup line with
-    // nothing after it is a daemon in its first attempt.
+    // Before credentials are resolved, where each `op read` can wait on a 1Password prompt for up
+    // to 90 seconds, and up to 65 more while a Touch ID prompt is on screen, and a refused
+    // credential is read twice: a startup line with nothing after it is a daemon in its first
+    // attempt.
     println!(
         "{}",
         startup::Startup {
@@ -129,9 +130,12 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
     // Once, at startup: every pass reuses these credentials, so passes raise no prompts. A failed
     // attempt is recorded and tried again in this process, because a restart would raise fresh
     // prompts. With --once there is one attempt.
-    // op answers for itself: under launchd on macOS 27, an op that answers to the ad-hoc signed
-    // hub-daemon cannot reach 1Password's desktop app (decision 027, addendum of 2026-11-01).
-    let resolve = || file.resolve(config::OpResponsibility::Disclaimed);
+    // op is started the ordinary way first, so on macOS 26 one dialog naming hub-daemon covers
+    // every op this process starts. Only a credential 1Password refuses with "No accounts
+    // configured", as it did every time it was measured on macOS 27 for an op that answers to the
+    // ad-hoc signed hub-daemon, is read again through an op that answers for itself (decision 027,
+    // addendum of 2026-11-03).
+    let resolve = || file.resolve(config::OpResponsibility::InheritedUnlessRefused);
     let schedule = cli.schedule();
     let record = |attempt: &CredentialAttempt| {
         let record_error =
@@ -166,9 +170,10 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
         )
         .await
     };
-    let Some(config) = obtained else {
+    let Some(obtained) = obtained else {
         return Ok(ExitCode::FAILURE);
     };
+    let config = log_obtained(profile, obtained);
     // A notification about missing credentials would now be out of date.
     if let Some(removed) = notifier.clear().await {
         log_notification_removal(profile, removed);
@@ -217,6 +222,29 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
     })
     .await;
     Ok(ExitCode::SUCCESS)
+}
+
+/// Logs which attempt obtained the credentials and how each `op` that answered was started, and
+/// hands back the configuration they complete.
+fn log_obtained(
+    profile: Profile,
+    obtained: credentials::Obtained<config::Resolved>,
+) -> config::Config {
+    let credentials::Obtained {
+        credentials: config::Resolved { config, spawns },
+        attempt,
+    } = obtained;
+    println!(
+        "{}",
+        credentials::ObtainedReport {
+            profile: profile.as_str().to_string(),
+            at: Utc::now(),
+            pid: std::process::id(),
+            attempt,
+            spawns,
+        }
+    );
+    config
 }
 
 /// Logs how removing the notification about missing credentials went.

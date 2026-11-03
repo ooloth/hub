@@ -429,6 +429,7 @@ mod tests {
             failure: domain::credential_failure::CredentialFailure::new(
                 &anyhow::anyhow!("dial tcp: lookup my.1password.com: no such host"),
                 &no_secrets(),
+                domain::op_spawn::OpSpawn::Inherited,
             ),
             opened_app: None,
             notified: None,

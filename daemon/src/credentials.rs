@@ -1,14 +1,15 @@
-//! Obtaining the daemon's credentials, trying again inside the process when 1Password fails, and
-//! the line each failed attempt leaves in the log.
+//! Obtaining the daemon's credentials, trying again inside the process when 1Password fails, the
+//! line each failed attempt leaves in the log, and the line once they arrive.
 use std::fmt;
 use std::future::Future;
 use std::time::Duration;
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use domain::credential_attempt::{AppOpening, CredentialAttempt, Notifying};
 use domain::credential_failure::{CredentialCause, CredentialFailure};
 use domain::credential_notification::Notification;
 use domain::known_secrets::KnownSecrets;
+use domain::op_spawn::OpSpawnsUsed;
 use domain::pass_failure::PassFailure;
 
 use crate::pass::one_line;
@@ -232,14 +233,14 @@ where
 /// pushed back.
 ///
 /// Returns `None` once `retries` says to stop, after the last attempt has been recorded. With
-/// [`Retries::UntilObtained`] it returns only with credentials.
+/// [`Retries::UntilObtained`] it returns only with credentials, and which attempt obtained them.
 pub(crate) async fn obtain<T, F, Fut, O, OpenFut, N, PostFut, R, RemoveFut>(
     mut resolve: F,
     mut retries: Retries,
     opener: &mut AppOpener<O>,
     notifier: &mut Notifier<N, R>,
     mut record: impl FnMut(&CredentialAttempt),
-) -> Option<T>
+) -> Option<Obtained<T>>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, CredentialFailure>>,
@@ -255,7 +256,12 @@ where
         let started_at = Utc::now();
         let started = std::time::Instant::now();
         let failure = match resolve().await {
-            Ok(credentials) => return Some(credentials),
+            Ok(credentials) => {
+                return Some(Obtained {
+                    credentials,
+                    attempt,
+                })
+            }
             Err(failure) => failure,
         };
         let duration = started.elapsed();
@@ -286,6 +292,39 @@ where
     None
 }
 
+/// Credentials [`obtain`] got, and which attempt since the daemon started got them, counting from 1.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Obtained<T> {
+    pub(crate) credentials: T,
+    pub(crate) attempt: u32,
+}
+
+/// The attempt that obtained the credentials, as it is logged: when, by which daemon, after how
+/// many attempts, and which ways of starting `op` answered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ObtainedReport {
+    pub(crate) profile: String,
+    pub(crate) at: DateTime<Utc>,
+    pub(crate) pid: u32,
+    /// Which attempt obtained them since the daemon started, counting from 1.
+    pub(crate) attempt: u32,
+    pub(crate) spawns: OpSpawnsUsed,
+}
+
+impl fmt::Display for ObtainedReport {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "hub-daemon credentials_obtained at={} pid={} profile={} attempt={} spawns={}",
+            self.at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            self.pid,
+            self.profile,
+            self.attempt,
+            self.spawns,
+        )
+    }
+}
+
 /// One failed attempt, as it is logged: what failed, and whether that reached the database.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AttemptReport {
@@ -300,7 +339,8 @@ impl fmt::Display for AttemptReport {
         let attempt = &self.attempt;
         write!(
             f,
-            "hub-daemon credentials at={} pid={} profile={} attempt={} cause={} duration_ms={}",
+            "hub-daemon credentials at={} pid={} profile={} attempt={} cause={} spawn={} \
+             duration_ms={}",
             attempt
                 .started_at
                 .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
@@ -308,6 +348,7 @@ impl fmt::Display for AttemptReport {
             self.profile,
             attempt.attempt,
             attempt.failure.cause().as_str(),
+            attempt.failure.spawn(),
             attempt.duration.as_millis(),
         )?;
         if let Some(retry_in) = attempt.retry_in {
@@ -383,6 +424,7 @@ mod tests {
 
     use chrono::TimeZone;
     use domain::known_secrets::KnownSecrets;
+    use domain::op_spawn::OpSpawn;
     use domain::screen_at_deadline::ScreenAtDeadline;
     use proptest::prelude::*;
     use rstest::rstest;
@@ -394,7 +436,11 @@ mod tests {
     }
 
     fn failure(message: &str) -> CredentialFailure {
-        CredentialFailure::new(&anyhow::anyhow!("{message}"), &no_secrets())
+        CredentialFailure::new(
+            &anyhow::anyhow!("{message}"),
+            &no_secrets(),
+            OpSpawn::Inherited,
+        )
     }
 
     #[test]
@@ -512,7 +558,13 @@ mod tests {
         )
         .await;
 
-        assert_eq!(obtained, Some("secrets"));
+        assert_eq!(
+            obtained,
+            Some(Obtained {
+                credentials: "secrets",
+                attempt: 3
+            })
+        );
         // Each stubbed attempt takes almost no time, so each wait is nearly the whole minute,
         // where the backoff would have waited 1 then 2 seconds.
         let recorded = recorded.borrow();
@@ -582,7 +634,7 @@ mod tests {
             move |attempt| log.borrow_mut().push(attempt.notified.clone()),
         )
         .await;
-        assert_eq!(obtained, Some("secrets"));
+        assert_eq!(obtained.map(|got| got.credentials), Some("secrets"));
         let recorded = recorded.borrow().clone();
         recorded
     }
@@ -769,7 +821,7 @@ mod tests {
         )
         .await;
 
-        assert_eq!(obtained, Some("secrets"));
+        assert_eq!(obtained.map(|got| got.credentials), Some("secrets"));
         assert_eq!(*opens.borrow(), 1);
         assert_eq!(
             *recorded.borrow(),
@@ -816,7 +868,7 @@ mod tests {
         )
         .await;
 
-        assert_eq!(obtained, Some("secrets"));
+        assert_eq!(obtained.map(|got| got.credentials), Some("secrets"));
     }
 
     #[tokio::test(start_paused = true)]
@@ -839,7 +891,7 @@ mod tests {
         )
         .await;
 
-        assert_eq!(obtained, Some("secrets"));
+        assert_eq!(obtained.map(|got| got.credentials), Some("secrets"));
         assert_eq!(
             *recorded.borrow(),
             vec![Some(AppOpening::failed(
@@ -878,7 +930,7 @@ mod tests {
         )
         .await;
 
-        assert_eq!(obtained, Some("secrets"));
+        assert_eq!(obtained.map(|got| got.credentials), Some("secrets"));
         assert_eq!(
             *recorded.borrow(),
             vec![
@@ -928,7 +980,7 @@ mod tests {
         )
         .await;
 
-        assert_eq!(obtained, None);
+        assert_eq!(obtained.map(|got| got.credentials), None);
         assert_eq!(*calls.borrow(), 1);
         assert_eq!(*recorded.borrow(), vec![(1, None)]);
     }
@@ -958,14 +1010,14 @@ mod tests {
     #[case::retrying(
         report(Some(Duration::from_secs(4)), None),
         "hub-daemon credentials at=2026-10-12T08:59:03Z pid=4242 profile=default attempt=3 \
-         cause=app_not_running duration_ms=812 retry_in=4s error=\"failed to resolve credential \
+         cause=app_not_running spawn=inherited duration_ms=812 retry_in=4s error=\"failed to resolve credential \
          from 1Password: could not read secret 'op://Scripts/GitHub/token': 1Password CLI \
          couldn't connect to the 1Password desktop app.\""
     )]
     #[case::giving_up(
         report(None, None),
         "hub-daemon credentials at=2026-10-12T08:59:03Z pid=4242 profile=default attempt=3 \
-         cause=app_not_running duration_ms=812 error=\"failed to resolve credential from \
+         cause=app_not_running spawn=inherited duration_ms=812 error=\"failed to resolve credential from \
          1Password: could not read secret 'op://Scripts/GitHub/token': 1Password CLI couldn't \
          connect to the 1Password desktop app.\""
     )]
@@ -975,7 +1027,7 @@ mod tests {
             Some(PassFailure::new(&anyhow::anyhow!("database is locked"), &no_secrets())),
         ),
         "hub-daemon credentials at=2026-10-12T08:59:03Z pid=4242 profile=default attempt=3 \
-         cause=app_not_running duration_ms=812 retry_in=1m error=\"failed to resolve credential \
+         cause=app_not_running spawn=inherited duration_ms=812 retry_in=1m error=\"failed to resolve credential \
          from 1Password: could not read secret 'op://Scripts/GitHub/token': 1Password CLI \
          couldn't connect to the 1Password desktop app.\" recorded=no \
          record_error=\"database is locked\""
@@ -985,6 +1037,47 @@ mod tests {
         #[case] line: &str,
     ) {
         assert_eq!(report.to_string(), line);
+    }
+
+    #[test]
+    fn a_failed_attempt_names_how_its_op_was_started() {
+        let mut line = report(Some(Duration::from_secs(1)), None);
+        line.attempt.failure = CredentialFailure::new(
+            &anyhow::anyhow!("isn't a vault in this account"),
+            &no_secrets(),
+            OpSpawn::Disclaimed,
+        );
+
+        assert!(line.to_string().contains(" spawn=disclaimed "), "{line}");
+    }
+
+    #[rstest]
+    #[case::inherited(&[OpSpawn::Inherited], "inherited")]
+    #[case::both(&[OpSpawn::Disclaimed, OpSpawn::Inherited], "inherited,disclaimed")]
+    #[case::plain_values_only(&[], "none")]
+    fn obtaining_credentials_logs_when_who_which_attempt_and_how_op_answered(
+        #[case] answered: &[OpSpawn],
+        #[case] spawns: &str,
+    ) {
+        let mut used = OpSpawnsUsed::default();
+        for spawn in answered {
+            used.add(*spawn);
+        }
+        let report = ObtainedReport {
+            profile: "default".to_string(),
+            at: Utc.with_ymd_and_hms(2026, 11, 3, 13, 59, 1).unwrap(),
+            pid: 4242,
+            attempt: 4,
+            spawns: used,
+        };
+
+        assert_eq!(
+            report.to_string(),
+            format!(
+                "hub-daemon credentials_obtained at=2026-11-03T13:59:01Z pid=4242 \
+                 profile=default attempt=4 spawns={spawns}"
+            )
+        );
     }
 
     #[test]
@@ -1005,6 +1098,7 @@ mod tests {
             Duration::from_secs(90),
             &ScreenAtDeadline::MacosAlert { windows: 1 },
             &no_secrets(),
+            OpSpawn::Inherited,
         );
 
         assert!(

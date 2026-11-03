@@ -1,5 +1,5 @@
 //! Configuration loading for hub — reads `hub.toml`, resolves credentials, and
-//! exposes a typed [`Config`] used by both the CLI and TUI.
+//! exposes a typed [`Config`] used by the TUI and the daemon.
 
 /// Raw TOML types that mirror the structure of `hub.toml`.
 pub mod toml;
@@ -10,7 +10,7 @@ pub mod investigation;
 /// `hub.toml` as read, before any credential is resolved.
 pub mod config_file;
 
-/// Which process macOS holds responsible for each `op` hub starts.
+/// How the `op` processes one resolution starts may answer to macOS.
 pub mod op_responsibility;
 
 /// Projects with every label settled, as the rest of hub sees them.
@@ -25,4 +25,4 @@ pub mod profile;
 pub use config_file::ConfigFile;
 pub use op_responsibility::OpResponsibility;
 pub use project::{Project, Projects};
-pub use resolved::Config;
+pub use resolved::{Config, Resolved};
