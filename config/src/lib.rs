@@ -10,8 +10,14 @@ pub mod investigation;
 /// `hub.toml` as read, before any credential is resolved.
 pub mod config_file;
 
+/// Reading one credential through `op`, and the fallback to a disclaimed `op`.
+mod op_read;
+
 /// How the `op` processes one resolution starts may answer to macOS.
 pub mod op_responsibility;
+
+/// What is on screen when an `op read` reaches its deadline.
+mod screen_look;
 
 /// Projects with every label settled, as the rest of hub sees them.
 pub mod project;
