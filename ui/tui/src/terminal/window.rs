@@ -35,6 +35,17 @@ enum Target {
     NewRexSession,
 }
 
+impl Target {
+    /// What `window` is called where it opens: its tmux name in tmux, and its label in Rex
+    /// (decision 033).
+    fn name_of(&self, window: &InvestigationWindow) -> String {
+        match self {
+            Self::Tmux => window.to_string(),
+            Self::RexSession(_) | Self::NewRexSession => window.label().as_str().to_string(),
+        }
+    }
+}
+
 /// What became of a request for a window.
 pub(crate) enum WindowClaim {
     /// The terminal already had the window.
@@ -174,19 +185,19 @@ impl VacantWindow {
         assert!(!command.is_empty(), "window command must not be empty");
 
         let Self { target, window } = self;
-        let label = window.label().as_str();
+        let name = target.name_of(&window);
         let session = window.session().clone();
         match target {
             Target::Tmux => {
-                tmux::new_window(&window.to_string(), cwd, env, command)?;
+                tmux::new_window(&name, cwd, env, command)?;
                 Ok(WindowPlace::InView)
             }
             Target::RexSession(id) => {
-                rex::new_window(&id, label, cwd, env, command)?;
+                rex::new_window(&id, &name, cwd, env, command)?;
                 Ok(WindowPlace::OpenedIn(session))
             }
             Target::NewRexSession => {
-                rex::new_session(session.label(), label, cwd, env, command)?;
+                rex::new_session(session.label(), &name, cwd, env, command)?;
                 Ok(WindowPlace::OpenedInNew(session))
             }
         }
@@ -445,6 +456,23 @@ mod tests {
                 Target::Tmux => panic!("a Rex claim targeted tmux"),
             },
         }
+    }
+
+    /// A window opens under the name it is found by again: its label in either Rex target, and
+    /// its tmux name in tmux, which decision 033 leaves unchanged.
+    #[rstest]
+    #[case::tmux(Target::Tmux, "hub:pr:330")]
+    #[case::existing_rex_session(
+        Target::RexSession(RexSessionId::parse("session:1").unwrap()),
+        "PR 330 (alice): investigate"
+    )]
+    #[case::new_rex_session(Target::NewRexSession, "PR 330 (alice): investigate")]
+    fn a_window_opens_under_the_name_its_terminal_finds_it_by(
+        #[case] target: Target,
+        #[case] expected: &str,
+    ) {
+        let window = on_pr(&hub(), 330, PrWindowActivity::Investigate);
+        assert_eq!(target.name_of(&window), expected);
     }
 
     /// The claim for the investigation of PR 330, `PR 330 (alice): investigate`.

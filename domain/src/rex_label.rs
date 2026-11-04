@@ -218,18 +218,68 @@ mod tests {
         assert!(label.as_str().starts_with("Loki prod-eu boom… "), "{label}");
     }
 
+    /// An environment longer than a label has room for is cut, so the label stays within bounds.
+    #[test]
+    fn a_long_environment_is_cut_to_twenty_characters() {
+        let env = "e".repeat(100);
+        let label = RexLabel::alert("Loki", &env, "boom");
+        assert!(
+            label
+                .as_str()
+                .starts_with(&format!("Loki {} boom… ", "e".repeat(20))),
+            "{label}"
+        );
+        assert_well_formed(&label);
+    }
+
+    /// Each pair shows the same environment once cut or cleaned, so only the hash keeps their
+    /// tabs apart.
+    #[rstest]
+    #[case::cut_to_the_same_twenty("production-us-east-1a", "production-us-east-1b")]
+    #[case::differ_only_in_case("Prod", "prod")]
+    fn two_environments_shown_alike_get_different_labels(#[case] a: &str, #[case] b: &str) {
+        assert_ne!(
+            RexLabel::alert("Loki", a, "connection refused"),
+            RexLabel::alert("Loki", b, "connection refused"),
+        );
+    }
+
     proptest! {
         /// Untrusted text of any shape gives a well-formed label. Each case also runs the
-        /// assertions in `RexLabel::new`.
+        /// assertions in `RexLabel::new`. The lengths reach past every limit, which `.*` alone
+        /// never does, because proptest stops it at 32 characters. The environment leans to
+        /// ASCII letters and digits, the only characters its segment keeps.
         #[test]
-        fn any_alert_gives_a_well_formed_label(env in ".*", message in ".*") {
+        fn any_alert_gives_a_well_formed_label(
+            env in "([a-zA-Z0-9]|.|\n){0,300}",
+            message in "(.|\n){0,300}",
+        ) {
             let label = RexLabel::alert("Loki", &env, &message);
             assert_well_formed(&label);
             prop_assert!(label.as_str().starts_with("Loki "), "{}", label);
         }
 
+        /// Two alerts with one message are told apart by their environment alone, even when
+        /// the environments cut or clean to the same text.
         #[test]
-        fn any_workflow_or_title_gives_a_well_formed_label(text in ".*") {
+        fn two_alerts_sharing_a_message_never_share_a_label(
+            env_a in "(production-us-east-1|Prod|prod| prod)[a-zA-Z -]{0,3}",
+            env_b in "(production-us-east-1|Prod|prod| prod)[a-zA-Z -]{0,3}",
+            message in "(.|\n){0,60}",
+        ) {
+            prop_assume!(env_a != env_b);
+            prop_assert_ne!(
+                RexLabel::alert("Loki", &env_a, &message),
+                RexLabel::alert("Loki", &env_b, &message),
+            );
+        }
+
+        /// Half the texts are long and plain, with no whitespace or control character, since
+        /// only those reach the cut without first being marked for cleaning.
+        #[test]
+        fn any_workflow_or_title_gives_a_well_formed_label(
+            text in "([a-zA-Z0-9/()_-]{41,300}|(.|\n){0,300})",
+        ) {
             assert_well_formed(&RexLabel::ci(&text));
             assert_well_formed(&RexLabel::media(&text));
         }

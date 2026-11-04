@@ -1515,6 +1515,41 @@ mod tests {
         assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
     }
 
+    /// A PR by `alice`, who is not the repository's owner, so a login taken from the repository
+    /// or the user instead of the PR's author fails.
+    fn pr_by_alice() -> StatusItem {
+        StatusItem::Pr(domain::PullRequest {
+            author: "alice".to_string(),
+            ..crate::test_support::pull_request()
+        })
+    }
+
+    #[test]
+    fn the_review_picker_carries_the_prs_author_login() {
+        let mut app = split_view_of(pr_by_alice());
+        assert_eq!(armed_picker(&mut app).login, "alice");
+    }
+
+    #[test]
+    fn investigating_a_pr_launches_with_its_authors_login() {
+        let mut app = app_with_items(vec![DisplayItem::Single(pr_by_alice())]);
+        let effects = app.update(Action::Investigate);
+        let [Effect::LaunchPr { login, .. }] = effects.as_slice() else {
+            panic!("expected one LaunchPr");
+        };
+        assert_eq!(login, "alice");
+    }
+
+    #[test]
+    fn investigating_an_issue_launches_with_its_authors_login() {
+        let mut app = app_with_items(vec![DisplayItem::Single(stub_issue())]);
+        let effects = app.update(Action::Investigate);
+        let [Effect::LaunchIssue { login, .. }] = effects.as_slice() else {
+            panic!("expected one LaunchIssue");
+        };
+        assert_eq!(login, "agent");
+    }
+
     #[test]
     fn open_review_picker_on_a_non_pr_row_leaves_the_submenu_closed() {
         let mut app = app_with_items(vec![DisplayItem::Single(ci_failure())]);
