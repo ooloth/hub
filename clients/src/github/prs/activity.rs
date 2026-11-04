@@ -294,8 +294,6 @@ mod tests {
     /// comments, and I replied in one thread.
     fn copilot_threads() -> serde_json::Value {
         serde_json::json!({
-            "latestOpinionatedReviews": { "nodes": [] },
-            "reviewRequests": { "nodes": [] },
             "reviewThreads": { "nodes": [
                 { "isResolved": false, "path": "a.rs", "line": 1, "diffSide": "RIGHT", "comments": { "nodes": [
                     { "author": { "__typename": "Bot", "login": "copilot-pull-request-reviewer" }, "createdAt": "2026-05-16T20:33:50Z", "body": "Consider this" },
@@ -313,8 +311,7 @@ mod tests {
                   "submittedAt": "2026-05-16T20:33:50Z", "body": "## Pull request overview" },
                 { "state": "COMMENTED", "author": { "__typename": "User", "login": "ooloth" },
                   "submittedAt": "2026-05-16T22:34:13Z", "body": "" }
-            ] },
-            "recentComments": { "nodes": [] }
+            ] }
         })
     }
 

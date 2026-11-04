@@ -23,6 +23,8 @@ mod scanned_text;
 mod setup_private;
 /// The commit-time check of staged content.
 mod staged_terms;
+#[cfg(test)]
+mod test_support;
 
 /// Hub's dev and ops tooling.
 #[derive(Parser)]

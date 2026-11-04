@@ -8,7 +8,7 @@
 //! and stall detection, see `workflows::agent_session`.
 
 /// One block of content from an agent session transcript.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StreamBlock {
     /// A message sent by the human (the opening prompt or a follow-up).
     HumanTurn(String),
@@ -173,121 +173,109 @@ fn extract_tool_result_content(block: &serde_json::Value) -> String {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
+    #[rstest]
+    // Must match the directory Claude Code creates for a task worktree under ~/.hub, e.g.
+    // ~/.claude/projects/-Users-michael--hub-workspaces-TASK-0010-hub/. The dot in ".hub" is
+    // replaced, so it becomes "--hub".
+    #[case::dots_become_dashes(
+        "/Users/michael/.hub/workspaces/TASK-0010/hub",
+        "-Users-michael--hub-workspaces-TASK-0010-hub"
+    )]
+    #[case::hyphens_are_kept(
+        "/Users/michael/Repos/ooloth/hub-private",
+        "-Users-michael-Repos-ooloth-hub-private"
+    )]
+    #[case::slashes_become_dashes(
+        "/Users/michael/Repos/ooloth/hub",
+        "-Users-michael-Repos-ooloth-hub"
+    )]
+    #[case::empty("", "")]
+    fn a_path_is_encoded_as_claude_code_names_its_project_directory(
+        #[case] path: &str,
+        #[case] encoded: &str,
+    ) {
+        assert_eq!(encode_project_path(path), encoded);
+    }
+
+    const TRANSCRIPT: &str = concat!(
+        "{\"type\":\"permission-mode\",\"permissionMode\":\"bypassPermissions\",\"sessionId\":\"s\"}\n",
+        "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Fix the auth bug\"}}\n",
+        "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"Let me look at auth\",\"signature\":\"sig\"},{\"type\":\"text\",\"text\":\"I'll read the auth file.\"},{\"type\":\"tool_use\",\"id\":\"t1\",\"name\":\"Read\",\"input\":{\"file_path\":\"/src/auth.rs\"}}]}}\n",
+        "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t1\",\"content\":\"pub fn auth() {}\"}]}}\n",
+        "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"t2\",\"name\":\"Bash\",\"input\":{\"command\":\"cargo test\",\"description\":\"run\"}},{\"type\":\"tool_use\",\"id\":\"t3\",\"name\":\"Edit\",\"input\":{\"file_path\":\"/src/auth.rs\",\"old_string\":\"old\",\"new_string\":\"new\"}}]}}\n",
+        "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t2\",\"content\":\"5 passed\"},{\"type\":\"tool_result\",\"tool_use_id\":\"t3\",\"is_error\":true,\"content\":\"not found\"}]}}\n",
+        "{\"type\":\"system\",\"systemPrompt\":\"...\"}\n",
+    );
+
+    fn tool_call(name: &str, summary: &str) -> StreamBlock {
+        StreamBlock::ToolCall {
+            name: name.to_string(),
+            summary: summary.to_string(),
+        }
+    }
+
+    fn tool_result(is_error: bool, content: &str) -> StreamBlock {
+        StreamBlock::ToolResult {
+            is_error,
+            content: content.to_string(),
+        }
+    }
+
     #[test]
-    fn encode_project_path_replaces_slashes_and_dots() {
-        // Must match the directory Claude Code creates for a task worktree under
-        // ~/.hub, e.g. ~/.claude/projects/-Users-michael--hub-workspaces-TASK-0010-hub/
-        // The dot in ".hub" is replaced, so it becomes "--hub".
+    fn a_transcript_reads_as_its_turns_thinking_text_tool_calls_and_results_in_order() {
         assert_eq!(
-            encode_project_path("/Users/michael/.hub/workspaces/TASK-0010/hub"),
-            "-Users-michael--hub-workspaces-TASK-0010-hub"
+            parse_session_jsonl(TRANSCRIPT),
+            vec![
+                StreamBlock::HumanTurn("Fix the auth bug".to_string()),
+                StreamBlock::AssistantThinking("Let me look at auth".to_string()),
+                StreamBlock::AssistantText("I'll read the auth file.".to_string()),
+                tool_call("Read", "/src/auth.rs"),
+                tool_result(false, "pub fn auth() {}"),
+                tool_call("Bash", "cargo test"),
+                tool_call("Edit", "/src/auth.rs"),
+                tool_result(false, "5 passed"),
+                tool_result(true, "not found"),
+            ]
         );
+    }
+
+    #[rstest]
+    #[case::empty("")]
+    #[case::only_unknown_types(
+        "{\"type\":\"permission-mode\"}\n{\"type\":\"system\",\"systemPrompt\":\"...\"}\n{\"type\":\"file-history-snapshot\"}\n{\"type\":\"ai-title\"}"
+    )]
+    fn a_transcript_with_nothing_to_show_reads_as_no_blocks(#[case] jsonl: &str) {
+        assert_eq!(parse_session_jsonl(jsonl), Vec::<StreamBlock>::new());
     }
 
     #[test]
-    fn encode_project_path_preserves_hyphens() {
-        assert_eq!(
-            encode_project_path("/Users/michael/Repos/ooloth/hub-private"),
-            "-Users-michael-Repos-ooloth-hub-private"
-        );
-    }
-
-    // ── encode_project_path ───────────────────────────────────────────────────
-
-    #[test]
-    fn encode_project_path_replaces_slashes_with_dashes() {
-        assert_eq!(
-            encode_project_path("/Users/michael/Repos/ooloth/hub"),
-            "-Users-michael-Repos-ooloth-hub"
-        );
-    }
-
-    #[test]
-    fn encode_project_path_empty_string_returns_empty() {
-        assert_eq!(encode_project_path(""), "");
-    }
-
-    // ── parse_session_jsonl ───────────────────────────────────────────────────
-
-    fn fixture_jsonl() -> &'static str {
-        concat!(
-            "{\"type\":\"permission-mode\",\"permissionMode\":\"bypassPermissions\",\"sessionId\":\"s\"}\n",
-            "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"Fix the auth bug\"}}\n",
-            "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"thinking\",\"thinking\":\"Let me look at auth\",\"signature\":\"sig\"},{\"type\":\"text\",\"text\":\"I'll read the auth file.\"},{\"type\":\"tool_use\",\"id\":\"t1\",\"name\":\"Read\",\"input\":{\"file_path\":\"/src/auth.rs\"}}]}}\n",
-            "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t1\",\"content\":\"pub fn auth() {}\"}]}}\n",
-            "{\"type\":\"assistant\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"tool_use\",\"id\":\"t2\",\"name\":\"Bash\",\"input\":{\"command\":\"cargo test\",\"description\":\"run\"}},{\"type\":\"tool_use\",\"id\":\"t3\",\"name\":\"Edit\",\"input\":{\"file_path\":\"/src/auth.rs\",\"old_string\":\"old\",\"new_string\":\"new\"}}]}}\n",
-            "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t2\",\"content\":\"5 passed\"},{\"type\":\"tool_result\",\"tool_use_id\":\"t3\",\"is_error\":true,\"content\":\"not found\"}]}}\n",
-            "{\"type\":\"system\",\"systemPrompt\":\"...\"}\n",
-        )
-    }
-
-    #[test]
-    fn parse_session_jsonl_produces_correct_block_sequence() {
-        let blocks = parse_session_jsonl(fixture_jsonl());
-        assert_eq!(blocks.len(), 9);
-        assert!(matches!(&blocks[0], StreamBlock::HumanTurn(t) if t == "Fix the auth bug"));
-        assert!(
-            matches!(&blocks[1], StreamBlock::AssistantThinking(t) if t == "Let me look at auth")
-        );
-        assert!(matches!(&blocks[2], StreamBlock::AssistantText(t) if t.contains("read the auth")));
-        assert!(
-            matches!(&blocks[3], StreamBlock::ToolCall { name, summary } if name == "Read" && summary == "/src/auth.rs")
-        );
-        assert!(
-            matches!(&blocks[4], StreamBlock::ToolResult { is_error: false, content } if content == "pub fn auth() {}")
-        );
-        assert!(
-            matches!(&blocks[5], StreamBlock::ToolCall { name, summary } if name == "Bash" && summary == "cargo test")
-        );
-        assert!(
-            matches!(&blocks[6], StreamBlock::ToolCall { name, summary } if name == "Edit" && summary == "/src/auth.rs")
-        );
-        assert!(
-            matches!(&blocks[7], StreamBlock::ToolResult { is_error: false, content } if content == "5 passed")
-        );
-        assert!(
-            matches!(&blocks[8], StreamBlock::ToolResult { is_error: true, content } if content == "not found")
-        );
-    }
-
-    #[test]
-    fn parse_session_jsonl_empty_input_returns_empty_vec() {
-        assert_eq!(parse_session_jsonl("").len(), 0);
-    }
-
-    #[test]
-    fn parse_session_jsonl_ignores_unknown_top_level_types() {
-        let jsonl = "{\"type\":\"permission-mode\"}\n{\"type\":\"system\",\"systemPrompt\":\"...\"}\n{\"type\":\"file-history-snapshot\"}\n{\"type\":\"ai-title\"}";
-        assert_eq!(parse_session_jsonl(jsonl).len(), 0);
-    }
-
-    #[test]
-    fn parse_session_jsonl_tool_result_array_content_is_joined() {
+    fn a_tool_result_given_as_several_texts_reads_as_one_joined_by_newlines() {
         let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t1\",\"content\":[{\"type\":\"text\",\"text\":\"line one\"},{\"type\":\"text\",\"text\":\"line two\"}]}]}}";
-        let blocks = parse_session_jsonl(jsonl);
-        assert_eq!(blocks.len(), 1);
-        assert!(
-            matches!(&blocks[0], StreamBlock::ToolResult { is_error: false, content } if content == "line one\nline two")
+
+        assert_eq!(
+            parse_session_jsonl(jsonl),
+            vec![tool_result(false, "line one\nline two")]
         );
     }
 
     #[test]
-    fn parse_session_jsonl_tool_result_is_error_flag() {
+    fn a_tool_result_marked_as_an_error_reads_as_one() {
         let jsonl = "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"t1\",\"is_error\":true,\"content\":\"boom\"}]}}";
-        let blocks = parse_session_jsonl(jsonl);
-        assert!(matches!(
-            &blocks[0],
-            StreamBlock::ToolResult { is_error: true, .. }
-        ));
+
+        assert_eq!(parse_session_jsonl(jsonl), vec![tool_result(true, "boom")]);
     }
 
     #[test]
-    fn parse_session_jsonl_skips_malformed_json_lines() {
+    fn lines_that_are_not_json_are_skipped() {
         let jsonl = "not json\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"hello\"}}\nalso not json";
-        let blocks = parse_session_jsonl(jsonl);
-        assert_eq!(blocks.len(), 1);
-        assert!(matches!(&blocks[0], StreamBlock::HumanTurn(t) if t == "hello"));
+
+        assert_eq!(
+            parse_session_jsonl(jsonl),
+            vec![StreamBlock::HumanTurn("hello".to_string())]
+        );
     }
 }

@@ -116,6 +116,7 @@ pub fn classify(refresh: Refresh) -> RefreshOutcome {
 mod tests {
     use super::*;
     use domain::known_secrets::KnownSecrets;
+    use rstest::rstest;
 
     use crate::status::{StatusItem, StatusReport};
     use domain::source_outcomes::Reach;
@@ -159,7 +160,7 @@ mod tests {
         }
     }
 
-    #[rstest::rstest]
+    #[rstest]
     #[case::every_source_answered(1, 0)]
     #[case::some_sources_failed_but_others_answered(1, 1)]
     #[case::an_empty_queue_with_no_failures(0, 0)]

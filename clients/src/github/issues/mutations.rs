@@ -125,23 +125,12 @@ mod tests {
             .collect::<Vec<_>>())
     }
 
-    async fn mock_get_labels(server: &MockServer, number: u64, labels: &[&str]) {
+    async fn mock_get_labels(server: &MockServer, number: u64, labels: &[&str], status: u16) {
         Mock::given(matchers::method("GET"))
             .and(matchers::path(format!(
                 "/repos/owner/repo/issues/{number}/labels"
             )))
-            .respond_with(ResponseTemplate::new(200).set_body_json(label_json(labels)))
-            .expect(1)
-            .mount(server)
-            .await;
-    }
-
-    async fn mock_get_labels_fail(server: &MockServer, number: u64) {
-        Mock::given(matchers::method("GET"))
-            .and(matchers::path(format!(
-                "/repos/owner/repo/issues/{number}/labels"
-            )))
-            .respond_with(ResponseTemplate::new(500).set_body_json(serde_json::json!({})))
+            .respond_with(ResponseTemplate::new(status).set_body_json(label_json(labels)))
             .expect(1)
             .mount(server)
             .await;
@@ -183,22 +172,36 @@ mod tests {
             .await;
     }
 
-    #[tokio::test]
-    async fn dismiss_issue_succeeds_without_reason() {
-        let server = MockServer::start().await;
-        mock_get_labels(&server, 7, &["bug"]).await;
-        mock_put_labels(&server, 7, &["wontfix"], 200).await;
-        mock_patch_close(&server, 7, 200).await;
+    /// Fails the test, when the server is dropped, if any request with `method` arrived.
+    async fn refuse_any(server: &MockServer, method: &str) {
+        Mock::given(matchers::method(method))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .expect(0)
+            .mount(server)
+            .await;
+    }
 
-        let result = dismiss_issue_with_base(
+    /// Dismisses issue 7 of `owner/repo` with the `wontfix` label, giving `reason`.
+    async fn dismiss(server: &MockServer, reason: &str) -> Result<()> {
+        dismiss_issue_with_base(
             &server.uri(),
             "token",
             "owner/repo",
             7,
-            "",
+            reason,
             &["wontfix".to_string()],
         )
-        .await;
+        .await
+    }
+
+    #[tokio::test]
+    async fn dismiss_issue_succeeds_without_reason() {
+        let server = MockServer::start().await;
+        mock_get_labels(&server, 7, &["bug"], 200).await;
+        mock_put_labels(&server, 7, &["wontfix"], 200).await;
+        mock_patch_close(&server, 7, 200).await;
+
+        let result = dismiss(&server, "").await;
 
         assert!(result.is_ok());
     }
@@ -206,20 +209,12 @@ mod tests {
     #[tokio::test]
     async fn dismiss_issue_succeeds_with_reason() {
         let server = MockServer::start().await;
-        mock_get_labels(&server, 7, &["bug"]).await;
+        mock_get_labels(&server, 7, &["bug"], 200).await;
         mock_put_labels(&server, 7, &["wontfix"], 200).await;
         mock_post_comment(&server, 7, 201).await;
         mock_patch_close(&server, 7, 200).await;
 
-        let result = dismiss_issue_with_base(
-            &server.uri(),
-            "token",
-            "owner/repo",
-            7,
-            "not planned",
-            &["wontfix".to_string()],
-        )
-        .await;
+        let result = dismiss(&server, "not planned").await;
 
         assert!(result.is_ok());
     }
@@ -227,20 +222,12 @@ mod tests {
     #[tokio::test]
     async fn dismiss_issue_rolls_back_labels_when_comment_fails() {
         let server = MockServer::start().await;
-        mock_get_labels(&server, 7, &["bug"]).await;
+        mock_get_labels(&server, 7, &["bug"], 200).await;
         mock_put_labels(&server, 7, &["wontfix"], 200).await;
         mock_post_comment(&server, 7, 500).await;
         mock_put_labels(&server, 7, &["bug"], 200).await; // rollback restores original
 
-        let result = dismiss_issue_with_base(
-            &server.uri(),
-            "token",
-            "owner/repo",
-            7,
-            "reason",
-            &["wontfix".to_string()],
-        )
-        .await;
+        let result = dismiss(&server, "reason").await;
 
         assert!(result.is_err());
     }
@@ -248,21 +235,13 @@ mod tests {
     #[tokio::test]
     async fn dismiss_issue_rolls_back_labels_when_close_fails() {
         let server = MockServer::start().await;
-        mock_get_labels(&server, 7, &["bug"]).await;
+        mock_get_labels(&server, 7, &["bug"], 200).await;
         mock_put_labels(&server, 7, &["wontfix"], 200).await;
         mock_post_comment(&server, 7, 201).await;
         mock_patch_close(&server, 7, 500).await;
         mock_put_labels(&server, 7, &["bug"], 200).await; // rollback restores original
 
-        let result = dismiss_issue_with_base(
-            &server.uri(),
-            "token",
-            "owner/repo",
-            7,
-            "reason",
-            &["wontfix".to_string()],
-        )
-        .await;
+        let result = dismiss(&server, "reason").await;
 
         assert!(result.is_err());
     }
@@ -270,41 +249,25 @@ mod tests {
     #[tokio::test]
     async fn dismiss_issue_makes_no_writes_when_label_fetch_fails() {
         let server = MockServer::start().await;
-        mock_get_labels_fail(&server, 7).await;
+        mock_get_labels(&server, 7, &[], 500).await;
+        refuse_any(&server, "PUT").await;
+        refuse_any(&server, "POST").await;
+        refuse_any(&server, "PATCH").await;
 
-        let result = dismiss_issue_with_base(
-            &server.uri(),
-            "token",
-            "owner/repo",
-            7,
-            "reason",
-            &["wontfix".to_string()],
-        )
-        .await;
+        let result = dismiss(&server, "reason").await;
 
         assert!(result.is_err());
-        // wiremock's expect(1) on the GET verifies it ran; no PUT/POST/PATCH mocks
-        // are registered, so any unexpected write would produce an error the test
-        // would need to handle — but the function aborts before reaching them.
     }
 
     #[tokio::test]
     async fn dismiss_issue_surfaces_both_errors_when_rollback_also_fails() {
         let server = MockServer::start().await;
-        mock_get_labels(&server, 7, &["bug"]).await;
+        mock_get_labels(&server, 7, &["bug"], 200).await;
         mock_put_labels(&server, 7, &["wontfix"], 200).await;
         mock_patch_close(&server, 7, 500).await;
         mock_put_labels(&server, 7, &["bug"], 500).await; // rollback also fails
 
-        let result = dismiss_issue_with_base(
-            &server.uri(),
-            "token",
-            "owner/repo",
-            7,
-            "",
-            &["wontfix".to_string()],
-        )
-        .await;
+        let result = dismiss(&server, "").await;
 
         let err = result.unwrap_err();
         let msg = format!("{err:#}");

@@ -178,8 +178,7 @@ pub(crate) fn read(conn: &Connection) -> Result<Option<CachedStatus>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::Arc;
+    use std::sync::Barrier;
     use std::thread;
     use std::time::Duration;
 
@@ -247,28 +246,30 @@ mod tests {
 
         let _ = conn1.execute("BEGIN IMMEDIATE", []).unwrap();
 
-        let path_for_writer2 = path;
-        let writer2_finished = Arc::new(AtomicBool::new(false));
-        let writer2_finished_flag = writer2_finished.clone();
+        // Both threads pass the barrier only once writer2 is about to write, so the check
+        // below sees writer2 inside its write rather than not yet started.
+        let about_to_write = Barrier::new(2);
+        thread::scope(|scope| {
+            let writer2 = scope.spawn(|| {
+                let conn2 = Connection::open(&path).unwrap();
+                apply_pragmas(&conn2).unwrap();
+                let _ = about_to_write.wait();
+                upsert(&conn2, r#"{"items":[]}"#, 1)
+            });
 
-        let writer2 = thread::spawn(move || {
-            let conn2 = Connection::open(&path_for_writer2).unwrap();
-            apply_pragmas(&conn2).unwrap();
-            upsert(&conn2, r#"{"items":[]}"#, 1).unwrap();
-            writer2_finished_flag.store(true, Ordering::SeqCst);
+            let _ = about_to_write.wait();
+            thread::sleep(Duration::from_millis(200));
+            assert!(
+                !writer2.is_finished(),
+                "writer2 must be blocked on conn1's transaction"
+            );
+
+            let _ = conn1.execute("COMMIT", []).unwrap();
+            writer2
+                .join()
+                .unwrap()
+                .expect("writer2 must wait for the lock, not fail with SQLITE_BUSY");
         });
-
-        thread::sleep(Duration::from_millis(200));
-        assert!(
-            !writer2_finished.load(Ordering::SeqCst),
-            "writer2 must be blocked on conn1's transaction"
-        );
-
-        let _ = conn1.execute("COMMIT", []).unwrap();
-        writer2
-            .join()
-            .expect("writer2 must not panic with SQLITE_BUSY");
-        assert!(writer2_finished.load(Ordering::SeqCst));
     }
 
     #[test]
@@ -293,14 +294,18 @@ mod tests {
         home.join(".hub").join("hub.db")
     }
 
+    /// Writes a database at `path` holding one row, and closes it.
+    fn seed(path: &Path, payload: &str, schema_version: i32) {
+        let conn = Connection::open(path).unwrap();
+        ensure_table(&conn).unwrap();
+        upsert(&conn, payload, schema_version).unwrap();
+    }
+
     /// Seeds the pre-profile database at `<home>/.hub/hub.db` with one row.
     fn seed_pre_profile_db(home: &Path, payload: &str) -> PathBuf {
         let legacy = pre_profile_db(home);
         std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
-        let src = Connection::open(&legacy).unwrap();
-        ensure_table(&src).unwrap();
-        upsert(&src, payload, 7).unwrap();
-        drop(src);
+        seed(&legacy, payload, 7);
         legacy
     }
 
@@ -357,11 +362,7 @@ mod tests {
         let legacy = tmp.path().join("legacy.db");
         let new = tmp.path().join("new.db");
 
-        // Seed legacy with one row
-        let src = Connection::open(&legacy).unwrap();
-        ensure_table(&src).unwrap();
-        upsert(&src, r#"{"items":[42]}"#, 7).unwrap();
-        drop(src);
+        seed(&legacy, r#"{"items":[42]}"#, 7);
 
         maybe_migrate(&legacy, &new).unwrap();
 
@@ -377,15 +378,8 @@ mod tests {
         let legacy = tmp.path().join("legacy.db");
         let new = tmp.path().join("new.db");
 
-        let src = Connection::open(&legacy).unwrap();
-        ensure_table(&src).unwrap();
-        upsert(&src, r#"{"items":[1]}"#, 1).unwrap();
-        drop(src);
-
-        let dst = Connection::open(&new).unwrap();
-        ensure_table(&dst).unwrap();
-        upsert(&dst, r#"{"items":[99]}"#, 99).unwrap();
-        drop(dst);
+        seed(&legacy, r#"{"items":[1]}"#, 1);
+        seed(&new, r#"{"items":[99]}"#, 99);
 
         // Second call must not overwrite the existing new DB
         maybe_migrate(&legacy, &new).unwrap();

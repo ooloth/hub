@@ -122,12 +122,16 @@ mod tests {
     use crate::investigations::{ci, gcp, issue, loki, pr, LaunchConfig};
     use crate::state::{PrAuthor, PrReview, PrReviewTarget};
     use domain::{InvestigationMcpServers, InvestigationPrompt, McpServer, UntrustedText};
+    use rstest::rstest;
     use std::collections::BTreeMap;
     use std::path::Path;
 
-    fn cwd() -> &'static Path {
-        Path::new("/tmp/hub-test-worktree")
-    }
+    const CWD: &str = "/tmp/hub-test-worktree";
+
+    const DATA_PATH: &str = "/tmp/hub-supporting-data-000.json";
+
+    const CLEANUP: &str =
+        "cd ~ && git -C '/tmp/bare' worktree remove --force '/tmp/wt' 2>/dev/null || true";
 
     fn no_mcp_servers() -> InvestigationMcpServers {
         InvestigationMcpServers::default()
@@ -140,13 +144,6 @@ mod tests {
         )]))
     }
 
-    fn data_path() -> &'static Path {
-        Path::new("/tmp/hub-supporting-data-000.json")
-    }
-
-    const CLEANUP: &str =
-        "cd ~ && git -C '/tmp/bare' worktree remove --force '/tmp/wt' 2>/dev/null || true";
-
     /// A config carrying the given prompt and nothing else of interest, for
     /// the cases about the shape of the invocation rather than a signal type.
     fn plain(prompt: InvestigationPrompt) -> LaunchConfig {
@@ -158,6 +155,34 @@ mod tests {
             allowed_tools: "Bash,Read".to_string(),
             env: vec![],
         }
+    }
+
+    /// A plain config that also sets `key` to `value` in the window.
+    fn with_env(key: &str, value: &str) -> LaunchConfig {
+        LaunchConfig {
+            env: vec![(key.to_string(), value.to_string())],
+            ..plain(InvestigationPrompt::new().instruction("Investigate"))
+        }
+    }
+
+    /// `config` composed with no MCP servers, no cleanup and no supporting data.
+    fn compose_bare(config: LaunchConfig) -> InvestigationCommand {
+        compose(config, Path::new(CWD), &no_mcp_servers(), None, None)
+    }
+
+    /// `config` composed the way every investigation type's snapshot is.
+    fn compose_for_snapshot(
+        config: LaunchConfig,
+        cleanup: Option<&str>,
+        supporting_data: Option<&str>,
+    ) -> String {
+        render(&compose(
+            config,
+            Path::new(CWD),
+            &no_mcp_servers(),
+            cleanup,
+            supporting_data.map(Path::new),
+        ))
     }
 
     fn env_value(command: &InvestigationCommand, key: &str) -> String {
@@ -194,13 +219,7 @@ mod tests {
 
     #[test]
     fn an_empty_task_prompt_produces_no_positional_argument() {
-        let command = compose(
-            plain(InvestigationPrompt::new()),
-            cwd(),
-            &no_mcp_servers(),
-            None,
-            None,
-        );
+        let command = compose_bare(plain(InvestigationPrompt::new()));
         assert!(
             !command.shell.contains("$HUB_TASK_PROMPT"),
             "shell referenced an empty task prompt: {}",
@@ -210,13 +229,9 @@ mod tests {
 
     #[test]
     fn a_task_prompt_is_referenced_by_the_shell_when_present() {
-        let command = compose(
-            plain(InvestigationPrompt::new().instruction("Investigate this")),
-            cwd(),
-            &no_mcp_servers(),
-            None,
-            None,
-        );
+        let command = compose_bare(plain(
+            InvestigationPrompt::new().instruction("Investigate this"),
+        ));
         assert!(command.shell.ends_with(" \"$HUB_TASK_PROMPT\""));
     }
 
@@ -224,13 +239,7 @@ mod tests {
     /// into default mode, where it waits on approvals nobody is watching for.
     #[test]
     fn investigations_run_in_auto_mode_and_never_bypass_permissions() {
-        let command = compose(
-            plain(InvestigationPrompt::new()),
-            cwd(),
-            &no_mcp_servers(),
-            None,
-            None,
-        );
+        let command = compose_bare(plain(InvestigationPrompt::new()));
         assert!(
             command.shell.contains(" --permission-mode auto "),
             "shell did not request auto mode: {}",
@@ -245,33 +254,29 @@ mod tests {
 
     /// A repository's `.mcp.json` is written by whoever wrote the repository,
     /// and approving it would run their commands, so no investigation reads it.
-    #[test]
-    fn investigations_ignore_every_mcp_config_hub_did_not_pass() {
-        for servers in [no_mcp_servers(), atlassian()] {
-            let command = compose(
-                plain(InvestigationPrompt::new()),
-                cwd(),
-                &servers,
-                None,
-                None,
-            );
-            assert!(
-                command.shell.contains(" --strict-mcp-config "),
-                "shell did not ignore other MCP config: {}",
-                command.shell
-            );
-        }
+    #[rstest]
+    #[case::no_servers(no_mcp_servers())]
+    #[case::a_server(atlassian())]
+    fn investigations_ignore_every_mcp_config_hub_did_not_pass(
+        #[case] servers: InvestigationMcpServers,
+    ) {
+        let command = compose(
+            plain(InvestigationPrompt::new()),
+            Path::new(CWD),
+            &servers,
+            None,
+            None,
+        );
+        assert!(
+            command.shell.contains(" --strict-mcp-config "),
+            "shell did not ignore other MCP config: {}",
+            command.shell
+        );
     }
 
     #[test]
     fn a_device_with_no_mcp_servers_passes_none() {
-        let command = compose(
-            plain(InvestigationPrompt::new()),
-            cwd(),
-            &no_mcp_servers(),
-            None,
-            None,
-        );
+        let command = compose_bare(plain(InvestigationPrompt::new()));
         assert!(!command.shell.contains("--mcp-config"), "{}", command.shell);
         assert!(
             !command.env.iter().any(|(key, _)| key == "HUB_MCP_CONFIG"),
@@ -286,7 +291,7 @@ mod tests {
     fn a_device_with_mcp_servers_passes_them_through_the_environment() {
         let command = compose(
             plain(InvestigationPrompt::new().instruction("Investigate this")),
-            cwd(),
+            Path::new(CWD),
             &atlassian(),
             None,
             None,
@@ -307,16 +312,9 @@ mod tests {
     #[test]
     fn shell_syntax_in_untrusted_text_stays_out_of_the_shell_string() {
         let hostile = "$(touch /tmp/hub-injection-probe) `id` \"quoted\"";
-        let command = compose(
-            plain(
-                InvestigationPrompt::new()
-                    .untrusted("loki log message", &UntrustedText::new(hostile)),
-            ),
-            cwd(),
-            &no_mcp_servers(),
-            None,
-            None,
-        );
+        let command = compose_bare(plain(
+            InvestigationPrompt::new().untrusted("loki log message", &UntrustedText::new(hostile)),
+        ));
         assert!(
             !command.shell.contains("touch"),
             "prompt text leaked into the shell string: {}",
@@ -329,16 +327,10 @@ mod tests {
     /// tags have to survive all the way into the value the terminal is handed.
     #[test]
     fn untrusted_text_reaches_the_environment_inside_its_fence() {
-        let command = compose(
-            plain(
-                InvestigationPrompt::new()
-                    .untrusted("loki log message", &UntrustedText::new("OOM killed")),
-            ),
-            cwd(),
-            &no_mcp_servers(),
-            None,
-            None,
-        );
+        let command = compose_bare(plain(
+            InvestigationPrompt::new()
+                .untrusted("loki log message", &UntrustedText::new("OOM killed")),
+        ));
         assert_eq!(
             env_value(&command, "HUB_TASK_PROMPT"),
             "<untrusted-input source=\"loki log message\">\nOOM killed\n</untrusted-input>"
@@ -349,13 +341,9 @@ mod tests {
     /// anyone remembering to copy the paragraph. This config fences nothing.
     #[test]
     fn every_investigation_is_told_how_to_treat_fenced_text() {
-        let command = compose(
-            plain(InvestigationPrompt::new().instruction("Investigate this")),
-            cwd(),
-            &no_mcp_servers(),
-            None,
-            None,
-        );
+        let command = compose_bare(plain(
+            InvestigationPrompt::new().instruction("Investigate this"),
+        ));
         assert!(env_value(&command, "HUB_SYSTEM_PROMPT").contains(UNTRUSTED_INPUT_GUIDANCE));
     }
 
@@ -367,10 +355,10 @@ mod tests {
                     .instruction("Read")
                     .supporting_data_path(),
             ),
-            cwd(),
+            Path::new(CWD),
             &no_mcp_servers(),
             None,
-            Some(data_path()),
+            Some(Path::new(DATA_PATH)),
         );
         assert_eq!(
             env_value(&command, "HUB_TASK_PROMPT"),
@@ -413,7 +401,7 @@ mod tests {
     fn the_cleanup_command_is_appended_to_the_shell_string() {
         let command = compose(
             plain(InvestigationPrompt::new().instruction("Investigate")),
-            cwd(),
+            Path::new(CWD),
             &no_mcp_servers(),
             Some(CLEANUP),
             None,
@@ -423,9 +411,7 @@ mod tests {
 
     #[test]
     fn config_environment_is_passed_through_alongside_the_prompts() {
-        let mut config = plain(InvestigationPrompt::new().instruction("Investigate"));
-        config.env = vec![("SOME_URL".to_string(), "https://example.com".to_string())];
-        let command = compose(config, cwd(), &no_mcp_servers(), None, None);
+        let command = compose_bare(with_env("SOME_URL", "https://example.com"));
         assert_eq!(env_value(&command, "SOME_URL"), "https://example.com");
     }
 
@@ -434,31 +420,23 @@ mod tests {
     fn writing_supporting_data_no_prompt_points_at_is_a_bug() {
         let _ = compose(
             plain(InvestigationPrompt::new().instruction("Investigate")),
-            cwd(),
+            Path::new(CWD),
             &no_mcp_servers(),
             None,
-            Some(data_path()),
+            Some(Path::new(DATA_PATH)),
         );
     }
 
     #[test]
     #[should_panic(expected = "references supporting data but none was written")]
     fn referencing_supporting_data_that_was_never_written_is_a_bug() {
-        let _ = compose(
-            plain(InvestigationPrompt::new().supporting_data_path()),
-            cwd(),
-            &no_mcp_servers(),
-            None,
-            None,
-        );
+        let _ = compose_bare(plain(InvestigationPrompt::new().supporting_data_path()));
     }
 
     #[test]
     #[should_panic(expected = "must not be empty")]
     fn an_empty_environment_key_is_a_bug() {
-        let mut config = plain(InvestigationPrompt::new().instruction("Investigate"));
-        config.env = vec![(String::new(), "value".to_string())];
-        let _ = compose(config, cwd(), &no_mcp_servers(), None, None);
+        let _ = compose_bare(with_env("", "value"));
     }
 
     /// `tmux -e A=B=C` and `env A=B=C` read the key as `A` and the value as `B=C`, so a key
@@ -466,9 +444,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "must not contain '='")]
     fn an_environment_key_containing_an_equals_sign_is_a_bug() {
-        let mut config = plain(InvestigationPrompt::new().instruction("Investigate"));
-        config.env = vec![("A=B".to_string(), "value".to_string())];
-        let _ = compose(config, cwd(), &no_mcp_servers(), None, None);
+        let _ = compose_bare(with_env("A=B", "value"));
     }
 
     /// `UntrustedText::expose` is the escape hatch that would let a prompt be
@@ -535,25 +511,13 @@ mod tests {
             "ooloth/hub",
             "https://github.com/ooloth/hub/actions/runs/123",
         );
-        insta::assert_snapshot!(render(&compose(
-            config,
-            cwd(),
-            &no_mcp_servers(),
-            Some(CLEANUP),
-            None
-        )));
+        insta::assert_snapshot!(compose_for_snapshot(config, Some(CLEANUP), None));
     }
 
     #[test]
     fn issue_investigation_command() {
         let config = issue::config("ooloth/hub", 42);
-        insta::assert_snapshot!(render(&compose(
-            config,
-            cwd(),
-            &no_mcp_servers(),
-            Some(CLEANUP),
-            None
-        )));
+        insta::assert_snapshot!(compose_for_snapshot(config, Some(CLEANUP), None));
     }
 
     #[test]
@@ -567,13 +531,7 @@ mod tests {
             "https://grafana.example.com/explore",
             "15m",
         );
-        insta::assert_snapshot!(render(&compose(
-            config,
-            cwd(),
-            &no_mcp_servers(),
-            Some(CLEANUP),
-            Some(data_path())
-        )));
+        insta::assert_snapshot!(compose_for_snapshot(config, Some(CLEANUP), Some(DATA_PATH)));
     }
 
     /// A log line that tries to talk its way out of the fence. Pinned as a
@@ -592,13 +550,7 @@ mod tests {
             "https://grafana.example.com/explore",
             "15m",
         );
-        insta::assert_snapshot!(render(&compose(
-            config,
-            cwd(),
-            &no_mcp_servers(),
-            Some(CLEANUP),
-            Some(data_path())
-        )));
+        insta::assert_snapshot!(compose_for_snapshot(config, Some(CLEANUP), Some(DATA_PATH)));
     }
 
     #[test]
@@ -615,54 +567,39 @@ mod tests {
             "15m",
             "my-gcp-project",
         );
-        insta::assert_snapshot!(render(&compose(
-            config,
-            cwd(),
-            &no_mcp_servers(),
-            Some(CLEANUP),
-            Some(data_path())
-        )));
+        insta::assert_snapshot!(compose_for_snapshot(config, Some(CLEANUP), Some(DATA_PATH)));
     }
 
     #[test]
     fn pr_ask_investigation_command() {
         let config = pr::ask_config(7, "ooloth/hub", PrAuthor::Peer);
-        insta::assert_snapshot!(render(&compose(
-            config,
-            cwd(),
-            &no_mcp_servers(),
-            None,
-            None
-        )));
+        insta::assert_snapshot!(compose_for_snapshot(config, None, None));
+    }
+
+    fn my_pr() -> PrReviewTarget {
+        PrReviewTarget {
+            repo: "ooloth/hub".to_string(),
+            number: 7,
+            head_branch: "feature".to_string(),
+            author: PrAuthor::Me,
+        }
     }
 
     #[test]
     fn pr_review_investigation_command_with_an_mcp_server() {
-        let target = PrReviewTarget {
-            repo: "ooloth/hub".to_string(),
-            number: 7,
-            head_branch: "feature".to_string(),
-            author: PrAuthor::Me,
-        };
-        let config = pr::review_config(&target, PrReview::ReviewMine);
-        insta::assert_snapshot!(render(&compose(config, cwd(), &atlassian(), None, None)));
+        let config = pr::review_config(&my_pr(), PrReview::ReviewMine);
+        insta::assert_snapshot!(render(&compose(
+            config,
+            Path::new(CWD),
+            &atlassian(),
+            None,
+            None
+        )));
     }
 
     #[test]
     fn pr_review_investigation_command() {
-        let target = PrReviewTarget {
-            repo: "ooloth/hub".to_string(),
-            number: 7,
-            head_branch: "feature".to_string(),
-            author: PrAuthor::Me,
-        };
-        let config = pr::review_config(&target, PrReview::ReviewMine);
-        insta::assert_snapshot!(render(&compose(
-            config,
-            cwd(),
-            &no_mcp_servers(),
-            None,
-            None
-        )));
+        let config = pr::review_config(&my_pr(), PrReview::ReviewMine);
+        insta::assert_snapshot!(compose_for_snapshot(config, None, None));
     }
 }

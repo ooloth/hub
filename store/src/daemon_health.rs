@@ -553,6 +553,13 @@ mod tests {
         }
     }
 
+    /// A pass in which every source failed, so the payload was kept.
+    fn kept_pass() -> Pass {
+        pass(PassOutcome::Kept {
+            sources: sources(&[], &["a"]),
+        })
+    }
+
     fn payload(json: &str) -> Payload {
         Payload {
             json: json.to_string(),
@@ -686,29 +693,57 @@ mod tests {
         let _ = record(&conn, &pass(outcome), SCHEDULE, Some(&payload("{}")));
     }
 
-    /// Inserts a row that is valid except for `column = value`.
-    fn insert_with(conn: &Connection, column: &str, value: &str) -> rusqlite::Result<usize> {
-        let mut row = vec![
-            ("id", "1"),
-            ("schema_version", "1"),
-            ("started_at", "'2025-10-09T08:53:20+00:00'"),
-            ("duration_ms", "6412"),
-            ("pid", "4242"),
-            ("interval_ms", "900000"),
-            ("outcome", "'partial'"),
-            ("payload_written", "1"),
-            ("items", "3"),
-            ("answered", r#"'["a"]'"#),
-            ("failed", r#"'[{"source":"b","reason":"down"}]'"#),
-            ("error", "NULL"),
-        ];
-        for (name, cell) in &mut row {
-            if *name == column {
-                *cell = value;
-            }
-        }
-        let columns: Vec<&str> = row.iter().map(|(name, _)| *name).collect();
-        let values: Vec<&str> = row.iter().map(|(_, cell)| *cell).collect();
+    /// A pass's row that every CHECK accepts.
+    const PASS_ROW: &[(&str, &str)] = &[
+        ("id", "1"),
+        ("schema_version", "1"),
+        ("started_at", "'2025-10-09T08:53:20+00:00'"),
+        ("duration_ms", "6412"),
+        ("pid", "4242"),
+        ("interval_ms", "900000"),
+        ("outcome", "'partial'"),
+        ("payload_written", "1"),
+        ("items", "3"),
+        ("answered", r#"'["a"]'"#),
+        ("failed", r#"'[{"source":"b","reason":"down"}]'"#),
+        ("error", "NULL"),
+    ];
+
+    /// A credential attempt's row that every CHECK accepts.
+    const CREDENTIAL_ROW: &[(&str, &str)] = &[
+        ("id", "1"),
+        ("schema_version", "6"),
+        ("started_at", "'2025-10-09T08:53:20+00:00'"),
+        ("duration_ms", "812"),
+        ("pid", "4242"),
+        ("outcome", "'credentials_unreachable'"),
+        ("payload_written", "0"),
+        ("items", "NULL"),
+        ("answered", "'[]'"),
+        ("failed", "'[]'"),
+        ("error", "'dial tcp'"),
+        ("opened_app", "NULL"),
+        ("open_error", "NULL"),
+        ("notified", "NULL"),
+        ("notify_error", "NULL"),
+    ];
+
+    /// Inserts `baseline`, with each `(column, value)` in `changes` in place of the baseline's.
+    fn insert_row(
+        conn: &Connection,
+        baseline: &[(&str, &str)],
+        changes: &[(&str, &str)],
+    ) -> rusqlite::Result<usize> {
+        let columns: Vec<&str> = baseline.iter().map(|(name, _)| *name).collect();
+        let values: Vec<&str> = baseline
+            .iter()
+            .map(
+                |(name, cell)| match changes.iter().find(|(column, _)| column == name) {
+                    Some((_, value)) => *value,
+                    None => *cell,
+                },
+            )
+            .collect();
         conn.execute(
             &format!(
                 "INSERT INTO daemon_health ({}) VALUES ({})",
@@ -723,7 +758,7 @@ mod tests {
     fn the_baseline_row_the_refusals_vary_is_accepted() {
         let conn = in_memory();
 
-        assert!(insert_with(&conn, "id", "1").is_ok());
+        assert!(insert_row(&conn, PASS_ROW, &[]).is_ok());
     }
 
     #[rstest]
@@ -743,7 +778,7 @@ mod tests {
     fn a_row_that_contradicts_itself_is_refused(#[case] column: &str, #[case] value: &str) {
         let conn = in_memory();
 
-        let result = insert_with(&conn, column, value);
+        let result = insert_row(&conn, PASS_ROW, &[(column, value)]);
 
         assert!(result.is_err(), "{column} = {value} was accepted");
     }
@@ -833,14 +868,16 @@ mod tests {
         #[case] outcome: &str,
     ) {
         let conn = in_memory();
-        let mut attempt = credential_attempt("unused", None);
-        attempt.failure = CredentialFailure::no_answer(
-            "op://Scripts/GitHub/token",
-            Duration::from_secs(90),
-            &screen,
-            &no_secrets(),
-            OpSpawn::Inherited,
-        );
+        let attempt = CredentialAttempt {
+            failure: CredentialFailure::no_answer(
+                "op://Scripts/GitHub/token",
+                Duration::from_secs(90),
+                &screen,
+                &no_secrets(),
+                OpSpawn::Inherited,
+            ),
+            ..credential_attempt("unused", None)
+        };
 
         record_credential_attempt(&conn, &attempt, SCHEDULE).unwrap();
 
@@ -866,11 +903,13 @@ mod tests {
         #[case] open_error: Option<&str>,
     ) {
         let conn = in_memory();
-        let mut attempt = credential_attempt(
-            "1Password CLI couldn't connect to the 1Password desktop app.",
-            Some(Duration::from_secs(1)),
-        );
-        attempt.opened_app = opened_app;
+        let attempt = CredentialAttempt {
+            opened_app,
+            ..credential_attempt(
+                "1Password CLI couldn't connect to the 1Password desktop app.",
+                Some(Duration::from_secs(1)),
+            )
+        };
 
         record_credential_attempt(&conn, &attempt, SCHEDULE).unwrap();
 
@@ -883,22 +922,16 @@ mod tests {
     #[test]
     fn a_pass_after_opening_the_app_clears_what_opening_recorded() {
         let conn = in_memory();
-        let mut attempt = credential_attempt(
-            "1Password CLI couldn't connect to the 1Password desktop app.",
-            Some(Duration::from_secs(1)),
-        );
-        attempt.opened_app = Some(AppOpening::Opened);
+        let attempt = CredentialAttempt {
+            opened_app: Some(AppOpening::Opened),
+            ..credential_attempt(
+                "1Password CLI couldn't connect to the 1Password desktop app.",
+                Some(Duration::from_secs(1)),
+            )
+        };
         record_credential_attempt(&conn, &attempt, SCHEDULE).unwrap();
 
-        record(
-            &conn,
-            &pass(PassOutcome::Kept {
-                sources: sources(&[], &["a"]),
-            }),
-            SCHEDULE,
-            None,
-        )
-        .unwrap();
+        record(&conn, &kept_pass(), SCHEDULE, None).unwrap();
 
         assert_eq!(recorded_row(&conn).opened_app, None);
     }
@@ -917,8 +950,10 @@ mod tests {
         #[case] notify_error: Option<&str>,
     ) {
         let conn = in_memory();
-        let mut attempt = credential_attempt("dial tcp", Some(Duration::from_secs(1)));
-        attempt.notified = notified;
+        let attempt = CredentialAttempt {
+            notified,
+            ..credential_attempt("dial tcp", Some(Duration::from_secs(1)))
+        };
 
         record_credential_attempt(&conn, &attempt, SCHEDULE).unwrap();
 
@@ -930,19 +965,13 @@ mod tests {
     #[test]
     fn a_pass_after_notifying_clears_what_notifying_recorded() {
         let conn = in_memory();
-        let mut attempt = credential_attempt("dial tcp", Some(Duration::from_secs(1)));
-        attempt.notified = Some(Notifying::Sent);
+        let attempt = CredentialAttempt {
+            notified: Some(Notifying::Sent),
+            ..credential_attempt("dial tcp", Some(Duration::from_secs(1)))
+        };
         record_credential_attempt(&conn, &attempt, SCHEDULE).unwrap();
 
-        record(
-            &conn,
-            &pass(PassOutcome::Kept {
-                sources: sources(&[], &["a"]),
-            }),
-            SCHEDULE,
-            None,
-        )
-        .unwrap();
+        record(&conn, &kept_pass(), SCHEDULE, None).unwrap();
 
         assert_eq!(recorded_row(&conn).notified, None);
     }
@@ -960,50 +989,11 @@ mod tests {
         );
     }
 
-    /// Inserts a credential attempt's row, valid except for each `(column, value)` in `changes`.
-    fn insert_credential_row(
-        conn: &Connection,
-        changes: &[(&str, &str)],
-    ) -> rusqlite::Result<usize> {
-        let mut row = vec![
-            ("id", "1"),
-            ("schema_version", "6"),
-            ("started_at", "'2025-10-09T08:53:20+00:00'"),
-            ("duration_ms", "812"),
-            ("pid", "4242"),
-            ("outcome", "'credentials_unreachable'"),
-            ("payload_written", "0"),
-            ("items", "NULL"),
-            ("answered", "'[]'"),
-            ("failed", "'[]'"),
-            ("error", "'dial tcp'"),
-            ("opened_app", "NULL"),
-            ("open_error", "NULL"),
-            ("notified", "NULL"),
-            ("notify_error", "NULL"),
-        ];
-        for (name, cell) in &mut row {
-            if let Some((_, value)) = changes.iter().find(|(column, _)| column == name) {
-                *cell = value;
-            }
-        }
-        let columns: Vec<&str> = row.iter().map(|(name, _)| *name).collect();
-        let values: Vec<&str> = row.iter().map(|(_, cell)| *cell).collect();
-        conn.execute(
-            &format!(
-                "INSERT INTO daemon_health ({}) VALUES ({})",
-                columns.join(", "),
-                values.join(", ")
-            ),
-            [],
-        )
-    }
-
     #[test]
     fn the_baseline_credential_row_the_refusals_vary_is_accepted() {
         let conn = in_memory();
 
-        assert!(insert_credential_row(&conn, &[]).is_ok());
+        assert!(insert_row(&conn, CREDENTIAL_ROW, &[]).is_ok());
     }
 
     #[rstest]
@@ -1022,15 +1012,23 @@ mod tests {
     fn a_credential_row_that_contradicts_itself_is_refused(#[case] changes: &[(&str, &str)]) {
         let conn = in_memory();
 
-        let result = insert_credential_row(&conn, changes);
+        let result = insert_row(&conn, CREDENTIAL_ROW, changes);
 
         assert!(result.is_err(), "{changes:?} was accepted");
     }
 
     #[test]
-    fn the_same_text_always_has_the_same_fingerprint() {
-        assert_eq!(fingerprint(CREATE_TABLE), fingerprint(CREATE_TABLE));
-        assert_eq!(fingerprint(CREATE_TABLE), SCHEMA_VERSION);
+    fn the_schema_version_is_the_fingerprint_of_this_text() {
+        assert_eq!(SCHEMA_VERSION, fingerprint(CREATE_TABLE));
+    }
+
+    #[test]
+    fn an_edit_that_keeps_the_texts_length_changes_its_fingerprint() {
+        let edited = CREATE_TABLE.replacen("'ok'", "'no'", 1);
+        assert_ne!(edited, CREATE_TABLE, "the edited text should differ");
+        assert_eq!(edited.len(), CREATE_TABLE.len());
+
+        assert_ne!(fingerprint(&edited), fingerprint(CREATE_TABLE));
     }
 
     #[test]
@@ -1047,7 +1045,12 @@ mod tests {
         status_cache::ensure_table(&conn).unwrap();
         let older = CREATE_TABLE.replace("'credentials_no_accounts', ", "");
         conn.execute_batch(&older).unwrap();
-        let _ = insert_with(&conn, "schema_version", &fingerprint(&older).to_string()).unwrap();
+        let _ = insert_row(
+            &conn,
+            PASS_ROW,
+            &[("schema_version", &fingerprint(&older).to_string())],
+        )
+        .unwrap();
 
         ensure_table(&conn).unwrap();
 
@@ -1066,15 +1069,7 @@ mod tests {
     #[test]
     fn a_table_from_another_schema_version_is_recreated_empty() {
         let conn = in_memory();
-        record(
-            &conn,
-            &pass(PassOutcome::Kept {
-                sources: sources(&[], &["a"]),
-            }),
-            SCHEDULE,
-            None,
-        )
-        .unwrap();
+        record(&conn, &kept_pass(), SCHEDULE, None).unwrap();
         conn.execute_batch("UPDATE daemon_health SET schema_version = 0")
             .unwrap();
 
@@ -1091,21 +1086,13 @@ mod tests {
 
         ensure_table(&conn).unwrap();
 
-        assert!(insert_with(&conn, "id", "1").is_ok());
+        assert!(insert_row(&conn, PASS_ROW, &[]).is_ok());
     }
 
     #[test]
     fn a_table_of_this_schema_version_keeps_its_row() {
         let conn = in_memory();
-        record(
-            &conn,
-            &pass(PassOutcome::Kept {
-                sources: sources(&[], &["a"]),
-            }),
-            SCHEDULE,
-            None,
-        )
-        .unwrap();
+        record(&conn, &kept_pass(), SCHEDULE, None).unwrap();
 
         ensure_table(&conn).unwrap();
 

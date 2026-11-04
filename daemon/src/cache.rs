@@ -137,14 +137,16 @@ mod tests {
         (dir, path)
     }
 
-    fn opener(path: &Path) -> impl Fn() -> Result<Connection> + '_ {
-        move || Ok(Connection::open(path)?)
+    fn opener(path: &Path) -> impl Fn() -> Result<Connection> {
+        let path = path.to_path_buf();
+        move || Ok(Connection::open(&path)?)
     }
 
-    fn read_only(path: &Path) -> impl Fn() -> Result<Connection> + '_ {
+    fn read_only(path: &Path) -> impl Fn() -> Result<Connection> {
+        let path = path.to_path_buf();
         move || {
             Ok(Connection::open_with_flags(
-                path,
+                &path,
                 OpenFlags::SQLITE_OPEN_READ_ONLY,
             )?)
         }
@@ -279,8 +281,9 @@ mod tests {
         );
 
         assert_eq!(recording, Recording::Recorded);
-        assert_eq!(health(&path).started_at, "1970-01-01T00:33:20+00:00");
-        assert_eq!(health(&path).outcome, "no_source_answered");
+        let row = health(&path);
+        assert_eq!(row.started_at, "1970-01-01T00:33:20+00:00");
+        assert_eq!(row.outcome, "no_source_answered");
         let after = cached(&path);
         assert_eq!(after.payload, before.payload);
         assert_eq!(after.schema_version, before.schema_version);
@@ -444,9 +447,7 @@ mod tests {
         let error = record_credential_attempt(opener(&path), &credential_attempt(), SCHEDULE);
 
         assert_eq!(error, None);
-        let conn = Connection::open(&path).unwrap();
-        let recorded = store::daemon_health::recorded(&conn).unwrap().unwrap();
-        assert_eq!(recorded.outcome, "credentials_unreachable");
+        assert_eq!(health(&path).outcome, "credentials_unreachable");
     }
 
     #[test]

@@ -419,8 +419,6 @@ impl fmt::Display for NotificationRemoval {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
-
     use chrono::TimeZone;
     use domain::known_secrets::KnownSecrets;
     use domain::op_spawn::OpSpawn;
@@ -541,8 +539,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn unanswered_prompts_then_approval_give_credentials_with_each_wait_recorded() {
-        let recorded = Arc::new(Mutex::new(Vec::new()));
-        let log = Arc::clone(&recorded);
+        let mut recorded = Vec::new();
         let resolve = failing_then(vec![failure(UNANSWERED), failure(UNANSWERED)], "secrets");
 
         let obtained = obtain(
@@ -550,26 +547,21 @@ mod tests {
             Retries::until_obtained(),
             &mut never_opens(),
             &mut never_posts(),
-            move |attempt| {
-                log.lock()
-                    .unwrap()
-                    .push((attempt.failure.cause(), attempt.retry_in));
-            },
+            |attempt| recorded.push((attempt.failure.cause(), attempt.retry_in)),
         )
         .await;
 
         assert_eq!(
             obtained,
             Some(Obtained {
-                credentials: "secrets",
+                credentials: "secrets".to_string(),
                 attempt: 3
             })
         );
         // Each stubbed attempt takes almost no time, so each wait is nearly the whole minute,
         // where the backoff would have waited 1 then 2 seconds.
-        let recorded = recorded.lock().unwrap();
         assert_eq!(recorded.len(), 2);
-        for (cause, wait) in recorded.iter() {
+        for (cause, wait) in &recorded {
             assert_eq!(*cause, CredentialCause::TouchIdPromptUnanswered);
             let wait = wait.expect("retried");
             assert!(
@@ -580,15 +572,6 @@ mod tests {
     }
 
     type OpenResult = std::future::Ready<anyhow::Result<()>>;
-
-    /// An opener whose open always succeeds, counting its calls in `opens`.
-    fn counting_opener(opens: &Arc<Mutex<u32>>) -> AppOpener<impl FnMut() -> OpenResult> {
-        let opens = Arc::clone(opens);
-        AppOpener::new(move || {
-            *opens.lock().unwrap() += 1;
-            std::future::ready(Ok(()))
-        })
-    }
 
     fn never_opens() -> AppOpener<impl FnMut() -> OpenResult> {
         AppOpener::new(|| -> OpenResult { panic!("opened the app") })
@@ -603,42 +586,25 @@ mod tests {
         )
     }
 
-    /// A notifier that records every notification it posts in `posted`, with the real timing.
-    fn recording_notifier(
-        posted: &Arc<Mutex<Vec<Notification>>>,
-    ) -> Notifier<impl FnMut(Notification) -> OpenResult, impl FnMut() -> OpenResult> {
-        let posted = Arc::clone(posted);
-        Notifier::new(
-            move |notification| {
-                posted.lock().unwrap().push(notification);
-                std::future::ready(Ok(()))
-            },
-            || std::future::ready(Ok(())),
-        )
-    }
-
     /// What each failed attempt recorded about notifying, for `failures` each taking `takes`.
     async fn notified_for(
         failures: Vec<CredentialFailure>,
         takes: Duration,
-        notifier: &mut Notifier<
-            impl FnMut(Notification) -> OpenResult + Send,
-            impl FnMut() -> OpenResult + Send,
-        >,
+        notifier: &mut Notifier<impl FnMut(Notification) -> OpenResult, impl FnMut() -> OpenResult>,
     ) -> Vec<Option<Notifying>> {
-        let recorded = Arc::new(Mutex::new(Vec::new()));
-        let log = Arc::clone(&recorded);
-        let resolve = failing_slowly_then(failures, takes, "secrets");
+        let mut recorded = Vec::new();
         let obtained = obtain(
-            resolve,
+            failing_slowly_then(failures, takes, "secrets"),
             Retries::until_obtained(),
             &mut never_opens(),
             notifier,
-            move |attempt| log.lock().unwrap().push(attempt.notified.clone()),
+            |attempt| recorded.push(attempt.notified.clone()),
         )
         .await;
-        assert_eq!(obtained.map(|got| got.credentials), Some("secrets"));
-        let recorded = recorded.lock().unwrap().clone();
+        assert_eq!(
+            obtained.map(|got| got.credentials),
+            Some("secrets".to_string())
+        );
         recorded
     }
 
@@ -646,7 +612,14 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn nothing_is_posted_before_ten_minutes_and_one_is_after() {
-        let posted = Arc::new(Mutex::new(Vec::new()));
+        let mut posted = Vec::new();
+        let mut recording = Notifier::new(
+            |notification| {
+                posted.push(notification);
+                std::future::ready(Ok(()))
+            },
+            || std::future::ready(Ok(())),
+        );
         // Failures end at about 4, 8, 12 and 16 minutes; ten minutes after the first is 14.
         let notified = notified_for(
             vec![
@@ -656,25 +629,27 @@ mod tests {
                 failure(NETWORK),
             ],
             Duration::from_mins(4),
-            &mut recording_notifier(&posted),
+            &mut recording,
         )
         .await;
 
         assert_eq!(notified, vec![None, None, None, Some(Notifying::Sent)]);
         assert_eq!(
-            *posted.lock().unwrap(),
+            posted,
             vec![Notification::for_cause(CredentialCause::Unreachable)]
         );
     }
 
     #[tokio::test(start_paused = true)]
     async fn while_credentials_stay_missing_another_is_posted_each_hour() {
-        let posted = Arc::new(Mutex::new(Vec::new()));
         // Failures end about every 25 minutes: at 25, 50, 75, 100, 125 and 150.
         let notified = notified_for(
             (0..6).map(|_| failure(NETWORK)).collect(),
             Duration::from_mins(25),
-            &mut recording_notifier(&posted),
+            &mut Notifier::new(
+                |_| std::future::ready(Ok(())),
+                || std::future::ready(Ok(())),
+            ),
         )
         .await;
 
@@ -691,48 +666,43 @@ mod tests {
         );
     }
 
-    /// A notifier that posts at once and counts its removals in `removals`.
-    fn removal_counting_notifier(
-        removals: &Arc<Mutex<u32>>,
-    ) -> Notifier<impl FnMut(Notification) -> OpenResult, impl FnMut() -> OpenResult> {
-        let removals = Arc::clone(removals);
-        Notifier::with_timing(
+    #[tokio::test(start_paused = true)]
+    async fn once_credentials_arrive_a_posted_notification_is_removed_once() {
+        let mut removals = 0;
+        let mut notifier = Notifier::with_timing(
             |_| std::future::ready(Ok(())),
-            move || {
-                *removals.lock().unwrap() += 1;
+            || {
+                removals += 1;
                 std::future::ready(Ok(()))
             },
             Duration::ZERO,
             Duration::from_hours(1),
-        )
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn once_credentials_arrive_a_posted_notification_is_removed_once() {
-        let removals = Arc::new(Mutex::new(0));
-        let mut notifier = removal_counting_notifier(&removals);
+        );
         let _ = notified_for(vec![failure(NETWORK)], Duration::ZERO, &mut notifier).await;
 
         let cleared = notifier.clear().await;
+        let cleared_again = notifier.clear().await;
 
         assert!(matches!(cleared, Some(Ok(()))), "{cleared:?}");
-        assert_eq!(*removals.lock().unwrap(), 1);
-        assert!(notifier.clear().await.is_none(), "removed twice");
+        assert!(cleared_again.is_none(), "removed twice");
+        assert_eq!(removals, 1);
     }
 
     #[tokio::test(start_paused = true)]
     async fn nothing_is_removed_when_nothing_was_posted() {
-        let removals = Arc::new(Mutex::new(0));
-        let mut notifier = Notifier::new(|_| std::future::ready(Ok(())), {
-            let removals = Arc::clone(&removals);
-            move || {
-                *removals.lock().unwrap() += 1;
+        let mut removals = 0;
+        let mut notifier = Notifier::new(
+            |_| std::future::ready(Ok(())),
+            || {
+                removals += 1;
                 std::future::ready(Ok(()))
-            }
-        });
+            },
+        );
 
-        assert!(notifier.clear().await.is_none());
-        assert_eq!(*removals.lock().unwrap(), 0);
+        let cleared = notifier.clear().await;
+
+        assert!(cleared.is_none());
+        assert_eq!(removals, 0);
     }
 
     #[tokio::test(start_paused = true)]
@@ -785,30 +755,54 @@ mod tests {
     const APP_QUIT: &str =
         "connecting to desktop app: 1Password CLI couldn't connect to the 1Password desktop app.";
 
+    /// The next of `failures` as an error, or `credentials` once they have run out.
+    fn next_or(
+        failures: &mut std::vec::IntoIter<CredentialFailure>,
+        credentials: &str,
+    ) -> Result<String, CredentialFailure> {
+        match failures.next() {
+            Some(failure) => Err(failure),
+            None => Ok(credentials.to_string()),
+        }
+    }
+
     /// A resolver that fails with `failures` in order, each after `takes`, then returns
     /// `credentials`.
     fn failing_slowly_then(
         failures: Vec<CredentialFailure>,
         takes: Duration,
-        credentials: &'static str,
-    ) -> impl FnMut() -> std::pin::Pin<
-        Box<dyn Future<Output = Result<&'static str, CredentialFailure>> + Send>,
-    > {
+        credentials: &str,
+    ) -> impl FnMut() -> std::pin::Pin<Box<dyn Future<Output = Result<String, CredentialFailure>> + Send>>
+    {
         let mut failures = failures.into_iter();
+        let credentials = credentials.to_string();
         move || {
-            let next = failures.next();
+            let next = next_or(&mut failures, &credentials);
             Box::pin(async move {
                 tokio::time::sleep(takes).await;
-                next.map_or(Ok(credentials), Err)
+                next
             })
         }
     }
 
+    /// A resolver that fails with `failures` in order, then returns `credentials`.
+    fn failing_then(
+        failures: Vec<CredentialFailure>,
+        credentials: &str,
+    ) -> impl FnMut() -> std::future::Ready<Result<String, CredentialFailure>> {
+        let mut failures = failures.into_iter();
+        let credentials = credentials.to_string();
+        move || std::future::ready(next_or(&mut failures, &credentials))
+    }
+
     #[tokio::test(start_paused = true)]
     async fn the_app_is_opened_on_the_first_quit_attempt_and_not_again_within_a_minute() {
-        let opens = Arc::new(Mutex::new(0));
-        let recorded = Arc::new(Mutex::new(Vec::new()));
-        let log = Arc::clone(&recorded);
+        let mut opens = 0;
+        let mut opener = AppOpener::new(|| {
+            opens += 1;
+            std::future::ready(Ok(()))
+        });
+        let mut recorded = Vec::new();
         let resolve = failing_then(
             vec![failure(APP_QUIT), failure(APP_QUIT), failure(APP_QUIT)],
             "secrets",
@@ -817,25 +811,27 @@ mod tests {
         let obtained = obtain(
             resolve,
             Retries::until_obtained(),
-            &mut counting_opener(&opens),
+            &mut opener,
             &mut never_posts(),
-            move |attempt| {
-                log.lock().unwrap().push(attempt.opened_app.clone());
-            },
+            |attempt| recorded.push(attempt.opened_app.clone()),
         )
         .await;
 
-        assert_eq!(obtained.map(|got| got.credentials), Some("secrets"));
-        assert_eq!(*opens.lock().unwrap(), 1);
         assert_eq!(
-            *recorded.lock().unwrap(),
-            vec![Some(AppOpening::Opened), None, None]
+            obtained.map(|got| got.credentials),
+            Some("secrets".to_string())
         );
+        assert_eq!(opens, 1);
+        assert_eq!(recorded, vec![Some(AppOpening::Opened), None, None]);
     }
 
     #[tokio::test(start_paused = true)]
     async fn the_app_is_opened_again_once_a_minute_has_passed() {
-        let opens = Arc::new(Mutex::new(0));
+        let mut opens = 0;
+        let mut opener = AppOpener::new(|| {
+            opens += 1;
+            std::future::ready(Ok(()))
+        });
         // Attempts start at 0 s, about 41 s and about 83 s.
         let resolve = failing_slowly_then(
             vec![failure(APP_QUIT), failure(APP_QUIT), failure(APP_QUIT)],
@@ -846,13 +842,13 @@ mod tests {
         let _ = obtain(
             resolve,
             Retries::until_obtained(),
-            &mut counting_opener(&opens),
+            &mut opener,
             &mut never_posts(),
             |_| {},
         )
         .await;
 
-        assert_eq!(*opens.lock().unwrap(), 2);
+        assert_eq!(opens, 2);
     }
 
     #[rstest]
@@ -872,13 +868,15 @@ mod tests {
         )
         .await;
 
-        assert_eq!(obtained.map(|got| got.credentials), Some("secrets"));
+        assert_eq!(
+            obtained.map(|got| got.credentials),
+            Some("secrets".to_string())
+        );
     }
 
     #[tokio::test(start_paused = true)]
     async fn a_failed_open_is_recorded_and_the_daemon_keeps_trying() {
-        let recorded = Arc::new(Mutex::new(Vec::new()));
-        let log = Arc::clone(&recorded);
+        let mut recorded = Vec::new();
         let mut opener = AppOpener::new(|| {
             std::future::ready(Err(anyhow::anyhow!("LSOpenURLsWithRole() failed")))
         });
@@ -889,15 +887,16 @@ mod tests {
             Retries::until_obtained(),
             &mut opener,
             &mut never_posts(),
-            move |attempt| {
-                log.lock().unwrap().push(attempt.opened_app.clone());
-            },
+            |attempt| recorded.push(attempt.opened_app.clone()),
         )
         .await;
 
-        assert_eq!(obtained.map(|got| got.credentials), Some("secrets"));
         assert_eq!(
-            *recorded.lock().unwrap(),
+            obtained.map(|got| got.credentials),
+            Some("secrets".to_string())
+        );
+        assert_eq!(
+            recorded,
             vec![Some(AppOpening::failed(
                 &anyhow::anyhow!("LSOpenURLsWithRole() failed"),
                 &no_secrets()
@@ -905,19 +904,9 @@ mod tests {
         );
     }
 
-    /// A resolver that fails with `failures` in order, then returns `credentials`.
-    fn failing_then(
-        failures: Vec<CredentialFailure>,
-        credentials: &'static str,
-    ) -> impl FnMut() -> std::future::Ready<Result<&'static str, CredentialFailure>> {
-        let mut failures = failures.into_iter();
-        move || std::future::ready(failures.next().map_or(Ok(credentials), Err))
-    }
-
     #[tokio::test(start_paused = true)]
     async fn credentials_arrive_after_every_failed_attempt_is_recorded_in_order() {
-        let recorded = Arc::new(Mutex::new(Vec::new()));
-        let log = Arc::clone(&recorded);
+        let mut recorded = Vec::new();
         let resolve = failing_then(
             vec![failure("dial tcp"), failure("desktop"), failure("dial tcp")],
             "secrets",
@@ -928,17 +917,16 @@ mod tests {
             Retries::until_obtained(),
             &mut never_opens(),
             &mut never_posts(),
-            move |attempt| {
-                log.lock()
-                    .unwrap()
-                    .push((attempt.attempt, attempt.retry_in));
-            },
+            |attempt| recorded.push((attempt.attempt, attempt.retry_in)),
         )
         .await;
 
-        assert_eq!(obtained.map(|got| got.credentials), Some("secrets"));
         assert_eq!(
-            *recorded.lock().unwrap(),
+            obtained.map(|got| got.credentials),
+            Some("secrets".to_string())
+        );
+        assert_eq!(
+            recorded,
             vec![
                 (1, Some(Duration::from_secs(1))),
                 (2, Some(Duration::from_secs(2))),
@@ -966,12 +954,10 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn with_no_retries_one_failure_is_recorded_and_nothing_is_tried_again() {
-        let calls = Arc::new(Mutex::new(0));
-        let counted = Arc::clone(&calls);
-        let recorded = Arc::new(Mutex::new(Vec::new()));
-        let log = Arc::clone(&recorded);
-        let resolve = move || {
-            *counted.lock().unwrap() += 1;
+        let mut calls = 0;
+        let mut recorded = Vec::new();
+        let resolve = || {
+            calls += 1;
             std::future::ready(Err::<(), _>(failure("dial tcp")))
         };
 
@@ -980,37 +966,66 @@ mod tests {
             Retries::Never,
             &mut never_opens(),
             &mut never_posts(),
-            move |attempt| {
-                log.lock()
-                    .unwrap()
-                    .push((attempt.attempt, attempt.retry_in));
-            },
+            |attempt| recorded.push((attempt.attempt, attempt.retry_in)),
         )
         .await;
 
         assert_eq!(obtained.map(|got| got.credentials), None);
-        assert_eq!(*calls.lock().unwrap(), 1);
-        assert_eq!(*recorded.lock().unwrap(), vec![(1, None)]);
+        assert_eq!(calls, 1);
+        assert_eq!(recorded, vec![(1, None)]);
+    }
+
+    /// A failed attempt to retry in a second, whose `op` was started the ordinary way and could
+    /// not reach the desktop app.
+    fn attempt() -> CredentialAttempt {
+        CredentialAttempt {
+            started_at: Utc.with_ymd_and_hms(2026, 10, 12, 8, 59, 3).unwrap(),
+            duration: Duration::from_millis(812),
+            pid: 4242,
+            attempt: 3,
+            failure: failure(
+                "failed to resolve credential from 1Password: could not read secret \
+                 'op://Scripts/GitHub/token': 1Password CLI couldn't connect to the \
+                 1Password desktop app.",
+            ),
+            opened_app: None,
+            notified: None,
+            retry_in: Some(Duration::from_secs(1)),
+        }
     }
 
     fn report(retry_in: Option<Duration>, record_error: Option<PassFailure>) -> AttemptReport {
         AttemptReport {
             profile: "default".to_string(),
             attempt: CredentialAttempt {
-                started_at: Utc.with_ymd_and_hms(2026, 10, 12, 8, 59, 3).unwrap(),
-                duration: Duration::from_millis(812),
-                pid: 4242,
-                attempt: 3,
-                failure: failure(
-                    "failed to resolve credential from 1Password: could not read secret \
-                     'op://Scripts/GitHub/token': 1Password CLI couldn't connect to the \
-                     1Password desktop app.",
-                ),
-                opened_app: None,
-                notified: None,
                 retry_in,
+                ..attempt()
             },
             record_error,
+        }
+    }
+
+    /// The line `attempt` leaves when its health record was written.
+    fn line(attempt: CredentialAttempt) -> String {
+        AttemptReport {
+            profile: "default".to_string(),
+            attempt,
+            record_error: None,
+        }
+        .to_string()
+    }
+
+    /// An attempt `op` did not answer before the deadline, with a macOS alert on screen.
+    fn macos_alert_attempt() -> CredentialAttempt {
+        CredentialAttempt {
+            failure: CredentialFailure::no_answer(
+                "op://Scripts/GitHub/token",
+                Duration::from_secs(90),
+                &ScreenAtDeadline::MacosAlert { windows: 1 },
+                &no_secrets(),
+                OpSpawn::Inherited,
+            ),
+            ..attempt()
         }
     }
 
@@ -1047,18 +1062,6 @@ mod tests {
         assert_eq!(report.to_string(), line);
     }
 
-    #[test]
-    fn a_failed_attempt_names_how_its_op_was_started() {
-        let mut line = report(Some(Duration::from_secs(1)), None);
-        line.attempt.failure = CredentialFailure::new(
-            &anyhow::anyhow!("isn't a vault in this account"),
-            &no_secrets(),
-            OpSpawn::Disclaimed,
-        );
-
-        assert!(line.to_string().contains(" spawn=disclaimed "), "{line}");
-    }
-
     #[rstest]
     #[case::inherited(&[OpSpawn::Inherited], "inherited")]
     #[case::both(&[OpSpawn::Disclaimed, OpSpawn::Inherited], "inherited,disclaimed")]
@@ -1088,92 +1091,77 @@ mod tests {
         );
     }
 
-    #[test]
-    fn an_attempt_op_answers_with_no_accounts_logs_no_accounts() {
-        let mut line = report(Some(Duration::from_secs(1)), None);
-        line.attempt.failure = failure("No accounts configured for use with 1Password CLI.");
+    #[rstest]
+    #[case::disclaimed_spawn(
+        CredentialAttempt {
+            failure: CredentialFailure::new(
+                &anyhow::anyhow!("isn't a vault in this account"),
+                &no_secrets(),
+                OpSpawn::Disclaimed,
+            ),
+            ..attempt()
+        },
+        " spawn=disclaimed "
+    )]
+    #[case::no_accounts(
+        CredentialAttempt {
+            failure: failure("No accounts configured for use with 1Password CLI."),
+            ..attempt()
+        },
+        " cause=no_accounts "
+    )]
+    #[case::touch_id_prompt(
+        CredentialAttempt { failure: failure(UNANSWERED), ..attempt() },
+        " cause=touch_id_prompt_unanswered "
+    )]
+    #[case::macos_alert(macos_alert_attempt(), " cause=macos_prompt_waiting_for_you ")]
+    #[case::app_opened(
+        CredentialAttempt { opened_app: Some(AppOpening::Opened), ..attempt() },
+        " retry_in=1s opened_app=yes error="
+    )]
+    #[case::app_open_failed(
+        CredentialAttempt {
+            opened_app: Some(AppOpening::failed(
+                &anyhow::anyhow!("LSOpenURLsWithRole() failed"),
+                &no_secrets(),
+            )),
+            ..attempt()
+        },
+        " retry_in=1s opened_app=failed open_error=\"LSOpenURLsWithRole() failed\" error="
+    )]
+    #[case::notified(
+        CredentialAttempt { notified: Some(Notifying::Sent), ..attempt() },
+        " retry_in=1s notified=yes error="
+    )]
+    #[case::notify_failed(
+        CredentialAttempt {
+            notified: Some(Notifying::failed(
+                &anyhow::anyhow!("terminal-notifier exited 1"),
+                &no_secrets(),
+            )),
+            ..attempt()
+        },
+        " retry_in=1s notified=failed notify_error=\"terminal-notifier exited 1\" error="
+    )]
+    fn a_failed_attempts_line_names_what_happened_in_the_words_the_record_uses(
+        #[case] attempt: CredentialAttempt,
+        #[case] part: &str,
+    ) {
+        let line = line(attempt);
 
-        assert!(line.to_string().contains(" cause=no_accounts "), "{line}");
+        assert!(line.contains(part), "{line}");
     }
 
     #[test]
-    fn the_line_names_who_was_not_answering_in_the_words_the_record_uses() {
-        let mut prompt = report(Some(Duration::from_secs(1)), None);
-        prompt.attempt.failure = failure(UNANSWERED);
-        let mut alert = report(Some(Duration::from_secs(1)), None);
-        alert.attempt.failure = CredentialFailure::no_answer(
-            "op://Scripts/GitHub/token",
-            Duration::from_secs(90),
-            &ScreenAtDeadline::MacosAlert { windows: 1 },
-            &no_secrets(),
-            OpSpawn::Inherited,
-        );
+    fn an_attempt_nobody_answered_ends_its_line_with_hubs_own_words() {
+        let line = line(macos_alert_attempt());
 
         assert!(
-            prompt
-                .to_string()
-                .contains(" cause=touch_id_prompt_unanswered "),
-            "{prompt}"
-        );
-        assert!(
-            alert
-                .to_string()
-                .contains(" cause=macos_prompt_waiting_for_you "),
-            "{alert}"
-        );
-        assert!(
-            alert.to_string().ends_with(
+            line.ends_with(
                 "error=\"1Password did not answer within 90s reading op://Scripts/GitHub/token; 1 \
                  macOS alert window(s) from UserNotificationCenter on screen\""
             ),
-            "{alert}"
-        );
-    }
-
-    #[test]
-    fn the_line_says_whether_the_app_was_opened() {
-        let mut opened = report(Some(Duration::from_secs(1)), None);
-        opened.attempt.opened_app = Some(AppOpening::Opened);
-        let mut refused = report(Some(Duration::from_secs(1)), None);
-        refused.attempt.opened_app = Some(AppOpening::failed(
-            &anyhow::anyhow!("LSOpenURLsWithRole() failed"),
-            &no_secrets(),
-        ));
-
-        assert!(
-            opened
-                .to_string()
-                .contains(" retry_in=1s opened_app=yes error="),
-            "{opened}"
-        );
-        assert!(
-            refused.to_string().contains(
-                " retry_in=1s opened_app=failed open_error=\"LSOpenURLsWithRole() failed\" error="
-            ),
-            "{refused}"
-        );
-    }
-
-    #[test]
-    fn the_line_says_whether_a_notification_was_posted() {
-        let mut sent = report(Some(Duration::from_secs(1)), None);
-        sent.attempt.notified = Some(Notifying::Sent);
-        let mut failed = report(Some(Duration::from_secs(1)), None);
-        failed.attempt.notified = Some(Notifying::failed(
-            &anyhow::anyhow!("terminal-notifier exited 1"),
-            &no_secrets(),
-        ));
-
-        assert!(
-            sent.to_string()
-                .contains(" retry_in=1s notified=yes error="),
-            "{sent}"
-        );
-        assert!(
-            failed.to_string().contains(
-                " retry_in=1s notified=failed notify_error=\"terminal-notifier exited 1\" error="
-            ),
-            "{failed}"
+            "{line}"
         );
     }
 

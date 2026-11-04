@@ -109,6 +109,7 @@ fn the_app_is_among(executables: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
 
     use super::*;
 
@@ -177,22 +178,19 @@ mod tests {
         assert!(windows_from("Control Center\n").is_err());
     }
 
-    #[test]
-    fn the_looks_combine_into_what_the_screen_showed() {
-        assert_eq!(
-            screen_from(
-                Ok(vec![OnScreenWindow {
-                    owner: "UserNotificationCenter".to_string(),
-                    layer: 8
-                }]),
-                Ok(true)
-            ),
-            ScreenAtDeadline::MacosAlert { windows: 1 }
-        );
-        assert_eq!(
-            screen_from(Ok(Vec::new()), Ok(false)),
-            ScreenAtDeadline::AppNotRunning
-        );
+    #[rstest]
+    #[case::an_alert_on_screen(
+        vec![OnScreenWindow { owner: "UserNotificationCenter".to_string(), layer: 8 }],
+        true,
+        ScreenAtDeadline::MacosAlert { windows: 1 }
+    )]
+    #[case::the_app_not_running(Vec::new(), false, ScreenAtDeadline::AppNotRunning)]
+    fn the_looks_combine_into_what_the_screen_showed(
+        #[case] windows: Vec<OnScreenWindow>,
+        #[case] app_is_running: bool,
+        #[case] expected: ScreenAtDeadline,
+    ) {
+        assert_eq!(screen_from(Ok(windows), Ok(app_is_running)), expected);
     }
 
     #[test]

@@ -77,24 +77,36 @@ mod tests {
     }
 
     #[rstest]
-    #[case::no_dev_profile("[workspace]\nmembers = []\n", 2)]
+    #[case::no_dev_profile(
+        "[workspace]\nmembers = []\n",
+        &[
+            "  [profile.dev] split-debuginfo is None, not \"packed\"",
+            "  [profile.dev] debug is None, not \"line-tables-only\"",
+        ]
+    )]
     #[case::unpacked(
         "[profile.dev]\n  debug = \"line-tables-only\"\n  split-debuginfo = \"unpacked\"\n",
-        1
+        &["  [profile.dev] split-debuginfo is Some(\"unpacked\"), not \"packed\""]
     )]
-    #[case::full_debug_info("[profile.dev]\n  debug = true\n  split-debuginfo = \"packed\"\n", 1)]
+    #[case::full_debug_info(
+        "[profile.dev]\n  debug = true\n  split-debuginfo = \"packed\"\n",
+        &["  [profile.dev] debug is None, not \"line-tables-only\""]
+    )]
     #[case::test_profile_unpacks(
         "[profile.dev]\n  debug = \"line-tables-only\"\n  split-debuginfo = \"packed\"\n\n\
          [profile.test]\n  split-debuginfo = \"unpacked\"\n",
-        1
+        &["  [profile.test] sets split-debuginfo, which it must leave to dev"]
     )]
     #[case::test_profile_sets_debug(
         "[profile.dev]\n  debug = \"line-tables-only\"\n  split-debuginfo = \"packed\"\n\n\
          [profile.test]\n  debug = \"line-tables-only\"\n",
-        1
+        &["  [profile.test] sets debug, which it must leave to dev"]
     )]
-    fn each_way_the_profiles_fall_short_is_named(#[case] manifest: &str, #[case] count: usize) {
-        assert_eq!(shortfalls(manifest).unwrap().len(), count, "{manifest}");
+    fn each_way_the_profiles_fall_short_is_named(
+        #[case] manifest: &str,
+        #[case] expected: &[&str],
+    ) {
+        assert_eq!(shortfalls(manifest).unwrap(), expected, "{manifest}");
     }
 
     #[test]

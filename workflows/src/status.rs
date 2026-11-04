@@ -337,6 +337,18 @@ fn dedupe_prs(items: &mut Vec<StatusItem>) {
 mod tests {
     use super::*;
 
+    fn loki_env(token: Option<Secret<String>>) -> domain::LokiEnv {
+        domain::LokiEnv {
+            project: "app".to_string(),
+            repo: domain::RepoSlug::new("ooloth", "app"),
+            env: "prod".to_string(),
+            endpoint: "https://loki.invalid".to_string(),
+            token,
+            grafana_url: None,
+            queries: vec![],
+        }
+    }
+
     fn params() -> StatusParams {
         StatusParams {
             github_token: Secret::new("token".to_string()),
@@ -346,15 +358,7 @@ mod tests {
             ci_repos: vec![],
             linear_token: None,
             private_workflow_names: vec![],
-            loki_envs: vec![domain::LokiEnv {
-                project: "app".to_string(),
-                repo: domain::RepoSlug::new("ooloth", "app"),
-                env: "prod".to_string(),
-                endpoint: "https://loki.invalid".to_string(),
-                token: None,
-                grafana_url: None,
-                queries: vec![],
-            }],
+            loki_envs: vec![loki_env(None)],
             gcp_envs: vec![domain::GcpEnv {
                 project: "api".to_string(),
                 repo: domain::RepoSlug::new("ooloth", "api"),
@@ -367,15 +371,16 @@ mod tests {
         }
     }
 
-    #[test]
-    fn sources_are_named_as_the_report_has_always_named_them() {
-        let names: Vec<String> = sources(params())
+    fn source_names(params: StatusParams) -> Vec<String> {
+        sources(params)
             .into_iter()
             .map(|source| source.name)
-            .collect();
+            .collect()
+    }
 
-        #[allow(unused_mut)]
-        let mut expected = vec![
+    #[test]
+    fn sources_are_named_as_the_report_has_always_named_them() {
+        let expected: Vec<&str> = [
             "github issues",
             "github my open prs",
             "github prs awaiting review",
@@ -384,21 +389,20 @@ mod tests {
             "github ci failures",
             "loki (app · prod)",
             "gcp (api · staging)",
-        ];
-        #[cfg(feature = "private")]
-        expected.push("private workflows");
-        assert_eq!(names, expected);
+        ]
+        .into_iter()
+        .chain(cfg!(feature = "private").then_some("private workflows"))
+        .collect();
+
+        assert_eq!(source_names(params()), expected);
     }
 
     #[test]
     fn linear_is_asked_only_when_a_linear_token_is_configured() {
-        let mut params = params();
-        params.linear_token = Some(Secret::new("lin-token-value".to_string()));
-
-        let names: Vec<String> = sources(params)
-            .into_iter()
-            .map(|source| source.name)
-            .collect();
+        let names = source_names(StatusParams {
+            linear_token: Some(Secret::new("lin-token-value".to_string())),
+            ..params()
+        });
 
         assert!(
             names.iter().any(|name| name == "linear issues"),
@@ -455,16 +459,16 @@ mod tests {
 
     #[test]
     fn every_credential_a_refresh_is_given_is_redacted_from_failure_reasons() {
-        let mut params = params();
-        params.github_token = Secret::new("ghp-token-value".to_string());
-        params.linear_token = Some(Secret::new("lin-token-value".to_string()));
-        if let Some(env) = params.loki_envs.first_mut() {
-            env.token = Some(Secret::new("loki-token-value".to_string()));
-        }
-        let _ = params.extra_credentials.insert(
-            "service_url".to_string(),
-            Secret::new("https://media.internal:8989".to_string()),
-        );
+        let params = StatusParams {
+            github_token: Secret::new("ghp-token-value".to_string()),
+            linear_token: Some(Secret::new("lin-token-value".to_string())),
+            loki_envs: vec![loki_env(Some(Secret::new("loki-token-value".to_string())))],
+            extra_credentials: HashMap::from([(
+                "service_url".to_string(),
+                Secret::new("https://media.internal:8989".to_string()),
+            )]),
+            ..params()
+        };
         let gathered = Gathered {
             items: vec![],
             answered: vec![],
@@ -535,8 +539,18 @@ mod tests {
         assert_eq!(titles(&items), vec!["first match", "other"]);
     }
 
+    /// The cached payload's format, under the schema version it is stored with. A change to
+    /// the format shows here, and its review is where `SCHEMA_VERSION` gets bumped.
     #[test]
-    fn the_cache_schema_moved_past_alerts_without_their_repo() {
-        assert_eq!(SCHEMA_VERSION, 22);
+    fn the_cached_payload_format_is_pinned_to_its_schema_version() {
+        let report = StatusReport {
+            items: vec![pr(1, "a pull request")],
+            errors: vec!["github issues".to_string()],
+        };
+
+        insta::assert_json_snapshot!(serde_json::json!({
+            "schema_version": SCHEMA_VERSION,
+            "payload": report,
+        }));
     }
 }

@@ -140,17 +140,17 @@ fn age_from_entry(entry: &clients::gcp::LogEntry) -> chrono::Duration {
 mod tests {
     use super::*;
     use chrono::Utc;
+    use clients::gcp::LogEntry;
+    use rstest::rstest;
     use std::collections::HashMap;
 
-    fn make_entry(
-        json_payload: Option<serde_json::Value>,
-        text_payload: Option<&str>,
-    ) -> clients::gcp::LogEntry {
-        clients::gcp::LogEntry {
+    /// A log entry with no payload of any kind.
+    fn empty_entry() -> LogEntry {
+        LogEntry {
             timestamp: Utc::now(),
             severity: None,
-            text_payload: text_payload.map(std::string::ToString::to_string),
-            json_payload,
+            text_payload: None,
+            json_payload: None,
             http_request: None,
             resource_labels: HashMap::new(),
             raw: String::new(),
@@ -176,73 +176,56 @@ mod tests {
             message_field: "message".to_string(),
         };
 
-        let entry = alert_entry(
-            &env,
-            &query,
-            &make_entry(None, None),
-            "https://console.invalid",
-        );
+        let entry = alert_entry(&env, &query, &empty_entry(), "https://console.invalid");
 
         assert_eq!(entry.repo, domain::RepoSlug::new("org", "myapp"));
     }
 
-    fn make_entry_with_raw(
-        json_payload: Option<serde_json::Value>,
-        text_payload: Option<&str>,
-        raw: &str,
-    ) -> clients::gcp::LogEntry {
-        clients::gcp::LogEntry {
-            timestamp: Utc::now(),
-            severity: None,
-            text_payload: text_payload.map(std::string::ToString::to_string),
-            json_payload,
-            http_request: None,
-            resource_labels: HashMap::new(),
-            raw: raw.to_string(),
-        }
-    }
-
-    fn make_entry_with_http_request(status: u64, url: &str) -> clients::gcp::LogEntry {
-        clients::gcp::LogEntry {
-            timestamp: Utc::now(),
-            severity: None,
-            text_payload: None,
-            json_payload: None,
-            http_request: Some(serde_json::json!({"status": status, "requestUrl": url})),
-            resource_labels: HashMap::new(),
-            raw: String::new(),
-        }
-    }
-
     #[test]
     fn message_prefers_json_payload_field() {
-        let payload = serde_json::json!({"message": "something broke", "code": 500});
-        let entry = make_entry(Some(payload), Some("text fallback"));
+        let entry = LogEntry {
+            json_payload: Some(serde_json::json!({"message": "something broke", "code": 500})),
+            text_payload: Some("text fallback".to_string()),
+            ..empty_entry()
+        };
         assert_eq!(message_for_entry(&entry, "message"), "something broke");
     }
 
     #[test]
     fn message_uses_custom_field_name() {
-        let payload = serde_json::json!({"msg": "custom field value", "code": 500});
-        let entry = make_entry(Some(payload), None);
+        let entry = LogEntry {
+            json_payload: Some(serde_json::json!({"msg": "custom field value", "code": 500})),
+            ..empty_entry()
+        };
         assert_eq!(message_for_entry(&entry, "msg"), "custom field value");
     }
 
     #[test]
     fn message_falls_back_to_text_payload_first_line() {
-        let entry = make_entry(None, Some("line one\nline two"));
+        let entry = LogEntry {
+            text_payload: Some("line one\nline two".to_string()),
+            ..empty_entry()
+        };
         assert_eq!(message_for_entry(&entry, "message"), "line one");
     }
 
     #[test]
     fn message_falls_back_to_raw_when_no_payload() {
-        let entry = make_entry_with_raw(None, None, "raw log line content");
+        let entry = LogEntry {
+            raw: "raw log line content".to_string(),
+            ..empty_entry()
+        };
         assert_eq!(message_for_entry(&entry, "message"), "raw log line content");
     }
 
     #[test]
     fn message_falls_back_to_http_request_status_and_url() {
-        let entry = make_entry_with_http_request(503, "https://example.com/ingest");
+        let entry = LogEntry {
+            http_request: Some(
+                serde_json::json!({"status": 503, "requestUrl": "https://example.com/ingest"}),
+            ),
+            ..empty_entry()
+        };
         assert_eq!(
             message_for_entry(&entry, "message"),
             "HTTP 503 https://example.com/ingest"
@@ -251,8 +234,11 @@ mod tests {
 
     #[test]
     fn message_json_payload_without_configured_key_falls_back_to_text() {
-        let payload = serde_json::json!({"code": 500});
-        let entry = make_entry(Some(payload), Some("text fallback"));
+        let entry = LogEntry {
+            json_payload: Some(serde_json::json!({"code": 500})),
+            text_payload: Some("text fallback".to_string()),
+            ..empty_entry()
+        };
         assert_eq!(message_for_entry(&entry, "message"), "text fallback");
     }
 
@@ -271,24 +257,13 @@ mod tests {
         assert!(url.contains("region=us-central1"));
     }
 
-    #[test]
-    fn lookback_to_seconds_hours() {
-        assert_eq!(lookback_to_seconds("1h"), 3600);
-        assert_eq!(lookback_to_seconds("24h"), 86400);
-    }
-
-    #[test]
-    fn lookback_to_seconds_minutes() {
-        assert_eq!(lookback_to_seconds("30m"), 1800);
-    }
-
-    #[test]
-    fn lookback_to_seconds_days() {
-        assert_eq!(lookback_to_seconds("7d"), 604_800);
-    }
-
-    #[test]
-    fn lookback_to_seconds_unknown_defaults_to_one_hour() {
-        assert_eq!(lookback_to_seconds("bad"), 3600);
+    #[rstest]
+    #[case::one_hour("1h", 3600)]
+    #[case::a_day_in_hours("24h", 86400)]
+    #[case::minutes("30m", 1800)]
+    #[case::days("7d", 604_800)]
+    #[case::unknown_defaults_to_one_hour("bad", 3600)]
+    fn lookback_to_seconds_reads_each_unit(#[case] lookback: &str, #[case] seconds: u64) {
+        assert_eq!(lookback_to_seconds(lookback), seconds);
     }
 }

@@ -45,10 +45,11 @@ an orb unable to build hub at all, and the orb is then the one place that cannot
 
 `scripts lint-configurations` (`scripts/src/lint_configurations.rs`) runs clippy with
 `--all-targets -D warnings` once for each configuration whose sources are present in the checkout,
-so test code is linted with the rest. `clippy.toml` lets tests unwrap, expect, index and panic, and
-every other lint applies to them as it does to library code. It always
-builds without hub-private. It builds `--features private` when `clients/src/private` exists. It
-builds `-p hub-tui --features media` when `ui/tui/src/investigations/media.rs` exists. `just lint`
+so test code is linted with the rest. `clippy.toml` lets `#[test]` functions and `#[cfg(test)]`
+modules unwrap, expect, index and panic, and every other lint applies to them as it does to library
+code. It always builds without hub-private. It builds `--features private` when
+`clients/src/private` exists. It builds `-p hub-tui --features media` when
+`ui/tui/src/investigations/media.rs` exists. `just lint`
 runs it, `just check` runs `just lint`, and prek runs `just lint` before every commit. When it
 fails, it names the configurations that failed and points here.
 

@@ -159,17 +159,18 @@ const fn has_next_page(returned: usize, per_page: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     // ── classify_urgency ──────────────────────────────────────────────────────
 
-    #[rstest::rstest]
-    #[case(vec!["alice"], vec![], "alice", Urgency::Medium)]
-    #[case(vec![], vec!["status:needs-human-review"], "alice", Urgency::Medium)]
-    #[case(vec!["alice"], vec!["status:needs-human-review"], "alice", Urgency::Medium)]
-    #[case(vec![], vec![], "alice", Urgency::Low)]
-    #[case(vec!["bob"], vec![], "alice", Urgency::Low)]
-    #[case(vec!["bob"], vec!["other-label"], "alice", Urgency::Low)]
-    fn classify_urgency_cases(
+    #[rstest]
+    #[case::assigned_to_me(vec!["alice"], vec![], "alice", Urgency::Medium)]
+    #[case::labelled_for_human_review(vec![], vec!["status:needs-human-review"], "alice", Urgency::Medium)]
+    #[case::assigned_to_me_and_labelled(vec!["alice"], vec!["status:needs-human-review"], "alice", Urgency::Medium)]
+    #[case::unassigned_and_unlabelled(vec![], vec![], "alice", Urgency::Low)]
+    #[case::assigned_to_someone_else(vec!["bob"], vec![], "alice", Urgency::Low)]
+    #[case::assigned_elsewhere_with_another_label(vec!["bob"], vec!["other-label"], "alice", Urgency::Low)]
+    fn urgency_is_medium_when_assigned_to_me_or_labelled_for_review(
         #[case] assignees: Vec<&str>,
         #[case] labels: Vec<&str>,
         #[case] username: &str,
@@ -182,19 +183,12 @@ mod tests {
 
     // ── has_next_page ─────────────────────────────────────────────────────────
 
-    #[test]
-    fn has_next_page_true_when_full_page_returned() {
-        assert!(has_next_page(100, 100));
-    }
-
-    #[test]
-    fn has_next_page_false_when_short_page_returned() {
-        assert!(!has_next_page(99, 100));
-    }
-
-    #[test]
-    fn has_next_page_false_when_empty_page_returned() {
-        assert!(!has_next_page(0, 100));
+    #[rstest]
+    #[case::full_page(100, true)]
+    #[case::short_page(99, false)]
+    #[case::empty_page(0, false)]
+    fn another_page_follows_only_a_full_one(#[case] returned: usize, #[case] expected: bool) {
+        assert_eq!(has_next_page(returned, 100), expected);
     }
 
     // ── to_domain_issue ───────────────────────────────────────────────────────
@@ -241,17 +235,21 @@ mod tests {
 
     #[test]
     fn to_domain_issue_body_none_when_absent() {
-        let mut item = make_api_issue(None);
-        item.body = None;
+        let item = ApiIssue {
+            body: None,
+            ..make_api_issue(None)
+        };
         let issue = to_domain_issue(item, RepoSlug::new("owner", "repo"), "alice").unwrap();
         assert_eq!(issue.body, None);
     }
 
     #[test]
     fn to_domain_issue_unassigned_no_label_is_low_urgency() {
-        let mut item = make_api_issue(None);
-        item.assignees = vec![];
-        item.labels = vec![];
+        let item = ApiIssue {
+            assignees: vec![],
+            labels: vec![],
+            ..make_api_issue(None)
+        };
         let issue = to_domain_issue(item, RepoSlug::new("owner", "repo"), "alice").unwrap();
         assert_eq!(issue.urgency, Urgency::Low);
     }

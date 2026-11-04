@@ -66,15 +66,13 @@ impl std::fmt::Display for Profile {
 mod tests {
     use super::*;
     use proptest::prelude::*;
+    use rstest::rstest;
 
-    #[test]
-    fn parse_accepts_the_default_profile() {
-        assert_eq!(Profile::parse("default").unwrap(), Profile::Default);
-    }
-
-    #[test]
-    fn parse_accepts_the_dev_profile() {
-        assert_eq!(Profile::parse("dev").unwrap(), Profile::Dev);
+    #[rstest]
+    #[case::default("default", Profile::Default)]
+    #[case::dev("dev", Profile::Dev)]
+    fn parse_accepts_each_profile_by_name(#[case] raw: &str, #[case] expected: Profile) {
+        assert_eq!(Profile::parse(raw).unwrap(), expected);
     }
 
     #[test]
@@ -90,27 +88,11 @@ mod tests {
         assert!(err.contains("dev"), "error must name dev: {err}");
     }
 
-    #[test]
-    fn dir_places_the_default_profile_under_dot_hub() {
-        assert_eq!(
-            Profile::Default.dir(Path::new("/home/x")),
-            PathBuf::from("/home/x/.hub/default")
-        );
-    }
-
-    #[test]
-    fn dir_places_the_dev_profile_under_dot_hub() {
-        assert_eq!(
-            Profile::Dev.dir(Path::new("/home/x")),
-            PathBuf::from("/home/x/.hub/dev")
-        );
-    }
-
-    #[test]
-    fn dir_never_returns_the_home_directory_itself() {
-        let home = Path::new("/home/x");
-        assert_ne!(Profile::Default.dir(home), home);
-        assert_ne!(Profile::Dev.dir(home), home);
+    #[rstest]
+    #[case::default(Profile::Default, "/home/x/.hub/default")]
+    #[case::dev(Profile::Dev, "/home/x/.hub/dev")]
+    fn dir_places_each_profile_under_dot_hub(#[case] profile: Profile, #[case] expected: &str) {
+        assert_eq!(profile.dir(Path::new("/home/x")), PathBuf::from(expected));
     }
 
     proptest! {

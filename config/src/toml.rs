@@ -233,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    fn github_ci_with_lookback() {
+    fn a_github_ci_lookback_is_read() {
         let result = parse(&with_credentials(
             r#"
             [[project]]
@@ -255,7 +255,7 @@ mod tests {
     }
 
     #[test]
-    fn github_prs_with_exclude_authors() {
+    fn github_prs_exclude_authors_are_read() {
         let result = parse(&with_credentials(
             r#"
             [[project]]
@@ -406,38 +406,24 @@ mod tests {
         );
     }
 
-    #[test]
-    fn monitor_with_known_workflow_name() {
-        let result = parse(&with_credentials(
+    /// Monitor workflow names are not checked against hub's own, because
+    /// private integrations add names hub does not know.
+    #[rstest]
+    #[case::known("github-prs")]
+    #[case::unknown("private-integration")]
+    fn a_monitor_workflow_name_is_kept_whether_or_not_hub_knows_it(#[case] name: &str) {
+        let result = parse(&with_credentials(&format!(
             r#"
             [[monitor.workflow]]
-            name = "github-prs"
-        "#,
-        ))
+            name = "{name}"
+        "#
+        )))
         .unwrap();
         let monitor = result.monitor.unwrap();
         assert_eq!(
             monitor.workflow,
             vec![MonitorWorkflowConfig {
-                name: "github-prs".into()
-            }]
-        );
-    }
-
-    #[test]
-    fn monitor_with_unknown_workflow_name_does_not_error() {
-        let result = parse(&with_credentials(
-            r#"
-            [[monitor.workflow]]
-            name = "private-integration"
-        "#,
-        ))
-        .unwrap();
-        let monitor = result.monitor.unwrap();
-        assert_eq!(
-            monitor.workflow,
-            vec![MonitorWorkflowConfig {
-                name: "private-integration".into()
+                name: name.to_string()
             }]
         );
     }
@@ -504,13 +490,13 @@ mod tests {
     }
 
     #[test]
-    fn missing_file_returns_error() {
+    fn a_missing_file_is_an_error_saying_it_was_not_found() {
         let err = parse_file("/nonexistent/path/hub.toml").unwrap_err();
         assert!(err.to_string().contains("not found"));
     }
 
     #[test]
-    fn project_no_workflows() {
+    fn a_project_without_workflows_parses_with_none() {
         let result = parse(&with_credentials(
             r#"
             [[project]]
@@ -527,7 +513,7 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_full_device_config() {
+    fn a_full_device_config_parses_every_section() {
         let result = parse(
             r#"
             [credentials]

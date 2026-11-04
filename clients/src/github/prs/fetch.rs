@@ -567,10 +567,11 @@ fn search_nodes(response: GraphQlResponse) -> Result<Vec<PrNode>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     // ── parse_ci_state ────────────────────────────────────────────────────────
 
-    #[rstest::rstest]
+    #[rstest]
     #[case("SUCCESS", Some(CiStatus::Success))]
     #[case("FAILURE", Some(CiStatus::Failure))]
     #[case("ERROR", Some(CiStatus::Failure))]
@@ -632,7 +633,7 @@ mod tests {
         }
     }
 
-    #[rstest::rstest]
+    #[rstest]
     #[case::unassigned(&[], 1)]
     #[case::assigned_to_me(&["alice"], 1)]
     #[case::assigned_to_someone_else(&["bob"], 0)]
@@ -650,55 +651,35 @@ mod tests {
         assert_eq!(result.len(), kept);
     }
 
-    #[test]
-    fn nodes_to_prs_excludes_pr_from_repo_excluded_author() {
+    #[rstest]
+    #[case::author_excluded_in_its_repo(
+        &["dependabot-preview[bot]"],
+        vec![pr_repo("owner/a", vec!["dependabot-preview[bot]"])],
+        0
+    )]
+    #[case::author_excluded_only_in_another_repo(
+        &["dependabot"],
+        vec![pr_repo("owner/b", vec!["dependabot"]), pr_repo("owner/a", vec![])],
+        1
+    )]
+    #[case::author_not_on_the_list(&["alice"], vec![pr_repo("owner/a", vec!["dependabot"])], 1)]
+    #[case::no_list(&["alice", "bob"], vec![pr_repo("owner/a", vec![])], 2)]
+    fn a_pull_request_is_left_out_only_when_its_repo_excludes_its_author(
+        #[case] authors: &[&str],
+        #[case] repos: Vec<GithubPrsRepo>,
+        #[case] kept: usize,
+    ) {
         let result = nodes_to_prs(
-            vec![node("dependabot-preview[bot]", "owner/a", &[])],
+            authors
+                .iter()
+                .map(|author| node(author, "owner/a", &[]))
+                .collect(),
             &search(PrKind::ToReview, false),
             "me",
-            &[pr_repo("owner/a", vec!["dependabot-preview[bot]"])],
+            &repos,
         )
         .unwrap();
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn nodes_to_prs_keeps_pr_when_author_excluded_only_in_different_repo() {
-        let result = nodes_to_prs(
-            vec![node("dependabot", "owner/b", &[])],
-            &search(PrKind::ToReview, false),
-            "me",
-            &[
-                pr_repo("owner/a", vec!["dependabot"]),
-                pr_repo("owner/b", vec![]),
-            ],
-        )
-        .unwrap();
-        assert_eq!(result.len(), 1);
-    }
-
-    #[test]
-    fn nodes_to_prs_keeps_pr_from_non_excluded_author_when_exclude_list_present() {
-        let result = nodes_to_prs(
-            vec![node("alice", "owner/a", &[])],
-            &search(PrKind::ToReview, false),
-            "me",
-            &[pr_repo("owner/a", vec!["dependabot"])],
-        )
-        .unwrap();
-        assert_eq!(result.len(), 1);
-    }
-
-    #[test]
-    fn nodes_to_prs_with_empty_exclude_lists_passes_all_prs() {
-        let result = nodes_to_prs(
-            vec![node("alice", "owner/a", &[]), node("bob", "owner/a", &[])],
-            &search(PrKind::ToReview, false),
-            "me",
-            &[pr_repo("owner/a", vec![])],
-        )
-        .unwrap();
-        assert_eq!(result.len(), 2);
+        assert_eq!(result.len(), kept);
     }
 
     // ── drafts ────────────────────────────────────────────────────────────────
@@ -717,7 +698,7 @@ mod tests {
 
     // ── parse_review_decision ─────────────────────────────────────────────────
 
-    #[rstest::rstest]
+    #[rstest]
     #[case(Some("APPROVED"), Some(ReviewDecision::Approved))]
     #[case(Some("CHANGES_REQUESTED"), Some(ReviewDecision::ChangesRequested))]
     #[case(Some("REVIEW_REQUIRED"), Some(ReviewDecision::ReviewRequired))]
@@ -732,7 +713,7 @@ mod tests {
 
     // ── parse_merge_readiness ─────────────────────────────────────────────────
 
-    #[rstest::rstest]
+    #[rstest]
     #[case::conflict(Some("DIRTY"), MergeReadiness::Blocked(MergeBlocker::Conflict))]
     #[case::behind(Some("BEHIND"), MergeReadiness::Blocked(MergeBlocker::Behind))]
     #[case::blocked(Some("BLOCKED"), MergeReadiness::Blocked(MergeBlocker::Blocked))]

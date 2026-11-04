@@ -63,26 +63,9 @@ mod tests {
             .render(Some(std::path::Path::new("/tmp/supporting-data.json")))
     }
 
-    #[test]
-    fn gcp_investigation_system_prompt_contains_skill_content() {
-        let cfg = config(
-            "web-app",
-            "neuro",
-            "errors",
-            &UntrustedText::new("something broke"),
-            &UntrustedText::new("{}"),
-            "",
-            "1h",
-            "web-app-prod-abc123",
-        );
-        assert!(cfg.system_prompt.contains("## Purpose"));
-        assert!(!cfg.system_prompt.starts_with("---"));
-    }
-
-    #[test]
-    fn gcp_investigation_prompt_contains_all_context() {
-        let line = r#"[{"message":"something broke","timestamp":"2024-01-15T10:30:00Z"}]"#;
-        let cfg = config(
+    /// An investigation of an error in `web-app` whose log lines are `line`.
+    fn web_app_error(line: &str) -> LaunchConfig {
+        config(
             "web-app",
             "neuro",
             "errors",
@@ -91,15 +74,42 @@ mod tests {
             "https://console.cloud.google.com/logs/query",
             "1h",
             "web-app-prod-abc123",
+        )
+    }
+
+    #[test]
+    fn the_system_prompt_is_the_skill_without_its_front_matter() {
+        let cfg = web_app_error("{}");
+
+        assert!(cfg.system_prompt.contains("## Purpose"));
+        assert!(!cfg.system_prompt.starts_with("---"));
+    }
+
+    #[test]
+    fn the_prompt_carries_the_error_its_place_and_where_to_read_the_log_lines() {
+        let cfg =
+            web_app_error(r#"[{"message":"something broke","timestamp":"2024-01-15T10:30:00Z"}]"#);
+
+        assert_eq!(
+            rendered(&cfg),
+            "Investigate GCP error in project web-app (env: neuro, gcp_project: \
+             web-app-prod-abc123). Title: errors.\n\
+             Message:\n\
+             <untrusted-input source=\"gcp log message\">\n\
+             something broke\n\
+             </untrusted-input>\n\
+             Log lines (last 1h), read with the Read tool:\n\
+             /tmp/supporting-data.json\n\
+             Incident timestamp: 2024-01-15T10:30:00Z.\n\
+             Console URL (pre-filtered): https://console.cloud.google.com/logs/query"
         );
-        assert!(rendered(&cfg).contains("web-app"));
-        assert!(rendered(&cfg).contains("neuro"));
-        assert!(rendered(&cfg).contains("something broke"));
-        assert!(rendered(&cfg).contains("1h"));
-        assert!(rendered(&cfg).contains("console.cloud.google.com"));
-        assert!(rendered(&cfg).contains("web-app-prod-abc123"));
-        assert!(rendered(&cfg).contains("2024-01-15T10:30:00Z"));
-        assert!(rendered(&cfg).contains("/tmp/supporting-data.json"));
+    }
+
+    #[test]
+    fn the_log_lines_are_kept_unchanged_as_supporting_data() {
+        let line = r#"[{"message":"something broke","timestamp":"2024-01-15T10:30:00Z"}]"#;
+        let cfg = web_app_error(line);
+
         assert_eq!(
             cfg.supporting_data
                 .as_ref()
@@ -111,17 +121,9 @@ mod tests {
     }
 
     #[test]
-    fn gcp_investigation_incident_at_empty_when_no_timestamp() {
-        let cfg = config(
-            "web-app",
-            "neuro",
-            "errors",
-            &UntrustedText::new("something broke"),
-            &UntrustedText::new(r#"[{"message":"no timestamp here"}]"#),
-            "",
-            "1h",
-            "web-app-prod-abc123",
-        );
+    fn a_log_without_a_timestamp_leaves_the_incident_time_empty() {
+        let cfg = web_app_error(r#"[{"message":"no timestamp here"}]"#);
+
         assert!(rendered(&cfg).contains("Incident timestamp: ."));
     }
 }

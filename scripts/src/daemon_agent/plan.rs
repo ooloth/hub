@@ -252,15 +252,6 @@ mod tests {
         assert_eq!(plan(Situation::RestartingIfRunning { running }), expected);
     }
 
-    #[test]
-    fn an_unchanged_definition_is_never_rewritten() {
-        for job in [Loaded, NotLoaded] {
-            let steps = plan(Situation::Starting { job, on_disk: Same });
-
-            assert!(!steps.contains(&WriteDefinition), "{job:?}: {steps:?}");
-        }
-    }
-
     #[rstest]
     #[case::started(Situation::Starting { job: NotLoaded, on_disk: Missing }, AgentOutcome::Started)]
     #[case::reloaded(Situation::Starting { job: Loaded, on_disk: Different }, AgentOutcome::Reloaded)]

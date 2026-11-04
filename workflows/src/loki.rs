@@ -112,12 +112,13 @@ fn age_from_entry(entry: &clients::loki::LogEntry) -> chrono::Duration {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use std::collections::HashMap;
 
-    fn make_entry(labels: &[(&str, &str)]) -> clients::loki::LogEntry {
+    fn make_entry(labels: &[(&str, &str)], line: &str) -> clients::loki::LogEntry {
         clients::loki::LogEntry {
             timestamp_ns: 0,
-            line: String::new(),
+            line: line.to_string(),
             labels: labels
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -145,68 +146,61 @@ mod tests {
             message_field: "message".to_string(),
         };
 
-        let entry = alert_entry(&env, &query, &make_entry(&[]), "https://grafana.invalid");
+        let entry = alert_entry(
+            &env,
+            &query,
+            &make_entry(&[], ""),
+            "https://grafana.invalid",
+        );
 
         assert_eq!(entry.repo, domain::RepoSlug::new("org", "myapp"));
     }
 
-    fn make_entry_with_line(labels: &[(&str, &str)], line: &str) -> clients::loki::LogEntry {
-        clients::loki::LogEntry {
-            timestamp_ns: 0,
-            line: line.to_string(),
-            labels: labels
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_string()))
-                .collect::<HashMap<_, _>>(),
-        }
-    }
-
-    #[test]
-    fn message_returns_configured_label_when_present() {
-        let entry = make_entry(&[("message", "something broke"), ("app", "myapp")]);
-        assert_eq!(message_for_entry(&entry, "message"), "something broke");
-    }
-
-    #[test]
-    fn message_uses_custom_field_name() {
-        let entry = make_entry(&[("msg", "custom field value"), ("app", "myapp")]);
-        assert_eq!(message_for_entry(&entry, "msg"), "custom field value");
-    }
-
-    #[test]
-    fn message_extracts_field_from_json_line() {
-        let entry = make_entry_with_line(
-            &[("app", "myapp")],
-            r#"{"message":"connection refused","level":"error","status":500}"#,
-        );
-        assert_eq!(message_for_entry(&entry, "message"), "connection refused");
-    }
-
-    #[test]
-    fn message_respects_message_field_when_parsing_json_line() {
-        let entry = make_entry_with_line(
-            &[("app", "myapp")],
-            r#"{"event":"connection refused","level":"error"}"#,
-        );
-        assert_eq!(message_for_entry(&entry, "event"), "connection refused");
-    }
-
-    #[test]
-    fn message_extracts_text_after_level_bracket_in_structlog_console_format() {
-        let entry = make_entry_with_line(
-            &[("app", "myapp")],
-            r#"pod_name="mypod" 2026-05-29 13:25:21 [warning  ] Error: connection refused   url="https://example.com""#,
-        );
-        assert_eq!(
-            message_for_entry(&entry, "message"),
-            r#"Error: connection refused   url="https://example.com""#
-        );
-    }
-
-    #[test]
-    fn message_falls_back_to_raw_line_when_label_absent() {
-        let entry = make_entry_with_line(&[("app", "myapp")], "raw log line content");
-        assert_eq!(message_for_entry(&entry, "message"), "raw log line content");
+    #[rstest]
+    #[case::configured_label_when_present(
+        &[("message", "something broke"), ("app", "myapp")],
+        "",
+        "message",
+        "something broke"
+    )]
+    #[case::custom_label_name(
+        &[("msg", "custom field value"), ("app", "myapp")],
+        "",
+        "msg",
+        "custom field value"
+    )]
+    #[case::field_from_a_json_line(
+        &[("app", "myapp")],
+        r#"{"message":"connection refused","level":"error","status":500}"#,
+        "message",
+        "connection refused"
+    )]
+    #[case::configured_field_from_a_json_line(
+        &[("app", "myapp")],
+        r#"{"event":"connection refused","level":"error"}"#,
+        "event",
+        "connection refused"
+    )]
+    #[case::text_after_the_level_bracket_in_structlog_console_format(
+        &[("app", "myapp")],
+        r#"pod_name="mypod" 2026-05-29 13:25:21 [warning  ] Error: connection refused   url="https://example.com""#,
+        "message",
+        r#"Error: connection refused   url="https://example.com""#
+    )]
+    #[case::raw_line_when_the_label_is_absent(
+        &[("app", "myapp")],
+        "raw log line content",
+        "message",
+        "raw log line content"
+    )]
+    fn the_message_is_read_from_the_entry(
+        #[case] labels: &[(&str, &str)],
+        #[case] line: &str,
+        #[case] message_field: &str,
+        #[case] expected: &str,
+    ) {
+        let entry = make_entry(labels, line);
+        assert_eq!(message_for_entry(&entry, message_field), expected);
     }
 
     #[test]

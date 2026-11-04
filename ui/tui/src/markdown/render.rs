@@ -481,6 +481,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
     use crate::markdown::style_sheet::CatppuccinStyleSheet;
 
@@ -488,54 +490,49 @@ mod tests {
         CatppuccinStyleSheet.code()
     }
 
-    fn fence_lines<'a>(text: &'a Text<'a>) -> Vec<&'a ratatui::text::Line<'a>> {
-        text.lines
+    fn is_fence(line: &Line) -> bool {
+        line.spans.iter().any(|s| s.content.starts_with("```"))
+    }
+
+    fn fence_styles(lines: &[Line]) -> Vec<Style> {
+        lines
             .iter()
-            .filter(|l| l.spans.iter().any(|s| s.content.starts_with("```")))
+            .filter(|l| is_fence(l))
+            .map(|l| l.style)
             .collect()
     }
 
-    fn content_lines<'a>(text: &'a Text<'a>) -> Vec<&'a ratatui::text::Line<'a>> {
-        text.lines
+    fn content_styles(lines: &[Line]) -> Vec<Style> {
+        lines
             .iter()
-            .filter(|l| !l.spans.iter().any(|s| s.content.starts_with("```")))
+            .filter(|l| !is_fence(l))
+            .map(|l| l.style)
             .collect()
     }
 
-    #[test]
-    fn unlanguaged_fence_content_carries_code_style() {
-        let text = from_str("```\nhello\n```\n");
+    #[rstest]
+    #[case::no_language("```\nhello\n```\n")]
+    #[case::unknown_language("```xyzzy\nhello\n```\n")]
+    fn unhighlighted_fence_content_carries_code_style(#[case] markdown: &str) {
+        let styles = content_styles(&from_str(markdown).lines);
         assert!(
-            content_lines(&text).iter().any(|l| l.style == code_style()),
-            "expected content lines to carry code() style"
+            styles.contains(&code_style()),
+            "expected content lines to carry code() style, got {styles:?}"
         );
     }
 
     #[test]
     fn unlanguaged_fence_delimiters_are_unstyled() {
-        let text = from_str("```\nhello\n```\n");
+        let styles = fence_styles(&from_str("```\nhello\n```\n").lines);
         assert!(
-            fence_lines(&text)
-                .iter()
-                .all(|l| l.style == Style::default()),
-            "expected fence lines to have no style"
+            styles.iter().all(|style| *style == Style::default()),
+            "expected fence lines to have no style, got {styles:?}"
         );
     }
 
-    #[test]
-    fn unknown_language_fence_content_carries_code_style() {
-        let text = from_str("```xyzzy\nhello\n```\n");
-        assert!(
-            content_lines(&text).iter().any(|l| l.style == code_style()),
-            "expected content lines to carry code() style for unknown language"
-        );
-    }
-
-    fn distinct_foregrounds<'a>(
-        lines: impl IntoIterator<Item = &'a Line<'a>>,
-    ) -> std::collections::HashSet<ratatui::style::Color> {
+    fn distinct_foregrounds(lines: &[Line]) -> std::collections::HashSet<ratatui::style::Color> {
         lines
-            .into_iter()
+            .iter()
             .flat_map(|l| l.spans.iter())
             .filter_map(|s| s.style.fg)
             .collect()

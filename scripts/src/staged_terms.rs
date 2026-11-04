@@ -113,31 +113,13 @@ fn git_text(repo: &Path, args: &[&str]) -> Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::process::Command;
-
     use tempfile::TempDir;
 
     use super::*;
     use crate::scanned_text::TextOrigin;
+    use crate::test_support::git;
 
     const TERM: &str = "alpha";
-
-    fn git(dir: &Path, args: &[&str]) {
-        let status = Command::new("git")
-            .args([
-                "-c",
-                "user.name=t",
-                "-c",
-                "user.email=t@t",
-                "-c",
-                "init.defaultBranch=main",
-            ])
-            .args(args)
-            .current_dir(dir)
-            .status()
-            .unwrap();
-        assert!(status.success(), "git {args:?} failed");
-    }
 
     /// A parent directory holding `hub/` (a git repo) and `hub-private/` with the list.
     struct Checkouts {

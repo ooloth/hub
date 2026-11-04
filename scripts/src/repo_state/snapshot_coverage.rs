@@ -108,8 +108,8 @@ mod tests {
         Some("full_screen_merging_pr")
     )]
     #[case::config(
-        "config/src/snapshots/config__toml__tests__snapshot_full_device_config.snap",
-        Some("snapshot_full_device_config")
+        "config/src/snapshots/config__toml__tests__a_full_device_config_parses_every_section.snap",
+        Some("a_full_device_config_parses_every_section")
     )]
     #[case::pending(
         "ui/tui/src/render/snapshots/hub_tui__render__tests__new.snap.new",

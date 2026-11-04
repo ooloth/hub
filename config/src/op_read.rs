@@ -273,6 +273,7 @@ pub(crate) fn killed_on_drop(program: &str) -> tokio::process::Command {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
     use secrecy::ExposeSecret;
 
     use super::*;
@@ -402,7 +403,7 @@ mod tests {
         );
     }
 
-    #[rstest::rstest]
+    #[rstest]
     #[case::not_found(
         std::io::ErrorKind::NotFound,
         "`op` is not on the PATH; is the 1Password CLI installed?"
@@ -493,24 +494,25 @@ mod tests {
         assert_eq!(output.stderr, b"err");
     }
 
+    #[rstest]
+    #[case::plain("plain-value")]
+    #[case::empty("")]
     #[tokio::test]
-    async fn a_plain_value_is_its_own_credential_and_starts_no_op() {
+    async fn a_plain_value_is_its_own_credential_and_starts_no_op(#[case] value: &str) {
         // A plain value never reaches a spawn, so either responsibility will do.
-        for value in ["plain-value", ""] {
-            let mut so_far = ResolvedSoFar::new(OpResponsibility::InheritedUnlessRefused);
+        let mut so_far = ResolvedSoFar::new(OpResponsibility::InheritedUnlessRefused);
 
-            let read = so_far
-                .read_with(
-                    value,
-                    |spawn| async move { panic!("started op {spawn:?} for a plain value") },
-                    || async { panic!("looked at the screen for a plain value") },
-                )
-                .await
-                .unwrap();
+        let read = so_far
+            .read_with(
+                value,
+                |spawn| async move { panic!("started op {spawn:?} for a plain value") },
+                || async { panic!("looked at the screen for a plain value") },
+            )
+            .await
+            .unwrap();
 
-            assert_eq!(read.expose_secret(), value);
-            assert_eq!(so_far.spawns.to_string(), "none");
-        }
+        assert_eq!(read.expose_secret(), value);
+        assert_eq!(so_far.spawns.to_string(), "none");
     }
 
     /// What hub makes of `op read` exiting non-zero with `stderr`.
@@ -621,7 +623,7 @@ mod tests {
         assert_eq!(failure.spawn(), OpSpawn::Disclaimed);
     }
 
-    #[rstest::rstest]
+    #[rstest]
     #[case::app_not_running(
         "error initializing client: 1Password CLI couldn't connect to the 1Password desktop app."
     )]
@@ -649,14 +651,11 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_read_silent_at_the_deadline_with_a_macos_alert_up_is_not_read_again_disclaimed() {
-        let spawned = Spawned::default();
+        let mut spawned = Vec::new();
         let mut so_far = ResolvedSoFar::new(OpResponsibility::InheritedUnlessRefused);
-        let read = {
-            let spawned = spawned.clone();
-            move |spawn| {
-                spawned.borrow_mut().push(spawn);
-                std::future::pending::<Result<String>>()
-            }
+        let read = |spawn| {
+            spawned.push(spawn);
+            std::future::pending::<Result<String>>()
         };
 
         let failure = so_far
@@ -668,7 +667,7 @@ mod tests {
 
         assert_eq!(failure.cause(), CredentialCause::MacosPromptWaitingForYou);
         assert_eq!(failure.spawn(), OpSpawn::Inherited);
-        assert_eq!(*spawned.borrow(), vec![OpSpawn::Inherited]);
+        assert_eq!(spawned, vec![OpSpawn::Inherited]);
     }
 
     #[tokio::test]

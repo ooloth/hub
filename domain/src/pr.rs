@@ -287,8 +287,9 @@ pub struct PullRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
-    #[rstest::rstest]
+    #[rstest]
     #[case("ooloth/hub", "hub")]
     #[case("org/my-app", "my-app")]
     #[case("a/b", "b")]
@@ -303,7 +304,7 @@ mod tests {
         assert_eq!(s.to_string(), "ooloth/hub");
     }
 
-    #[rstest::rstest]
+    #[rstest]
     #[case::no_slash("hub")]
     #[case::empty_owner("/hub")]
     #[case::empty_repo("ooloth/")]
@@ -377,56 +378,57 @@ mod tests {
         })
     }
 
-    #[test]
-    fn review_status_no_reviews_when_no_decision_and_no_counts() {
-        let pr = pr_with_review_state(None, 0, 0);
-        assert_eq!(pr.review_status(), ReviewStatus::NoReviews);
-    }
-
-    #[test]
-    fn review_status_reports_approval_count_even_when_decision_is_null() {
-        // Regression: GitHub's reviewDecision can be null (e.g. no required-review
-        // branch protection) even when a raw APPROVED review exists.
-        let pr = pr_with_review_state(None, 1, 0);
-        assert_eq!(pr.review_status(), ReviewStatus::Approved(Some(1)));
-    }
-
-    #[test]
-    fn review_status_reports_changes_requested_even_when_decision_is_null() {
-        let pr = pr_with_review_state(None, 0, 1);
-        assert_eq!(pr.review_status(), ReviewStatus::ChangesRequested);
-    }
-
-    #[test]
-    fn review_status_changes_requested_trumps_approvals() {
-        let pr = pr_with_review_state(None, 2, 1);
-        assert_eq!(pr.review_status(), ReviewStatus::ChangesRequested);
-    }
-
-    #[test]
-    fn review_status_trusts_approved_decision_when_counts_are_zero() {
-        // Fallback for the (rare) case where reviewDecision reports a real
-        // decision but the counted reviews found nothing — never fabricates a count.
-        let pr = pr_with_review_state(Some(ReviewDecision::Approved), 0, 0);
-        assert_eq!(pr.review_status(), ReviewStatus::Approved(None));
-    }
-
-    #[test]
-    fn review_status_trusts_changes_requested_decision_when_counts_are_zero() {
-        let pr = pr_with_review_state(Some(ReviewDecision::ChangesRequested), 0, 0);
-        assert_eq!(pr.review_status(), ReviewStatus::ChangesRequested);
-    }
-
-    #[test]
-    fn review_status_reports_counted_approvals_when_branch_protection_wants_more() {
-        let pr = pr_with_review_state(Some(ReviewDecision::ReviewRequired), 1, 0);
-        assert_eq!(pr.review_status(), ReviewStatus::Approved(Some(1)));
-    }
-
-    #[test]
-    fn review_status_uses_approval_count_when_decision_agrees() {
-        let pr = pr_with_review_state(Some(ReviewDecision::Approved), 3, 0);
-        assert_eq!(pr.review_status(), ReviewStatus::Approved(Some(3)));
+    #[rstest]
+    #[case::no_reviews_when_no_decision_and_no_counts(None, 0, 0, ReviewStatus::NoReviews)]
+    // Regression: GitHub's reviewDecision can be null (e.g. no required-review
+    // branch protection) even when a raw APPROVED review exists.
+    #[case::approval_counted_even_when_decision_is_null(
+        None,
+        1,
+        0,
+        ReviewStatus::Approved(Some(1))
+    )]
+    #[case::changes_requested_even_when_decision_is_null(
+        None,
+        0,
+        1,
+        ReviewStatus::ChangesRequested
+    )]
+    #[case::changes_requested_trumps_approvals(None, 2, 1, ReviewStatus::ChangesRequested)]
+    // Fallback for the (rare) case where reviewDecision reports a real
+    // decision but the counted reviews found nothing: never fabricates a count.
+    #[case::approved_decision_trusted_when_counts_are_zero(
+        Some(ReviewDecision::Approved),
+        0,
+        0,
+        ReviewStatus::Approved(None)
+    )]
+    #[case::changes_requested_decision_trusted_when_counts_are_zero(
+        Some(ReviewDecision::ChangesRequested),
+        0,
+        0,
+        ReviewStatus::ChangesRequested
+    )]
+    #[case::counted_approvals_when_branch_protection_wants_more(
+        Some(ReviewDecision::ReviewRequired),
+        1,
+        0,
+        ReviewStatus::Approved(Some(1))
+    )]
+    #[case::approval_count_used_when_decision_agrees(
+        Some(ReviewDecision::Approved),
+        3,
+        0,
+        ReviewStatus::Approved(Some(3))
+    )]
+    fn review_status_combines_the_decision_with_the_counted_reviews(
+        #[case] decision: Option<ReviewDecision>,
+        #[case] approvals: u32,
+        #[case] changes_requested: u32,
+        #[case] expected: ReviewStatus,
+    ) {
+        let pr = pr_with_review_state(decision, approvals, changes_requested);
+        assert_eq!(pr.review_status(), expected);
     }
 
     // ── repo_slug ─────────────────────────────────────────────────────────────
@@ -451,7 +453,7 @@ mod tests {
 
     // ── merge_readiness serde default ─────────────────────────────────────────
 
-    #[rstest::rstest]
+    #[rstest]
     #[case(
         Some(r#"{"Blocked":"Conflict"}"#),
         MergeReadiness::Blocked(MergeBlocker::Conflict)

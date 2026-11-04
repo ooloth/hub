@@ -191,12 +191,12 @@ pub(crate) fn run() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use std::os::unix::fs::PermissionsExt;
-    use std::process::Command;
 
     use rstest::rstest;
     use tempfile::TempDir;
 
     use super::*;
+    use crate::test_support::git;
 
     /// Shaped like the hooks prek writes, but runs nothing, since the tests commit with it.
     const PREK_HOOK: &str =
@@ -284,23 +284,6 @@ mod tests {
     }
 
     // ── a real repository ────────────────────────────────────────────────────
-
-    fn git(dir: &Path, args: &[&str]) {
-        let status = Command::new("git")
-            .args([
-                "-c",
-                "user.name=t",
-                "-c",
-                "user.email=t@t",
-                "-c",
-                "init.defaultBranch=main",
-            ])
-            .args(args)
-            .current_dir(dir)
-            .status()
-            .unwrap();
-        assert!(status.success(), "git {args:?} failed");
-    }
 
     /// A repository declaring pre-commit and pre-push, with only pre-commit installed.
     fn repo_missing_pre_push() -> TempDir {

@@ -139,6 +139,16 @@ pub(crate) mod tests {
         waiting.prs().map(|pr| pr.number).collect()
     }
 
+    /// Each counted pull request's number with its kind of reason, read through the public
+    /// iterators, which walk the counted pull requests in the same order.
+    fn reasons_counted(waiting: &WaitingOnMe) -> BTreeMap<u64, ReasonKind> {
+        waiting
+            .prs()
+            .map(|pr| pr.number)
+            .zip(waiting.reasons())
+            .collect()
+    }
+
     pub(crate) fn reason() -> impl Strategy<Value = TurnReason> {
         prop_oneof![
             Just(TurnReason::ReviewRequested),
@@ -178,8 +188,9 @@ pub(crate) mod tests {
 
             let waiting = earlier.after(&seen(&now, &undecided, coverage));
 
+            let counted = reasons_counted(&waiting);
             for (n, reason) in &now {
-                prop_assert_eq!(waiting.prs.get(&id(*n)), Some(&ReasonKind::of(reason)));
+                prop_assert_eq!(counted.get(n), Some(&ReasonKind::of(reason)));
             }
         }
 
@@ -229,6 +240,9 @@ pub(crate) mod tests {
             TurnCoverage::Complete,
         ));
 
-        assert_eq!(waiting.prs.get(&id(7)), Some(&ReasonKind::ReadyToMerge));
+        assert_eq!(
+            reasons_counted(&waiting).get(&7),
+            Some(&ReasonKind::ReadyToMerge)
+        );
     }
 }

@@ -247,7 +247,7 @@ mod tests {
     }
 
     #[test]
-    fn a_session_with_no_windows_parses_to_none() {
+    fn a_session_with_no_windows_parses_to_no_windows() {
         assert_eq!(pairs(r#"{"windows":[]}"#), Vec::<(String, String)>::new());
     }
 
@@ -266,6 +266,10 @@ mod tests {
         assert!(parse_window_listing(r#"{"windows":[{"label":"hub:pr:1"}]}"#).is_err());
     }
 
+    fn os(args: &[&str]) -> Vec<OsString> {
+        args.iter().map(OsString::from).collect()
+    }
+
     #[test]
     fn the_arguments_open_a_labelled_window_in_the_session_running_the_command() {
         let args = new_window_args(
@@ -275,46 +279,44 @@ mod tests {
             &[("HUB_SYSTEM_PROMPT".to_string(), "be careful".to_string())],
             "claude \"$HUB_SYSTEM_PROMPT\"",
         );
-        let expected: Vec<OsString> = [
-            "window",
-            "new",
-            "-s",
-            SESSION,
-            "hub:pr:92",
-            "-c",
-            "/tmp/worktree",
-            "--",
-            ENV,
-            "HUB_SYSTEM_PROMPT=be careful",
-            SHELL,
-            "-c",
-            "claude \"$HUB_SYSTEM_PROMPT\"",
-        ]
-        .iter()
-        .map(OsString::from)
-        .collect();
-        assert_eq!(args, expected);
+        assert_eq!(
+            args,
+            os(&[
+                "window",
+                "new",
+                "-s",
+                SESSION,
+                "hub:pr:92",
+                "-c",
+                "/tmp/worktree",
+                "--",
+                ENV,
+                "HUB_SYSTEM_PROMPT=be careful",
+                SHELL,
+                "-c",
+                "claude \"$HUB_SYSTEM_PROMPT\"",
+            ])
+        );
     }
 
     #[test]
     fn without_a_directory_the_window_starts_where_rex_chooses() {
         let args = new_window_args(&session(), "hub:diff:1", None, &[], "gh pr diff 1");
-        let expected: Vec<OsString> = [
-            "window",
-            "new",
-            "-s",
-            SESSION,
-            "hub:diff:1",
-            "--",
-            ENV,
-            SHELL,
-            "-c",
-            "gh pr diff 1",
-        ]
-        .iter()
-        .map(OsString::from)
-        .collect();
-        assert_eq!(args, expected);
+        assert_eq!(
+            args,
+            os(&[
+                "window",
+                "new",
+                "-s",
+                SESSION,
+                "hub:diff:1",
+                "--",
+                ENV,
+                SHELL,
+                "-c",
+                "gh pr diff 1",
+            ])
+        );
     }
 
     #[test]

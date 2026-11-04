@@ -105,6 +105,9 @@ fn entries_from_response(response: QueryRangeResponse) -> anyhow::Result<Vec<Log
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+    use wiremock::{matchers, Mock, MockServer, ResponseTemplate};
+
     use super::*;
 
     fn make_stream(labels: &[(&str, &str)], values: &[(&str, &str)]) -> Stream {
@@ -178,28 +181,17 @@ mod tests {
         assert!(entries[0].labels.is_empty());
     }
 
-    #[test]
-    fn invalid_timestamp_returns_error() {
-        let stream = make_stream(&[("app", "myapp")], &[("not-a-number", "some log line")]);
+    #[rstest]
+    #[case::not_a_number("not-a-number", "not-a-number")]
+    #[case::empty("", "unparseable Loki timestamp")]
+    #[case::overflow("99999999999999999999999", "99999999999999999999999")]
+    fn an_unparseable_timestamp_is_an_error_naming_it(
+        #[case] timestamp: &str,
+        #[case] expected_in_error: &str,
+    ) {
+        let stream = make_stream(&[("app", "myapp")], &[(timestamp, "some log line")]);
         let err = entries_from_response(make_response(vec![stream])).unwrap_err();
-        assert!(err.to_string().contains("not-a-number"));
-    }
-
-    #[test]
-    fn empty_timestamp_returns_error() {
-        let stream = make_stream(&[("app", "myapp")], &[("", "some log line")]);
-        let err = entries_from_response(make_response(vec![stream])).unwrap_err();
-        assert!(err.to_string().contains("unparseable Loki timestamp"));
-    }
-
-    #[test]
-    fn overflow_timestamp_returns_error() {
-        let stream = make_stream(
-            &[("app", "myapp")],
-            &[("99999999999999999999999", "log line")],
-        );
-        let err = entries_from_response(make_response(vec![stream])).unwrap_err();
-        assert!(err.to_string().contains("99999999999999999999999"));
+        assert!(err.to_string().contains(expected_in_error), "{err}");
     }
 
     #[test]
@@ -209,15 +201,52 @@ mod tests {
         assert_eq!(entries[0].timestamp_ns, -1000);
     }
 
-    #[test]
-    fn accepts_valid_lookback_durations() {
-        assert!(humantime::parse_duration("1h").is_ok());
-        assert!(humantime::parse_duration("30m").is_ok());
-        assert!(humantime::parse_duration("7d").is_ok());
+    /// A Loki that answers every range query with no streams.
+    async fn loki_with_no_entries() -> MockServer {
+        let server = MockServer::start().await;
+        Mock::given(matchers::method("GET"))
+            .and(matchers::path("/loki/api/v1/query_range"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "data": { "result": [] } })),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        server
     }
 
-    #[test]
-    fn rejects_invalid_lookback() {
-        assert!(humantime::parse_duration("not-a-duration").is_err());
+    #[rstest]
+    #[case::hours("1h")]
+    #[case::minutes("30m")]
+    #[case::days("7d")]
+    #[tokio::test]
+    async fn a_valid_lookback_queries_loki(#[case] lookback: &str) {
+        let server = loki_with_no_entries().await;
+
+        let found = entries(&server.uri(), None, r#"{app="myapp"}"#, lookback)
+            .await
+            .unwrap();
+
+        assert_eq!(found, Vec::<LogEntry>::new());
+    }
+
+    #[tokio::test]
+    async fn an_invalid_lookback_is_an_error_and_loki_is_not_asked() {
+        let server = MockServer::start().await;
+        Mock::given(matchers::any())
+            .respond_with(ResponseTemplate::new(200))
+            .expect(0)
+            .mount(&server)
+            .await;
+
+        let err = entries(&server.uri(), None, r#"{app="myapp"}"#, "not-a-duration")
+            .await
+            .unwrap_err();
+
+        assert!(
+            format!("{err:#}").contains("invalid lookback: not-a-duration"),
+            "{err:#}"
+        );
     }
 }

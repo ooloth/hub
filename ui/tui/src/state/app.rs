@@ -105,7 +105,7 @@ mod tests {
     use workflows::status::StatusItem;
 
     use super::{App, UiState};
-    use crate::display::{flatten, Filter, FlatRow};
+    use crate::display::{flatten, Filter};
     use crate::state::types::{DetailMode, Screen};
 
     fn stub_item() -> StatusItem {
@@ -190,16 +190,5 @@ mod tests {
     fn active_list_len_returns_flat_rows_count() {
         let app = list_app(5, 0);
         assert_eq!(app.active_list_len(), 5);
-    }
-
-    #[test]
-    fn flat_rows_single_items_are_single_variant() {
-        let app = list_app(3, 0);
-        match &app.ui.screen {
-            Screen::UnifiedList { flat_rows, .. } => {
-                assert!(flat_rows.iter().all(|r| matches!(r, FlatRow::Single(_))));
-            }
-            Screen::MergingPr { .. } => panic!(),
-        }
     }
 }

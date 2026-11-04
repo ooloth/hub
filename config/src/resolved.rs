@@ -218,6 +218,7 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     fn project(name: &str, repo: &str, workflows: Vec<toml::WorkflowConfig>) -> toml::Project {
         toml::Project {
@@ -235,26 +236,27 @@ mod tests {
         environments: Vec<toml::Environment>,
     ) -> toml::Project {
         toml::Project {
-            name: Some(name.into()),
-            short_name: None,
-            repo: repo.parse().unwrap(),
-            workflow: vec![],
             environment: environments,
+            ..project(name, repo, vec![])
         }
     }
 
-    fn loki_env(
-        endpoint: &str,
-        grafana_url: Option<&str>,
-        workflows: Vec<toml::WorkflowConfig>,
-    ) -> toml::Environment {
+    /// An environment with neither a Loki endpoint nor a GCP project.
+    fn env_without_a_log_source(workflows: Vec<toml::WorkflowConfig>) -> toml::Environment {
         toml::Environment {
             env: "prod".into(),
             gcp_project: None,
             gcp_region: None,
-            loki_endpoint: Some(endpoint.into()),
-            grafana_url: grafana_url.map(Into::into),
+            loki_endpoint: None,
+            grafana_url: None,
             workflow: workflows,
+        }
+    }
+
+    fn loki_env(endpoint: &str, workflows: Vec<toml::WorkflowConfig>) -> toml::Environment {
+        toml::Environment {
+            loki_endpoint: Some(endpoint.into()),
+            ..env_without_a_log_source(workflows)
         }
     }
 
@@ -267,20 +269,31 @@ mod tests {
             env: "neuro".into(),
             gcp_project: Some(gcp_project.into()),
             gcp_region: gcp_region.map(Into::into),
-            loki_endpoint: None,
-            grafana_url: None,
-            workflow: workflows,
+            ..env_without_a_log_source(workflows)
         }
     }
 
-    fn env_no_loki(workflows: Vec<toml::WorkflowConfig>) -> toml::Environment {
-        toml::Environment {
-            env: "prod".into(),
-            gcp_project: None,
-            gcp_region: None,
-            loki_endpoint: None,
-            grafana_url: None,
-            workflow: workflows,
+    fn loki_logs(lookback: Option<&str>) -> toml::WorkflowConfig {
+        toml::WorkflowConfig::LokiLogs {
+            title: "errors".into(),
+            query: "{app=\"myapp\"}".into(),
+            lookback: lookback.map(Into::into),
+            message_field: None,
+        }
+    }
+
+    fn gcp_logs(lookback: Option<&str>) -> toml::WorkflowConfig {
+        toml::WorkflowConfig::GcpLogs {
+            title: "errors".into(),
+            query: "severity>=ERROR".into(),
+            lookback: lookback.map(Into::into),
+            message_field: None,
+        }
+    }
+
+    fn github_prs() -> toml::WorkflowConfig {
+        toml::WorkflowConfig::GithubPrs {
+            exclude_authors: vec![],
         }
     }
 
@@ -297,38 +310,13 @@ mod tests {
         }
     }
 
-    fn config_with_monitor(projects: Vec<toml::Project>, monitor: toml::Monitor) -> Config {
-        Config {
-            github_token: Secret::new("tok".into()),
-            github_username: "user".into(),
-            linear_token: None,
-            loki_token: None,
-            extra_credentials: HashMap::new(),
-            projects: crate::Projects::resolve(projects).unwrap(),
-            monitor: Some(monitor),
-            investigation_mcp_servers: domain::InvestigationMcpServers::default(),
-        }
-    }
-
     // github_pr_repos
 
     #[test]
     fn github_pr_repos_returns_opted_in_repos() {
         let cfg = config(vec![
-            project(
-                "hub",
-                "ooloth/hub",
-                vec![toml::WorkflowConfig::GithubPrs {
-                    exclude_authors: vec![],
-                }],
-            ),
-            project(
-                "other",
-                "ooloth/other",
-                vec![toml::WorkflowConfig::GithubPrs {
-                    exclude_authors: vec![],
-                }],
-            ),
+            project("hub", "ooloth/hub", vec![github_prs()]),
+            project("other", "ooloth/other", vec![github_prs()]),
         ]);
         let repos = cfg.github_pr_repos();
         assert_eq!(repos.len(), 2);
@@ -346,13 +334,7 @@ mod tests {
                     exclude_authors: vec!["dependabot-preview[bot]".into()],
                 }],
             ),
-            project(
-                "hub",
-                "ooloth/hub",
-                vec![toml::WorkflowConfig::GithubPrs {
-                    exclude_authors: vec![],
-                }],
-            ),
+            project("hub", "ooloth/hub", vec![github_prs()]),
         ]);
         let repos = cfg.github_pr_repos();
         assert_eq!(repos[0].exclude_authors, vec!["dependabot-preview[bot]"]);
@@ -393,43 +375,29 @@ mod tests {
 
     // github_ci_repos
 
-    #[test]
-    fn github_ci_repos_uses_specified_lookback() {
+    #[rstest]
+    #[case::specified(Some("48h"), "48h")]
+    #[case::defaults_to_24h(None, "24h")]
+    fn github_ci_repos_carry_the_lookback(
+        #[case] configured: Option<&str>,
+        #[case] expected: &str,
+    ) {
         let cfg = config(vec![project(
             "hub",
             "ooloth/hub",
             vec![toml::WorkflowConfig::GithubCi {
-                lookback: Some("48h".into()),
+                lookback: configured.map(Into::into),
             }],
         )]);
         assert_eq!(
             cfg.github_ci_repos(),
-            vec![("ooloth/hub".to_string(), "48h".to_string())]
-        );
-    }
-
-    #[test]
-    fn github_ci_repos_defaults_lookback_to_24h() {
-        let cfg = config(vec![project(
-            "hub",
-            "ooloth/hub",
-            vec![toml::WorkflowConfig::GithubCi { lookback: None }],
-        )]);
-        assert_eq!(
-            cfg.github_ci_repos(),
-            vec![("ooloth/hub".to_string(), "24h".to_string())]
+            vec![("ooloth/hub".to_string(), expected.to_string())]
         );
     }
 
     #[test]
     fn github_ci_repos_excludes_projects_without_workflow() {
-        let cfg = config(vec![project(
-            "hub",
-            "ooloth/hub",
-            vec![toml::WorkflowConfig::GithubPrs {
-                exclude_authors: vec![],
-            }],
-        )]);
+        let cfg = config(vec![project("hub", "ooloth/hub", vec![github_prs()])]);
         assert_eq!(cfg.github_ci_repos(), Vec::<(String, String)>::new());
     }
 
@@ -437,17 +405,19 @@ mod tests {
 
     #[test]
     fn private_monitor_workflow_names_returns_names_when_monitor_set() {
-        let monitor = toml::Monitor {
-            workflow: vec![
-                toml::MonitorWorkflowConfig {
-                    name: "github-prs".into(),
-                },
-                toml::MonitorWorkflowConfig {
-                    name: "private-workflow".into(),
-                },
-            ],
+        let cfg = Config {
+            monitor: Some(toml::Monitor {
+                workflow: vec![
+                    toml::MonitorWorkflowConfig {
+                        name: "github-prs".into(),
+                    },
+                    toml::MonitorWorkflowConfig {
+                        name: "private-workflow".into(),
+                    },
+                ],
+            }),
+            ..config(vec![])
         };
-        let cfg = config_with_monitor(vec![], monitor);
         assert_eq!(
             cfg.private_monitor_workflow_names(),
             vec!["github-prs", "private-workflow"]
@@ -469,23 +439,13 @@ mod tests {
         let cfg = config(vec![project_with_envs(
             "myapp",
             "org/myapp",
-            vec![loki_env(
-                "https://loki.example.com",
-                None,
-                vec![toml::WorkflowConfig::LokiLogs {
-                    title: "errors".into(),
-                    query: "{app=\"myapp\"}".into(),
-                    lookback: Some("30m".into()),
-                    message_field: None,
-                }],
-            )],
+            vec![loki_env("https://loki.example.com", vec![loki_logs(None)])],
         )]);
         let envs = cfg.loki_envs();
         assert_eq!(envs.len(), 1);
         assert_eq!(envs[0].project, "myapp");
         assert_eq!(envs[0].endpoint, "https://loki.example.com");
         assert_eq!(envs[0].queries[0].title, "errors");
-        assert_eq!(envs[0].queries[0].lookback, "30m");
     }
 
     /// The clone an alert investigation runs in is found by repo, so the
@@ -495,37 +455,24 @@ mod tests {
         let cfg = config(vec![project_with_envs(
             "My App",
             "org/myapp",
-            vec![loki_env(
-                "https://loki.example.com",
-                None,
-                vec![toml::WorkflowConfig::LokiLogs {
-                    title: "errors".into(),
-                    query: "{app=\"myapp\"}".into(),
-                    lookback: None,
-                    message_field: None,
-                }],
-            )],
+            vec![loki_env("https://loki.example.com", vec![loki_logs(None)])],
         )]);
         assert_eq!(cfg.loki_envs()[0].repo.to_string(), "org/myapp");
     }
 
-    #[test]
-    fn loki_envs_defaults_lookback_to_1h() {
+    #[rstest]
+    #[case::specified(Some("30m"), "30m")]
+    #[case::defaults_to_1h(None, "1h")]
+    fn loki_envs_carry_the_lookback(#[case] configured: Option<&str>, #[case] expected: &str) {
         let cfg = config(vec![project_with_envs(
             "myapp",
             "org/myapp",
             vec![loki_env(
                 "https://loki.example.com",
-                None,
-                vec![toml::WorkflowConfig::LokiLogs {
-                    title: "errors".into(),
-                    query: "{app=\"myapp\"}".into(),
-                    lookback: None,
-                    message_field: None,
-                }],
+                vec![loki_logs(configured)],
             )],
         )]);
-        assert_eq!(cfg.loki_envs()[0].queries[0].lookback, "1h");
+        assert_eq!(cfg.loki_envs()[0].queries[0].lookback, expected);
     }
 
     #[test]
@@ -533,12 +480,7 @@ mod tests {
         let cfg = config(vec![project_with_envs(
             "myapp",
             "org/myapp",
-            vec![env_no_loki(vec![toml::WorkflowConfig::LokiLogs {
-                title: "errors".into(),
-                query: "{app=\"myapp\"}".into(),
-                lookback: None,
-                message_field: None,
-            }])],
+            vec![env_without_a_log_source(vec![loki_logs(None)])],
         )]);
         assert!(cfg.loki_envs().is_empty());
     }
@@ -548,7 +490,7 @@ mod tests {
         let cfg = config(vec![project_with_envs(
             "myapp",
             "org/myapp",
-            vec![loki_env("https://loki.example.com", None, vec![])],
+            vec![loki_env("https://loki.example.com", vec![])],
         )]);
         assert!(cfg.loki_envs().is_empty());
     }
@@ -560,16 +502,7 @@ mod tests {
         let cfg = config(vec![project_with_envs(
             "myapp",
             "org/myapp",
-            vec![gcp_env(
-                "my-org-prod",
-                None,
-                vec![toml::WorkflowConfig::GcpLogs {
-                    title: "errors".into(),
-                    query: "severity>=ERROR".into(),
-                    lookback: Some("30m".into()),
-                    message_field: None,
-                }],
-            )],
+            vec![gcp_env("my-org-prod", None, vec![gcp_logs(None)])],
         )]);
         let envs = cfg.gcp_envs();
         assert_eq!(envs.len(), 1);
@@ -577,7 +510,6 @@ mod tests {
         assert_eq!(envs[0].env, "neuro");
         assert_eq!(envs[0].gcp_project, "my-org-prod");
         assert_eq!(envs[0].queries[0].title, "errors");
-        assert_eq!(envs[0].queries[0].lookback, "30m");
     }
 
     #[test]
@@ -585,37 +517,21 @@ mod tests {
         let cfg = config(vec![project_with_envs(
             "My App",
             "org/myapp",
-            vec![gcp_env(
-                "my-org-prod",
-                None,
-                vec![toml::WorkflowConfig::GcpLogs {
-                    title: "errors".into(),
-                    query: "severity>=ERROR".into(),
-                    lookback: None,
-                    message_field: None,
-                }],
-            )],
+            vec![gcp_env("my-org-prod", None, vec![gcp_logs(None)])],
         )]);
         assert_eq!(cfg.gcp_envs()[0].repo.to_string(), "org/myapp");
     }
 
-    #[test]
-    fn gcp_envs_defaults_lookback_to_1h() {
+    #[rstest]
+    #[case::specified(Some("30m"), "30m")]
+    #[case::defaults_to_1h(None, "1h")]
+    fn gcp_envs_carry_the_lookback(#[case] configured: Option<&str>, #[case] expected: &str) {
         let cfg = config(vec![project_with_envs(
             "myapp",
             "org/myapp",
-            vec![gcp_env(
-                "my-org-prod",
-                None,
-                vec![toml::WorkflowConfig::GcpLogs {
-                    title: "errors".into(),
-                    query: "severity>=ERROR".into(),
-                    lookback: None,
-                    message_field: None,
-                }],
-            )],
+            vec![gcp_env("my-org-prod", None, vec![gcp_logs(configured)])],
         )]);
-        assert_eq!(cfg.gcp_envs()[0].queries[0].lookback, "1h");
+        assert_eq!(cfg.gcp_envs()[0].queries[0].lookback, expected);
     }
 
     #[test]
@@ -626,12 +542,7 @@ mod tests {
             vec![gcp_env(
                 "my-org-prod",
                 Some("us-central1"),
-                vec![toml::WorkflowConfig::GcpLogs {
-                    title: "errors".into(),
-                    query: "severity>=ERROR".into(),
-                    lookback: None,
-                    message_field: None,
-                }],
+                vec![gcp_logs(None)],
             )],
         )]);
         assert_eq!(cfg.gcp_envs()[0].gcp_region.as_deref(), Some("us-central1"));
@@ -642,12 +553,7 @@ mod tests {
         let cfg = config(vec![project_with_envs(
             "myapp",
             "org/myapp",
-            vec![env_no_loki(vec![toml::WorkflowConfig::GcpLogs {
-                title: "errors".into(),
-                query: "severity>=ERROR".into(),
-                lookback: None,
-                message_field: None,
-            }])],
+            vec![env_without_a_log_source(vec![gcp_logs(None)])],
         )]);
         assert!(cfg.gcp_envs().is_empty());
     }
@@ -671,12 +577,7 @@ mod tests {
                 "my-org-prod",
                 None,
                 vec![
-                    toml::WorkflowConfig::GcpLogs {
-                        title: "errors".into(),
-                        query: "severity>=ERROR".into(),
-                        lookback: None,
-                        message_field: None,
-                    },
+                    gcp_logs(None),
                     toml::WorkflowConfig::GcpLogs {
                         title: "errors (external)".into(),
                         query: "severity>=ERROR AND labels.user_type=\"external\"".into(),

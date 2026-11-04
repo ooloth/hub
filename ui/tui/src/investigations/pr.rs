@@ -78,10 +78,10 @@ mod tests {
     }
 
     #[rstest]
-    #[case(PrReview::ReviewMine, "/review-code")]
-    #[case(PrReview::ReviewPeer, "/review-code")]
-    #[case(PrReview::FixMine, "/review-converge")]
-    #[case(PrReview::AnswerReviewers, "/review-pr-comments-converge")]
+    #[case::review_mine(PrReview::ReviewMine, "/review-code")]
+    #[case::review_peer(PrReview::ReviewPeer, "/review-code")]
+    #[case::fix_mine(PrReview::FixMine, "/review-converge")]
+    #[case::answer_reviewers(PrReview::AnswerReviewers, "/review-pr-comments-converge")]
     fn review_config_prompt_leads_with_the_slash_command(
         #[case] review: PrReview,
         #[case] expected: &str,
@@ -129,8 +129,8 @@ mod tests {
     /// in 9f402d6 and drifted back in unnoticed; this is the check that stops it
     /// happening a third time.
     #[rstest]
-    #[case(PrAuthor::Me)]
-    #[case(PrAuthor::Peer)]
+    #[case::mine(PrAuthor::Me)]
+    #[case::a_peers(PrAuthor::Peer)]
     fn ask_config_launches_no_skill(#[case] author: PrAuthor) {
         let config = ask_config(7, "ooloth/hub", author);
         assert!(
@@ -146,8 +146,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(PrAuthor::Me)]
-    #[case(PrAuthor::Peer)]
+    #[case::mine(PrAuthor::Me)]
+    #[case::a_peers(PrAuthor::Peer)]
     fn ask_prompt_names_the_pr_and_repo(#[case] author: PrAuthor) {
         let prompt = ask_prompt(7, "ooloth/hub", author);
         assert!(prompt.contains("#7"));
@@ -161,17 +161,14 @@ mod tests {
         assert!(prompt.contains("do not make local changes"));
     }
 
-    #[test]
-    fn every_review_prompt_names_the_pr_number_and_repo() {
-        for review in [
-            PrReview::ReviewMine,
-            PrReview::FixMine,
-            PrReview::AnswerReviewers,
-            PrReview::ReviewPeer,
-        ] {
-            let prompt = review_prompt(42, "ooloth/hub", review);
-            assert!(prompt.contains("#42"), "{review:?}");
-            assert!(prompt.contains("ooloth/hub"), "{review:?}");
-        }
+    #[rstest]
+    #[case::review_mine(PrReview::ReviewMine)]
+    #[case::fix_mine(PrReview::FixMine)]
+    #[case::answer_reviewers(PrReview::AnswerReviewers)]
+    #[case::review_peer(PrReview::ReviewPeer)]
+    fn every_review_prompt_names_the_pr_number_and_repo(#[case] review: PrReview) {
+        let prompt = review_prompt(42, "ooloth/hub", review);
+        assert!(prompt.contains("#42"), "{prompt}");
+        assert!(prompt.contains("ooloth/hub"), "{prompt}");
     }
 }

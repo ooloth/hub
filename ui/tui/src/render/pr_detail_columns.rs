@@ -192,13 +192,13 @@ mod tests {
     use super::{diff_spans, dim, file_lines, pr_right_column_lines, truncate};
     use chrono::Duration;
     use domain::{
-        ChangedFile, CiStatus, MergeBlocker, MergeReadiness, PrKind, PullRequest, RepoSlug,
-        ReviewDecision, Urgency,
+        ChangedFile, CiStatus, MergeBlocker, MergeReadiness, PrKind, PullRequest, ReviewDecision,
+        Urgency,
     };
     use ratatui::{style::Color, text::Line};
     use rstest::rstest;
 
-    fn line_text(line: &Line<'static>) -> String {
+    fn line_text(line: &Line) -> String {
         line.spans.iter().map(|s| s.content.as_ref()).collect()
     }
 
@@ -248,17 +248,14 @@ mod tests {
         PullRequest {
             number: 42,
             title: "feat: add two-column PR detail".to_string(),
-            repo: RepoSlug::new("ooloth", "hub"),
             url: "https://github.com/ooloth/hub/pull/42".to_string(),
             age: Duration::days(3),
             urgency: Urgency::High,
             kind: PrKind::ToReview,
-            draft: false,
             author: "alice".to_string(),
             review_decision: Some(ReviewDecision::Approved),
             comment_count: 5,
             head_branch: "feat/two-col".to_string(),
-            base_branch: "main".to_string(),
             body: Some("Some description.".to_string()),
             ci_status: Some(CiStatus::Success),
             changed_files: vec![
@@ -276,29 +273,37 @@ mod tests {
                 },
             ],
             total_changed_files: 2,
-            review_threads: vec![],
-            pr_comments: vec![],
             merge_readiness: MergeReadiness::Blocked(MergeBlocker::Conflict),
             activity: crate::test_support::verdicts(2, 0),
+            ..crate::test_support::pull_request()
         }
     }
 
     const W: usize = 40;
     const H: usize = 40;
 
-    #[test]
-    fn pr_right_column_lines_snapshot_fully_populated_pr() {
-        let lines = pr_right_column_lines(&pr_with_all_fields(), W, H, dim());
-        let text: Vec<String> = lines.iter().map(line_text).collect();
-        insta::assert_snapshot!(text.join("\n"));
+    /// The right column for `pr` at height `height`, one line of text per row.
+    fn column_text(pr: &PullRequest, height: usize) -> String {
+        pr_right_column_lines(pr, W, height, dim())
+            .iter()
+            .map(line_text)
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     #[test]
-    fn pr_right_column_lines_omits_reviews_row_when_approval_count_is_zero() {
-        let mut p = pr_with_all_fields();
-        p.activity = crate::test_support::verdicts(0, 0);
-        p.review_decision = None;
-        let lines = pr_right_column_lines(&p, W, H, dim());
+    fn pr_right_column_lines_snapshot_fully_populated_pr() {
+        insta::assert_snapshot!(column_text(&pr_with_all_fields(), H));
+    }
+
+    #[test]
+    fn the_reviews_row_is_left_out_when_nobody_has_approved() {
+        let pr = PullRequest {
+            activity: crate::test_support::verdicts(0, 0),
+            review_decision: None,
+            ..pr_with_all_fields()
+        };
+        let lines = pr_right_column_lines(&pr, W, H, dim());
         let has_reviews_row = lines.iter().any(|l| line_text(l).contains("reviews "));
         assert!(!has_reviews_row, "expected no reviews row");
     }
@@ -306,14 +311,12 @@ mod tests {
     #[rstest]
     #[case::one(1, "1 approval")]
     #[case::many(3, "3 approvals")]
-    fn pr_right_column_lines_shows_reviews_row_when_approval_count_nonzero(
-        #[case] count: u32,
-        #[case] expected: &str,
-    ) {
-        let mut p = pr_with_all_fields();
-        p.activity = crate::test_support::verdicts(count, 0);
-        let lines = pr_right_column_lines(&p, W, H, dim());
-        let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+    fn the_reviews_row_counts_the_approvals(#[case] count: u32, #[case] expected: &str) {
+        let pr = PullRequest {
+            activity: crate::test_support::verdicts(count, 0),
+            ..pr_with_all_fields()
+        };
+        let all_text = column_text(&pr, H);
         assert!(
             all_text.contains(expected),
             "expected '{expected}' in:\n{all_text}"
@@ -321,11 +324,12 @@ mod tests {
     }
 
     #[test]
-    fn pr_right_column_lines_reviews_row_sums_approvals_and_changes_requested() {
-        let mut p = pr_with_all_fields();
-        p.activity = crate::test_support::verdicts(1, 1);
-        let lines = pr_right_column_lines(&p, W, H, dim());
-        let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+    fn the_reviews_row_sums_approvals_and_changes_requested() {
+        let pr = PullRequest {
+            activity: crate::test_support::verdicts(1, 1),
+            ..pr_with_all_fields()
+        };
+        let all_text = column_text(&pr, H);
         assert!(
             all_text.contains("2 reviews"),
             "expected '2 reviews' in:\n{all_text}"
@@ -337,11 +341,12 @@ mod tests {
     }
 
     #[test]
-    fn pr_right_column_lines_status_row_shows_changes_requested_alongside_approvals() {
-        let mut p = pr_with_all_fields();
-        p.activity = crate::test_support::verdicts(1, 1);
-        let lines = pr_right_column_lines(&p, W, H, dim());
-        let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+    fn the_status_row_shows_changes_requested_alongside_approvals() {
+        let pr = PullRequest {
+            activity: crate::test_support::verdicts(1, 1),
+            ..pr_with_all_fields()
+        };
+        let all_text = column_text(&pr, H);
         assert!(
             all_text.contains("Changes requested"),
             "expected the status row to say 'Changes requested':\n{all_text}"
@@ -349,11 +354,12 @@ mod tests {
     }
 
     #[test]
-    fn pr_right_column_lines_omits_blocker_row_when_nothing_blocks_the_merge() {
-        let mut p = pr_with_all_fields();
-        p.merge_readiness = MergeReadiness::Ready;
-        let lines = pr_right_column_lines(&p, W, H, dim());
-        let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+    fn the_blocker_row_is_left_out_when_nothing_blocks_the_merge() {
+        let pr = PullRequest {
+            merge_readiness: MergeReadiness::Ready,
+            ..pr_with_all_fields()
+        };
+        let all_text = column_text(&pr, H);
         assert!(
             !all_text.contains("blocker"),
             "expected no blocker row, got:\n{all_text}"
@@ -364,14 +370,15 @@ mod tests {
     #[case::conflict(MergeBlocker::Conflict, "conflict")]
     #[case::behind(MergeBlocker::Behind, "behind")]
     #[case::blocked(MergeBlocker::Blocked, "blocked")]
-    fn pr_right_column_lines_shows_blocker_row_with_correct_word(
+    fn the_blocker_row_names_what_blocks_the_merge(
         #[case] blocker: MergeBlocker,
         #[case] expected_word: &str,
     ) {
-        let mut p = pr_with_all_fields();
-        p.merge_readiness = MergeReadiness::Blocked(blocker);
-        let lines = pr_right_column_lines(&p, W, H, dim());
-        let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        let pr = PullRequest {
+            merge_readiness: MergeReadiness::Blocked(blocker),
+            ..pr_with_all_fields()
+        };
+        let all_text = column_text(&pr, H);
         assert!(
             all_text.contains(expected_word),
             "expected '{expected_word}' in:\n{all_text}"
@@ -379,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn pr_right_column_lines_shows_file_section_separator_when_space_allows() {
+    fn the_file_section_is_separated_when_space_allows() {
         let lines = pr_right_column_lines(&pr_with_all_fields(), W, H, dim());
         let has_separator = lines.iter().any(|l| line_text(l).contains('─'));
         assert!(
@@ -389,9 +396,8 @@ mod tests {
     }
 
     #[test]
-    fn pr_right_column_lines_omits_file_list_when_no_space() {
-        let lines = pr_right_column_lines(&pr_with_all_fields(), W, 5, dim());
-        let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+    fn the_file_list_is_left_out_when_there_is_no_space() {
+        let all_text = column_text(&pr_with_all_fields(), 5);
         assert!(
             !all_text.contains("mod.rs"),
             "expected no file list when height is tiny:\n{all_text}"
@@ -399,21 +405,22 @@ mod tests {
     }
 
     #[test]
-    fn pr_right_column_lines_clips_file_list_with_more_hint_when_overflow() {
-        let mut p = pr_with_all_fields();
-        p.changed_files = (0..10)
-            .map(|i| ChangedFile {
-                path: format!("file{i}.rs"),
-                additions: 1,
-                deletions: 0,
-                patch: None,
-            })
-            .collect();
-        p.total_changed_files = 10;
+    fn a_file_list_too_long_for_the_space_ends_with_a_more_hint() {
+        let pr = PullRequest {
+            changed_files: (0..10)
+                .map(|i| ChangedFile {
+                    path: format!("file{i}.rs"),
+                    additions: 1,
+                    deletions: 0,
+                    patch: None,
+                })
+                .collect(),
+            total_changed_files: 10,
+            ..pr_with_all_fields()
+        };
         let field_count = 12;
         let height = field_count + 2 + 3;
-        let lines = pr_right_column_lines(&p, W, height, dim());
-        let all_text: String = lines.iter().map(line_text).collect::<Vec<_>>().join("\n");
+        let all_text = column_text(&pr, height);
         assert!(
             all_text.contains("more…"),
             "expected overflow hint:\n{all_text}"

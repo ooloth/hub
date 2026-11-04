@@ -238,22 +238,16 @@ mod tests {
         let parent = tempfile::tempdir().unwrap();
         let root = parent.path().canonicalize().unwrap();
         let hub = root.join("hub");
-        for dir in [
-            "clients/src",
-            "workflows/src",
-            "ui/cli/src",
-            "ui/tui/src/investigations",
-        ] {
-            std::fs::create_dir_all(hub.join(dir)).unwrap();
-        }
         let private = root.join("hub-private");
-        for dir in [
-            "clients/src",
-            "workflows/src",
-            "ui/cli/src",
-            "ui/tui/src/investigations",
-        ] {
-            std::fs::create_dir_all(private.join(dir)).unwrap();
+        for checkout in [&hub, &private] {
+            for dir in [
+                "clients/src",
+                "workflows/src",
+                "ui/cli/src",
+                "ui/tui/src/investigations",
+            ] {
+                std::fs::create_dir_all(checkout.join(dir)).unwrap();
+            }
         }
         std::fs::create_dir_all(private.join("devices")).unwrap();
         for device in devices {

@@ -329,11 +329,12 @@ pub(crate) mod tests {
     fn recording(
         listing_fails: usize,
         showing: &[&str],
-        failing: &'static [&'static str],
+        failing: &[&str],
     ) -> (Rc<RefCell<Calls>>, RecordingNotifier) {
         let calls = Rc::new(RefCell::new(Calls::default()));
         let (lists, posts, removes) = (Rc::clone(&calls), Rc::clone(&calls), Rc::clone(&calls));
         let listed = showing.join("\n");
+        let failing: Vec<String> = failing.iter().map(ToString::to_string).collect();
         let notifier: RecordingNotifier = PrNotifier::new(
             Profile::Dev,
             Box::new(move || {
@@ -350,7 +351,7 @@ pub(crate) mod tests {
                 std::future::ready(Ok(()))
             }),
             Box::new(move |group: String| {
-                let fails = failing.contains(&group.as_str());
+                let fails = failing.contains(&group);
                 removes.borrow_mut().removed.push(group);
                 std::future::ready(if fails {
                     Err(anyhow::anyhow!("removing the card took too long"))
@@ -505,13 +506,12 @@ pub(crate) mod tests {
 
     #[tokio::test]
     async fn a_failed_post_is_reported_and_made_again_on_the_next_refresh() {
-        let attempts = Rc::new(RefCell::new(0));
-        let counted = Rc::clone(&attempts);
+        let mut attempts = 0;
         let mut notifier = PrNotifier::new(
             Profile::Dev,
             nothing_showing,
-            move |_, _| {
-                *counted.borrow_mut() += 1;
+            |_, _| {
+                attempts += 1;
                 std::future::ready(Err(anyhow::anyhow!("posting the card took too long")))
             },
             |_| std::future::ready(Ok(())),
@@ -520,7 +520,7 @@ pub(crate) mod tests {
         let report = notifier.apply(&complete(&[1])).await;
         let _ = notifier.apply(&complete(&[1])).await;
 
-        assert_eq!(*attempts.borrow(), 2);
+        assert_eq!(attempts, 2);
         assert!(
             report
                 .to_string()

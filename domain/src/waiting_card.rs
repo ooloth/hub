@@ -158,12 +158,13 @@ mod tests {
             let now = seen(&now, &BTreeSet::new(), coverage);
             let waiting = earlier.after(&now);
 
-            if let CardChange::Show(card) = CardChange::after(&waiting, now.coverage()) {
-                let sum: usize = card.rows.values().map(|count| count.get()).sum();
-                prop_assert_eq!(sum, waiting.len());
-                prop_assert_eq!(card.total(), waiting.len());
-            } else {
-                prop_assert!(waiting.is_empty());
+            match CardChange::after(&waiting, now.coverage()) {
+                CardChange::Show(card) => {
+                    let sum: usize = card.rows.values().map(|count| count.get()).sum();
+                    prop_assert_eq!(sum, waiting.len());
+                    prop_assert_eq!(card.total(), waiting.len());
+                }
+                CardChange::Remove | CardChange::Leave => prop_assert!(waiting.is_empty()),
             }
         }
     }

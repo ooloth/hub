@@ -432,25 +432,15 @@ fn parse_worktree_list(output: &str) -> Vec<(String, Option<String>)> {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
     use crate::git::test_helpers::{git_rev_parse, push_commit, run_git, setup_origin_and_bare};
 
-    #[test]
-    fn bare_clone_path_uses_repo_name_not_project_nickname() {
-        let repos = PathBuf::from("/tmp/repos");
-        assert_eq!(
-            bare_clone_path(&repos, &"ooloth/hub".parse().unwrap()),
-            repos.join("hub")
-        );
-        assert_eq!(
-            bare_clone_path(&repos, &"org/legacy-name".parse().unwrap()),
-            repos.join("legacy-name")
-        );
-    }
-
     proptest::proptest! {
         /// Every launch finds a clone by this path, so for any repository it
-        /// must be the repository's own directory, directly inside `repos_dir`.
+        /// must be the repository's own directory, directly inside `repos_dir`,
+        /// whatever the owner is called.
         #[test]
         fn bare_clone_path_is_the_repo_name_inside_repos_dir(
             owner in "[A-Za-z0-9_.-]{1,12}",
@@ -515,18 +505,13 @@ mod tests {
         assert_eq!(wt_after, new_sha, "worktree HEAD must be reset to latest");
     }
 
-    #[test]
-    fn parse_worktree_list_bare_only() {
-        let input = "worktree /home/user/.hub/repos/hub\nHEAD abc123\nbare\n\n";
-        let result = parse_worktree_list(input);
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].0, "/home/user/.hub/repos/hub");
-        assert!(result[0].1.is_none());
-    }
-
-    #[test]
-    fn parse_worktree_list_with_linked_worktree() {
-        let input = concat!(
+    #[rstest]
+    #[case::bare_only(
+        "worktree /home/user/.hub/repos/hub\nHEAD abc123\nbare\n\n",
+        vec![("/home/user/.hub/repos/hub".to_string(), None)]
+    )]
+    #[case::with_a_linked_worktree(
+        concat!(
             "worktree /home/user/.hub/repos/hub\n",
             "HEAD abc123\n",
             "bare\n",
@@ -535,26 +520,46 @@ mod tests {
             "HEAD def456\n",
             "branch refs/heads/fix-ci-456\n",
             "\n",
-        );
-        let result = parse_worktree_list(input);
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[1].0, "/home/user/.hub/repos/hub/fix-ci-456");
-        assert_eq!(result[1].1.as_deref(), Some("fix-ci-456"));
+        ),
+        vec![
+            ("/home/user/.hub/repos/hub".to_string(), None),
+            (
+                "/home/user/.hub/repos/hub/fix-ci-456".to_string(),
+                Some("fix-ci-456".to_string()),
+            ),
+        ]
+    )]
+    #[case::detached_head_has_no_branch(
+        concat!(
+            "worktree /home/user/.hub/repos/hub\n",
+            "HEAD abc123\n",
+            "bare\n",
+            "\n",
+            "worktree /home/user/.hub/repos/hub/detached-wt\n",
+            "HEAD def456\n",
+            "detached\n",
+            "\n",
+        ),
+        vec![
+            ("/home/user/.hub/repos/hub".to_string(), None),
+            ("/home/user/.hub/repos/hub/detached-wt".to_string(), None),
+        ]
+    )]
+    fn each_listed_worktree_is_read_with_its_branch(
+        #[case] input: &str,
+        #[case] expected: Vec<(String, Option<String>)>,
+    ) {
+        assert_eq!(parse_worktree_list(input), expected);
     }
 
-    #[tokio::test]
-    async fn clean_merged_worktrees_preserves_pr_worktree_while_head_branch_alive() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (origin, bare) = setup_origin_and_bare(tmp.path()).await;
+    /// Creates `feat/my-pr` on origin and, in the bare clone, the `pr-42` worktree
+    /// tracking it, as a PR investigation sets one up. Returns the worktree's path.
+    async fn pr_worktree_tracking_feat_my_pr(origin: &Path, bare: &Path) -> PathBuf {
         let origin_str = origin.to_string_lossy().into_owned();
         let bare_str = bare.to_string_lossy().into_owned();
-
-        // Create feat/my-pr on origin and fetch it into the bare repo.
         run_git(&["-C", &origin_str, "checkout", "-b", "feat/my-pr"]).await;
         run_git(&["-C", &origin_str, "commit", "--allow-empty", "-m", "pr"]).await;
         run_git(&["-C", &bare_str, "fetch", "origin"]).await;
-
-        // Simulate the PR worktree setup: local branch pr-42 tracking origin/feat/my-pr.
         run_git(&[
             "-C",
             &bare_str,
@@ -582,8 +587,18 @@ mod tests {
             "pr-42",
         ])
         .await;
+        wt
+    }
 
-        clean_merged_worktrees(&bare_str).await.unwrap();
+    #[tokio::test]
+    async fn clean_merged_worktrees_preserves_pr_worktree_while_head_branch_alive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (origin, bare) = setup_origin_and_bare(tmp.path()).await;
+        let wt = pr_worktree_tracking_feat_my_pr(&origin, &bare).await;
+
+        clean_merged_worktrees(&bare.to_string_lossy())
+            .await
+            .unwrap();
 
         assert!(
             wt.is_dir(),
@@ -595,40 +610,9 @@ mod tests {
     async fn clean_merged_worktrees_removes_pr_worktree_after_head_branch_deleted() {
         let tmp = tempfile::tempdir().unwrap();
         let (origin, bare) = setup_origin_and_bare(tmp.path()).await;
+        let wt = pr_worktree_tracking_feat_my_pr(&origin, &bare).await;
         let origin_str = origin.to_string_lossy().into_owned();
         let bare_str = bare.to_string_lossy().into_owned();
-
-        // Create feat/my-pr on origin, fetch, create PR worktree.
-        run_git(&["-C", &origin_str, "checkout", "-b", "feat/my-pr"]).await;
-        run_git(&["-C", &origin_str, "commit", "--allow-empty", "-m", "pr"]).await;
-        run_git(&["-C", &bare_str, "fetch", "origin"]).await;
-        run_git(&[
-            "-C",
-            &bare_str,
-            "branch",
-            "pr-42",
-            "refs/remotes/origin/feat/my-pr",
-        ])
-        .await;
-        let wt = bare.join("pr-42");
-        run_git(&[
-            "-C",
-            &bare_str,
-            "worktree",
-            "add",
-            &wt.to_string_lossy(),
-            "pr-42",
-        ])
-        .await;
-        run_git(&[
-            "-C",
-            &bare_str,
-            "branch",
-            "--set-upstream-to",
-            "origin/feat/my-pr",
-            "pr-42",
-        ])
-        .await;
 
         // Merge the PR: delete the head branch on origin and fetch --prune.
         run_git(&["-C", &origin_str, "checkout", "main"]).await;
@@ -641,22 +625,5 @@ mod tests {
             !wt.is_dir(),
             "pr worktree must be removed after head branch is deleted"
         );
-    }
-
-    #[test]
-    fn parse_worktree_list_detached_head_has_no_branch() {
-        let input = concat!(
-            "worktree /home/user/.hub/repos/hub\n",
-            "HEAD abc123\n",
-            "bare\n",
-            "\n",
-            "worktree /home/user/.hub/repos/hub/detached-wt\n",
-            "HEAD def456\n",
-            "detached\n",
-            "\n",
-        );
-        let result = parse_worktree_list(input);
-        assert_eq!(result.len(), 2);
-        assert!(result[1].1.is_none());
     }
 }

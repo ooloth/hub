@@ -165,37 +165,31 @@ mod tests {
         assert_eq!(kinds(command), Vec::<PublishKind>::new());
     }
 
+    /// The argument texts of the one publishing call in `command`.
+    fn args_of_the_only_call(command: &str) -> Vec<String> {
+        let calls = PublishingCall::find_all(&ShellWords::split(command).unwrap());
+        assert_eq!(calls.len(), 1, "{command}");
+        calls
+            .into_iter()
+            .flat_map(|call| call.args)
+            .map(|word| word.text)
+            .collect()
+    }
+
     #[test]
     fn a_call_stops_at_the_next_shell_operator() {
-        let calls = PublishingCall::find_all(
-            &ShellWords::split("gh issue comment 1 -b body && echo done").unwrap(),
+        assert_eq!(
+            args_of_the_only_call("gh issue comment 1 -b body && echo done"),
+            vec!["1", "-b", "body"]
         );
-
-        assert_eq!(calls.len(), 1);
-        let texts: Vec<&str> = calls
-            .first()
-            .unwrap()
-            .args
-            .iter()
-            .map(|w| w.text.as_str())
-            .collect();
-        assert_eq!(texts, vec!["1", "-b", "body"]);
     }
 
     #[test]
     fn a_quoted_operator_is_text_not_the_end_of_the_call() {
-        let calls = PublishingCall::find_all(
-            &ShellWords::split("gh issue comment 1 -b ';' --body-file b.md").unwrap(),
+        assert_eq!(
+            args_of_the_only_call("gh issue comment 1 -b ';' --body-file b.md"),
+            vec!["1", "-b", ";", "--body-file", "b.md"]
         );
-
-        let texts: Vec<&str> = calls
-            .first()
-            .unwrap()
-            .args
-            .iter()
-            .map(|w| w.text.as_str())
-            .collect();
-        assert_eq!(texts, vec!["1", "-b", ";", "--body-file", "b.md"]);
     }
 
     #[test]

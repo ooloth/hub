@@ -95,6 +95,7 @@ fn validate_required(creds: &toml::CredentialsToml) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
     use secrecy::ExposeSecret;
 
     use super::*;
@@ -111,19 +112,19 @@ mod tests {
 
     #[tokio::test]
     async fn plain_credentials_resolve_without_asking_1password() {
-        // A plain value never reaches a spawn, so either responsibility will do.
-        let responsibility = OpResponsibility::Inherited;
-        let mut creds = credentials("tok", "user");
-        creds.linear_token = Some("lin".into());
-        let _ = creds.extra.insert("media".into(), "key".into());
         let file = ConfigFile {
-            credentials: creds,
+            credentials: toml::CredentialsToml {
+                linear_token: Some("lin".into()),
+                extra: HashMap::from([("media".into(), "key".into())]),
+                ..credentials("tok", "user")
+            },
             projects: crate::Projects::default(),
             monitor: None,
             investigation_mcp_servers: domain::InvestigationMcpServers::default(),
         };
 
-        let resolved = file.resolve(responsibility).await.unwrap();
+        // A plain value never reaches a spawn, so either responsibility will do.
+        let resolved = file.resolve(OpResponsibility::Inherited).await.unwrap();
         let config = resolved.config;
 
         assert_eq!(resolved.spawns.to_string(), "none");
@@ -144,15 +145,15 @@ mod tests {
         assert!(validate_required(&credentials("tok", "user")).is_ok());
     }
 
-    #[test]
-    fn validate_required_fails_on_empty_github_token() {
-        let err = validate_required(&credentials("", "user")).unwrap_err();
-        assert!(err.to_string().contains("github_token"));
-    }
-
-    #[test]
-    fn validate_required_fails_on_empty_github_username() {
-        let err = validate_required(&credentials("tok", "")).unwrap_err();
-        assert!(err.to_string().contains("github_username"));
+    #[rstest]
+    #[case::empty_github_token("", "user", "github_token")]
+    #[case::empty_github_username("tok", "", "github_username")]
+    fn validate_required_fails_naming_the_empty_field(
+        #[case] github_token: &str,
+        #[case] github_username: &str,
+        #[case] field: &str,
+    ) {
+        let err = validate_required(&credentials(github_token, github_username)).unwrap_err();
+        assert!(err.to_string().contains(field), "{err}");
     }
 }

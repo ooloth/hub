@@ -183,13 +183,14 @@ const fn merge_confirm_key(key: KeyEvent) -> Option<Action> {
 #[cfg(test)]
 mod tests {
     use super::key_to_action;
-    use crate::display::{Category, Filter, ListSnapshot};
+    use crate::display::{flatten, Category, DisplayItem, Filter, ListSnapshot};
     use crate::state::{
         Action, App, DetailMode, PrAuthor, PrPrevScreen, PrReview, PrReviewTarget, Screen,
         SubmenuState, UiState,
     };
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use rstest::rstest;
+    use workflows::status::StatusItem;
 
     fn k(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
@@ -322,14 +323,6 @@ mod tests {
         assert_eq!(key_to_action(&app, ch('g')), Some(Action::MoveToTop));
     }
 
-    #[test]
-    fn first_g_arms_pending_g_in_unified_list() {
-        assert_eq!(
-            key_to_action(&App::default(), ch('g')),
-            Some(Action::PendingG)
-        );
-    }
-
     #[rstest]
     #[case(ctrl('c'), Some(Action::Quit))]
     #[case(k(KeyCode::Esc), Some(Action::CancelQuery))]
@@ -348,36 +341,14 @@ mod tests {
             selected: 0,
             filter: Filter::default(),
             expanded_groups: std::collections::HashSet::new(),
-            detail_mode: crate::state::DetailMode::Hidden,
+            detail_mode: DetailMode::Hidden,
         };
         let snapshot = parent.clone();
         App {
             ui: UiState {
                 screen: Screen::MergingPr {
                     parent,
-                    pr: domain::PullRequest {
-                        number: 7,
-                        title: "test pr".to_string(),
-                        repo: domain::RepoSlug::new("ooloth", "hub"),
-                        url: "https://github.com/ooloth/hub/pull/7".to_string(),
-                        age: chrono::Duration::zero(),
-                        urgency: domain::Urgency::Low,
-                        kind: domain::PrKind::Mine,
-                        draft: false,
-                        author: "ooloth".to_string(),
-                        review_decision: None,
-                        comment_count: 0,
-                        head_branch: "feat/thing".to_string(),
-                        base_branch: "main".to_string(),
-                        body: None,
-                        ci_status: None,
-                        changed_files: vec![],
-                        total_changed_files: 0,
-                        review_threads: vec![],
-                        pr_comments: vec![],
-                        merge_readiness: domain::MergeReadiness::NotYetKnown,
-                        activity: domain::pr_activity::PrActivity::default(),
-                    },
+                    pr: crate::test_support::pull_request(),
                     prev: PrPrevScreen::UnifiedList { snapshot },
                 },
                 ..UiState::default()
@@ -387,6 +358,7 @@ mod tests {
     }
 
     #[rstest]
+    #[case(ctrl('c'), Some(Action::Quit))]
     #[case(k(KeyCode::Esc), Some(Action::CancelMerge))]
     #[case(k(KeyCode::Enter), Some(Action::CommitMerge))]
     #[case(ch('j'), None)]
@@ -398,20 +370,20 @@ mod tests {
         assert_eq!(key_to_action(&merging_app(), key), expected);
     }
 
-    #[test]
-    fn ctrl_c_quits_during_merge_confirm() {
-        assert_eq!(key_to_action(&merging_app(), ctrl('c')), Some(Action::Quit));
-    }
-
     fn picker_app(author: PrAuthor) -> App {
-        let mut app = split_view_app_with_pr();
-        app.ui.submenu = SubmenuState::ReviewPicker(PrReviewTarget {
-            repo: "owner/repo".to_string(),
-            number: 1,
-            head_branch: "feature".to_string(),
-            author,
-        });
-        app
+        let app = split_view_app_with_pr();
+        App {
+            ui: UiState {
+                submenu: SubmenuState::ReviewPicker(PrReviewTarget {
+                    repo: "owner/repo".to_string(),
+                    number: 1,
+                    head_branch: "feature".to_string(),
+                    author,
+                }),
+                ..app.ui
+            },
+            ..app
+        }
     }
 
     #[rstest]
@@ -478,32 +450,8 @@ mod tests {
 
     // --- Split view context dispatch ---
 
-    fn split_view_app_with_pr() -> App {
-        use crate::display::{flatten, DisplayItem};
-        use workflows::status::StatusItem;
-        let item = StatusItem::Pr(domain::PullRequest {
-            number: 1,
-            title: "Fix".to_string(),
-            repo: domain::RepoSlug::new("owner", "repo"),
-            url: "https://github.com/owner/repo/pull/1".to_string(),
-            age: chrono::Duration::zero(),
-            urgency: domain::Urgency::Low,
-            kind: domain::PrKind::Mine,
-            draft: false,
-            author: "ooloth".to_string(),
-            review_decision: None,
-            comment_count: 0,
-            head_branch: "feat/fix".to_string(),
-            base_branch: "main".to_string(),
-            body: None,
-            ci_status: None,
-            changed_files: vec![],
-            total_changed_files: 0,
-            review_threads: vec![],
-            pr_comments: vec![],
-            merge_readiness: domain::MergeReadiness::NotYetKnown,
-            activity: domain::pr_activity::PrActivity::default(),
-        });
+    /// The split view with `item` selected and the detail pane showing.
+    fn split_view_app(item: StatusItem) -> App {
         let items = vec![DisplayItem::Single(item)];
         let expanded = std::collections::HashSet::new();
         let flat_rows = flatten(&items, &expanded);
@@ -515,7 +463,7 @@ mod tests {
                     selected: 0,
                     filter: Filter::default(),
                     expanded_groups: expanded,
-                    detail_mode: crate::state::DetailMode::Visible { detail_scroll: 0 },
+                    detail_mode: DetailMode::Visible { detail_scroll: 0 },
                 },
                 ..UiState::default()
             },
@@ -523,10 +471,12 @@ mod tests {
         }
     }
 
+    fn split_view_app_with_pr() -> App {
+        split_view_app(StatusItem::Pr(crate::test_support::pull_request()))
+    }
+
     fn split_view_app_with_issue() -> App {
-        use crate::display::{flatten, DisplayItem};
-        use workflows::status::StatusItem;
-        let item = StatusItem::Issue(domain::Issue {
+        split_view_app(StatusItem::Issue(domain::Issue {
             number: 42,
             title: "Bug".to_string(),
             repo: domain::RepoSlug::new("owner", "repo"),
@@ -536,116 +486,48 @@ mod tests {
             urgency: domain::Urgency::Low,
             labels: vec![],
             body: None,
-        });
-        let items = vec![DisplayItem::Single(item)];
-        let expanded = std::collections::HashSet::new();
-        let flat_rows = flatten(&items, &expanded);
-        App {
-            ui: UiState {
-                screen: Screen::UnifiedList {
-                    flat_rows,
-                    items,
-                    selected: 0,
-                    filter: Filter::default(),
-                    expanded_groups: expanded,
-                    detail_mode: crate::state::DetailMode::Visible { detail_scroll: 0 },
-                },
-                ..UiState::default()
-            },
-            ..App::default()
-        }
+        }))
     }
 
     fn pending_pr_action_app_with_pr() -> App {
-        let mut app = split_view_app_with_pr();
-        app.ui.submenu = SubmenuState::PrActions;
-        app
+        let app = split_view_app_with_pr();
+        App {
+            ui: UiState {
+                submenu: SubmenuState::PrActions,
+                ..app.ui
+            },
+            ..app
+        }
     }
 
-    // K3: d on PR in split view → PendingPrAction
-    #[test]
-    fn d_on_pr_in_split_view_arms_pr_submenu() {
+    #[rstest]
+    #[case::d_arms_the_pr_submenu(ch('d'), Some(Action::PrActionSubmenu))]
+    #[case::v_opens_the_review_picker(ch('v'), Some(Action::OpenReviewPicker))]
+    #[case::m_merges(ch('m'), Some(Action::MergePr))]
+    // `a` approves only an issue, so on a PR it keeps its list meaning.
+    #[case::a_clears_the_filter(ch('a'), Some(Action::ClearFilter))]
+    fn split_view_keys_on_a_pr(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
+        assert_eq!(key_to_action(&split_view_app_with_pr(), key), expected);
+    }
+
+    #[rstest]
+    // The PR submenu needs a PR, so `d` on an issue does nothing.
+    #[case::d_does_nothing(ch('d'), None)]
+    #[case::a_approves_for_the_agent(ch('a'), Some(Action::ApproveForAgent))]
+    fn split_view_keys_on_an_issue(#[case] key: KeyEvent, #[case] expected: Option<Action>) {
+        assert_eq!(key_to_action(&split_view_app_with_issue(), key), expected);
+    }
+
+    #[rstest]
+    #[case::d_opens_the_diff(ch('d'), Action::OpenPrDiffInDelta)]
+    #[case::l_opens_lazygit(ch('l'), Action::OpenInLazygit)]
+    #[case::o_opens_octo(ch('o'), Action::OpenInOcto)]
+    // Esc dismisses the submenu and keeps the split view.
+    #[case::esc_cancels_only_the_submenu(k(KeyCode::Esc), Action::CancelPrSubmenu)]
+    fn pr_submenu_keys(#[case] key: KeyEvent, #[case] expected: Action) {
         assert_eq!(
-            key_to_action(&split_view_app_with_pr(), ch('d')),
-            Some(Action::PrActionSubmenu)
-        );
-    }
-
-    // K4: d on non-PR in split view → nothing
-    #[test]
-    fn d_on_non_pr_in_split_view_does_nothing() {
-        assert_eq!(key_to_action(&split_view_app_with_issue(), ch('d')), None);
-    }
-
-    // K5: d→d while pending → OpenPrDiffInDelta
-    #[test]
-    fn d_while_pending_pr_action_opens_diff() {
-        assert_eq!(
-            key_to_action(&pending_pr_action_app_with_pr(), ch('d')),
-            Some(Action::OpenPrDiffInDelta)
-        );
-    }
-
-    // K6: d→l while pending → OpenInLazygit
-    #[test]
-    fn l_while_pending_pr_action_opens_lazygit() {
-        assert_eq!(
-            key_to_action(&pending_pr_action_app_with_pr(), ch('l')),
-            Some(Action::OpenInLazygit)
-        );
-    }
-
-    // K7: d→o while pending → OpenInOcto
-    #[test]
-    fn o_while_pending_pr_action_opens_octo() {
-        assert_eq!(
-            key_to_action(&pending_pr_action_app_with_pr(), ch('o')),
-            Some(Action::OpenInOcto)
-        );
-    }
-
-    // K8: Esc while pending → CancelPrSubmenu (dismisses submenu, keeps split view)
-    #[test]
-    fn esc_while_pending_pr_action_cancels_submenu_only() {
-        assert_eq!(
-            key_to_action(&pending_pr_action_app_with_pr(), k(KeyCode::Esc)),
-            Some(Action::CancelPrSubmenu)
-        );
-    }
-
-    // K9: v on PR in split view → OpenReviewPicker
-    #[test]
-    fn v_on_pr_in_split_view_opens_review_picker() {
-        assert_eq!(
-            key_to_action(&split_view_app_with_pr(), ch('v')),
-            Some(Action::OpenReviewPicker)
-        );
-    }
-
-    // K10: m on PR in split view → MergePr
-    #[test]
-    fn m_on_pr_in_split_view_merges_pr() {
-        assert_eq!(
-            key_to_action(&split_view_app_with_pr(), ch('m')),
-            Some(Action::MergePr)
-        );
-    }
-
-    // K11: a on issue in split view → ApproveForAgent
-    #[test]
-    fn a_on_issue_in_split_view_approves_for_agent() {
-        assert_eq!(
-            key_to_action(&split_view_app_with_issue(), ch('a')),
-            Some(Action::ApproveForAgent)
-        );
-    }
-
-    // K12: a on PR in split view → ClearFilter (not ApproveForAgent)
-    #[test]
-    fn a_on_pr_in_split_view_clears_filter() {
-        assert_eq!(
-            key_to_action(&split_view_app_with_pr(), ch('a')),
-            Some(Action::ClearFilter)
+            key_to_action(&pending_pr_action_app_with_pr(), key),
+            Some(expected)
         );
     }
 }

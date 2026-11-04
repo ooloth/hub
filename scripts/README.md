@@ -28,9 +28,10 @@ Not imported by anything.
   changes what the next `prek install` writes, so without this a hook type added to it never runs
   in a clone that installed its hooks before. CI runs `cargo` directly, not `just check`, so it is
   never asked there.
-- `lint-configurations` — what `just lint` runs. Clippy with `-D warnings` once per configuration
-  whose sources this checkout has: without hub-private always, then with each linked module. Runs
-  them all, then names the failures. hub-private's pre-commit check calls it too.
+- `lint-configurations` — what `just lint` runs. Clippy with `--all-targets -D warnings`, tests
+  included, once per configuration whose sources this checkout has: without hub-private always,
+  then with each linked module. Runs them all, then names the failures. hub-private's pre-commit
+  check calls it too.
 - `daemon start|stop|restart|uninstall|restart-if-running|logs` — what the `just daemon-*` recipes
   and the end of `just install` run. `start` writes the LaunchAgent for the installed `hub-daemon`
   and loads it, rewriting the plist and reloading only when it changed. `stop` unloads it until the
@@ -70,12 +71,16 @@ No output means allowed. A refusal prints the hook's deny JSON with the reason.
 - `src/main.rs` — the subcommands
 - `src/repo_state/` — checks over the repository's own state, compiled only for tests:
   `crate_readmes` (every workspace member has a non-empty README), `lint_inheritance` (every
-  member's manifest sets `[lints] workspace = true`), `domain_purity` (nothing under `domain/src`
-  names a way of reading ambient state), `decision_numbers` (no two decision records share a
-  number), `decision_status` (no superseded decision record still says "not yet implemented"), `snapshot_coverage` (every snapshot file is named by a test in its
-  crate), `daemon_tools` (every program the daemon's crates start by name is in `DAEMON_TOOLS`),
-  `test_isolation` (`just test` and `just test-update` clear git's hook variables first)
-  and `workspace` (the member list, from `cargo metadata`).
+  member's manifest sets `[lints] workspace = true`, except `disclaimed_spawn`, which carries an
+  exact copy of the workspace lints with `unsafe_code = "deny"`), `domain_purity` (nothing under
+  `domain/src` names a way of reading ambient state), `decision_numbers` (no two decision records
+  share a number), `decision_status` (no superseded decision record still says "not yet
+  implemented"), `snapshot_coverage` (every snapshot file is named by a test in its crate),
+  `daemon_tools` (every program the daemon's crates start by name is in `DAEMON_TOOLS`),
+  `daemon_health_writer` (only `store` names the daemon health table), `packed_debug_info` (the
+  dev profile packs its debug information and the test profile leaves that to it),
+  `test_isolation` (`just test` and `just test-update` clear git's hook variables first) and
+  `workspace` (the member list, from `cargo metadata`).
   Run them alone with `cargo nextest run -p scripts -E 'test(repo_state)'`
 - `src/banned_terms.rs`, `src/scanned_text.rs` — the one matching rule the guard and the
   pre-commit check share

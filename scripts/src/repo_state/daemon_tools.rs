@@ -35,9 +35,10 @@ struct SpawnSite {
 /// Every call to a start or a listed wrapper in `source`, outside its test module. Tests start
 /// helpers such as `sh` and `ps` that the daemon never runs.
 fn spawn_sites(source: &str) -> Vec<SpawnSite> {
-    let outside_tests = source
-        .find("#[cfg(test)]")
-        .map_or(source, |start| &source[..start]);
+    let outside_tests = match source.find("#[cfg(test)]") {
+        Some(start) => &source[..start],
+        None => source,
+    };
     let mut sites: Vec<(usize, SpawnSite)> = STARTS
         .iter()
         .chain(WRAPPERS.iter())
@@ -73,19 +74,20 @@ fn calls_to(source: &str, callee: &str) -> Vec<(usize, String)> {
 fn first_argument(after_paren: &str) -> String {
     let mut depth = 0_usize;
     let mut in_string = false;
-    let end = after_paren
-        .char_indices()
-        .find(|&(_, c)| {
-            match c {
-                '"' => in_string = !in_string,
-                '(' | '[' | '{' if !in_string => depth += 1,
-                ')' | ']' | '}' if !in_string && depth > 0 => depth -= 1,
-                ',' | ')' if !in_string && depth == 0 => return true,
-                _ => {}
-            }
-            false
-        })
-        .map_or(after_paren.len(), |(end, _)| end);
+    let found = after_paren.char_indices().find(|&(_, c)| {
+        match c {
+            '"' => in_string = !in_string,
+            '(' | '[' | '{' if !in_string => depth += 1,
+            ')' | ']' | '}' if !in_string && depth > 0 => depth -= 1,
+            ',' | ')' if !in_string && depth == 0 => return true,
+            _ => {}
+        }
+        false
+    });
+    let end = match found {
+        Some((end, _)) => end,
+        None => after_paren.len(),
+    };
     after_paren[..end].trim().to_string()
 }
 

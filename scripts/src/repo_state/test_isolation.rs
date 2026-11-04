@@ -1,3 +1,5 @@
+use rstest::rstest;
+
 use crate::repo_root::repo_root;
 
 /// What a test recipe runs first, so that nothing a git hook exports reaches the tests.
@@ -25,34 +27,38 @@ fn recipe_body(justfile: &str, name: &str) -> Option<String> {
     )
 }
 
-#[test]
-fn every_test_recipe_clears_the_git_environment_before_running_the_tests() {
+#[rstest]
+#[case::test("test")]
+#[case::test_update("test-update")]
+fn every_test_recipe_clears_the_git_environment_before_running_the_tests(#[case] recipe: &str) {
     let justfile = std::fs::read_to_string(repo_root().join("justfile")).unwrap();
 
-    for recipe in ["test", "test-update"] {
-        let body = recipe_body(&justfile, recipe)
-            .unwrap_or_else(|| panic!("the justfile has no `{recipe}` recipe"));
-        assert!(
-            body.trim_start().starts_with(CLEAR_GIT_ENV),
-            "`just {recipe}` does not start with `{CLEAR_GIT_ENV}`, so a git hook's GIT_DIR \
-             reaches the tests and their throwaway repositories write to this one:\n{body}"
-        );
-    }
+    let body = recipe_body(&justfile, recipe)
+        .unwrap_or_else(|| panic!("the justfile has no `{recipe}` recipe"));
+    assert!(
+        body.trim_start().starts_with(CLEAR_GIT_ENV),
+        "`just {recipe}` does not start with `{CLEAR_GIT_ENV}`, so a git hook's GIT_DIR \
+         reaches the tests and their throwaway repositories write to this one:\n{body}"
+    );
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    const JUSTFILE: &str =
+        "build:\n    cargo build\n\ntest: _require-nextest\n    a\n    b\n\nother:\n    c\n";
+
     #[test]
     fn a_recipes_body_is_its_indented_lines() {
-        let justfile =
-            "build:\n    cargo build\n\ntest: _require-nextest\n    a\n    b\n\nother:\n    c\n";
-
         assert_eq!(
-            recipe_body(justfile, "test"),
+            recipe_body(JUSTFILE, "test"),
             Some("    a\n    b".to_string())
         );
-        assert_eq!(recipe_body(justfile, "missing"), None);
+    }
+
+    #[test]
+    fn a_recipe_the_justfile_lacks_has_no_body() {
+        assert_eq!(recipe_body(JUSTFILE, "missing"), None);
     }
 }

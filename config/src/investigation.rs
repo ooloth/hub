@@ -50,6 +50,7 @@ impl InvestigationToml {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     fn parse(toml: &str) -> Result<InvestigationToml> {
         Ok(::toml::from_str(toml)?)
@@ -81,23 +82,15 @@ mod tests {
         assert!(parse("").unwrap().mcp_servers().unwrap().is_empty());
     }
 
-    #[test]
-    fn a_server_without_a_url_is_rejected() {
-        assert!(parse("[mcp_servers.x]\ntype = \"http\"").is_err());
-    }
-
-    #[test]
-    fn an_unknown_server_type_is_rejected() {
-        assert!(parse("[mcp_servers.x]\ntype = \"stdio\"\ncommand = \"npx\"").is_err());
-    }
-
-    #[test]
-    fn an_unknown_key_is_rejected() {
-        assert!(
-            parse("[mcp_servers.x]\ntype = \"http\"\nurl = \"https://e.com\"\nheaders = 1")
-                .is_err()
-        );
-        assert!(parse("unknown = 1").is_err());
+    #[rstest]
+    #[case::a_server_without_a_url("[mcp_servers.x]\ntype = \"http\"")]
+    #[case::an_unknown_server_type("[mcp_servers.x]\ntype = \"stdio\"\ncommand = \"npx\"")]
+    #[case::an_unknown_server_key(
+        "[mcp_servers.x]\ntype = \"http\"\nurl = \"https://e.com\"\nheaders = 1"
+    )]
+    #[case::an_unknown_top_level_key("unknown = 1")]
+    fn a_malformed_table_is_rejected(#[case] toml: &str) {
+        assert!(parse(toml).is_err());
     }
 
     #[test]

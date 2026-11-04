@@ -335,15 +335,7 @@ fn git_common_dir(repo: &Path) -> Result<AbsolutePath> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn git(dir: &Path, args: &[&str]) {
-        let status = Command::new("git")
-            .args(args)
-            .current_dir(dir)
-            .status()
-            .unwrap();
-        assert!(status.success(), "git {args:?}");
-    }
+    use crate::test_support::git;
 
     #[test]
     fn a_worktree_shares_the_main_checkouts_git_directory() {
@@ -351,20 +343,7 @@ mod tests {
         let main = dir.path().join("hub");
         std::fs::create_dir_all(&main).unwrap();
         git(&main, &["init", "-q"]);
-        git(
-            &main,
-            &[
-                "-c",
-                "user.name=t",
-                "-c",
-                "user.email=t@t",
-                "commit",
-                "-q",
-                "--allow-empty",
-                "-m",
-                "init",
-            ],
-        );
+        git(&main, &["commit", "-q", "--allow-empty", "-m", "init"]);
         let worktree = dir.path().join("wt");
         git(
             &main,

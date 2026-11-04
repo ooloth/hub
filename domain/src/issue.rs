@@ -99,126 +99,105 @@ pub struct GithubPrsRepo {
 
 #[cfg(test)]
 mod tests {
+    use proptest::prelude::*;
+    use rstest::rstest;
+
     use super::*;
 
-    // ── agent_ready_labels ────────────────────────────────────────────────────
+    /// Either relabelling: marking an issue ready for an agent, or dismissing it.
+    type Relabel = fn(&[String]) -> Vec<String>;
 
-    fn s(v: &str) -> String {
-        v.to_string()
+    fn labels(list: &[&str]) -> Vec<String> {
+        list.iter().map(ToString::to_string).collect()
     }
 
-    #[rstest::rstest]
-    // needs-human-review removed, ready-for-agent added
-    #[case(vec![s(NEEDS_HUMAN_REVIEW_LABEL)], vec![s(READY_FOR_AGENT_LABEL)])]
-    // already has ready-for-agent and needs-human-review → only needs-human-review removed
-    #[case(
-        vec![s(NEEDS_HUMAN_REVIEW_LABEL), s(READY_FOR_AGENT_LABEL)],
-        vec![s(READY_FOR_AGENT_LABEL)]
+    #[rstest]
+    #[case::ready_replaces_needs_review(
+        agent_ready_labels,
+        &[NEEDS_HUMAN_REVIEW_LABEL],
+        &[READY_FOR_AGENT_LABEL]
     )]
-    // already fully ready → unchanged (idempotent)
-    #[case(vec![s(READY_FOR_AGENT_LABEL)], vec![s(READY_FOR_AGENT_LABEL)])]
-    // no relevant labels → ready-for-agent added, others preserved
-    #[case(vec![s("bug"), s("wontfix")], vec![s("bug"), s("wontfix"), s(READY_FOR_AGENT_LABEL)])]
-    // empty → only ready-for-agent
-    #[case(vec![], vec![s(READY_FOR_AGENT_LABEL)])]
-    // unrelated label + needs-human-review → unrelated preserved, needs-human-review removed
-    #[case(
-        vec![s("bug"), s(NEEDS_HUMAN_REVIEW_LABEL)],
-        vec![s("bug"), s(READY_FOR_AGENT_LABEL)]
+    #[case::ready_drops_needs_review_beside_ready(
+        agent_ready_labels,
+        &[NEEDS_HUMAN_REVIEW_LABEL, READY_FOR_AGENT_LABEL],
+        &[READY_FOR_AGENT_LABEL]
     )]
-    fn agent_ready_labels_cases(#[case] input: Vec<String>, #[case] expected: Vec<String>) {
-        assert_eq!(agent_ready_labels(&input), expected);
-    }
-
-    #[test]
-    fn agent_ready_labels_idempotent() {
-        let input = vec![s(NEEDS_HUMAN_REVIEW_LABEL), s("bug")];
-        let once = agent_ready_labels(&input);
-        let twice = agent_ready_labels(&once);
-        assert_eq!(once, twice);
-    }
-
-    #[test]
-    fn agent_ready_labels_never_contains_needs_human_review() {
-        // property: result never contains NEEDS_HUMAN_REVIEW_LABEL, regardless of input
-        let inputs: &[&[&str]] = &[
-            &[NEEDS_HUMAN_REVIEW_LABEL],
-            &[NEEDS_HUMAN_REVIEW_LABEL, READY_FOR_AGENT_LABEL],
-            &["bug", NEEDS_HUMAN_REVIEW_LABEL, "wontfix"],
-            &[],
-        ];
-        for labels in inputs {
-            let input: Vec<String> = labels
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect();
-            let result = agent_ready_labels(&input);
-            assert!(
-                !result.iter().any(|l| l == NEEDS_HUMAN_REVIEW_LABEL),
-                "result contained NEEDS_HUMAN_REVIEW_LABEL for input {labels:?}"
-            );
-            assert!(
-                result.iter().any(|l| l == READY_FOR_AGENT_LABEL),
-                "result missing READY_FOR_AGENT_LABEL for input {labels:?}"
-            );
-        }
-    }
-
-    // ── dismissed_labels ──────────────────────────────────────────────────────
-
-    #[rstest::rstest]
-    // needs-human-review removed, wontfix added
-    #[case(vec![s(NEEDS_HUMAN_REVIEW_LABEL)], vec![s(WONTFIX_LABEL)])]
-    // already has wontfix and needs-human-review → only needs-human-review removed
-    #[case(
-        vec![s(NEEDS_HUMAN_REVIEW_LABEL), s(WONTFIX_LABEL)],
-        vec![s(WONTFIX_LABEL)]
+    #[case::ready_leaves_a_ready_issue_unchanged(
+        agent_ready_labels,
+        &[READY_FOR_AGENT_LABEL],
+        &[READY_FOR_AGENT_LABEL]
     )]
-    // already dismissed → unchanged (idempotent)
-    #[case(vec![s(WONTFIX_LABEL)], vec![s(WONTFIX_LABEL)])]
-    // no relevant labels → wontfix added, others preserved
-    #[case(vec![s("bug")], vec![s("bug"), s(WONTFIX_LABEL)])]
-    // empty → only wontfix
-    #[case(vec![], vec![s(WONTFIX_LABEL)])]
-    // unrelated label + needs-human-review → unrelated preserved, needs-human-review removed
-    #[case(
-        vec![s("bug"), s(NEEDS_HUMAN_REVIEW_LABEL)],
-        vec![s("bug"), s(WONTFIX_LABEL)]
+    #[case::ready_keeps_other_labels_in_order(
+        agent_ready_labels,
+        &["bug", "wontfix"],
+        &["bug", "wontfix", READY_FOR_AGENT_LABEL]
     )]
-    fn dismissed_labels_cases(#[case] input: Vec<String>, #[case] expected: Vec<String>) {
-        assert_eq!(dismissed_labels(&input), expected);
+    #[case::ready_labels_an_unlabelled_issue(agent_ready_labels, &[], &[READY_FOR_AGENT_LABEL])]
+    #[case::ready_keeps_others_and_drops_needs_review(
+        agent_ready_labels,
+        &["bug", NEEDS_HUMAN_REVIEW_LABEL],
+        &["bug", READY_FOR_AGENT_LABEL]
+    )]
+    #[case::dismissed_replaces_needs_review(
+        dismissed_labels,
+        &[NEEDS_HUMAN_REVIEW_LABEL],
+        &[WONTFIX_LABEL]
+    )]
+    #[case::dismissed_drops_needs_review_beside_wontfix(
+        dismissed_labels,
+        &[NEEDS_HUMAN_REVIEW_LABEL, WONTFIX_LABEL],
+        &[WONTFIX_LABEL]
+    )]
+    #[case::dismissed_leaves_a_dismissed_issue_unchanged(
+        dismissed_labels,
+        &[WONTFIX_LABEL],
+        &[WONTFIX_LABEL]
+    )]
+    #[case::dismissed_keeps_other_labels_in_order(
+        dismissed_labels,
+        &["bug"],
+        &["bug", WONTFIX_LABEL]
+    )]
+    #[case::dismissed_labels_an_unlabelled_issue(dismissed_labels, &[], &[WONTFIX_LABEL])]
+    #[case::dismissed_keeps_others_and_drops_needs_review(
+        dismissed_labels,
+        &["bug", NEEDS_HUMAN_REVIEW_LABEL],
+        &["bug", WONTFIX_LABEL]
+    )]
+    fn relabelling_swaps_needs_review_for_its_label_and_keeps_the_rest(
+        #[case] relabel: Relabel,
+        #[case] before: &[&str],
+        #[case] after: &[&str],
+    ) {
+        assert_eq!(relabel(&labels(before)), labels(after));
     }
 
-    #[test]
-    fn dismissed_labels_idempotent() {
-        let input = vec![s(NEEDS_HUMAN_REVIEW_LABEL), s("bug")];
-        let once = dismissed_labels(&input);
-        let twice = dismissed_labels(&once);
-        assert_eq!(once, twice);
+    /// Label sets dense with the labels relabelling looks for, among arbitrary others.
+    fn label_sets() -> impl Strategy<Value = Vec<String>> {
+        prop::collection::vec(
+            prop_oneof![
+                Just(NEEDS_HUMAN_REVIEW_LABEL.to_string()),
+                Just(READY_FOR_AGENT_LABEL.to_string()),
+                Just(WONTFIX_LABEL.to_string()),
+                "[a-z:-]{1,24}",
+            ],
+            0..6,
+        )
     }
 
-    #[test]
-    fn dismissed_labels_never_contains_needs_human_review() {
-        let inputs: &[&[&str]] = &[
-            &[NEEDS_HUMAN_REVIEW_LABEL],
-            &[NEEDS_HUMAN_REVIEW_LABEL, WONTFIX_LABEL],
-            &["bug", NEEDS_HUMAN_REVIEW_LABEL],
-            &[],
-        ];
-        for labels in inputs {
-            let input: Vec<String> = labels
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect();
-            let result = dismissed_labels(&input);
-            assert!(
-                !result.iter().any(|l| l == NEEDS_HUMAN_REVIEW_LABEL),
-                "result contained NEEDS_HUMAN_REVIEW_LABEL for input {labels:?}"
-            );
-            assert!(
-                result.iter().any(|l| l == WONTFIX_LABEL),
-                "result missing WONTFIX_LABEL for input {labels:?}"
-            );
-        }
+    #[rstest]
+    #[case::ready_for_agent(agent_ready_labels, READY_FOR_AGENT_LABEL)]
+    #[case::dismissed(dismissed_labels, WONTFIX_LABEL)]
+    fn relabelling_any_issue_drops_needs_review_adds_its_label_and_is_idempotent(
+        #[case] relabel: Relabel,
+        #[case] label: &str,
+    ) {
+        proptest!(|(before in label_sets())| {
+            let once = relabel(&before);
+
+            prop_assert!(!once.iter().any(|l| l == NEEDS_HUMAN_REVIEW_LABEL), "{once:?}");
+            prop_assert!(once.iter().any(|l| l == label), "{once:?}");
+            prop_assert_eq!(relabel(&once), once);
+        });
     }
 }

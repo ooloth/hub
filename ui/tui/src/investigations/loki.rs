@@ -36,36 +36,14 @@ pub(crate) fn config(
     }
 }
 
+// The prompt and system prompt are pinned by the snapshots in `command.rs`.
 #[cfg(test)]
 mod tests {
     use super::config;
-    use crate::investigations::LaunchConfig;
     use domain::UntrustedText;
 
-    /// The prompt as the agent receives it. Supplied with a path because the
-    /// Loki and GCP prompts carry a supporting-data segment.
-    fn rendered(cfg: &LaunchConfig) -> String {
-        cfg.prompt
-            .render(Some(std::path::Path::new("/tmp/supporting-data.json")))
-    }
-
     #[test]
-    fn loki_investigation_system_prompt_contains_skill_content() {
-        let cfg = config(
-            "web-app",
-            "internal",
-            "backend errors",
-            &UntrustedText::new("Parser validation error"),
-            &UntrustedText::new("{}"),
-            "",
-            "15m",
-        );
-        assert!(cfg.system_prompt.contains("## Purpose"));
-        assert!(!cfg.system_prompt.starts_with("---"));
-    }
-
-    #[test]
-    fn loki_investigation_prompt_contains_all_context() {
+    fn the_log_line_is_kept_unchanged_as_supporting_data() {
         let line = r#"[{"message":"Parser validation error"}]"#;
         let cfg = config(
             "web-app",
@@ -76,12 +54,6 @@ mod tests {
             "https://grafana.example.com/explore",
             "15m",
         );
-        assert!(rendered(&cfg).contains("web-app"));
-        assert!(rendered(&cfg).contains("internal"));
-        assert!(rendered(&cfg).contains("Parser validation error"));
-        assert!(rendered(&cfg).contains("15m"));
-        assert!(rendered(&cfg).contains("grafana.example.com"));
-        assert!(rendered(&cfg).contains("/tmp/supporting-data.json"));
         assert_eq!(
             cfg.supporting_data
                 .as_ref()

@@ -1,0 +1,45 @@
+---
+source: workflows/src/status.rs
+expression: "serde_json::json!({ \"schema_version\": SCHEMA_VERSION, \"payload\": report, })"
+---
+{
+  "payload": {
+    "errors": [
+      "github issues"
+    ],
+    "items": [
+      {
+        "Pr": {
+          "activity": {
+            "bodies": [],
+            "my_latest": null,
+            "open_threads": [],
+            "requests": [],
+            "verdicts": []
+          },
+          "age": 0,
+          "author": "alice",
+          "base_branch": "main",
+          "body": null,
+          "changed_files": [],
+          "ci_status": null,
+          "comment_count": 0,
+          "draft": false,
+          "head_branch": "feat",
+          "kind": "ToReview",
+          "merge_readiness": "NotYetKnown",
+          "number": 1,
+          "pr_comments": [],
+          "repo": "owner/repo",
+          "review_decision": null,
+          "review_threads": [],
+          "title": "a pull request",
+          "total_changed_files": 0,
+          "urgency": "Medium",
+          "url": "https://github.com/owner/repo/pull/1"
+        }
+      }
+    ]
+  },
+  "schema_version": 22
+}

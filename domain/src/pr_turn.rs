@@ -285,21 +285,59 @@ mod tests {
         }
     }
 
-    fn approved(mut pr: PullRequest) -> PullRequest {
-        pr.activity
-            .verdicts
-            .push(verdict(person("ada"), Opinion::Approved, 1));
-        pr
+    /// `pr` with `verdict` added to the verdicts it already has.
+    fn with_verdict(pr: PullRequest, verdict: LatestVerdict) -> PullRequest {
+        PullRequest {
+            activity: PrActivity {
+                verdicts: pr.activity.verdicts.into_iter().chain([verdict]).collect(),
+                ..pr.activity
+            },
+            ..pr
+        }
     }
 
-    fn with_threads(mut pr: PullRequest, threads: Vec<OpenThread>) -> PullRequest {
-        pr.activity.open_threads = threads;
-        pr
+    fn approved(pr: PullRequest) -> PullRequest {
+        with_verdict(pr, verdict(person("ada"), Opinion::Approved, 1))
     }
 
-    fn requested(mut pr: PullRequest, request: Requested) -> PullRequest {
-        pr.activity.requests.push(request);
-        pr
+    fn with_threads(pr: PullRequest, threads: Vec<OpenThread>) -> PullRequest {
+        PullRequest {
+            activity: PrActivity {
+                open_threads: threads,
+                ..pr.activity
+            },
+            ..pr
+        }
+    }
+
+    fn requested(pr: PullRequest, request: Requested) -> PullRequest {
+        PullRequest {
+            activity: PrActivity {
+                requests: pr.activity.requests.into_iter().chain([request]).collect(),
+                ..pr.activity
+            },
+            ..pr
+        }
+    }
+
+    /// `pr` with a review body from ada at minute 2, and my latest activity at `mine_at`.
+    fn with_ada_body(pr: PullRequest, mine_at: Option<i64>) -> PullRequest {
+        PullRequest {
+            activity: PrActivity {
+                bodies: pr
+                    .activity
+                    .bodies
+                    .into_iter()
+                    .chain([ReviewBody {
+                        by: "ada".to_string(),
+                        at: minute(2),
+                    }])
+                    .collect(),
+                my_latest: mine_at.map(minute),
+                ..pr.activity
+            },
+            ..pr
+        }
     }
 
     fn reason(reading: &TurnReading) -> Option<TurnReason> {
@@ -329,8 +367,10 @@ mod tests {
     #[case::asking_for_my_review(PrKind::ToReview)]
     #[case::not_asking(PrKind::External)]
     fn someone_elses_draft_is_never_my_turn(#[case] kind: PrKind) {
-        let mut draft = pr(kind);
-        draft.draft = true;
+        let draft = PullRequest {
+            draft: true,
+            ..pr(kind)
+        };
 
         assert_eq!(TurnReading::of(&draft), TurnReading::NotMyTurn);
     }
@@ -362,20 +402,17 @@ mod tests {
 
     #[test]
     fn changes_requested_by_a_reviewer_not_asked_again_is_my_turn() {
-        let mut pr = mine();
-        pr.activity
-            .verdicts
-            .push(verdict(person("ada"), Opinion::ChangesRequested, 1));
+        let pr = with_verdict(mine(), verdict(person("ada"), Opinion::ChangesRequested, 1));
 
         assert_eq!(reason(&TurnReading::of(&pr)), Some(feedback_from("ada")));
     }
 
     #[test]
     fn asking_the_reviewer_who_requested_changes_again_hands_them_the_move() {
-        let mut pr = requested(mine(), Requested::Person("ada".to_string()));
-        pr.activity
-            .verdicts
-            .push(verdict(person("ada"), Opinion::ChangesRequested, 1));
+        let pr = with_verdict(
+            requested(mine(), Requested::Person("ada".to_string())),
+            verdict(person("ada"), Opinion::ChangesRequested, 1),
+        );
 
         assert_eq!(TurnReading::of(&pr), TurnReading::NotMyTurn);
     }
@@ -384,12 +421,10 @@ mod tests {
     #[case::nothing_of_mine(None)]
     #[case::mine_before_it(Some(1))]
     fn a_persons_review_body_newer_than_anything_of_mine_is_my_turn(#[case] mine_at: Option<i64>) {
-        let mut pr = requested(approved(mine()), Requested::Person("grace".to_string()));
-        pr.activity.bodies.push(ReviewBody {
-            by: "ada".to_string(),
-            at: minute(2),
-        });
-        pr.activity.my_latest = mine_at.map(minute);
+        let pr = with_ada_body(
+            requested(approved(mine()), Requested::Person("grace".to_string())),
+            mine_at,
+        );
 
         assert_eq!(reason(&TurnReading::of(&pr)), Some(feedback_from("ada")));
     }
@@ -398,22 +433,20 @@ mod tests {
     #[case::at_the_same_moment(2)]
     #[case::after_it(3)]
     fn anything_of_mine_after_a_review_body_answers_it(#[case] mine_at: i64) {
-        let mut pr = requested(mine(), Requested::Person("grace".to_string()));
-        pr.activity.bodies.push(ReviewBody {
-            by: "ada".to_string(),
-            at: minute(2),
-        });
-        pr.activity.my_latest = Some(minute(mine_at));
+        let pr = with_ada_body(
+            requested(mine(), Requested::Person("grace".to_string())),
+            Some(mine_at),
+        );
 
         assert_eq!(TurnReading::of(&pr), TurnReading::NotMyTurn);
     }
 
     #[test]
     fn the_newest_feedback_names_who_left_it() {
-        let mut pr = with_threads(mine(), vec![thread(&[(person("ada"), 1)])]);
-        pr.activity
-            .verdicts
-            .push(verdict(person("grace"), Opinion::ChangesRequested, 5));
+        let pr = with_verdict(
+            with_threads(mine(), vec![thread(&[(person("ada"), 1)])]),
+            verdict(person("grace"), Opinion::ChangesRequested, 5),
+        );
 
         assert_eq!(reason(&TurnReading::of(&pr)), Some(feedback_from("grace")));
     }
@@ -422,9 +455,11 @@ mod tests {
 
     #[test]
     fn failing_checks_are_my_turn_ahead_of_draft_and_approval() {
-        let mut pr = approved(mine());
-        pr.draft = true;
-        pr.ci_status = Some(CiStatus::Failure);
+        let pr = PullRequest {
+            draft: true,
+            ci_status: Some(CiStatus::Failure),
+            ..approved(mine())
+        };
 
         assert_eq!(
             reason(&TurnReading::of(&pr)),
@@ -434,8 +469,10 @@ mod tests {
 
     #[test]
     fn feedback_comes_before_failing_checks() {
-        let mut pr = with_threads(mine(), vec![thread(&[(person("ada"), 1)])]);
-        pr.ci_status = Some(CiStatus::Failure);
+        let pr = PullRequest {
+            ci_status: Some(CiStatus::Failure),
+            ..with_threads(mine(), vec![thread(&[(person("ada"), 1)])])
+        };
 
         assert_eq!(reason(&TurnReading::of(&pr)), Some(feedback_from("ada")));
     }
@@ -444,16 +481,20 @@ mod tests {
 
     #[test]
     fn my_draft_is_my_turn_even_while_a_review_is_requested() {
-        let mut pr = requested(mine(), Requested::Person("ada".to_string()));
-        pr.draft = true;
+        let pr = PullRequest {
+            draft: true,
+            ..requested(mine(), Requested::Person("ada".to_string()))
+        };
 
         assert_eq!(reason(&TurnReading::of(&pr)), Some(TurnReason::Draft));
     }
 
     #[test]
     fn feedback_on_my_draft_comes_before_its_being_a_draft() {
-        let mut pr = with_threads(mine(), vec![thread(&[(person("ada"), 1)])]);
-        pr.draft = true;
+        let pr = PullRequest {
+            draft: true,
+            ..with_threads(mine(), vec![thread(&[(person("ada"), 1)])])
+        };
 
         assert_eq!(reason(&TurnReading::of(&pr)), Some(feedback_from("ada")));
     }
@@ -482,17 +523,21 @@ mod tests {
         #[case] checks: Option<CiStatus>,
         #[case] expected: Option<TurnReason>,
     ) {
-        let mut pr = requested(approved(mine()), Requested::Person("grace".to_string()));
-        pr.merge_readiness = merge;
-        pr.ci_status = checks;
+        let pr = PullRequest {
+            merge_readiness: merge,
+            ci_status: checks,
+            ..requested(approved(mine()), Requested::Person("grace".to_string()))
+        };
 
         assert_eq!(reason(&TurnReading::of(&pr)), expected);
     }
 
     #[test]
     fn an_approval_github_reports_only_as_a_decision_counts() {
-        let mut pr = mine();
-        pr.review_decision = Some(ReviewDecision::Approved);
+        let pr = PullRequest {
+            review_decision: Some(ReviewDecision::Approved),
+            ..mine()
+        };
 
         assert_eq!(
             reason(&TurnReading::of(&pr)),
@@ -506,8 +551,10 @@ mod tests {
     fn an_approval_branch_protection_does_not_accept_is_not_approved(
         #[case] decision: ReviewDecision,
     ) {
-        let mut pr = requested(approved(mine()), Requested::Person("grace".to_string()));
-        pr.review_decision = Some(decision);
+        let pr = PullRequest {
+            review_decision: Some(decision),
+            ..requested(approved(mine()), Requested::Person("grace".to_string()))
+        };
 
         assert_eq!(TurnReading::of(&pr), TurnReading::NotMyTurn);
     }
@@ -518,9 +565,11 @@ mod tests {
     fn my_approved_pull_request_blocked_by_anything_else_is_read_as_not_approved(
         #[case] checks: Option<CiStatus>,
     ) {
-        let mut blocked = approved(mine());
-        blocked.merge_readiness = MergeReadiness::Blocked(MergeBlocker::Blocked);
-        blocked.ci_status = checks;
+        let blocked = PullRequest {
+            merge_readiness: MergeReadiness::Blocked(MergeBlocker::Blocked),
+            ci_status: checks,
+            ..approved(mine())
+        };
         let waiting = requested(blocked.clone(), Requested::Person("grace".to_string()));
 
         assert_eq!(
@@ -532,16 +581,20 @@ mod tests {
 
     #[test]
     fn my_approved_pull_request_is_undecided_until_github_works_out_the_merge() {
-        let mut pr = approved(mine());
-        pr.merge_readiness = MergeReadiness::NotYetKnown;
+        let pr = PullRequest {
+            merge_readiness: MergeReadiness::NotYetKnown,
+            ..approved(mine())
+        };
 
         assert_eq!(TurnReading::of(&pr), TurnReading::Undecided);
     }
 
     #[test]
     fn running_checks_neither_make_nor_end_a_turn() {
-        let mut running = mine();
-        running.ci_status = Some(CiStatus::Pending);
+        let running = PullRequest {
+            ci_status: Some(CiStatus::Pending),
+            ..mine()
+        };
         let waiting = requested(running.clone(), Requested::Person("ada".to_string()));
 
         assert_eq!(
@@ -708,14 +761,13 @@ mod tests {
             Just(MergeReadiness::Blocked(MergeBlocker::Blocked)),
         ];
         (kind, any::<bool>(), decision, checks, merge, activity()).prop_map(
-            |(kind, draft, decision, checks, merge, activity)| {
-                let mut pr = pr(kind);
-                pr.draft = draft;
-                pr.review_decision = decision;
-                pr.ci_status = checks;
-                pr.merge_readiness = merge;
-                pr.activity = activity;
-                pr
+            |(kind, draft, decision, checks, merge, activity)| PullRequest {
+                draft,
+                review_decision: decision,
+                ci_status: checks,
+                merge_readiness: merge,
+                activity,
+                ..pr(kind)
             },
         )
     }
@@ -743,14 +795,19 @@ mod tests {
             pr in any_pr(),
             at in 20..40_i64,
         ) {
-            let mut pr = pr;
-            pr.kind = PrKind::Mine;
-            pr.activity.verdicts = vec![];
-            pr.activity.bodies = vec![];
-            pr.activity.open_threads = vec![
-                thread(&[(person("ada"), at), (Participant::Me, at + 1)]),
-                thread(&[(person("grace"), at)]),
-            ];
+            let pr = PullRequest {
+                kind: PrKind::Mine,
+                activity: PrActivity {
+                    verdicts: vec![],
+                    bodies: vec![],
+                    open_threads: vec![
+                        thread(&[(person("ada"), at), (Participant::Me, at + 1)]),
+                        thread(&[(person("grace"), at)]),
+                    ],
+                    ..pr.activity
+                },
+                ..pr
+            };
 
             prop_assert_eq!(reason(&TurnReading::of(&pr)), Some(feedback_from("grace")));
         }

@@ -123,6 +123,17 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
+    /// Whether `pid` is still running. Running means present and not a zombie: a killed process
+    /// stays listed as `Z` until something reaps it, and is no longer running.
+    fn running(pid: &str) -> bool {
+        let output = std::process::Command::new("ps")
+            .args(["-o", "stat=", "-p", pid])
+            .output()
+            .unwrap();
+        let state = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        !state.is_empty() && !state.starts_with('Z')
+    }
+
     #[tokio::test]
     async fn a_process_given_up_on_is_killed() {
         let dir = std::env::temp_dir().join(format!("hub-killed-on-drop-{}", std::process::id()));
@@ -144,49 +155,41 @@ mod tests {
             .unwrap()
             .trim()
             .to_string();
-        // Running means present and not a zombie: a killed process stays listed as `Z` until
-        // something reaps it, and is no longer running.
-        let mut alive = true;
-        for _ in 0..50 {
-            let output = std::process::Command::new("ps")
-                .args(["-o", "stat=", "-p", &pid])
-                .output()
-                .unwrap();
-            let state = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            alive = !state.is_empty() && !state.starts_with('Z');
-            if !alive {
-                break;
+        let stopped = (0..50).any(|attempt| {
+            if attempt > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(20));
             }
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
+            !running(&pid)
+        });
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(
-            !alive,
+            stopped,
             "process {pid} was still running after its future was dropped"
         );
     }
 
-    #[rstest]
-    #[case("my-project", "severity>=ERROR", "1h", vec![
-        "logging", "read", "severity>=ERROR",
-        "--project=my-project", "--freshness=1h", "--format=json", "--limit=1000",
-    ])]
-    fn gcloud_args_produces_correct_args(
-        #[case] project: &str,
-        #[case] filter: &str,
-        #[case] lookback: &str,
-        #[case] expected: Vec<&str>,
-    ) {
-        let got = gcloud_args(project, filter, lookback);
-        assert_eq!(got, expected);
+    #[test]
+    fn gcloud_is_asked_for_the_projects_matching_logs_as_json() {
+        assert_eq!(
+            gcloud_args("my-project", "severity>=ERROR", "1h"),
+            [
+                "logging",
+                "read",
+                "severity>=ERROR",
+                "--project=my-project",
+                "--freshness=1h",
+                "--format=json",
+                "--limit=1000",
+            ]
+        );
     }
 
     #[rstest]
-    #[case("1h")]
-    #[case("30m")]
-    #[case("24h")]
-    #[case("7d")]
-    fn gcloud_args_passes_lookback_through_unchanged(#[case] lookback: &str) {
+    #[case::one_hour("1h")]
+    #[case::thirty_minutes("30m")]
+    #[case::one_day_in_hours("24h")]
+    #[case::seven_days("7d")]
+    fn the_lookback_is_passed_to_gcloud_unchanged(#[case] lookback: &str) {
         let args = gcloud_args("proj", "filter", lookback);
         assert!(
             args.contains(&format!("--freshness={lookback}")),
@@ -195,18 +198,18 @@ mod tests {
     }
 
     #[test]
-    fn parse_entries_empty_array_returns_empty_vec() {
+    fn no_entries_parse_as_none() {
         let entries = parse_entries("[]").unwrap();
         assert!(entries.is_empty());
     }
 
     #[test]
-    fn parse_entries_invalid_json_returns_error() {
+    fn output_that_is_not_json_is_an_error() {
         assert!(parse_entries("not json").is_err());
     }
 
     #[test]
-    fn parse_entries_json_payload_entry() {
+    fn a_structured_entry_keeps_its_json_payload() {
         let json = r#"[{
             "timestamp": "2024-01-15T10:30:00Z",
             "severity": "ERROR",
@@ -216,7 +219,6 @@ mod tests {
         assert_eq!(entries.len(), 1);
         let e = &entries[0];
         assert_eq!(e.severity.as_deref(), Some("ERROR"));
-        assert!(e.json_payload.is_some());
         assert!(e.text_payload.is_none());
         assert_eq!(
             e.json_payload
@@ -229,7 +231,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_entries_text_payload_entry() {
+    fn a_text_entry_keeps_its_text_payload() {
         let json = r#"[{
             "timestamp": "2024-01-15T10:30:00Z",
             "severity": "WARNING",
@@ -244,7 +246,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_entries_missing_timestamp_uses_now() {
+    fn an_entry_without_a_timestamp_is_dated_now() {
         let json = r#"[{"severity": "ERROR"}]"#;
         let before = Utc::now();
         let entries = parse_entries(json).unwrap();
@@ -255,7 +257,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_entries_raw_field_is_json_representation() {
+    fn an_entry_keeps_its_raw_json() {
         let json = r#"[{"timestamp": "2024-01-15T10:30:00Z", "severity": "ERROR"}]"#;
         let entries = parse_entries(json).unwrap();
         assert_eq!(entries.len(), 1);
@@ -264,7 +266,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_entries_http_request_entry() {
+    fn a_request_entry_keeps_its_http_request() {
         let json = r#"[{
             "timestamp": "2024-01-15T10:30:00Z",
             "severity": "ERROR",
@@ -286,7 +288,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_entries_resource_labels_extracted() {
+    fn an_entry_keeps_its_resource_labels() {
         let json = r#"[{
             "timestamp": "2024-01-15T10:30:00Z",
             "resource": {

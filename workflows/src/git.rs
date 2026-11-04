@@ -4,10 +4,6 @@
 //! domain concepts (investigations, projects). Feature-specific worktree
 //! logic — where to put worktrees, when to clean them up, branch naming conventions —
 //! belongs in the feature's own module (`fetch.rs`), not here.
-// pub(crate) fns in a pub(crate) mod are effectively the same visibility; both lints
-// fire depending on which keyword is used — suppress the noisier nursery one.
-#![allow(clippy::redundant_pub_crate)]
-
 use anyhow::{Context, Result};
 use std::path::Path;
 use tokio::process::Command;
@@ -50,11 +46,16 @@ pub(crate) mod test_helpers {
     use tokio::process::Command;
 
     pub(crate) async fn run_git(args: &[&str]) {
-        let out = Command::new("git")
-            .args(args)
-            .output()
-            .await
-            .expect("git not found");
+        succeeds(Command::new("git").args(args), args).await;
+    }
+
+    /// Runs git in `dir`, as `git -C <dir>` would.
+    pub(crate) async fn run_git_in(dir: &Path, args: &[&str]) {
+        succeeds(Command::new("git").current_dir(dir).args(args), args).await;
+    }
+
+    async fn succeeds(git: &mut Command, args: &[&str]) {
+        let out = git.output().await.expect("git not found");
         assert!(
             out.status.success(),
             "git {} failed: {}",
@@ -81,28 +82,28 @@ pub(crate) mod test_helpers {
         let bare_str = bare.to_string_lossy().into_owned();
 
         run_git(&["-c", "init.defaultBranch=main", "init", &origin_str]).await;
-        run_git(&["-C", &origin_str, "config", "user.email", "t@t.com"]).await;
-        run_git(&["-C", &origin_str, "config", "user.name", "Test"]).await;
-        run_git(&["-C", &origin_str, "commit", "--allow-empty", "-m", "init"]).await;
+        run_git_in(&origin, &["config", "user.email", "t@t.com"]).await;
+        run_git_in(&origin, &["config", "user.name", "Test"]).await;
+        run_git_in(&origin, &["commit", "--allow-empty", "-m", "init"]).await;
 
         run_git(&["clone", "--bare", &origin_str, &bare_str]).await;
-        run_git(&[
-            "-C",
-            &bare_str,
-            "config",
-            "remote.origin.fetch",
-            "+refs/heads/*:refs/remotes/origin/*",
-        ])
+        run_git_in(
+            &bare,
+            &[
+                "config",
+                "remote.origin.fetch",
+                "+refs/heads/*:refs/remotes/origin/*",
+            ],
+        )
         .await;
-        run_git(&["-C", &bare_str, "fetch", "origin"]).await;
+        run_git_in(&bare, &["fetch", "origin"]).await;
 
         (origin, bare)
     }
 
     /// Pushes an empty commit to origin and returns its SHA.
     pub(crate) async fn push_commit(origin: &Path, message: &str) -> String {
-        let origin_str = origin.to_string_lossy().into_owned();
-        run_git(&["-C", &origin_str, "commit", "--allow-empty", "-m", message]).await;
+        run_git_in(origin, &["commit", "--allow-empty", "-m", message]).await;
         git_rev_parse(origin, "HEAD").await
     }
 }
@@ -134,20 +135,12 @@ mod tests {
     async fn add_worktree_or_recover_succeeds_on_fresh_bare() {
         let tmp = tempfile::tempdir().unwrap();
         let (origin, bare) = setup_origin_and_bare(tmp.path()).await;
-        let origin_str = origin.to_string_lossy().into_owned();
         let bare_str = bare.to_string_lossy().into_owned();
 
-        run_git(&["-C", &origin_str, "checkout", "-b", "feat/x"]).await;
-        run_git(&["-C", &origin_str, "commit", "--allow-empty", "-m", "x"]).await;
-        run_git(&["-C", &bare_str, "fetch", "origin"]).await;
-        run_git(&[
-            "-C",
-            &bare_str,
-            "branch",
-            "pr-9",
-            "refs/remotes/origin/feat/x",
-        ])
-        .await;
+        run_git_in(&origin, &["checkout", "-b", "feat/x"]).await;
+        let _ = push_commit(&origin, "x").await;
+        run_git_in(&bare, &["fetch", "origin"]).await;
+        run_git_in(&bare, &["branch", "pr-9", "refs/remotes/origin/feat/x"]).await;
 
         let worktree = bare.join("pr-9");
         add_worktree_or_recover(&bare_str, &worktree, "pr-9")

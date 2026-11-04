@@ -39,42 +39,52 @@ fn media_health() -> StatusItem {
 }
 
 fn pr() -> StatusItem {
-    StatusItem::Pr(domain::PullRequest {
+    StatusItem::Pr(review_request())
+}
+
+/// Someone else's pull request asking for my review, with no reviews yet.
+fn review_request() -> domain::PullRequest {
+    domain::PullRequest {
         number: 42,
         title: "Add feature".to_string(),
         repo: domain::RepoSlug::new("owner", "repo"),
         url: "https://github.com/owner/repo/pull/42".to_string(),
-        age: chrono::Duration::zero(),
         urgency: domain::Urgency::Medium,
         kind: domain::PrKind::ToReview,
-        draft: false,
         author: "alice".to_string(),
-        review_decision: None,
-        comment_count: 0,
         head_branch: "feat/add-feature".to_string(),
-        base_branch: "main".to_string(),
-        body: None,
-        ci_status: None,
-        changed_files: vec![],
-        total_changed_files: 0,
-        review_threads: vec![],
-        pr_comments: vec![],
-        merge_readiness: domain::MergeReadiness::NotYetKnown,
-        activity: domain::pr_activity::PrActivity::default(),
-    })
+        ..crate::test_support::pull_request()
+    }
+}
+
+/// A pull request of `kind` that I opened, with the reviews given.
+fn reviewed(
+    kind: domain::PrKind,
+    approval_count: u32,
+    changes_requested_count: u32,
+) -> domain::PullRequest {
+    domain::PullRequest {
+        kind,
+        author: "ooloth".to_string(),
+        activity: crate::test_support::verdicts(approval_count, changes_requested_count),
+        ..review_request()
+    }
 }
 
 /// My own draft.
-fn make_draft() -> StatusItem {
-    let StatusItem::Pr(mut pr) = make_pr(domain::PrKind::Mine) else {
-        unreachable!()
-    };
-    pr.draft = true;
-    StatusItem::Pr(pr)
+fn my_draft() -> domain::PullRequest {
+    domain::PullRequest {
+        draft: true,
+        ..reviewed(domain::PrKind::Mine, 0, 0)
+    }
 }
 
 fn issue() -> StatusItem {
-    StatusItem::Issue(domain::Issue {
+    StatusItem::Issue(github_issue())
+}
+
+fn github_issue() -> domain::Issue {
+    domain::Issue {
         number: 7,
         title: "Fix bug".to_string(),
         repo: domain::RepoSlug::new("owner", "repo"),
@@ -84,25 +94,26 @@ fn issue() -> StatusItem {
         urgency: domain::Urgency::Low,
         labels: vec![],
         body: None,
-    })
+    }
 }
 
 fn issue_with_labels() -> StatusItem {
     StatusItem::Issue(domain::Issue {
         number: 8,
-        title: "Fix bug".to_string(),
-        repo: domain::RepoSlug::new("owner", "repo"),
         url: "https://github.com/owner/repo/issues/8".to_string(),
-        author: "alice".to_string(),
-        age: chrono::Duration::zero(),
-        urgency: domain::Urgency::Low,
         labels: vec!["bug".to_string(), "wontfix".to_string()],
         body: Some("Issue body text.".to_string()),
+        ..github_issue()
     })
 }
 
 fn ci() -> StatusItem {
-    StatusItem::Ci(domain::CiFailure {
+    StatusItem::Ci(ci_failure())
+}
+
+/// A failed workflow run, with no job, step or error named.
+fn ci_failure() -> domain::CiFailure {
+    domain::CiFailure {
         repo: domain::RepoSlug::new("owner", "repo"),
         workflow_name: "CI".to_string(),
         job_name: None,
@@ -111,7 +122,7 @@ fn ci() -> StatusItem {
         age: chrono::Duration::zero(),
         urgency: domain::Urgency::High,
         url: "https://github.com/owner/repo/actions/runs/1".to_string(),
-    })
+    }
 }
 
 fn linear() -> StatusItem {
@@ -158,84 +169,72 @@ fn gcp() -> StatusItem {
 
 fn ci_job_step() -> StatusItem {
     StatusItem::Ci(domain::CiFailure {
-        repo: domain::RepoSlug::new("owner", "repo"),
-        workflow_name: "CI".to_string(),
         job_name: Some("Build".to_string()),
         step_name: Some("cargo check".to_string()),
-        error: None,
-        age: chrono::Duration::zero(),
-        urgency: domain::Urgency::High,
-        url: "https://github.com/owner/repo/actions/runs/1".to_string(),
+        ..ci_failure()
     })
 }
 
 fn ci_full() -> StatusItem {
     StatusItem::Ci(domain::CiFailure {
-        repo: domain::RepoSlug::new("owner", "repo"),
-        workflow_name: "CI".to_string(),
         job_name: Some("Build".to_string()),
         step_name: Some("cargo check".to_string()),
         error: Some("error[E0308]: mismatched types".to_string()),
-        age: chrono::Duration::zero(),
-        urgency: domain::Urgency::High,
-        url: "https://github.com/owner/repo/actions/runs/1".to_string(),
+        ..ci_failure()
     })
+}
+
+fn pr_line(pr: domain::PullRequest) -> String {
+    item_line(&StatusItem::Pr(pr)).flat()
 }
 
 #[test]
 fn snapshot_item_lines() {
+    let conflict = domain::MergeReadiness::Blocked(domain::MergeBlocker::Conflict);
     let lines = [
         format!(
             "pr_no_reviews:         {}",
-            item_line(&make_pr(domain::PrKind::Mine)).flat()
+            pr_line(reviewed(domain::PrKind::Mine, 0, 0))
         ),
         format!(
             "pr_approved:           {}",
-            item_line(&make_pr_with(
-                domain::PrKind::Mine,
-                Some(domain::ReviewDecision::Approved),
-                2,
-                0
-            ))
-            .flat()
+            pr_line(domain::PullRequest {
+                review_decision: Some(domain::ReviewDecision::Approved),
+                ..reviewed(domain::PrKind::Mine, 2, 0)
+            })
         ),
         format!(
             "pr_changes_requested:  {}",
-            item_line(&make_pr_with(
-                domain::PrKind::Mine,
-                Some(domain::ReviewDecision::ChangesRequested),
-                1,
-                1
-            ))
-            .flat()
+            pr_line(domain::PullRequest {
+                review_decision: Some(domain::ReviewDecision::ChangesRequested),
+                ..reviewed(domain::PrKind::Mine, 1, 1)
+            })
         ),
         format!(
             "pr_approved_null_decision: {}",
             // Regression: reviewDecision null (e.g. no branch-protection policy)
             // must not hide a counted approval.
-            item_line(&make_pr_with(domain::PrKind::Mine, None, 1, 0)).flat()
+            pr_line(reviewed(domain::PrKind::Mine, 1, 0))
         ),
         format!(
             "pr_changes_requested_trumps_approvals: {}",
             // Any changes-requested review shows the bare word, even with approvals.
-            item_line(&make_pr_with(domain::PrKind::Mine, None, 2, 1)).flat()
+            pr_line(reviewed(domain::PrKind::Mine, 2, 1))
         ),
-        format!("pr_draft:              {}", item_line(&make_draft()).flat()),
+        format!("pr_draft:              {}", pr_line(my_draft())),
         format!(
             "pr_conflict:           {}",
-            item_line(&make_pr_conflicting(domain::PrKind::Mine)).flat()
+            pr_line(domain::PullRequest {
+                merge_readiness: conflict,
+                ..reviewed(domain::PrKind::Mine, 0, 0)
+            })
         ),
         format!(
             "pr_draft_conflict:     {}",
-            item_line(&{
-                let StatusItem::Pr(mut pr) = make_draft() else {
-                    unreachable!()
-                };
-                pr.merge_readiness =
-                    domain::MergeReadiness::Blocked(domain::MergeBlocker::Conflict);
-                StatusItem::Pr(pr)
+            pr_line(domain::PullRequest {
+                merge_readiness: conflict,
+                ..my_draft()
             })
-            .flat()
         ),
         format!("issue:       {}", item_line(&issue()).flat()),
         format!("issue_labels:{}", item_line(&issue_with_labels()).flat()),
@@ -273,29 +272,14 @@ fn snapshot_item_lines_private() {
     insta::assert_snapshot!(lines);
 }
 
-#[test]
-fn item_category_ci_is_errors() {
-    assert_eq!(item_category(&ci()), Category::Errors);
-}
-
-#[test]
-fn item_category_pr_is_prs() {
-    assert_eq!(item_category(&pr()), Category::Prs);
-}
-
-#[test]
-fn item_category_issue_is_issues() {
-    assert_eq!(item_category(&issue()), Category::Issues);
-}
-
-#[test]
-fn item_category_linear_is_issues() {
-    assert_eq!(item_category(&linear()), Category::Issues);
-}
-
-#[test]
-fn item_category_gcp_is_errors() {
-    assert_eq!(item_category(&gcp()), Category::Errors);
+#[rstest]
+#[case::ci(ci(), Category::Errors)]
+#[case::pr(pr(), Category::Prs)]
+#[case::issue(issue(), Category::Issues)]
+#[case::linear(linear(), Category::Issues)]
+#[case::gcp(gcp(), Category::Errors)]
+fn each_signal_is_listed_under_its_category(#[case] item: StatusItem, #[case] category: Category) {
+    assert_eq!(item_category(&item), category);
 }
 
 #[test]
@@ -307,14 +291,6 @@ fn item_investigation_gcp_returns_kind() {
 }
 
 #[test]
-fn item_url_gcp_returns_url() {
-    assert_eq!(
-        item_url(&gcp()),
-        Some("https://console.cloud.google.com/logs/query")
-    );
-}
-
-#[test]
 fn group_key_gcp_returns_key() {
     assert_eq!(
         group_key(&gcp()),
@@ -322,24 +298,6 @@ fn group_key_gcp_returns_key() {
             "errors · something broke — web-app:neuro".to_string()
         ))
     );
-}
-
-fn make_pr(kind: domain::PrKind) -> StatusItem {
-    make_pr_with(kind, None, 0, 0)
-}
-
-fn make_pr_merging(
-    kind: domain::PrKind,
-    approval_count: u32,
-    changes_requested_count: u32,
-    merge_readiness: domain::MergeReadiness,
-) -> StatusItem {
-    let StatusItem::Pr(mut pr) = make_pr_with(kind, None, approval_count, changes_requested_count)
-    else {
-        unreachable!()
-    };
-    pr.merge_readiness = merge_readiness;
-    StatusItem::Pr(pr)
 }
 
 #[rstest]
@@ -423,20 +381,25 @@ fn a_pr_row_names_why_it_is_my_turn_exactly_when_it_is(
     #[case] merge: domain::MergeReadiness,
     #[case] expected: Option<&str>,
 ) {
-    let StatusItem::Pr(mut pr) = make_pr_merging(kind, approvals, changes_requested, merge) else {
-        unreachable!()
-    };
-    pr.draft = draft;
-
-    let line = item_line(&StatusItem::Pr(pr));
+    let line = item_line(&StatusItem::Pr(domain::PullRequest {
+        draft,
+        merge_readiness: merge,
+        ..reviewed(kind, approvals, changes_requested)
+    }));
 
     assert_eq!(line.subcategory.as_deref(), expected);
 }
 
 #[test]
 fn searching_for_a_reason_finds_only_the_rows_that_show_it() {
-    let ready = make_pr_merging(domain::PrKind::Mine, 1, 0, domain::MergeReadiness::Ready);
-    let waiting = make_pr_merging(domain::PrKind::Mine, 0, 0, domain::MergeReadiness::Ready);
+    let ready = StatusItem::Pr(domain::PullRequest {
+        merge_readiness: domain::MergeReadiness::Ready,
+        ..reviewed(domain::PrKind::Mine, 1, 0)
+    });
+    let waiting = StatusItem::Pr(domain::PullRequest {
+        merge_readiness: domain::MergeReadiness::Ready,
+        ..reviewed(domain::PrKind::Mine, 0, 0)
+    });
 
     let result = build_unified(
         vec![ready, waiting],
@@ -454,94 +417,22 @@ fn searching_for_a_reason_finds_only_the_rows_that_show_it() {
     ));
 }
 
-fn make_pr_conflicting(kind: domain::PrKind) -> StatusItem {
-    let StatusItem::Pr(mut pr) = make_pr_with(kind, None, 0, 0) else {
-        unreachable!()
-    };
-    pr.merge_readiness = domain::MergeReadiness::Blocked(domain::MergeBlocker::Conflict);
-    StatusItem::Pr(pr)
-}
-
-fn make_pr_with(
-    kind: domain::PrKind,
-    review_decision: Option<domain::ReviewDecision>,
-    approval_count: u32,
-    changes_requested_count: u32,
-) -> StatusItem {
-    StatusItem::Pr(domain::PullRequest {
-        number: 42,
-        title: "Add feature".to_string(),
-        repo: domain::RepoSlug::new("owner", "repo"),
-        url: "https://github.com/owner/repo/pull/42".to_string(),
-        age: chrono::Duration::zero(),
-        urgency: domain::Urgency::Medium,
-        kind,
-        draft: false,
-        author: "ooloth".to_string(),
-        review_decision,
-        comment_count: 0,
-        head_branch: "feat/add-feature".to_string(),
-        base_branch: "main".to_string(),
-        body: None,
-        ci_status: None,
-        changed_files: vec![],
-        total_changed_files: 0,
-        review_threads: vec![],
-        pr_comments: vec![],
-        merge_readiness: domain::MergeReadiness::NotYetKnown,
-        activity: crate::test_support::verdicts(approval_count, changes_requested_count),
-    })
-}
-
-#[test]
-fn item_url_pr_returns_url() {
-    assert_eq!(
-        item_url(&pr()),
-        Some("https://github.com/owner/repo/pull/42")
-    );
-}
-
-#[test]
-fn item_url_ci_returns_url() {
-    assert_eq!(
-        item_url(&ci()),
-        Some("https://github.com/owner/repo/actions/runs/1")
-    );
-}
-
-#[test]
-fn item_url_issue_returns_url() {
-    assert_eq!(
-        item_url(&issue()),
-        Some("https://github.com/owner/repo/issues/7")
-    );
+#[rstest]
+#[case::pr(pr(), "https://github.com/owner/repo/pull/42")]
+#[case::ci(ci(), "https://github.com/owner/repo/actions/runs/1")]
+#[case::issue(issue(), "https://github.com/owner/repo/issues/7")]
+#[case::gcp(gcp(), "https://console.cloud.google.com/logs/query")]
+fn each_signal_opens_its_own_url(#[case] item: StatusItem, #[case] url: &str) {
+    assert_eq!(item_url(&item), Some(url));
 }
 
 #[cfg(feature = "private")]
-#[test]
-fn item_url_media_blocked_returns_queue_url() {
-    assert_eq!(
-        item_url(&media_blocked()),
-        Some("http://media-server/queue")
-    );
-}
-
-#[cfg(feature = "private")]
-#[test]
-fn item_url_media_missing_returns_wanted_url() {
-    assert_eq!(
-        item_url(&media_missing()),
-        Some("http://media-server/wanted")
-    );
-}
-
-#[cfg(feature = "private")]
-#[test]
-fn item_url_media_health_returns_wiki_url() {
-    assert_eq!(
-        item_url(&media_health()),
-        Some("https://wiki.example.com/system#indexers")
-    );
+#[rstest]
+#[case::media_blocked_opens_the_queue(media_blocked(), "http://media-server/queue")]
+#[case::media_missing_opens_wanted(media_missing(), "http://media-server/wanted")]
+#[case::media_health_opens_the_wiki(media_health(), "https://wiki.example.com/system#indexers")]
+fn each_media_signal_opens_its_own_url(#[case] item: StatusItem, #[case] url: &str) {
+    assert_eq!(item_url(&item), Some(url));
 }
 
 #[test]
@@ -616,41 +507,8 @@ fn aggregate_empty_input_gives_empty_output() {
 }
 
 #[test]
-fn build_unified_no_filter_returns_all_items_in_order() {
-    let items = vec![ci(), pr(), issue()];
-    let result = build_unified(items, &Filter::default());
-    assert_eq!(result.len(), 3);
-}
-
-#[test]
-fn build_unified_empty_input_returns_empty() {
+fn no_signals_make_no_rows() {
     assert!(build_unified(vec![], &Filter::default()).is_empty());
-}
-
-#[test]
-fn build_unified_category_filter_keeps_matching_items() {
-    let result = build_unified(
-        vec![ci(), pr(), issue()],
-        &Filter {
-            category: Some(Category::Prs),
-            query: None,
-        },
-    );
-    assert_eq!(result.len(), 1);
-    assert!(matches!(&result[0], DisplayItem::Single(StatusItem::Pr(_))));
-}
-
-#[test]
-fn build_unified_category_filter_excludes_non_matching() {
-    let result = build_unified(
-        vec![ci(), pr(), issue()],
-        &Filter {
-            category: Some(Category::Errors),
-            query: None,
-        },
-    );
-    assert_eq!(result.len(), 1);
-    assert!(matches!(&result[0], DisplayItem::Single(StatusItem::Ci(_))));
 }
 
 // issue() fields: primary="Fix bug", dim_inline=" (#7)", source="owner/repo",
@@ -662,7 +520,7 @@ fn build_unified_category_filter_excludes_non_matching() {
 #[case("owner/repo")] // source
 #[case("Issue")] // category
 #[case("now")] // age
-fn build_unified_query_searches_all_visible_text(#[case] query: &str) {
+fn a_query_searches_all_of_a_rows_visible_text(#[case] query: &str) {
     let result = build_unified(
         vec![issue()],
         &Filter {
@@ -673,281 +531,90 @@ fn build_unified_query_searches_all_visible_text(#[case] query: &str) {
     assert!(!result.is_empty(), "query {query:?} should match issue");
 }
 
-#[test]
-fn build_unified_query_filter_matches_case_insensitively() {
-    let result = build_unified(
-        vec![ci(), pr(), issue()],
-        &Filter {
-            category: None,
-            query: Some("ADD FEATURE".to_string()),
-        },
-    );
-    assert_eq!(result.len(), 1);
-    assert!(matches!(&result[0], DisplayItem::Single(StatusItem::Pr(_))));
+// ── filter ───────────────────────────────────────────────────────────────
+
+/// The category of each row a filter on `category` and `query` keeps from `ci()`, `pr()` and
+/// `issue()`.
+///
+/// The CI failure is High, the pull request Medium and the issue Low, so the rows come back in
+/// that order. `pr()` searches as "PR Add feature  #42 alice no reviews owner/repo now" and
+/// `issue()` as "Issue Fix bug  #7 owner/repo now".
+fn rows_kept(category: Option<Category>, query: Option<&str>) -> Vec<Category> {
+    let filter = Filter {
+        category,
+        query: query.map(str::to_string),
+    };
+    build_unified(vec![ci(), pr(), issue()], &filter)
+        .iter()
+        .map(|row| match row {
+            DisplayItem::Single(item) => item_category(item),
+            DisplayItem::Group { .. } => panic!("none of these signals groups"),
+        })
+        .collect()
 }
 
-#[test]
-fn build_unified_query_filter_no_match_returns_empty() {
-    let result = build_unified(
-        vec![ci(), pr(), issue()],
-        &Filter {
-            category: None,
-            query: Some("zzznomatch".to_string()),
-        },
-    );
-    assert!(result.is_empty());
+#[rstest]
+#[case::no_filter(None, None, vec![Category::Errors, Category::Prs, Category::Issues])]
+#[case::category_keeps_its_own(Some(Category::Prs), None, vec![Category::Prs])]
+#[case::category_drops_the_rest(Some(Category::Errors), None, vec![Category::Errors])]
+#[case::query_ignores_case(None, Some("ADD FEATURE"), vec![Category::Prs])]
+#[case::query_matching_nothing(None, Some("zzznomatch"), vec![])]
+#[case::category_and_query_both_apply(Some(Category::Prs), Some("Add feature"), vec![Category::Prs])]
+#[case::category_and_query_that_never_overlap(Some(Category::Errors), Some("Add feature"), vec![])]
+#[case::words_need_not_be_adjacent(None, Some("feature alice"), vec![Category::Prs])]
+#[case::every_word_must_match(None, Some("feature zzznomatch"), vec![])]
+#[case::a_negative_word_drops_its_matches(None, Some("-alice"), vec![Category::Errors, Category::Issues])]
+#[case::positive_and_negative_words_combine(None, Some("owner -alice"), vec![Category::Errors, Category::Issues])]
+#[case::a_negative_word_ignores_case(None, Some("-ALICE"), vec![Category::Errors, Category::Issues])]
+#[case::a_bare_hyphen_is_ignored(None, Some("- fix"), vec![Category::Issues])]
+#[case::a_hyphen_inside_a_word_is_literal(None, Some("fix-bug"), vec![])]
+#[case::a_blank_query_keeps_everything(None, Some("   "), vec![Category::Errors, Category::Prs, Category::Issues])]
+fn a_filter_keeps_only_the_rows_it_matches(
+    #[case] category: Option<Category>,
+    #[case] query: Option<&str>,
+    #[case] expected: Vec<Category>,
+) {
+    assert_eq!(rows_kept(category, query), expected);
 }
 
-#[test]
-fn build_unified_both_filters_applied_with_and_semantics() {
-    let result = build_unified(
-        vec![ci(), pr(), issue()],
-        &Filter {
-            category: Some(Category::Prs),
-            query: Some("Add feature".to_string()),
-        },
-    );
-    assert_eq!(result.len(), 1);
-    assert!(matches!(&result[0], DisplayItem::Single(StatusItem::Pr(_))));
-}
-
-#[test]
-fn build_unified_category_and_query_no_overlap_returns_empty() {
-    let result = build_unified(
-        vec![ci(), pr(), issue()],
-        &Filter {
-            category: Some(Category::Errors),
-            query: Some("Add feature".to_string()), // PR text, not an error
-        },
-    );
-    assert!(result.is_empty());
+#[rstest]
+#[case::nothing_set(Filter::default(), true)]
+#[case::a_category(Filter { category: Some(Category::Prs), query: None }, false)]
+#[case::a_query(Filter { category: None, query: Some("foo".to_string()) }, false)]
+fn a_filter_is_empty_only_when_it_sets_nothing(#[case] filter: Filter, #[case] empty: bool) {
+    assert_eq!(filter.is_empty(), empty);
 }
 
 // ── format_age_short ─────────────────────────────────────────────────────
 
-#[test]
-fn format_age_short_zero_is_now() {
-    assert_eq!(format_age_short(chrono::Duration::seconds(0)), "now");
-}
-
-#[test]
-fn format_age_short_59_seconds_is_now() {
-    assert_eq!(format_age_short(chrono::Duration::seconds(59)), "now");
-}
-
-#[test]
-fn format_age_short_60_seconds_is_1m() {
-    assert_eq!(format_age_short(chrono::Duration::seconds(60)), "1m");
-}
-
-#[test]
-fn format_age_short_59_minutes_is_59m() {
-    assert_eq!(format_age_short(chrono::Duration::seconds(3599)), "59m");
-}
-
-#[test]
-fn format_age_short_1_hour_is_1h() {
-    assert_eq!(format_age_short(chrono::Duration::seconds(3600)), "1h");
-}
-
-#[test]
-fn format_age_short_23_hours_is_23h() {
-    assert_eq!(format_age_short(chrono::Duration::seconds(86399)), "23h");
-}
-
-#[test]
-fn format_age_short_1_day_is_1d() {
-    assert_eq!(format_age_short(chrono::Duration::seconds(86400)), "1d");
-}
-
-#[test]
-fn format_age_short_99_days_is_99d() {
-    assert_eq!(format_age_short(chrono::Duration::days(99)), "99d");
+#[rstest]
+#[case::zero(0, "now")]
+#[case::under_a_minute(59, "now")]
+#[case::one_minute(60, "1m")]
+#[case::under_an_hour(3599, "59m")]
+#[case::one_hour(3600, "1h")]
+#[case::under_a_day(86399, "23h")]
+#[case::one_day(86400, "1d")]
+#[case::ninety_nine_days(99 * 86400, "99d")]
+fn an_age_is_shown_in_its_largest_whole_unit(#[case] seconds: i64, #[case] shown: &str) {
+    assert_eq!(format_age_short(chrono::Duration::seconds(seconds)), shown);
 }
 
 // ── truncate_to_width ────────────────────────────────────────────────────
 
-#[test]
-fn truncate_to_width_fits_exactly_unchanged() {
-    assert_eq!(truncate_to_width("hello", 5), "hello");
-}
-
-#[test]
-fn truncate_to_width_fits_within_unchanged() {
-    assert_eq!(truncate_to_width("hello", 10), "hello");
-}
-
-#[test]
-fn truncate_to_width_overflow_appends_ellipsis() {
-    assert_eq!(truncate_to_width("hello", 4), "hel…");
-}
-
-#[test]
-fn truncate_to_width_width_one_gives_ellipsis() {
-    assert_eq!(truncate_to_width("hello", 1), "…");
-}
-
-#[test]
-fn truncate_to_width_width_zero_gives_empty() {
-    assert_eq!(truncate_to_width("hello", 0), "");
-}
-
-#[test]
-fn truncate_to_width_empty_string_unchanged() {
-    assert_eq!(truncate_to_width("", 5), "");
-}
-
-// ── filter ───────────────────────────────────────────────────────────────
-
-#[test]
-fn filter_is_empty_when_both_none() {
-    assert!(Filter::default().is_empty());
-}
-
-#[test]
-fn filter_is_not_empty_when_category_set() {
-    let f = Filter {
-        category: Some(Category::Prs),
-        query: None,
-    };
-    assert!(!f.is_empty());
-}
-
-#[test]
-fn filter_is_not_empty_when_query_set() {
-    let f = Filter {
-        category: None,
-        query: Some("foo".to_string()),
-    };
-    assert!(!f.is_empty());
-}
-
-// ── query parsing: AND logic and negative terms ──────────────────────────
-
-// pr() all_text: "PR Add feature  #42 alice no reviews owner/repo now"
-// issue() all_text: "Issue Fix bug  #7 owner/repo now"
-
-#[test]
-fn build_unified_query_and_matches_words_non_adjacently() {
-    // "feature" and "alice" both appear in pr() but are not adjacent —
-    // old substring match misses this; AND logic finds it
-    let result = build_unified(
-        vec![pr(), issue()],
-        &Filter {
-            category: None,
-            query: Some("feature alice".to_string()),
-        },
-    );
-    assert_eq!(result.len(), 1);
-    assert!(matches!(&result[0], DisplayItem::Single(StatusItem::Pr(_))));
-}
-
-#[test]
-fn build_unified_query_and_excludes_when_any_word_absent() {
-    // pr() has "feature" but not "zzznomatch" — no match
-    let result = build_unified(
-        vec![pr(), issue()],
-        &Filter {
-            category: None,
-            query: Some("feature zzznomatch".to_string()),
-        },
-    );
-    assert!(result.is_empty());
-}
-
-#[test]
-fn build_unified_query_negative_term_excludes_matching_items() {
-    // "-alice" — "alice" appears in pr()'s dim_inline (author) but not in issue()
-    let result = build_unified(
-        vec![pr(), issue()],
-        &Filter {
-            category: None,
-            query: Some("-alice".to_string()),
-        },
-    );
-    assert_eq!(result.len(), 1);
-    assert!(matches!(
-        &result[0],
-        DisplayItem::Single(StatusItem::Issue(_))
-    ));
-}
-
-#[test]
-fn build_unified_query_mixed_positive_and_negative() {
-    // "owner" appears in both (from "owner/repo"); "-alice" excludes pr()
-    let result = build_unified(
-        vec![pr(), issue()],
-        &Filter {
-            category: None,
-            query: Some("owner -alice".to_string()),
-        },
-    );
-    assert_eq!(result.len(), 1);
-    assert!(matches!(
-        &result[0],
-        DisplayItem::Single(StatusItem::Issue(_))
-    ));
-}
-
-#[test]
-fn build_unified_query_negative_term_is_case_insensitive() {
-    // "-ALICE" excludes pr() — negation terms are lowercased before matching
-    let result = build_unified(
-        vec![pr(), issue()],
-        &Filter {
-            category: None,
-            query: Some("-ALICE".to_string()),
-        },
-    );
-    assert_eq!(result.len(), 1);
-    assert!(matches!(
-        &result[0],
-        DisplayItem::Single(StatusItem::Issue(_))
-    ));
-}
-
-#[test]
-fn build_unified_query_bare_hyphen_is_ignored() {
-    // "- fix": bare "-" is dropped; "fix" matches issue() which has "Fix bug"
-    let result = build_unified(
-        vec![pr(), issue()],
-        &Filter {
-            category: None,
-            query: Some("- fix".to_string()),
-        },
-    );
-    assert_eq!(result.len(), 1);
-    assert!(matches!(
-        &result[0],
-        DisplayItem::Single(StatusItem::Issue(_))
-    ));
-}
-
-#[test]
-fn build_unified_query_hyphen_mid_word_is_literal_positive() {
-    // "fix-bug" — leading char is 'f', not '-', so treated as positive literal
-    // issue() has "Fix bug" (space, not hyphen) → no match → empty
-    let result = build_unified(
-        vec![pr(), issue()],
-        &Filter {
-            category: None,
-            query: Some("fix-bug".to_string()),
-        },
-    );
-    assert!(result.is_empty());
-}
-
-#[test]
-fn build_unified_query_whitespace_only_matches_all() {
-    // "   " — all tokens dropped, effectively no constraint
-    let result = build_unified(
-        vec![pr(), issue(), ci()],
-        &Filter {
-            category: None,
-            query: Some("   ".to_string()),
-        },
-    );
-    assert_eq!(result.len(), 3);
+#[rstest]
+#[case::fits_exactly("hello", 5, "hello")]
+#[case::fits_within("hello", 10, "hello")]
+#[case::overflows("hello", 4, "hel…")]
+#[case::width_one("hello", 1, "…")]
+#[case::width_zero("hello", 0, "")]
+#[case::empty_text("", 5, "")]
+fn text_wider_than_its_width_is_cut_with_an_ellipsis(
+    #[case] text: &str,
+    #[case] width: usize,
+    #[case] shown: &str,
+) {
+    assert_eq!(truncate_to_width(text, width), shown);
 }
 
 #[test]
@@ -974,14 +641,12 @@ fn build_unified_sorts_by_urgency_ascending_critical_first() {
     );
 }
 
-// SK2: from_row delegates to from_item for Single rows.
 #[test]
 fn from_row_single_pr_returns_pr_kind() {
     let row = FlatRow::Single(pr());
     assert_eq!(SelectedItemKind::from_row(&row), SelectedItemKind::Pr);
 }
 
-// SK3: from_row returns Other for GroupHeader.
 #[test]
 fn from_row_group_header_returns_other() {
     let row = FlatRow::GroupHeader {

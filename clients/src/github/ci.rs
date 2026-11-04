@@ -291,7 +291,17 @@ async fn get_completed_runs(token: &str, repo: &str) -> Result<RunsResponse> {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
+
+    const CI: &str = ".github/workflows/ci.yml";
+    const RECENT: &str = "2099-01-01T00:00:00Z";
+    const OLD: &str = "2000-01-01T00:00:00Z";
+    /// A cutoff before `RECENT` and after `OLD`.
+    const PAST_CUTOFF: &str = "2001-01-01T00:00:00Z";
+    /// A cutoff after both `RECENT` and `OLD`.
+    const FUTURE_CUTOFF: &str = "2100-01-01T00:00:00Z";
 
     fn make_run(
         path: &str,
@@ -311,123 +321,47 @@ mod tests {
         }
     }
 
-    fn recent() -> &'static str {
-        "2099-01-01T00:00:00Z"
-    }
-
-    fn old() -> &'static str {
-        "2000-01-01T00:00:00Z"
-    }
-
-    fn far_future_cutoff() -> chrono::DateTime<Utc> {
-        chrono::DateTime::parse_from_rfc3339("2100-01-01T00:00:00Z")
+    fn cutoff(rfc3339: &str) -> chrono::DateTime<Utc> {
+        chrono::DateTime::parse_from_rfc3339(rfc3339)
             .unwrap()
             .to_utc()
     }
 
-    fn past_cutoff() -> chrono::DateTime<Utc> {
-        chrono::DateTime::parse_from_rfc3339("2001-01-01T00:00:00Z")
-            .unwrap()
-            .to_utc()
-    }
+    /// One run of the CI workflow, filtered for `main` against `cutoff`.
+    #[rstest]
+    #[case::failing_on_the_default_branch_within_the_window(
+        "main",
+        Some("failure"),
+        RECENT,
+        PAST_CUTOFF,
+        true
+    )]
+    #[case::on_another_branch("feat", Some("failure"), RECENT, PAST_CUTOFF, false)]
+    #[case::outside_the_lookback_window("main", Some("failure"), OLD, FUTURE_CUTOFF, false)]
+    #[case::successful("main", Some("success"), RECENT, PAST_CUTOFF, false)]
+    #[case::cancelled("main", Some("cancelled"), RECENT, PAST_CUTOFF, false)]
+    #[case::not_concluded("main", None, RECENT, PAST_CUTOFF, false)]
+    fn a_single_run_is_kept_only_when_it_failed_recently_on_the_default_branch(
+        #[case] branch: &str,
+        #[case] conclusion: Option<&str>,
+        #[case] created_at: &str,
+        #[case] cutoff_at: &str,
+        #[case] kept: bool,
+    ) {
+        let runs = vec![make_run(CI, "CI", branch, conclusion, created_at)];
 
-    #[test]
-    fn keeps_failing_run_on_default_branch_within_window() {
-        let runs = vec![make_run(
-            ".github/workflows/ci.yml",
-            "CI",
-            "main",
-            Some("failure"),
-            recent(),
-        )];
-        let result = filter_runs(runs, "main", past_cutoff());
-        assert_eq!(result.len(), 1);
-    }
+        let result = filter_runs(runs, "main", cutoff(cutoff_at));
 
-    #[test]
-    fn drops_run_on_non_default_branch() {
-        let runs = vec![make_run(
-            ".github/workflows/ci.yml",
-            "CI",
-            "feat",
-            Some("failure"),
-            recent(),
-        )];
-        let result = filter_runs(runs, "main", past_cutoff());
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn drops_run_outside_lookback_window() {
-        let runs = vec![make_run(
-            ".github/workflows/ci.yml",
-            "CI",
-            "main",
-            Some("failure"),
-            old(),
-        )];
-        let result = filter_runs(runs, "main", far_future_cutoff());
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn drops_successful_run() {
-        let runs = vec![make_run(
-            ".github/workflows/ci.yml",
-            "CI",
-            "main",
-            Some("success"),
-            recent(),
-        )];
-        let result = filter_runs(runs, "main", past_cutoff());
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn drops_cancelled_run() {
-        let runs = vec![make_run(
-            ".github/workflows/ci.yml",
-            "CI",
-            "main",
-            Some("cancelled"),
-            recent(),
-        )];
-        let result = filter_runs(runs, "main", past_cutoff());
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn drops_run_with_no_conclusion() {
-        let runs = vec![make_run(
-            ".github/workflows/ci.yml",
-            "CI",
-            "main",
-            None,
-            recent(),
-        )];
-        let result = filter_runs(runs, "main", past_cutoff());
-        assert!(result.is_empty());
+        assert_eq!(result.len(), usize::from(kept));
     }
 
     #[test]
     fn keeps_latest_run_per_workflow_path() {
         let runs = vec![
-            make_run(
-                ".github/workflows/ci.yml",
-                "CI",
-                "main",
-                Some("failure"),
-                "2099-01-01T00:00:00Z",
-            ),
-            make_run(
-                ".github/workflows/ci.yml",
-                "CI",
-                "main",
-                Some("failure"),
-                "2099-01-02T00:00:00Z",
-            ),
+            make_run(CI, "CI", "main", Some("failure"), "2099-01-01T00:00:00Z"),
+            make_run(CI, "CI", "main", Some("failure"), "2099-01-02T00:00:00Z"),
         ];
-        let result = filter_runs(runs, "main", past_cutoff());
+        let result = filter_runs(runs, "main", cutoff(PAST_CUTOFF));
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].created_at, "2099-01-02T00:00:00Z");
     }
@@ -435,36 +369,24 @@ mod tests {
     #[test]
     fn keeps_one_entry_per_distinct_workflow_path() {
         let runs = vec![
-            make_run(
-                ".github/workflows/ci.yml",
-                "CI",
-                "main",
-                Some("failure"),
-                recent(),
-            ),
+            make_run(CI, "CI", "main", Some("failure"), RECENT),
             make_run(
                 ".github/workflows/deploy.yml",
                 "Deploy",
                 "main",
                 Some("timed_out"),
-                recent(),
+                RECENT,
             ),
         ];
-        let result = filter_runs(runs, "main", past_cutoff());
+        let result = filter_runs(runs, "main", cutoff(PAST_CUTOFF));
         assert_eq!(result.len(), 2);
     }
 
     #[test]
     fn includes_all_failing_conclusions() {
         for conclusion in FAILING_CONCLUSIONS {
-            let runs = vec![make_run(
-                ".github/workflows/ci.yml",
-                "CI",
-                "main",
-                Some(conclusion),
-                recent(),
-            )];
-            let result = filter_runs(runs, "main", past_cutoff());
+            let runs = vec![make_run(CI, "CI", "main", Some(conclusion), RECENT)];
+            let result = filter_runs(runs, "main", cutoff(PAST_CUTOFF));
             assert_eq!(result.len(), 1, "expected {conclusion} to be kept");
         }
     }
@@ -472,30 +394,29 @@ mod tests {
     #[test]
     fn success_after_failure_clears_the_failure() {
         let runs = vec![
-            make_run(
-                ".github/workflows/ci.yml",
-                "CI",
-                "main",
-                Some("failure"),
-                "2099-01-01T00:00:00Z",
-            ),
-            make_run(
-                ".github/workflows/ci.yml",
-                "CI",
-                "main",
-                Some("success"),
-                "2099-01-02T00:00:00Z",
-            ),
+            make_run(CI, "CI", "main", Some("failure"), "2099-01-01T00:00:00Z"),
+            make_run(CI, "CI", "main", Some("success"), "2099-01-02T00:00:00Z"),
         ];
-        let result = filter_runs(runs, "main", past_cutoff());
+        let result = filter_runs(runs, "main", cutoff(PAST_CUTOFF));
         assert!(result.is_empty());
     }
 
-    #[test]
-    fn parse_cutoff_accepts_valid_durations() {
-        assert!(parse_cutoff("24h").is_ok());
-        assert!(parse_cutoff("1h").is_ok());
-        assert!(parse_cutoff("7d").is_ok());
+    #[rstest]
+    #[case::one_hour("1h", chrono::Duration::hours(1))]
+    #[case::one_day("24h", chrono::Duration::hours(24))]
+    #[case::one_week("7d", chrono::Duration::days(7))]
+    fn the_cutoff_is_the_lookback_before_now(
+        #[case] lookback: &str,
+        #[case] expected: chrono::Duration,
+    ) {
+        let before = Utc::now();
+        let cutoff = parse_cutoff(lookback).unwrap();
+        let after = Utc::now();
+
+        assert!(
+            before - expected <= cutoff && cutoff <= after - expected,
+            "{lookback} gave {cutoff}, expected {expected} before a moment in {before}..{after}"
+        );
     }
 
     #[test]

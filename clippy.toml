@@ -1,5 +1,7 @@
-# Tests may unwrap, expect, index and panic: a panic is how a test reports failure, and test code
-# never reaches a binary. Every other lint applies to test code as it does to library code.
+# Code inside `#[test]` functions and `#[cfg(test)]` modules may unwrap, expect, index and panic: a
+# panic is how a test reports failure, and test code never reaches a binary. A helper in an
+# integration test under `tests/` is outside both, so it returns a `Result` for its tests to
+# unwrap. Every other lint applies to test code as it does to library code.
 allow-expect-in-tests = true
 allow-indexing-slicing-in-tests = true
 allow-panic-in-tests = true

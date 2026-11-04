@@ -289,21 +289,13 @@ mod tests {
             .join("\n")
     }
 
-    /// Extract the last (status bar) row of a buffer as a plain string.
-    /// Empty cells are rendered as spaces so the snapshot width is always `buf.area.width`.
+    /// The last (status bar) row of a buffer, as `screen_text` renders it.
     fn status_row(buf: &ratatui::buffer::Buffer) -> String {
-        let w = buf.area.width as usize;
-        let last_y = (buf.area.height - 1) as usize;
-        buf.content[last_y * w..(last_y + 1) * w]
-            .iter()
-            .map(|cell| {
-                if cell.symbol().is_empty() {
-                    " "
-                } else {
-                    cell.symbol()
-                }
-            })
-            .collect()
+        screen_text(buf)
+            .lines()
+            .last()
+            .expect("a rendered screen has rows")
+            .to_string()
     }
 
     fn ci_item() -> StatusItem {
@@ -443,88 +435,76 @@ mod tests {
         insta::assert_snapshot!(status_row(&buf));
     }
 
-    fn pr() -> StatusItem {
-        StatusItem::Pr(domain::PullRequest {
+    /// Alice's pull request #1 on `owner/repo`, asking for my review.
+    fn review_request() -> domain::PullRequest {
+        domain::PullRequest {
             number: 1,
             title: "Fix".to_string(),
             repo: domain::RepoSlug::new("owner", "repo"),
             url: "https://github.com/owner/repo/pull/1".to_string(),
-            age: chrono::Duration::zero(),
-            urgency: domain::Urgency::Low,
             kind: domain::PrKind::ToReview,
-            draft: false,
             author: "alice".to_string(),
-            review_decision: None,
-            comment_count: 0,
             head_branch: "feat/fix".to_string(),
-            base_branch: "main".to_string(),
-            body: None,
-            ci_status: None,
-            changed_files: vec![],
-            total_changed_files: 0,
-            review_threads: vec![],
-            pr_comments: vec![],
-            merge_readiness: domain::MergeReadiness::NotYetKnown,
-            activity: domain::pr_activity::PrActivity::default(),
-        })
-    }
-
-    fn unified_list_app(items: Vec<DisplayItem>) -> App {
-        let expanded = HashSet::new();
-        let flat_rows = flatten(&items, &expanded);
-        App {
-            ui: UiState {
-                screen: Screen::UnifiedList {
-                    flat_rows,
-                    items,
-                    selected: 0,
-                    filter: Filter::default(),
-                    expanded_groups: expanded,
-                    detail_mode: DetailMode::Hidden,
-                },
-                ..UiState::default()
-            },
-            ..app_with_a_current_daemon()
+            ..crate::test_support::pull_request()
         }
     }
 
-    fn make_screen(items: Vec<DisplayItem>, selected: usize, filter: Filter) -> Screen {
-        let expanded = HashSet::new();
-        let flat_rows = flatten(&items, &expanded);
+    fn pr() -> StatusItem {
+        StatusItem::Pr(review_request())
+    }
+
+    /// The unified list showing `items`, with `selected` highlighted.
+    fn list_screen(
+        items: Vec<DisplayItem>,
+        selected: usize,
+        filter: Filter,
+        expanded_groups: HashSet<GroupKey>,
+        detail_mode: DetailMode,
+    ) -> Screen {
+        let flat_rows = flatten(&items, &expanded_groups);
         Screen::UnifiedList {
             flat_rows,
             items,
             selected,
             filter,
-            expanded_groups: expanded,
-            detail_mode: DetailMode::Hidden,
+            expanded_groups,
+            detail_mode,
         }
     }
 
-    fn expanded_group_app(group_items: Vec<workflows::status::StatusItem>, selected: usize) -> App {
-        use crate::display::GroupKey;
+    /// The unified list with no group expanded and the detail pane hidden.
+    fn make_screen(items: Vec<DisplayItem>, selected: usize, filter: Filter) -> Screen {
+        list_screen(items, selected, filter, HashSet::new(), DetailMode::Hidden)
+    }
+
+    /// An app showing `screen`, with a daemon that has nothing to warn about.
+    fn app_on(screen: Screen) -> App {
+        App {
+            ui: UiState {
+                screen,
+                ..UiState::default()
+            },
+            ..app_with_a_current_daemon()
+        }
+    }
+
+    fn unified_list_app(items: Vec<DisplayItem>) -> App {
+        app_on(make_screen(items, 0, Filter::default()))
+    }
+
+    fn expanded_group_app(group_items: Vec<StatusItem>, selected: usize) -> App {
         let key = GroupKey::new("hub errors".to_string());
         let items = vec![DisplayItem::Group {
             label: key.clone(),
             items: group_items,
         }];
-        let mut expanded = HashSet::new();
-        let _ = expanded.insert(key);
-        let flat_rows = flatten(&items, &expanded);
-        App {
-            ui: UiState {
-                screen: Screen::UnifiedList {
-                    flat_rows,
-                    items,
-                    selected,
-                    filter: Filter::default(),
-                    expanded_groups: expanded,
-                    detail_mode: DetailMode::Hidden,
-                },
-                ..UiState::default()
-            },
-            ..app_with_a_current_daemon()
-        }
+        app_on(list_screen(
+            items,
+            selected,
+            Filter::default(),
+            HashSet::from([key]),
+            DetailMode::Hidden,
+        ))
     }
 
     #[test]
@@ -546,16 +526,7 @@ mod tests {
             DisplayItem::Single(pr()),
             DisplayItem::Single(pr()),
         ];
-        let expanded = HashSet::new();
-        let flat_rows = flatten(&items, &expanded);
-        let screen = Screen::UnifiedList {
-            flat_rows,
-            items,
-            selected: 1,
-            filter: Filter::default(),
-            expanded_groups: expanded,
-            detail_mode: DetailMode::Hidden,
-        };
+        let screen = make_screen(items, 1, Filter::default());
         assert_eq!(status_bar::position_label(&screen), "2/3");
     }
 
@@ -584,7 +555,7 @@ mod tests {
         assert_eq!(status_bar::investigate_hint(&inv), " · [i] investigate");
     }
 
-    #[rstest::rstest]
+    #[rstest]
     #[case::default_profile(Profile::Default, "refreshing…")]
     #[case::dev_profile(Profile::Dev, "dev · refreshing…")]
     fn right_status_names_only_a_non_default_profile(
@@ -598,7 +569,7 @@ mod tests {
         );
     }
 
-    #[rstest::rstest]
+    #[rstest]
     #[case::default_profile(Profile::Default, "updated just now")]
     #[case::dev_profile(Profile::Dev, "dev · updated just now")]
     fn right_status_leads_with_the_profile(#[case] profile: Profile, #[case] expected: &str) {
@@ -613,7 +584,7 @@ mod tests {
     /// A fresh profile sits in this state until its first refresh, which is
     /// exactly when knowing the profile matters. The default profile keeps
     /// rendering nothing, as it does with no profile feature at all.
-    #[rstest::rstest]
+    #[rstest]
     #[case::default_profile(Profile::Default, "")]
     #[case::dev_profile(Profile::Dev, "dev")]
     fn right_status_with_no_timestamp_still_names_a_non_default_profile(
@@ -627,109 +598,46 @@ mod tests {
         );
     }
 
-    #[test]
-    fn right_status_in_progress() {
-        let now = Utc::now();
-        assert_eq!(
-            status_bar::right_status_text(Profile::Default, &RefreshState::InProgress, None, now),
-            "refreshing…"
-        );
-    }
-
-    #[test]
-    fn right_status_failed_shows_error_message() {
-        let now = Utc::now();
-        assert_eq!(
-            status_bar::right_status_text(
-                Profile::Default,
-                &RefreshState::Failed("network error".to_string()),
-                None,
-                now
-            ),
-            "refresh failed: network error"
-        );
-    }
-
-    #[test]
-    fn right_status_idle_no_timestamp_is_empty() {
-        let now = Utc::now();
-        assert_eq!(
-            status_bar::right_status_text(Profile::Default, &RefreshState::Idle, None, now),
-            ""
-        );
-    }
-
-    #[test]
-    fn right_status_idle_updated_within_a_minute() {
-        let now = Utc::now();
-        let last_updated = now - chrono::Duration::seconds(30);
-        assert_eq!(
-            status_bar::right_status_text(
-                Profile::Default,
-                &RefreshState::Idle,
-                Some(last_updated),
-                now
-            ),
-            "updated just now"
-        );
-    }
-
-    #[test]
-    fn right_status_idle_updated_minutes_ago() {
-        let now = Utc::now();
-        let last_updated = now - chrono::Duration::minutes(5);
-        assert_eq!(
-            status_bar::right_status_text(
-                Profile::Default,
-                &RefreshState::Idle,
-                Some(last_updated),
-                now
-            ),
-            "updated 5m ago"
-        );
-    }
-
-    #[test]
-    fn right_status_partial_no_timestamp() {
+    #[rstest]
+    #[case::failed(
+        RefreshState::Failed("network error".to_string()),
+        None,
+        "refresh failed: network error"
+    )]
+    #[case::idle_updated_minutes_ago(
+        RefreshState::Idle,
+        Some(chrono::Duration::minutes(5)),
+        "updated 5m ago"
+    )]
+    #[case::partial_no_timestamp(
+        RefreshState::Partial(vec!["media".to_string()]),
+        None,
+        "! media unreachable (updated unknown)"
+    )]
+    #[case::partial_updated_within_a_minute(
+        RefreshState::Partial(vec!["media".to_string()]),
+        Some(chrono::Duration::seconds(10)),
+        "! media unreachable (updated just now)"
+    )]
+    #[case::partial_multiple_sources(
+        RefreshState::Partial(vec!["media".to_string(), "linear issues".to_string()]),
+        Some(chrono::Duration::minutes(2)),
+        "! media, linear issues unreachable (updated 2m ago)"
+    )]
+    fn right_status_describes_the_refresh_and_when_it_last_updated(
+        #[case] state: RefreshState,
+        #[case] updated_ago: Option<chrono::Duration>,
+        #[case] expected: &str,
+    ) {
         let now = Utc::now();
         assert_eq!(
             status_bar::right_status_text(
                 Profile::Default,
-                &RefreshState::Partial(vec!["media".to_string()]),
-                None,
+                &state,
+                updated_ago.map(|ago| now - ago),
                 now
             ),
-            "! media unreachable (updated unknown)"
-        );
-    }
-
-    #[test]
-    fn right_status_partial_updated_within_a_minute() {
-        let now = Utc::now();
-        let last_updated = now - chrono::Duration::seconds(10);
-        assert_eq!(
-            status_bar::right_status_text(
-                Profile::Default,
-                &RefreshState::Partial(vec!["media".to_string()]),
-                Some(last_updated),
-                now
-            ),
-            "! media unreachable (updated just now)"
-        );
-    }
-
-    #[test]
-    fn right_status_partial_multiple_sources() {
-        let now = Utc::now();
-        let last_updated = now - chrono::Duration::minutes(2);
-        assert_eq!(
-            status_bar::right_status_text(
-                Profile::Default,
-                &RefreshState::Partial(vec!["media".to_string(), "linear issues".to_string()]),
-                Some(last_updated),
-                now
-            ),
-            "! media, linear issues unreachable (updated 2m ago)"
+            expected
         );
     }
 
@@ -764,7 +672,7 @@ mod tests {
         Schedule::every(std::time::Duration::from_mins(15))
     }
 
-    #[rstest::rstest]
+    #[rstest]
     #[case::current(
         daemon_record(4, every_fifteen_minutes(), LastActivity::Pass(PassStatus::Ok)),
         None,
@@ -816,7 +724,7 @@ mod tests {
         );
     }
 
-    #[rstest::rstest]
+    #[rstest]
     #[case::default_profile_current(Profile::Default, 4, "updated 4m ago")]
     #[case::dev_profile_current(Profile::Dev, 4, "dev · updated 4m ago")]
     #[case::default_profile_overdue(
@@ -928,9 +836,7 @@ mod tests {
             profile: Profile::Dev,
             ..unified_list_app(vec![DisplayItem::Single(pr())])
         };
-        let buf = draw(&mut app, 80, 15);
-        let text = screen_text(&buf);
-        let bar = text.lines().last().expect("a rendered screen has rows");
+        let bar = status_row(&draw(&mut app, 80, 15));
 
         assert!(
             bar.contains(" dev"),
@@ -949,9 +855,7 @@ mod tests {
             data: DataState::default(),
             ..unified_list_app(vec![DisplayItem::Single(pr())])
         };
-        let buf = draw(&mut app, 80, 15);
-        let text = screen_text(&buf);
-        let bar = text.lines().last().expect("a rendered screen has rows");
+        let bar = status_row(&draw(&mut app, 80, 15));
 
         assert!(
             bar.contains(" ! no background refresh yet"),
@@ -984,20 +888,14 @@ mod tests {
     #[test]
     fn full_screen_unified_list_category_filter() {
         // U4: Category filter active — green border + category label in the title.
-        let mut app = App {
-            ui: UiState {
-                screen: make_screen(
-                    vec![DisplayItem::Single(ci_item())],
-                    0,
-                    Filter {
-                        category: Some(Category::Errors),
-                        query: None,
-                    },
-                ),
-                ..UiState::default()
+        let mut app = app_on(make_screen(
+            vec![DisplayItem::Single(ci_item())],
+            0,
+            Filter {
+                category: Some(Category::Errors),
+                query: None,
             },
-            ..app_with_a_current_daemon()
-        };
+        ));
         let buf = draw(&mut app, 80, 15);
         insta::assert_snapshot!(screen_text(&buf));
     }
@@ -1026,11 +924,13 @@ mod tests {
     }
 
     /// A pull request in ooloth/hub, opened three hours ago, whose merge nothing blocks.
-    fn turn_pr(number: u64, kind: domain::PrKind, approvals: u32, title: &str) -> StatusItem {
-        let StatusItem::Pr(base) = pr() else {
-            unreachable!()
-        };
-        StatusItem::Pr(domain::PullRequest {
+    fn turn_pr(
+        number: u64,
+        kind: domain::PrKind,
+        approvals: u32,
+        title: &str,
+    ) -> domain::PullRequest {
+        domain::PullRequest {
             number,
             kind,
             title: title.to_string(),
@@ -1039,101 +939,84 @@ mod tests {
             age: chrono::Duration::hours(3),
             merge_readiness: domain::MergeReadiness::Ready,
             activity: crate::test_support::verdicts(approvals, 0),
-            ..base
-        })
+            ..review_request()
+        }
     }
 
     fn turn_rows() -> Vec<DisplayItem> {
-        vec![
-            DisplayItem::Single(turn_pr(
+        [
+            turn_pr(
                 344,
                 domain::PrKind::ToReview,
                 0,
                 "Notify when a pull request is my turn, with a card for each one",
-            )),
-            DisplayItem::Single(turn_pr(
+            ),
+            turn_pr(
                 370,
                 domain::PrKind::Mine,
                 0,
                 "The status bar shows when signals were last updated, however",
-            )),
-            DisplayItem::Single(turn_pr(
+            ),
+            turn_pr(
                 371,
                 domain::PrKind::Mine,
                 1,
                 "Investigation worktrees are removed however their session ends",
-            )),
-            DisplayItem::Single(reviewed(turn_pr(
+            ),
+            reviewed(turn_pr(
                 372,
                 domain::PrKind::Mine,
                 1,
                 "A reply in a review thread I took part in makes it my turn",
-            ))),
-            DisplayItem::Single(draft(turn_pr(
-                373,
-                domain::PrKind::Mine,
-                0,
-                "My pull request is my turn when someone leaves feedback",
-            ))),
-            DisplayItem::Single(with_pr(
-                turn_pr(
+            )),
+            domain::PullRequest {
+                draft: true,
+                ..turn_pr(
+                    373,
+                    domain::PrKind::Mine,
+                    0,
+                    "My pull request is my turn when someone leaves feedback",
+                )
+            },
+            domain::PullRequest {
+                ci_status: Some(domain::CiStatus::Failure),
+                ..turn_pr(
                     374,
                     domain::PrKind::Mine,
                     0,
                     "Pull requests that are my turn are listed by age",
-                ),
-                |pr| pr.ci_status = Some(domain::CiStatus::Failure),
-            )),
-            DisplayItem::Single(with_pr(
-                turn_pr(
+                )
+            },
+            domain::PullRequest {
+                merge_readiness: domain::MergeReadiness::Blocked(domain::MergeBlocker::Conflict),
+                ..turn_pr(
                     375,
                     domain::PrKind::Mine,
                     1,
                     "An investigation tells the agent why it waits on me",
-                ),
-                |pr| {
-                    pr.merge_readiness =
-                        domain::MergeReadiness::Blocked(domain::MergeBlocker::Conflict);
-                },
-            )),
+                )
+            },
         ]
+        .into_iter()
+        .map(|pr| DisplayItem::Single(StatusItem::Pr(pr)))
+        .collect()
     }
 
-    /// `item` after `change`.
-    fn with_pr(item: StatusItem, change: impl FnOnce(&mut domain::PullRequest)) -> StatusItem {
-        let StatusItem::Pr(mut pr) = item else {
-            unreachable!()
-        };
-        change(&mut pr);
-        StatusItem::Pr(pr)
-    }
-
-    /// `item`, still a draft.
-    fn draft(item: StatusItem) -> StatusItem {
-        let StatusItem::Pr(pr) = item else {
-            unreachable!()
-        };
-        StatusItem::Pr(domain::PullRequest { draft: true, ..pr })
-    }
-
-    /// `item` with a thread whose newest comment is Ada's, waiting on me.
-    fn reviewed(item: StatusItem) -> StatusItem {
+    /// `pr` with a thread whose newest comment is Ada's, waiting on me.
+    fn reviewed(pr: domain::PullRequest) -> domain::PullRequest {
         use domain::pr_activity::{OpenThread, Participant};
-        let StatusItem::Pr(pr) = item else {
-            unreachable!()
-        };
         let thread = OpenThread::from_comments(&[(
             Participant::Person("ada".to_string()),
             chrono::DateTime::UNIX_EPOCH,
         )])
         .unwrap();
-        StatusItem::Pr(domain::PullRequest {
+        domain::PullRequest {
             activity: domain::pr_activity::PrActivity {
                 open_threads: vec![thread],
                 ..pr.activity
             },
             ..pr
-        })
+        }
     }
 
     #[rstest]
@@ -1190,17 +1073,11 @@ mod tests {
         // U8: PR item (Low urgency, no investigate action) selected as item 2/2.
         // Tests that: (a) the inline hint is "↩ to open" only (no "i" hint);
         // (b) the CI item above it shows no hint; (c) position label is "2/2".
-        let mut app = App {
-            ui: UiState {
-                screen: make_screen(
-                    vec![DisplayItem::Single(ci_item()), DisplayItem::Single(pr())],
-                    1,
-                    Filter::default(),
-                ),
-                ..UiState::default()
-            },
-            ..app_with_a_current_daemon()
-        };
+        let mut app = app_on(make_screen(
+            vec![DisplayItem::Single(ci_item()), DisplayItem::Single(pr())],
+            1,
+            Filter::default(),
+        ));
         let buf = draw(&mut app, 80, 15);
         insta::assert_snapshot!(screen_text(&buf));
     }
@@ -1211,13 +1088,7 @@ mod tests {
         // Tests that the scroll offset logic renders only the visible window
         // and the selected item appears at the bottom of the viewport.
         let items: Vec<DisplayItem> = (0..15).map(|_| DisplayItem::Single(pr())).collect();
-        let mut app = App {
-            ui: UiState {
-                screen: make_screen(items, 14, Filter::default()),
-                ..UiState::default()
-            },
-            ..app_with_a_current_daemon()
-        };
+        let mut app = app_on(make_screen(items, 14, Filter::default()));
         let buf = draw(&mut app, 80, 15);
         insta::assert_snapshot!(screen_text(&buf));
     }
@@ -1226,20 +1097,14 @@ mod tests {
     fn full_screen_unified_list_empty_filter_result() {
         // U10: Category filter active but no items match — green border with
         // filter title, empty body.  Different from U1 (no filter) and U4 (items match).
-        let mut app = App {
-            ui: UiState {
-                screen: make_screen(
-                    vec![],
-                    0,
-                    Filter {
-                        category: Some(Category::Errors),
-                        query: None,
-                    },
-                ),
-                ..UiState::default()
+        let mut app = app_on(make_screen(
+            vec![],
+            0,
+            Filter {
+                category: Some(Category::Errors),
+                query: None,
             },
-            ..app_with_a_current_daemon()
-        };
+        ));
         let buf = draw(&mut app, 80, 15);
         insta::assert_snapshot!(screen_text(&buf));
     }
@@ -1248,53 +1113,33 @@ mod tests {
     fn full_screen_unified_list_committed_query() {
         // U11: Query committed (filter.query set, query_input None) — green
         // border + query in title. Distinct from U5 (query_input set → yellow border).
-        let mut app = App {
-            ui: UiState {
-                screen: make_screen(
-                    vec![DisplayItem::Single(ci_item())],
-                    0,
-                    Filter {
-                        category: None,
-                        query: Some("hub".to_string()),
-                    },
-                ),
-                ..UiState::default()
+        let mut app = app_on(make_screen(
+            vec![DisplayItem::Single(ci_item())],
+            0,
+            Filter {
+                category: None,
+                query: Some("hub".to_string()),
             },
-            ..app_with_a_current_daemon()
-        };
+        ));
         let buf = draw(&mut app, 80, 15);
         insta::assert_snapshot!(screen_text(&buf));
     }
-
-    // ── Full-screen MergingPr snapshots ──────────────────────────────────────
 
     fn stub_pr_with_body() -> domain::PullRequest {
         domain::PullRequest {
             number: 102,
             title: "Add PrDetail screen".to_string(),
-            repo: domain::RepoSlug::new("ooloth", "hub"),
             url: "https://github.com/ooloth/hub/pull/102".to_string(),
             age: chrono::Duration::days(1),
             urgency: domain::Urgency::Medium,
-            kind: domain::PrKind::Mine,
-            draft: false,
-            author: "ooloth".to_string(),
-            review_decision: None,
             comment_count: 2,
             head_branch: "feat/pr-detail".to_string(),
-            base_branch: "main".to_string(),
             body: Some(
                 "## Summary\n\nAdds a detail screen for PRs.\n\n\
                  ## Why\n\nReadability from terminal without leaving the TUI."
                     .to_string(),
             ),
-            ci_status: None,
-            changed_files: vec![],
-            total_changed_files: 0,
-            review_threads: vec![],
-            pr_comments: vec![],
-            merge_readiness: domain::MergeReadiness::NotYetKnown,
-            activity: domain::pr_activity::PrActivity::default(),
+            ..crate::test_support::pull_request()
         }
     }
 
@@ -1400,22 +1245,13 @@ mod tests {
     // ── Split view snapshot tests ─────────────────────────────────────────────
 
     fn split_view_app(items: Vec<DisplayItem>, selected: usize, detail_scroll: u16) -> App {
-        let expanded = HashSet::new();
-        let flat_rows = flatten(&items, &expanded);
-        App {
-            ui: UiState {
-                screen: Screen::UnifiedList {
-                    flat_rows,
-                    items,
-                    selected,
-                    filter: Filter::default(),
-                    expanded_groups: expanded,
-                    detail_mode: DetailMode::Visible { detail_scroll },
-                },
-                ..UiState::default()
-            },
-            ..app_with_a_current_daemon()
-        }
+        app_on(list_screen(
+            items,
+            selected,
+            Filter::default(),
+            HashSet::new(),
+            DetailMode::Visible { detail_scroll },
+        ))
     }
 
     fn issue_item() -> StatusItem {
@@ -1484,21 +1320,32 @@ mod tests {
     // SL5: PrActions submenu shows in status bar.
     #[test]
     fn status_bar_pending_pr_action_shows_submenu() {
-        let mut app = split_view_app(vec![DisplayItem::Single(pr())], 0, 0);
-        app.ui.submenu = SubmenuState::PrActions;
+        let split = split_view_app(vec![DisplayItem::Single(pr())], 0, 0);
+        let mut app = App {
+            ui: UiState {
+                submenu: SubmenuState::PrActions,
+                ..split.ui
+            },
+            ..split
+        };
         let buf = draw(&mut app, 120, 5);
         insta::assert_snapshot!(status_row(&buf));
     }
 
     fn armed_review_picker(author: crate::state::PrAuthor) -> App {
-        let mut app = split_view_app(vec![DisplayItem::Single(pr())], 0, 0);
-        app.ui.submenu = SubmenuState::ReviewPicker(crate::state::PrReviewTarget {
-            repo: "owner/repo".to_string(),
-            number: 1,
-            head_branch: "feature".to_string(),
-            author,
-        });
-        app
+        let split = split_view_app(vec![DisplayItem::Single(pr())], 0, 0);
+        App {
+            ui: UiState {
+                submenu: SubmenuState::ReviewPicker(crate::state::PrReviewTarget {
+                    repo: "owner/repo".to_string(),
+                    number: 1,
+                    head_branch: "feature".to_string(),
+                    author,
+                }),
+                ..split.ui
+            },
+            ..split
+        }
     }
 
     // SL6: review picker on my own PR offers read, fix and reviewer replies.
@@ -1522,10 +1369,7 @@ mod tests {
     fn pr_with_urgency(urgency: domain::Urgency) -> StatusItem {
         StatusItem::Pr(domain::PullRequest {
             urgency,
-            ..match pr() {
-                StatusItem::Pr(p) => p,
-                _ => unreachable!(),
-            }
+            ..review_request()
         })
     }
 
