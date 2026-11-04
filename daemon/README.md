@@ -320,9 +320,9 @@ just daemon --once >/dev/null 2>&1; echo $?
   `~/.hub/default/hub.db` is untouched. To look at that one instead, set the variable for the
   invocation: `HUB_PROFILE=default just daemon`.
 - **The TUI refetches if the cache is older than 30 minutes** (`REFRESH_INTERVAL_SECS`,
-  `../ui/tui/src/main.rs`), and it is still a second cache writer until Phase 5. Check the daemon's
-  work within that window, or the TUI will overwrite the row and it will look like the daemon did
-  nothing.
+  `../ui/tui/src/main.rs`), so it is a second cache writer until decision 022 is built. Check the
+  daemon's work within that window, or the TUI will overwrite the row and it will look like the
+  daemon did nothing.
 - **Pointing egress at a dead port without exempting 1Password exercises the wrong path.** The
   proxy also blocks `op read`, which reaches `my.1password.com` even with the 1Password desktop
   integration enabled, so credentials never arrive and no pass runs: the log shows a failed

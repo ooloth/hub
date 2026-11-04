@@ -123,7 +123,7 @@ Hard rules for agents:
 - **Owned types**: structs hold `String`/`Vec<T>`. Functions that only read take `&str`/`&[T]`. Return owned values, not references.
 - **No lifetime annotations**: if you're writing `'a`, stop and restructure. Return owned types instead.
 - **Clone freely**: don't fight the borrow checker. Clone across `.await` points. Optimize only if profiling shows it matters.
-- **Async**: `#[tokio::main]`, `features = ["full"]`. Use `tokio::join!` for parallel work. Use `tokio::fs`/`tokio::time` not std equivalents inside async.
+- **Async**: `#[tokio::main]`, `features = ["full"]`. Use `tokio::join!` for parallel work. Use `tokio::time`, not `std::thread::sleep`, inside async. Use `tokio::fs` for file I/O that could block; reading a small local file (config, a HEAD ref) with `std::fs` is fine, as `~/.agents/standards/rust.md` says.
 - **Secrets**: wrapped in `Secret<String>` (secrecy crate) throughout `Config`, `LokiEnv`, and `StatusParams`. Sourced from `hub.toml`'s `[credentials]` table; `op://` references are resolved at startup via `op read`. `.expose_secret()` is called only at client call sites.
 - **CLI**: `clap` with derive macros. Annotate structs; don't use the builder API.
 - **Newtypes over primitives**: IDs, status values, and domain-meaningful strings are

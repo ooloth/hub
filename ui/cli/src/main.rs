@@ -3,7 +3,10 @@ use clap::Parser;
 
 /// Hub CLI binary.
 #[derive(Parser)]
-#[command(version, about = "Hub CLI — the agent's in-session toolkit")]
+#[command(
+    version,
+    about = "Hub CLI: no subcommands yet; it is reserved as the agents' toolkit"
+)]
 struct Cli {}
 
 fn main() {

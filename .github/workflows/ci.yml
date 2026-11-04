@@ -7,8 +7,9 @@ on:
 
 jobs:
   check:
-    # hub runs on macOS and is also developed in Linux sandboxes, so every push is checked on
-    # both (decision 031). Neither run cancels the other, so each platform's result is reported.
+    # hub runs on macOS and is also developed in Linux sandboxes, so every push to main and every
+    # pull request is checked on both (decision 031). Neither run cancels the other, so each
+    # platform's result is reported.
     strategy:
       fail-fast: false
       matrix:

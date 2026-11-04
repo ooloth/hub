@@ -6,8 +6,8 @@ date: 2026-10-02
 
 # 025 — Hub's own tooling is Rust, in the `scripts` crate
 
-_Status: accepted; implemented. Every tool is now in the `scripts` crate; the last port finished
-in commit d799456._
+_Status: accepted; implemented. Every tool is in the `scripts` crate (the last port is commit
+d799456)._
 
 ## Forced by
 
