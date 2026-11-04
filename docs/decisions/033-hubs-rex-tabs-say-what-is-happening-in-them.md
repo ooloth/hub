@@ -74,5 +74,5 @@ could find it by instead of its label.
 
 ## Also update
 
-- [ ] dotfiles `monitor-prs`: put back "and hub opens them in each repository's".
+- [x] dotfiles `monitor-prs`: put back "and hub opens them in each repository's".
 - [x] CLAUDE.md's Rex QA loop: the tab it lists is labelled `Issue <n> (<login>): investigate`.
