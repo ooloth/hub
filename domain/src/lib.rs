@@ -46,7 +46,7 @@ pub mod profile;
 pub mod project_short_name;
 /// Why a pull request is waiting on me, as the card counts it.
 pub mod reason_kind;
-/// The Rex session a terminal belongs to.
+/// A Rex session's id.
 pub mod rex_session_id;
 /// What the screen showed when an `op read` reached its deadline.
 pub mod screen_at_deadline;
@@ -70,6 +70,8 @@ pub mod waiting_card;
 pub mod waiting_on_me;
 /// The segments a window name is built from, and the hashes that keep them apart.
 mod window_segment;
+/// The Rex session a signal's tabs open in.
+pub mod workers_session;
 
 // At the crate root because hub-private's workflows name it as `domain::duration_secs` in their
 // `#[serde(with = ...)]` attributes. This repo's own types use `crate::serde_helpers::duration_secs`.
@@ -89,3 +91,4 @@ pub use rex_session_id::*;
 pub use session::*;
 pub use untrusted::*;
 pub use urgency::*;
+pub use workers_session::*;

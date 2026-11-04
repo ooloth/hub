@@ -1,16 +1,16 @@
-//! The Rex session a terminal belongs to.
+//! A Rex session's id.
 
-/// The Rex session a terminal belongs to, as Rex reports it in `REX_SESSION`.
+/// A Rex session's id as Rex prints it, such as `session:01a1…`.
 ///
-/// Rex sets the variable in every terminal it opens, so the TUI's own value
-/// names the session its windows are listed in and opened into. Holding one is
-/// proof the value was present and non-empty; whether the session still exists
-/// is the Rex server's to say, and it says so when asked.
+/// hub reads one from `rex session list` and passes it back with `-s` to list
+/// or open that session's tabs. Holding one is proof the value was non-empty;
+/// whether the session still exists is the Rex server's to say, and it says so
+/// when asked.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RexSessionId(String);
 
 impl RexSessionId {
-    /// Reads the value of `REX_SESSION`, or `None` when it is empty.
+    /// Reads an id Rex printed, or `None` when it is empty.
     #[must_use]
     pub fn parse(raw: &str) -> Option<Self> {
         (!raw.is_empty()).then(|| Self(raw.to_string()))

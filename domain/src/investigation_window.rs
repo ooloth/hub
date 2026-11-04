@@ -1,7 +1,7 @@
 //! Deterministic names for the windows hub opens, in tmux or Rex.
 
 use crate::window_segment::{clamp, segment, short_hash};
-use crate::ProjectShortName;
+use crate::{ProjectShortName, RepoSlug, WorkersSession};
 
 /// Longest window name hub will produce. Beyond this the tmux status bar or
 /// Rex tab bar crowds out everything else.
@@ -54,8 +54,15 @@ impl AlertSource {
 /// Construction is deterministic in its inputs. That is the property that lets
 /// a later launch find the window an earlier one opened, by building the same
 /// name again rather than by recording it anywhere.
+///
+/// Each window also carries the Rex session its tab belongs in, built from the
+/// same repository as the name, so no caller can pair a window with another
+/// repository's session (decision 032). tmux ignores it.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct InvestigationWindow(String);
+pub struct InvestigationWindow {
+    name: String,
+    session: WorkersSession,
+}
 
 impl InvestigationWindow {
     /// Window for an investigation of a pull request.
@@ -63,8 +70,8 @@ impl InvestigationWindow {
     /// # Panics
     /// Panics if `number` is zero.
     #[must_use]
-    pub fn pr(project: &ProjectShortName, number: u64) -> Self {
-        Self::numbered(project, "pr", number)
+    pub fn pr(project: &ProjectShortName, repo: &RepoSlug, number: u64) -> Self {
+        Self::numbered(project, repo, "pr", number)
     }
 
     /// Window for an investigation of a GitHub issue.
@@ -72,8 +79,8 @@ impl InvestigationWindow {
     /// # Panics
     /// Panics if `number` is zero.
     #[must_use]
-    pub fn issue(project: &ProjectShortName, number: u64) -> Self {
-        Self::numbered(project, "issue", number)
+    pub fn issue(project: &ProjectShortName, repo: &RepoSlug, number: u64) -> Self {
+        Self::numbered(project, repo, "issue", number)
     }
 
     /// Window for an investigation of a failing CI workflow.
@@ -81,8 +88,8 @@ impl InvestigationWindow {
     /// Named by workflow rather than by run, so re-running a failing workflow
     /// maps to the window already investigating it.
     #[must_use]
-    pub fn ci(project: &ProjectShortName, workflow: &str) -> Self {
-        Self::for_project(project, "ci", &segment(workflow))
+    pub fn ci(project: &ProjectShortName, repo: &RepoSlug, workflow: &str) -> Self {
+        Self::for_project(project, repo, "ci", &segment(workflow))
     }
 
     /// Window for an investigation of a log alert.
@@ -93,6 +100,7 @@ impl InvestigationWindow {
     #[must_use]
     pub fn alert(
         project: &ProjectShortName,
+        repo: &RepoSlug,
         source: AlertSource,
         env: &str,
         message: &str,
@@ -107,7 +115,7 @@ impl InvestigationWindow {
             readable.trim_end_matches('-'),
             short_hash(&format!("{env}\u{1}{message}"), IDENTITY_HASH_LEN),
         );
-        Self::for_project(project, source.kind(), &discriminator)
+        Self::for_project(project, repo, source.kind(), &discriminator)
     }
 
     /// Window for an investigation of a blocked media item.
@@ -116,7 +124,7 @@ impl InvestigationWindow {
     /// only thing distinguishing one from another.
     #[must_use]
     pub fn media(title: &str) -> Self {
-        Self::build("media", "item", &segment(title))
+        Self::build("media", "item", &segment(title), WorkersSession::unscoped())
     }
 
     /// Window for a pull request opened in lazygit.
@@ -124,8 +132,8 @@ impl InvestigationWindow {
     /// # Panics
     /// Panics if `number` is zero.
     #[must_use]
-    pub fn lazygit(project: &ProjectShortName, number: u64) -> Self {
-        Self::numbered(project, "git", number)
+    pub fn lazygit(project: &ProjectShortName, repo: &RepoSlug, number: u64) -> Self {
+        Self::numbered(project, repo, "git", number)
     }
 
     /// Window for a pull request opened in neovim's Octo.
@@ -133,8 +141,8 @@ impl InvestigationWindow {
     /// # Panics
     /// Panics if `number` is zero.
     #[must_use]
-    pub fn octo(project: &ProjectShortName, number: u64) -> Self {
-        Self::numbered(project, "octo", number)
+    pub fn octo(project: &ProjectShortName, repo: &RepoSlug, number: u64) -> Self {
+        Self::numbered(project, repo, "octo", number)
     }
 
     /// Window for a pull request's diff.
@@ -142,28 +150,39 @@ impl InvestigationWindow {
     /// # Panics
     /// Panics if `number` is zero.
     #[must_use]
-    pub fn diff(project: &ProjectShortName, number: u64) -> Self {
-        Self::numbered(project, "diff", number)
+    pub fn diff(project: &ProjectShortName, repo: &RepoSlug, number: u64) -> Self {
+        Self::numbered(project, repo, "diff", number)
     }
 
-    fn numbered(project: &ProjectShortName, kind: &str, number: u64) -> Self {
+    fn numbered(project: &ProjectShortName, repo: &RepoSlug, kind: &str, number: u64) -> Self {
         assert!(number > 0, "signal number must be positive, got {number}");
-        Self::for_project(project, kind, &number.to_string())
+        Self::for_project(project, repo, kind, &number.to_string())
     }
 
     /// A window named for `project`, whose short name already fits the
-    /// project segment and so must arrive in it unchanged.
-    fn for_project(project: &ProjectShortName, kind: &str, discriminator: &str) -> Self {
-        let window = Self::build(project.as_str(), kind, discriminator);
+    /// project segment and so must arrive in it unchanged, with its tab in
+    /// `repo`'s session.
+    fn for_project(
+        project: &ProjectShortName,
+        repo: &RepoSlug,
+        kind: &str,
+        discriminator: &str,
+    ) -> Self {
+        let window = Self::build(
+            project.as_str(),
+            kind,
+            discriminator,
+            WorkersSession::for_repo(repo),
+        );
         assert_eq!(
-            window.0.split(':').next(),
+            window.name.split(':').next(),
             Some(project.as_str()),
             "window {window} does not start with the short name {project}"
         );
         window
     }
 
-    fn build(project: &str, kind: &str, discriminator: &str) -> Self {
+    fn build(project: &str, kind: &str, discriminator: &str, session: WorkersSession) -> Self {
         assert!(
             kind.len() <= MAX_KIND,
             "kind {kind} exceeds {MAX_KIND} characters"
@@ -190,26 +209,40 @@ impl InvestigationWindow {
             "window name {name} contains whitespace"
         );
 
-        Self(name)
+        Self { name, session }
+    }
+
+    /// The Rex session this window's tab belongs in.
+    #[must_use]
+    pub const fn session(&self) -> &WorkersSession {
+        &self.session
     }
 }
 
 impl std::fmt::Display for InvestigationWindow {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(&self.name)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{AlertSource, InvestigationWindow, MAX_LEN};
-    use crate::ProjectShortName;
+    use crate::{ProjectShortName, RepoSlug};
     use proptest::prelude::*;
     use rstest::rstest;
 
     /// The short name a project tracking `repo` gets when it chooses none.
     fn of(repo: &str) -> ProjectShortName {
         ProjectShortName::from_repo(&repo.parse().unwrap())
+    }
+
+    fn slug(repo: &str) -> RepoSlug {
+        repo.parse().unwrap()
+    }
+
+    fn hub_repo() -> RepoSlug {
+        slug("ooloth/hub")
     }
 
     fn short(name: &str) -> ProjectShortName {
@@ -235,7 +268,7 @@ mod tests {
             project in short_names(),
             number in 1u64..=u64::MAX,
         ) {
-            assert_well_formed(&InvestigationWindow::pr(&project, number).to_string());
+            assert_well_formed(&InvestigationWindow::pr(&project, &hub_repo(), number).to_string());
         }
 
         /// A short name is chosen to be what the window shows, so the window
@@ -245,7 +278,7 @@ mod tests {
             project in short_names(),
             number in 1u64..=u64::MAX,
         ) {
-            let name = InvestigationWindow::pr(&project, number).to_string();
+            let name = InvestigationWindow::pr(&project, &hub_repo(), number).to_string();
             prop_assert_eq!(name.split(':').next(), Some(project.as_str()));
         }
 
@@ -253,7 +286,7 @@ mod tests {
         /// punctuation, emoji and considerable length.
         #[test]
         fn ci_window_is_well_formed_for_any_workflow(project in short_names(), workflow in ".*") {
-            assert_well_formed(&InvestigationWindow::ci(&project, &workflow).to_string());
+            assert_well_formed(&InvestigationWindow::ci(&project, &hub_repo(), &workflow).to_string());
         }
 
         #[test]
@@ -262,7 +295,7 @@ mod tests {
             env in ".*",
             message in ".*",
         ) {
-            let window = InvestigationWindow::alert(&project, AlertSource::Loki, &env, &message);
+            let window = InvestigationWindow::alert(&project, &hub_repo(), AlertSource::Loki, &env, &message);
             assert_well_formed(&window.to_string());
         }
 
@@ -271,8 +304,8 @@ mod tests {
         #[test]
         fn construction_is_deterministic(project in short_names(), workflow in ".*") {
             prop_assert_eq!(
-                InvestigationWindow::ci(&project, &workflow),
-                InvestigationWindow::ci(&project, &workflow),
+                InvestigationWindow::ci(&project, &hub_repo(), &workflow),
+                InvestigationWindow::ci(&project, &hub_repo(), &workflow),
             );
         }
 
@@ -282,8 +315,8 @@ mod tests {
         fn distinct_alert_messages_get_distinct_windows(a in ".*", b in ".*") {
             prop_assume!(a != b);
             prop_assert_ne!(
-                InvestigationWindow::alert(&short("api"), AlertSource::Loki, "prod", &a),
-                InvestigationWindow::alert(&short("api"), AlertSource::Loki, "prod", &b),
+                InvestigationWindow::alert(&short("api"), &hub_repo(), AlertSource::Loki, "prod", &a),
+                InvestigationWindow::alert(&short("api"), &hub_repo(), AlertSource::Loki, "prod", &b),
             );
         }
 
@@ -295,7 +328,7 @@ mod tests {
             project in short_names(),
             workflow in "[a-z]{1,4}([ /._-][a-z]{1,4}){0,12}",
         ) {
-            let name = InvestigationWindow::ci(&project, &workflow).to_string();
+            let name = InvestigationWindow::ci(&project, &hub_repo(), &workflow).to_string();
             prop_assert!(!name.contains("--"), "{} has a doubled separator", name);
         }
 
@@ -304,8 +337,8 @@ mod tests {
         fn distinct_alert_environments_get_distinct_windows(a in ".*", b in ".*") {
             prop_assume!(a != b);
             prop_assert_ne!(
-                InvestigationWindow::alert(&short("api"), AlertSource::Loki, &a, "boom"),
-                InvestigationWindow::alert(&short("api"), AlertSource::Loki, &b, "boom"),
+                InvestigationWindow::alert(&short("api"), &hub_repo(), AlertSource::Loki, &a, "boom"),
+                InvestigationWindow::alert(&short("api"), &hub_repo(), AlertSource::Loki, &b, "boom"),
             );
         }
     }
@@ -319,11 +352,11 @@ mod tests {
             number in 1u64..=u64::MAX,
         ) {
             let names: std::collections::HashSet<String> = [
-                InvestigationWindow::pr(&project, number),
-                InvestigationWindow::issue(&project, number),
-                InvestigationWindow::lazygit(&project, number),
-                InvestigationWindow::octo(&project, number),
-                InvestigationWindow::diff(&project, number),
+                InvestigationWindow::pr(&project, &hub_repo(), number),
+                InvestigationWindow::issue(&project, &hub_repo(), number),
+                InvestigationWindow::lazygit(&project, &hub_repo(), number),
+                InvestigationWindow::octo(&project, &hub_repo(), number),
+                InvestigationWindow::diff(&project, &hub_repo(), number),
             ]
             .iter()
             .map(ToString::to_string)
@@ -333,11 +366,11 @@ mod tests {
     }
 
     #[rstest]
-    #[case(InvestigationWindow::pr(&of("ooloth/hub"), 330), "hub:pr:330")]
-    #[case(InvestigationWindow::issue(&of("ooloth/hub"), 412), "hub:issue:412")]
-    #[case(InvestigationWindow::lazygit(&of("ooloth/hub"), 330), "hub:git:330")]
-    #[case(InvestigationWindow::octo(&of("ooloth/hub"), 330), "hub:octo:330")]
-    #[case(InvestigationWindow::diff(&of("ooloth/hub"), 330), "hub:diff:330")]
+    #[case(InvestigationWindow::pr(&of("ooloth/hub"), &slug("ooloth/hub"), 330), "hub:pr:330")]
+    #[case(InvestigationWindow::issue(&of("ooloth/hub"), &slug("ooloth/hub"), 412), "hub:issue:412")]
+    #[case(InvestigationWindow::lazygit(&of("ooloth/hub"), &slug("ooloth/hub"), 330), "hub:git:330")]
+    #[case(InvestigationWindow::octo(&of("ooloth/hub"), &slug("ooloth/hub"), 330), "hub:octo:330")]
+    #[case(InvestigationWindow::diff(&of("ooloth/hub"), &slug("ooloth/hub"), 330), "hub:diff:330")]
     fn the_owner_is_dropped_and_the_kind_names_the_window(
         #[case] window: InvestigationWindow,
         #[case] expected: &str,
@@ -349,7 +382,7 @@ mod tests {
     #[test]
     fn a_chosen_short_name_names_the_window() {
         assert_eq!(
-            InvestigationWindow::pr(&short("h"), 7).to_string(),
+            InvestigationWindow::pr(&short("h"), &hub_repo(), 7).to_string(),
             "h:pr:7"
         );
     }
@@ -364,7 +397,7 @@ mod tests {
         #[case] expected: &str,
     ) {
         assert_eq!(
-            InvestigationWindow::ci(&short("hub"), workflow).to_string(),
+            InvestigationWindow::ci(&short("hub"), &hub_repo(), workflow).to_string(),
             expected
         );
     }
@@ -372,7 +405,7 @@ mod tests {
     /// External text that sanitises to nothing must not produce an empty name.
     #[test]
     fn a_workflow_named_only_with_punctuation_falls_back() {
-        let name = InvestigationWindow::ci(&short("hub"), "!!! ///").to_string();
+        let name = InvestigationWindow::ci(&short("hub"), &hub_repo(), "!!! ///").to_string();
         assert_eq!(name, "hub:ci:unnamed");
     }
 
@@ -380,8 +413,12 @@ mod tests {
     /// saying what it is.
     #[test]
     fn a_long_project_keeps_its_kind_and_discriminator() {
-        let name =
-            InvestigationWindow::pr(&of("ooloth/a-very-long-repository-name"), 330).to_string();
+        let name = InvestigationWindow::pr(
+            &of("ooloth/a-very-long-repository-name"),
+            &slug("ooloth/a-very-long-repository-name"),
+            330,
+        )
+        .to_string();
         assert!(name.ends_with(":pr:330"), "{name} lost its kind or number");
         assert!(name.len() <= MAX_LEN, "{name} is too long");
     }
@@ -390,8 +427,12 @@ mod tests {
     /// disambiguating hash is kept short enough to leave readable characters.
     #[test]
     fn a_shortened_repository_stays_recognisable() {
-        let name =
-            InvestigationWindow::pr(&of("ooloth/a-very-long-repository-name"), 330).to_string();
+        let name = InvestigationWindow::pr(
+            &of("ooloth/a-very-long-repository-name"),
+            &slug("ooloth/a-very-long-repository-name"),
+            330,
+        )
+        .to_string();
         assert!(
             name.starts_with("a-very-long-rep"),
             "{name} is not recognisable"
@@ -405,15 +446,22 @@ mod tests {
     #[case("ooloth/hub-private", "hub-private:pr:12")]
     #[case("ooloth/config.nvim", "config-nvim:pr:12")]
     fn real_repository_names_survive_intact(#[case] repo: &str, #[case] expected: &str) {
-        assert_eq!(InvestigationWindow::pr(&of(repo), 12).to_string(), expected);
+        assert_eq!(
+            InvestigationWindow::pr(&of(repo), &slug(repo), 12).to_string(),
+            expected
+        );
     }
 
     /// The case that surfaced this: the kept prefix ends on a separator, and
     /// the hash separator would double it.
     #[test]
     fn a_prefix_ending_in_a_separator_does_not_double_it() {
-        let name =
-            InvestigationWindow::ci(&short("hub"), "build and test everything nightly").to_string();
+        let name = InvestigationWindow::ci(
+            &short("hub"),
+            &hub_repo(),
+            "build and test everything nightly",
+        )
+        .to_string();
         assert!(!name.contains("--"), "{name} has a doubled separator");
     }
 
@@ -421,8 +469,16 @@ mod tests {
     #[test]
     fn two_long_projects_sharing_a_prefix_get_different_windows() {
         assert_ne!(
-            InvestigationWindow::pr(&of("ooloth/a-very-long-repository-name-one"), 1),
-            InvestigationWindow::pr(&of("ooloth/a-very-long-repository-name-two"), 1),
+            InvestigationWindow::pr(
+                &of("ooloth/a-very-long-repository-name-one"),
+                &slug("ooloth/a-very-long-repository-name-one"),
+                1
+            ),
+            InvestigationWindow::pr(
+                &of("ooloth/a-very-long-repository-name-two"),
+                &slug("ooloth/a-very-long-repository-name-two"),
+                1
+            ),
         );
     }
 
@@ -436,9 +492,43 @@ mod tests {
         );
     }
 
+    /// Every kind of window for one repository puts its tab in that repository's session, so a
+    /// lookup never searches another repository's tabs.
+    #[rstest]
+    #[case(InvestigationWindow::pr(&short("hub"), &hub_repo(), 330))]
+    #[case(InvestigationWindow::issue(&short("hub"), &hub_repo(), 412))]
+    #[case(InvestigationWindow::ci(&short("hub"), &hub_repo(), "lint"))]
+    #[case(InvestigationWindow::alert(&short("hub"), &hub_repo(), AlertSource::Gcp, "prod", "boom"))]
+    #[case(InvestigationWindow::lazygit(&short("hub"), &hub_repo(), 330))]
+    #[case(InvestigationWindow::octo(&short("hub"), &hub_repo(), 330))]
+    #[case(InvestigationWindow::diff(&short("hub"), &hub_repo(), 330))]
+    fn a_repositorys_windows_open_in_its_session(#[case] window: InvestigationWindow) {
+        assert_eq!(window.session().label(), "Workers (hub)");
+    }
+
+    /// The session is named after the repository, not the short name, so it matches the session
+    /// the dotfiles launcher picks for the same repository.
+    #[test]
+    fn a_chosen_short_name_does_not_rename_the_session() {
+        let window = InvestigationWindow::pr(&short("h"), &hub_repo(), 7);
+        assert_eq!(window.to_string(), "h:pr:7");
+        assert_eq!(window.session().label(), "Workers (hub)");
+    }
+
+    /// Media signals carry no repository, so their tabs have no repository's session to join.
+    #[test]
+    fn a_media_window_opens_in_plain_workers() {
+        assert_eq!(
+            InvestigationWindow::media("Some Show - S01E01")
+                .session()
+                .label(),
+            "Workers"
+        );
+    }
+
     #[test]
     #[should_panic(expected = "signal number must be positive")]
     fn a_zero_signal_number_is_a_programmer_error() {
-        let _ = InvestigationWindow::pr(&of("ooloth/hub"), 0);
+        let _ = InvestigationWindow::pr(&of("ooloth/hub"), &slug("ooloth/hub"), 0);
     }
 }

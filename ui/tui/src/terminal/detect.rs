@@ -1,7 +1,6 @@
 //! Which terminal the TUI is running in.
 
 use anyhow::{bail, Result};
-use domain::RexSessionId;
 
 /// The terminal hub opens its windows in.
 ///
@@ -12,8 +11,9 @@ use domain::RexSessionId;
 pub(super) enum Terminal {
     /// A tmux session, addressed through the `TMUX` socket tmux set.
     Tmux,
-    /// A Rex session, where each window is a tab.
-    Rex { session: RexSessionId },
+    /// Rex, where each window is a tab. `REX_SESSION` only says the TUI runs in
+    /// Rex: each tab opens in its repository's session (decision 032).
+    Rex,
 }
 
 impl Terminal {
@@ -33,9 +33,9 @@ impl Terminal {
         if tmux.is_some() {
             return Ok(Self::Tmux);
         }
-        match rex_session.and_then(RexSessionId::parse) {
-            Some(session) => Ok(Self::Rex { session }),
-            None => {
+        match rex_session {
+            Some(session) if !session.is_empty() => Ok(Self::Rex),
+            _ => {
                 bail!("not in tmux or Rex; {purpose} requires a tmux session or a Rex terminal")
             }
         }
@@ -45,7 +45,6 @@ impl Terminal {
 #[cfg(test)]
 mod tests {
     use super::Terminal;
-    use domain::RexSessionId;
     use rstest::rstest;
 
     const SESSION: &str = "session:01a176a8-c72c-777d-918d-80612ca64cc3";
@@ -66,12 +65,10 @@ mod tests {
     }
 
     #[test]
-    fn rex_is_chosen_with_its_session_when_tmux_is_absent() {
+    fn rex_is_chosen_when_tmux_is_absent() {
         assert_eq!(
             Terminal::detect(None, Some(SESSION), "investigation").unwrap(),
-            Terminal::Rex {
-                session: RexSessionId::parse(SESSION).unwrap()
-            }
+            Terminal::Rex
         );
     }
 

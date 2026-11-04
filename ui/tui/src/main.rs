@@ -427,22 +427,37 @@ async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &con
 
 fn open_pr_diff(app: &mut App, config: &config::Config, repo: &str, number: u64) {
     let project = config.projects.short_name_for(&signal_repo(repo));
-    if let Err(err) = show_pr_diff(repo, &project, number) {
-        app.ui.flash = Some(err.to_string());
-    }
+    report_launch(app, show_pr_diff(repo, &project, number));
 }
 
-fn show_pr_diff(repo: &str, project: &domain::ProjectShortName, number: u64) -> Result<()> {
+fn show_pr_diff(
+    repo: &str,
+    project: &domain::ProjectShortName,
+    number: u64,
+) -> Result<terminal::WindowPlace> {
     let vacant = match terminal::claim(
-        &domain::InvestigationWindow::diff(project, number),
+        &domain::InvestigationWindow::diff(project, &signal_repo(repo), number),
         "opening the diff",
     )? {
-        terminal::WindowClaim::Reused => return Ok(()),
+        terminal::WindowClaim::Reused(place) => return Ok(place),
         terminal::WindowClaim::Vacant(vacant) => vacant,
     };
 
     let cmd = format!("gh pr diff {number} -R {repo} | delta; read");
     vacant.open(None, &[], &cmd)
+}
+
+/// Puts what became of a launch in the status bar: the error, or where the
+/// window is when the user cannot see it (decision 032).
+fn report_launch(app: &mut App, result: Result<terminal::WindowPlace>) {
+    match result {
+        Ok(place) => {
+            if let Some(notice) = place.notice() {
+                app.ui.flash = Some(notice);
+            }
+        }
+        Err(err) => app.ui.flash = Some(err.to_string()),
+    }
 }
 
 /// The slug of a repo a signal carried as text.
@@ -484,34 +499,30 @@ async fn handle_launch_ci(
     let Some(project) = tracked_project(app, config, &signal_repo(&repo)) else {
         return;
     };
-    let window = domain::InvestigationWindow::ci(&project.short_name, &workflow);
-    if let Err(err) = investigations::launch(
+    let window = domain::InvestigationWindow::ci(&project.short_name, &project.repo, &workflow);
+    let result = investigations::launch(
         investigations::ci::config(&repo, &run_url),
         &window,
         investigations::WorktreeSpec::EphemeralFresh { project },
         config,
     )
-    .await
-    {
-        app.ui.flash = Some(err.to_string());
-    }
+    .await;
+    report_launch(app, result);
 }
 
 async fn handle_launch_issue(app: &mut App, config: &config::Config, repo: String, number: u64) {
     let Some(project) = tracked_project(app, config, &signal_repo(&repo)) else {
         return;
     };
-    let window = domain::InvestigationWindow::issue(&project.short_name, number);
-    if let Err(err) = investigations::launch(
+    let window = domain::InvestigationWindow::issue(&project.short_name, &project.repo, number);
+    let result = investigations::launch(
         investigations::issue::config(&repo, number),
         &window,
         investigations::WorktreeSpec::EphemeralFresh { project },
         config,
     )
-    .await
-    {
-        app.ui.flash = Some(err.to_string());
-    }
+    .await;
+    report_launch(app, result);
 }
 
 async fn handle_launch_pr(
@@ -525,8 +536,8 @@ async fn handle_launch_pr(
     let Some(project) = tracked_project(app, config, &signal_repo(&repo)) else {
         return;
     };
-    let window = domain::InvestigationWindow::pr(&project.short_name, number);
-    if let Err(err) = investigations::launch(
+    let window = domain::InvestigationWindow::pr(&project.short_name, &project.repo, number);
+    let result = investigations::launch(
         investigations::pr::ask_config(number, &repo, author),
         &window,
         investigations::WorktreeSpec::PullRequest {
@@ -536,10 +547,8 @@ async fn handle_launch_pr(
         },
         config,
     )
-    .await
-    {
-        app.ui.flash = Some(err.to_string());
-    }
+    .await;
+    report_launch(app, result);
 }
 
 async fn handle_review_pr(
@@ -551,8 +560,8 @@ async fn handle_review_pr(
     let Some(project) = tracked_project(app, config, &signal_repo(&target.repo)) else {
         return;
     };
-    let window = domain::InvestigationWindow::pr(&project.short_name, target.number);
-    if let Err(err) = investigations::launch(
+    let window = domain::InvestigationWindow::pr(&project.short_name, &project.repo, target.number);
+    let result = investigations::launch(
         investigations::pr::review_config(target, review),
         &window,
         investigations::WorktreeSpec::PullRequest {
@@ -562,10 +571,8 @@ async fn handle_review_pr(
         },
         config,
     )
-    .await
-    {
-        app.ui.flash = Some(err.to_string());
-    }
+    .await;
+    report_launch(app, result);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -585,7 +592,7 @@ async fn handle_launch_gcp(
     let Some(tracked) = tracked_project(app, config, &repo) else {
         return;
     };
-    if let Err(err) = investigations::launch(
+    let result = investigations::launch(
         investigations::gcp::config(
             &project,
             &env,
@@ -598,6 +605,7 @@ async fn handle_launch_gcp(
         ),
         &domain::InvestigationWindow::alert(
             &tracked.short_name,
+            &tracked.repo,
             domain::AlertSource::Gcp,
             &env,
             message.expose(),
@@ -605,10 +613,8 @@ async fn handle_launch_gcp(
         investigations::WorktreeSpec::Ephemeral { project: tracked },
         config,
     )
-    .await
-    {
-        app.ui.flash = Some(err.to_string());
-    }
+    .await;
+    report_launch(app, result);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -627,10 +633,11 @@ async fn handle_launch_loki(
     let Some(tracked) = tracked_project(app, config, &repo) else {
         return;
     };
-    if let Err(err) = investigations::launch(
+    let result = investigations::launch(
         investigations::loki::config(&project, &env, &title, &message, &line, &url, &lookback),
         &domain::InvestigationWindow::alert(
             &tracked.short_name,
+            &tracked.repo,
             domain::AlertSource::Loki,
             &env,
             message.expose(),
@@ -638,10 +645,8 @@ async fn handle_launch_loki(
         investigations::WorktreeSpec::Ephemeral { project: tracked },
         config,
     )
-    .await
-    {
-        app.ui.flash = Some(err.to_string());
-    }
+    .await;
+    report_launch(app, result);
 }
 
 async fn handle_open_in_octo(
@@ -654,9 +659,8 @@ async fn handle_open_in_octo(
     let Some(project) = tracked_project(app, config, &signal_repo(&repo)) else {
         return;
     };
-    if let Err(err) = investigations::open_in_octo(&project, number, &head_branch).await {
-        app.ui.flash = Some(err.to_string());
-    }
+    let result = investigations::open_in_octo(&project, number, &head_branch).await;
+    report_launch(app, result);
 }
 
 async fn handle_open_in_lazygit(
@@ -669,9 +673,8 @@ async fn handle_open_in_lazygit(
     let Some(project) = tracked_project(app, config, &signal_repo(&repo)) else {
         return;
     };
-    if let Err(err) = investigations::open_in_lazygit(&project, number, &head_branch).await {
-        app.ui.flash = Some(err.to_string());
-    }
+    let result = investigations::open_in_lazygit(&project, number, &head_branch).await;
+    report_launch(app, result);
 }
 
 #[cfg(feature = "private")]
@@ -693,9 +696,7 @@ async fn handle_launch_media(
         }
         Err(e) => Err(e),
     };
-    if let Err(err) = result {
-        app.ui.flash = Some(err.to_string());
-    }
+    report_launch(app, result);
 }
 
 async fn handle_set_issue_labels(

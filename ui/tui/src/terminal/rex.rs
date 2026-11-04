@@ -1,8 +1,8 @@
 //! Every Rex invocation hub makes.
 //!
 //! Rex calls a window a tab, and its CLI calls it a window. Every call names
-//! the session explicitly, so the TUI's own session is the one acted on even
-//! when the user is looking at another.
+//! the session explicitly, because hub's tabs open in their repository's
+//! session rather than the TUI's (decision 032).
 
 use super::window::OpenWindow;
 use anyhow::{bail, Context, Result};
@@ -23,6 +23,19 @@ const ENV: &str = "/usr/bin/env";
 /// command means the same on every machine; hub writes every command it runs.
 const SHELL: &str = "/bin/sh";
 
+/// A Rex session, as `rex session list` reports it.
+pub(super) struct RexSession {
+    pub(super) id: RexSessionId,
+    pub(super) label: String,
+}
+
+/// Every session the Rex server has.
+pub(super) fn sessions() -> Result<Vec<RexSession>> {
+    let out = run(&["session".into(), "list".into(), "--json".into()])
+        .context("rex session list failed")?;
+    parse_session_listing(&out)
+}
+
 /// Windows open in the session.
 pub(super) fn open_windows(session: &RexSessionId) -> Result<Vec<OpenWindow>> {
     let out = run(&[
@@ -36,23 +49,8 @@ pub(super) fn open_windows(session: &RexSessionId) -> Result<Vec<OpenWindow>> {
     parse_window_listing(&out)
 }
 
-/// Makes the window with this id the session's active one.
-///
-/// Focused by id rather than by label, because a label can match more than
-/// one window and an id cannot.
-pub(super) fn focus_window(session: &RexSessionId, id: &str) -> Result<()> {
-    let _ = run(&[
-        "window".into(),
-        "focus".into(),
-        "-s".into(),
-        session.as_str().into(),
-        id.into(),
-    ])
-    .with_context(|| format!("rex window focus failed for {id}"))?;
-    Ok(())
-}
-
-/// Opens a window labelled `name` running `command`, and makes it active.
+/// Opens a window labelled `name` running `command`, leaving the session's
+/// active window as it was.
 pub(super) fn new_window(
     session: &RexSessionId,
     name: &str,
@@ -62,6 +60,20 @@ pub(super) fn new_window(
 ) -> Result<()> {
     let _ = run(&new_window_args(session, name, cwd, env, command))
         .with_context(|| format!("rex window new failed for {name}"))?;
+    Ok(())
+}
+
+/// Creates the session labelled `label`, with a window labelled `name`
+/// running `command` as its first window.
+pub(super) fn new_session(
+    label: &str,
+    name: &str,
+    cwd: Option<&Path>,
+    env: &[(String, String)],
+    command: &str,
+) -> Result<()> {
+    let _ = run(&new_session_args(label, name, cwd, env, command))
+        .with_context(|| format!("rex session new failed for {label}"))?;
     Ok(())
 }
 
@@ -82,12 +94,14 @@ fn run(args: &[OsString]) -> Result<String> {
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-/// The arguments to `rex` that open one window.
+/// The arguments to `rex` that open one window in an existing session.
+///
+/// `--focus=false` keeps the session's active window, because a new active
+/// window that the app is not showing would receive keys bound to actions.
 ///
 /// # Panics
-/// Panics if `name` starts with `-`, which `rex` would read as an option, if
-/// `command` is empty, or if an environment key is empty, contains `=`, or
-/// starts with `-`, any of which `env` would misread.
+/// Panics if `name` starts with `-`, which `rex` would read as an option, or if
+/// the command or its environment is refused by [`command_args`].
 fn new_window_args(
     session: &RexSessionId,
     name: &str,
@@ -99,6 +113,58 @@ fn new_window_args(
         !name.starts_with('-'),
         "window name must not start with '-', got {name}"
     );
+    let mut args: Vec<OsString> = vec![
+        "window".into(),
+        "new".into(),
+        "-s".into(),
+        session.as_str().into(),
+        name.into(),
+        "--focus=false".into(),
+    ];
+    args.extend(command_args(cwd, env, command));
+    args
+}
+
+/// The arguments to `rex` that create a session whose first window runs the
+/// command.
+///
+/// # Panics
+/// Panics if `label` or `name` starts with `-`, which `rex` would read as an
+/// option, or if the command or its environment is refused by
+/// [`command_args`].
+fn new_session_args(
+    label: &str,
+    name: &str,
+    cwd: Option<&Path>,
+    env: &[(String, String)],
+    command: &str,
+) -> Vec<OsString> {
+    assert!(
+        !label.starts_with('-'),
+        "session label must not start with '-', got {label}"
+    );
+    assert!(
+        !name.starts_with('-'),
+        "window name must not start with '-', got {name}"
+    );
+    let mut args: Vec<OsString> = vec![
+        "session".into(),
+        "new".into(),
+        label.into(),
+        "--window".into(),
+        name.into(),
+    ];
+    args.extend(command_args(cwd, env, command));
+    args
+}
+
+/// The directory option and the command a new terminal runs, shared by a new
+/// window and a new session.
+///
+/// # Panics
+/// Panics if `command` is empty, or if an environment key is empty, contains
+/// `=`, or starts with `-`, any of which `env` would misread.
+fn command_args(cwd: Option<&Path>, env: &[(String, String)], command: &str) -> Vec<OsString> {
     assert!(!command.is_empty(), "window command must not be empty");
     for (key, _) in env {
         assert!(!key.is_empty(), "environment key must not be empty");
@@ -112,13 +178,7 @@ fn new_window_args(
         );
     }
 
-    let mut args: Vec<OsString> = vec![
-        "window".into(),
-        "new".into(),
-        "-s".into(),
-        session.as_str().into(),
-        name.into(),
-    ];
+    let mut args: Vec<OsString> = Vec::new();
     if let Some(cwd) = cwd {
         args.push("-c".into());
         args.push(cwd.into());
@@ -165,11 +225,48 @@ fn parse_window_listing(listing: &str) -> Result<Vec<OpenWindow>> {
     Ok(open)
 }
 
+/// Reads `rex session list --json` output.
+///
+/// A session without a label cannot be one hub looks for, so it is skipped
+/// rather than rejected.
+///
+/// # Errors
+/// Returns an error when the output is not a listing of sessions with ids.
+fn parse_session_listing(listing: &str) -> Result<Vec<RexSession>> {
+    let parsed: serde_json::Value = serde_json::from_str(listing)
+        .context("rex session list printed something other than JSON")?;
+    let Some(sessions) = parsed.get("sessions").and_then(serde_json::Value::as_array) else {
+        bail!("rex session list printed no sessions array");
+    };
+
+    let mut found = Vec::with_capacity(sessions.len());
+    for session in sessions {
+        let Some(id) = session
+            .get("session_id")
+            .and_then(serde_json::Value::as_str)
+            .and_then(RexSessionId::parse)
+        else {
+            bail!("rex session list printed a session without a session_id");
+        };
+        let Some(label) = session.get("label").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        found.push(RexSession {
+            id,
+            label: label.to_string(),
+        });
+    }
+    Ok(found)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{new_window_args, parse_window_listing, ENV, SHELL};
+    use super::{
+        new_session_args, new_window_args, parse_session_listing, parse_window_listing, ENV, SHELL,
+    };
     use domain::RexSessionId;
     use proptest::prelude::*;
+    use rstest::rstest;
     use std::ffi::OsString;
     use std::path::Path;
     use std::process::Command;
@@ -266,12 +363,110 @@ mod tests {
         assert!(parse_window_listing(r#"{"windows":[{"label":"hub:pr:1"}]}"#).is_err());
     }
 
+    /// What `rex session list --json` printed on 2026-11-04, Rex 0.0.1793420730.
+    const SESSION_LISTING: &str = r#"{
+      "sessions": [
+        {
+          "session_id": "session:01a1947a-6cb7-7a41-8705-cc758ca2c81f",
+          "label": "Signals"
+        },
+        {
+          "session_id": "session:01a1a4a2-217f-7a19-8127-7d06ef12e0c6",
+          "label": "Workers (hub)"
+        }
+      ]
+    }"#;
+
+    fn session_pairs(listing: &str) -> Vec<(String, String)> {
+        parse_session_listing(listing)
+            .unwrap()
+            .into_iter()
+            .map(|session| (session.id.as_str().to_string(), session.label))
+            .collect()
+    }
+
+    #[test]
+    fn a_session_listing_pairs_each_session_id_with_its_label() {
+        assert_eq!(
+            session_pairs(SESSION_LISTING),
+            vec![
+                (
+                    "session:01a1947a-6cb7-7a41-8705-cc758ca2c81f".to_string(),
+                    "Signals".to_string()
+                ),
+                (
+                    "session:01a1a4a2-217f-7a19-8127-7d06ef12e0c6".to_string(),
+                    "Workers (hub)".to_string()
+                ),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_session_without_a_label_is_skipped() {
+        let listing = r#"{"sessions":[{"session_id":"session:a"},{"session_id":"session:b","label":"Workers"}]}"#;
+        assert_eq!(
+            session_pairs(listing),
+            vec![("session:b".to_string(), "Workers".to_string())]
+        );
+    }
+
+    #[rstest]
+    #[case::not_json("Error: server not running")]
+    #[case::no_sessions_array(r#"{"revision":5}"#)]
+    #[case::a_session_without_an_id(r#"{"sessions":[{"label":"Workers (hub)"}]}"#)]
+    #[case::a_session_with_an_empty_id(r#"{"sessions":[{"session_id":"","label":"Workers"}]}"#)]
+    fn a_session_listing_that_is_not_one_is_an_error(#[case] listing: &str) {
+        assert!(parse_session_listing(listing).is_err());
+    }
+
+    #[test]
+    fn the_arguments_create_a_session_whose_first_window_runs_the_command() {
+        let args = new_session_args(
+            "Workers (hub)",
+            "hub:pr:92",
+            Some(Path::new("/tmp/worktree")),
+            &[("HUB_SYSTEM_PROMPT".to_string(), "be careful".to_string())],
+            "claude \"$HUB_SYSTEM_PROMPT\"",
+        );
+        assert_eq!(
+            args,
+            os(&[
+                "session",
+                "new",
+                "Workers (hub)",
+                "--window",
+                "hub:pr:92",
+                "-c",
+                "/tmp/worktree",
+                "--",
+                ENV,
+                "HUB_SYSTEM_PROMPT=be careful",
+                SHELL,
+                "-c",
+                "claude \"$HUB_SYSTEM_PROMPT\"",
+            ])
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "session label must not start with '-'")]
+    fn a_session_label_starting_with_a_dash_is_refused() {
+        let _ = new_session_args("-Workers", "hub:pr:1", None, &[], "true");
+    }
+
+    #[test]
+    #[should_panic(expected = "window name must not start with '-'")]
+    fn a_new_sessions_window_name_starting_with_a_dash_is_refused() {
+        let _ = new_session_args("Workers", "-hub:pr:1", None, &[], "true");
+    }
+
     fn os(args: &[&str]) -> Vec<OsString> {
         args.iter().map(OsString::from).collect()
     }
 
     #[test]
-    fn the_arguments_open_a_labelled_window_in_the_session_running_the_command() {
+    fn the_arguments_open_a_labelled_background_window_in_the_session_running_the_command() {
         let args = new_window_args(
             &session(),
             "hub:pr:92",
@@ -287,6 +482,7 @@ mod tests {
                 "-s",
                 SESSION,
                 "hub:pr:92",
+                "--focus=false",
                 "-c",
                 "/tmp/worktree",
                 "--",
@@ -310,6 +506,7 @@ mod tests {
                 "-s",
                 SESSION,
                 "hub:diff:1",
+                "--focus=false",
                 "--",
                 ENV,
                 SHELL,
@@ -345,16 +542,33 @@ mod tests {
         let _ = new_window_args(&session(), "hub:pr:1", None, &[], "");
     }
 
-    /// Runs the part of the arguments Rex hands to the new terminal, here, and
-    /// returns the value each variable held, in order.
+    /// The values a new window's command sees, in order.
     fn values_seen_by_the_command(env: &[(String, String)]) -> Vec<String> {
+        values_seen_by(env, |env, command| {
+            new_window_args(&session(), "hub:pr:1", None, env, command)
+        })
+    }
+
+    /// The values a new session's first window's command sees, in order.
+    fn values_seen_by_the_new_sessions_command(env: &[(String, String)]) -> Vec<String> {
+        values_seen_by(env, |env, command| {
+            new_session_args("Workers (hub)", "hub:pr:1", None, env, command)
+        })
+    }
+
+    /// Runs the part of `args` Rex hands to the new terminal, here, and returns
+    /// the value each variable held, in order.
+    fn values_seen_by(
+        env: &[(String, String)],
+        args: impl Fn(&[(String, String)], &str) -> Vec<OsString>,
+    ) -> Vec<String> {
         let print = env
             .iter()
             .map(|(key, _)| format!("\"${key}\""))
             .collect::<Vec<_>>()
             .join(" ");
         let command = format!("printf '%s\\0' {print}");
-        let args = new_window_args(&session(), "hub:pr:1", None, env, &command);
+        let args = args(env, &command);
         let tail = &args[args.iter().position(|arg| arg == "--").unwrap() + 1..];
         let out = Command::new(&tail[0]).args(&tail[1..]).output().unwrap();
         assert!(out.status.success(), "{out:?}");
@@ -387,6 +601,20 @@ mod tests {
                 .map(|(i, value)| (format!("HUB_VALUE_{i}"), value.clone()))
                 .collect();
             prop_assert_eq!(values_seen_by_the_command(&env), values);
+        }
+
+        /// A new session's first window gets the same wrapper, so the same
+        /// holds when hub creates the session.
+        #[test]
+        fn every_value_reaches_a_new_sessions_command_byte_for_byte(
+            values in prop::collection::vec("[^\\x00]{0,300}", 1..4),
+        ) {
+            let env: Vec<(String, String)> = values
+                .iter()
+                .enumerate()
+                .map(|(i, value)| (format!("HUB_VALUE_{i}"), value.clone()))
+                .collect();
+            prop_assert_eq!(values_seen_by_the_new_sessions_command(&env), values);
         }
     }
 }

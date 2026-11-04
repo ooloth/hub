@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use domain::{InvestigationPrompt, UntrustedText};
 
-use crate::terminal::{claim, WindowClaim};
+use crate::terminal::{claim, WindowClaim, WindowPlace};
 
 use super::command::compose;
 
@@ -84,8 +84,8 @@ pub(crate) enum WorktreeSpec {
     CurrentDir,
 }
 
-/// Opens an investigation in its own tmux window or Rex tab, or switches to the window
-/// already investigating this signal.
+/// Opens an investigation in its own tmux window or Rex tab, or finds the window
+/// already investigating this signal, and returns where it is.
 ///
 /// `window` names the window, and naming it is what makes it addressable
 /// afterwards: several investigations run side by side, each reachable from
@@ -94,15 +94,15 @@ pub(crate) enum WorktreeSpec {
 /// The claim comes before `resolve_worktree`, and that ordering is load bearing.
 /// `WorktreeSpec::EphemeralFresh` and `Ephemeral` create a worktree whose only
 /// cleanup is appended to the command the window runs, so one resolved for a launch
-/// that then switches instead would have nothing to remove it.
+/// that then finds an open window instead would have nothing to remove it.
 pub(crate) async fn launch(
     config: LaunchConfig,
     window: &domain::InvestigationWindow,
     spec: WorktreeSpec,
     hub_config: &config::Config,
-) -> Result<()> {
+) -> Result<WindowPlace> {
     let vacant = match claim(window, "investigation")? {
-        WindowClaim::Reused => return Ok(()),
+        WindowClaim::Reused(place) => return Ok(place),
         WindowClaim::Vacant(vacant) => vacant,
     };
 
@@ -138,12 +138,12 @@ pub(crate) async fn open_in_lazygit(
     project: &config::Project,
     number: u64,
     head_branch: &str,
-) -> Result<()> {
+) -> Result<WindowPlace> {
     let vacant = match claim(
-        &domain::InvestigationWindow::lazygit(&project.short_name, number),
+        &domain::InvestigationWindow::lazygit(&project.short_name, &project.repo, number),
         "opening lazygit",
     )? {
-        WindowClaim::Reused => return Ok(()),
+        WindowClaim::Reused(place) => return Ok(place),
         WindowClaim::Vacant(vacant) => vacant,
     };
 
@@ -159,12 +159,12 @@ pub(crate) async fn open_in_octo(
     project: &config::Project,
     number: u64,
     head_branch: &str,
-) -> Result<()> {
+) -> Result<WindowPlace> {
     let vacant = match claim(
-        &domain::InvestigationWindow::octo(&project.short_name, number),
+        &domain::InvestigationWindow::octo(&project.short_name, &project.repo, number),
         "opening in neovim",
     )? {
-        WindowClaim::Reused => return Ok(()),
+        WindowClaim::Reused(place) => return Ok(place),
         WindowClaim::Vacant(vacant) => vacant,
     };
 

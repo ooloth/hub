@@ -250,11 +250,13 @@ sleep 12                                          # wait for the first render
 rex capture -s "$S" -b "$B" --trim
 rex send -s "$S" -b "$B" i
 sleep 12
-rex window ls -s "$S" --json | jq -r '.windows[] | "\(.window_id) \(.label)"'
+W=$(rex session list --json | jq -er '.sessions | map(select(.label == "Workers (hub)")) | .[0].session_id')
+rex window ls -s "$W" --json | jq -r '.windows[] | "\(.window_id) \(.label)"'
 ```
 
-Clean up the same way, with `rex session kill "$S"` in place of the tmux one.
-Killing the session ends each investigation before its own cleanup runs, so
+Clean up the same way, with `rex session kill "$S"` in place of the tmux one, and close each tab
+the run opened in `Workers (hub)` with `rex window close -s "$W" <window_id>`, leaving that
+session's other tabs alone. Closing a tab ends its investigation before its own cleanup runs, so
 its worktree is always left behind to remove.
 
 **Gotchas that cost time**
