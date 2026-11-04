@@ -61,7 +61,8 @@ async fn start_disclaimed(program: &str, args: &[&str]) -> std::io::Result<std::
 /// A command whose process is killed when the future running it is dropped.
 ///
 /// A read gives up on `op` at its deadline by dropping its future. Without this, an `op` that never
-/// answers would keep running after the attempt that gave up on it.
+/// answers would keep running after the attempt that gave up on it. `screen_look` starts
+/// `osascript` and `ps` through it too, under deadlines of their own.
 pub(crate) fn killed_on_drop(program: &str) -> tokio::process::Command {
     let mut command = tokio::process::Command::new(program);
     let _ = command.kill_on_drop(true);
