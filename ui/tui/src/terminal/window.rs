@@ -28,9 +28,9 @@ pub(crate) struct VacantWindow {
 enum Target {
     /// A new tmux window in the TUI's tmux session.
     Tmux,
-    /// A new tab in the existing session for the window's repository.
+    /// A new tab in the window's existing session.
     RexSession(RexSessionId),
-    /// A new session for the window's repository, with this tab as its first.
+    /// A new session labelled as the window's session, with this tab as its first.
     NewRexSession,
 }
 
@@ -74,8 +74,8 @@ impl WindowPlace {
 /// right to open it.
 ///
 /// In tmux a found window is brought into view. In Rex it is left as it is,
-/// because Rex.app follows no request to change its view (decision 032), and
-/// it is looked for only in the session for the window's repository.
+/// because hub can't bring a Rex tab into view without Remote Control
+/// (decision 032), and it is looked for only in the window's session.
 ///
 /// A `Reused` claim means the caller is done, and every step the caller would
 /// otherwise take (fetching, creating a worktree, writing a prompt) is skipped.

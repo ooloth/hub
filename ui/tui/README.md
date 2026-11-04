@@ -172,7 +172,7 @@ and `review_config()` for pull requests) with a system prompt (loaded via
 `include_str!` from `prompts/`), a context-specific prompt string, and
 tool/model settings. `launch.rs` holds the shared launcher, and
 `command.rs` builds the command it runs. `src/terminal/` opens the window in tmux or Rex,
-whichever encloses the TUI ([Decision 029](../../docs/decisions/029-hub-opens-windows-in-whichever-of-tmux-or-rex-encloses-it.md)).
+whichever encloses the TUI ([Decision 029](../../docs/decisions/029-hub-opens-windows-in-whichever-of-tmux-or-rex-encloses-it.md)). A Rex tab opens in the background, in the session for its repository ([Decision 032](../../docs/decisions/032-hubs-rex-tabs-open-in-their-repositorys-session.md)).
 
 Use the existing types in `investigations/` as templates when adding a new one.
 

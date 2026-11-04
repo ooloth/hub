@@ -56,8 +56,8 @@ impl AlertSource {
 /// name again rather than by recording it anywhere.
 ///
 /// Each window also carries the Rex session its tab belongs in, built from the
-/// same repository as the name, so no caller can pair a window with another
-/// repository's session (decision 032). tmux ignores it.
+/// repository the caller passes beside the short name (decision 032). Callers
+/// take both from one project. tmux ignores the session.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InvestigationWindow {
     name: String,

@@ -4,9 +4,10 @@ use anyhow::{bail, Result};
 
 /// The terminal hub opens its windows in.
 ///
-/// Rex is a GUI terminal, so it is always the outermost layer: tmux started in
-/// a Rex pane inherits `REX_SESSION`, but a Rex terminal is never inside tmux.
-/// That is why `TMUX` decides first.
+/// Rex is a GUI terminal, so it is normally the outermost layer: tmux started in
+/// a Rex pane inherits `REX_SESSION`, and the windows on screen are tmux's. That
+/// is why `TMUX` decides first. A Rex server started from inside tmux would
+/// break this, as decision 029's Risk says.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum Terminal {
     /// A tmux session, addressed through the `TMUX` socket tmux set.

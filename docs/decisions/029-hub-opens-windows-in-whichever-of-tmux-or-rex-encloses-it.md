@@ -83,5 +83,4 @@ then go), or the case under Risk is seen.
 
 - [x] Decision 015 — marked as superseded for its tmux section.
 - [x] vision.md, README.md, ui/tui/README.md and CLAUDE.md — windows are tmux windows or Rex tabs.
-- [ ] The TUI QA loop in CLAUDE.md still drives the TUI in tmux. Moving it to Rex is a separate
-      change.
+- [x] The TUI QA loop in CLAUDE.md has a Rex version.

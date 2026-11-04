@@ -20,7 +20,7 @@ Its three binaries serve three distinct audiences:
 - **`hub`** (CLI) — the **agent's toolkit** (stub). The task subcommand (`hub task *`) was removed with the task model (ADR 019). Future agent-facing subcommands will be added here as the filesystem session model is built out.
 - **`hub-daemon`** — the **unattended surface** (ADR 020). Refreshes the signal cache with nobody present. It refreshes every 15 minutes (`--interval`), one daemon per profile, and `--once` runs a single pass. Each pass is recorded in a health record in the profile's database, and after each refresh that finds pull requests that are my turn, one macOS notification through `terminal-notifier` counts them by reason. `just daemon-start` runs the installed binary under launchd at every login. The TUI's status bar warns when the daemon's refreshes stop. The TUI becoming a client of the daemon and the PR attention model are the rest of [#327](https://github.com/ooloth/hub/issues/327).
 
-The core value is cross-domain triage plus agent delegation: signals from different systems are ranked together in one list, and any signal can be investigated by pressing `i` to launch a Claude Code session with injected context. That session opens in its own tmux window or Rex tab, whichever encloses the TUI, named after the signal by `domain::InvestigationWindow`, so several investigations run side by side and each stays reachable from the terminal's window list.
+The core value is cross-domain triage plus agent delegation: signals from different systems are ranked together in one list, and any signal can be investigated by pressing `i` to launch a Claude Code session with injected context. That session opens in its own tmux window or Rex tab, whichever encloses the TUI, named after the signal by `domain::InvestigationWindow`, so several investigations run side by side: in tmux it joins the TUI's window list, and in Rex it opens in the background in its repository's `Workers (<repo>)` session ([decision 032](docs/decisions/032-hubs-rex-tabs-open-in-their-repositorys-session.md)).
 
 See [README.md](README.md) for the full feature list and value proposition.
 
@@ -253,6 +253,10 @@ sleep 12
 W=$(rex session list --json | jq -er '.sessions | map(select(.label == "Workers (hub)")) | .[0].session_id')
 rex window ls -s "$W" --json | jq -r '.windows[] | "\(.window_id) \(.label)"'
 ```
+
+The tab opens in the session for the selected signal's repository, so pick an `ooloth/hub`
+signal, or put that repository's name in place of `hub`. Kill any `Workers (<repo>)` session the
+run created once its tabs are closed.
 
 Clean up the same way, with `rex session kill "$S"` in place of the tmux one, and close each tab
 the run opened in `Workers (hub)` with `rex window close -s "$W" <window_id>`, leaving that
