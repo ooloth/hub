@@ -6,6 +6,9 @@ date: 2026-10-26
 
 # 029 — Hub opens its windows in whichever of tmux or Rex encloses it
 
+_Its rule that Rex tabs open in the TUI's session is superseded by
+[032](032-hubs-rex-tabs-open-in-their-repositorys-session.md)._
+
 ## Forced by
 
 - I use [Rex](https://www.superlogical.com/rex/docs) as my terminal, and Rex is meant to be a
