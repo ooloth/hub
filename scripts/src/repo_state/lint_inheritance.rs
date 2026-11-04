@@ -133,8 +133,8 @@ fn every_workspace_member_inherits_the_workspace_lints() {
         })
         .collect();
 
-    assert!(
-        wrong.is_empty(),
+    assert_eq!(
+        wrong, Vec::<String>::new(),
         "these manifests need\n\n[lints]\n  workspace = true\n\nto be held to the workspace lints:\n{}",
         wrong.join("\n")
     );

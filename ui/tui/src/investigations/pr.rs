@@ -65,7 +65,7 @@ fn review_prompt(number: u64, repo: &str, review: PrReview) -> String {
 mod tests {
     use rstest::rstest;
 
-    use super::{ask_config, ask_prompt, review_config, review_prompt};
+    use super::{ask_config, ask_prompt, review_config, review_prompt, InvestigationPrompt};
     use crate::state::{PrAuthor, PrReview, PrReviewTarget};
 
     fn target(author: PrAuthor) -> PrReviewTarget {
@@ -133,8 +133,9 @@ mod tests {
     #[case::a_peers(PrAuthor::Peer)]
     fn ask_config_launches_no_skill(#[case] author: PrAuthor) {
         let config = ask_config(7, "ooloth/hub", author);
-        assert!(
-            config.prompt.is_empty(),
+        assert_eq!(
+            config.prompt,
+            InvestigationPrompt::new(),
             "expected no task prompt, got {:?}",
             config.prompt
         );

@@ -67,8 +67,9 @@ fn every_workspace_member_has_a_readme() {
         .map(|problem| format!("  {problem}"))
         .collect();
 
-    assert!(
-        problems.is_empty(),
+    assert_eq!(
+        problems,
+        Vec::<String>::new(),
         "every workspace member needs a README:\n{}\n\n\
          Cover what the crate is for, how to run it, and the gotchas that are not visible in \
          the source. clients/README.md is the minimal shape; daemon/README.md adds a runbook.",

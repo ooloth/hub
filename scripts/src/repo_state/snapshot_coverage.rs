@@ -79,8 +79,9 @@ fn every_snapshot_is_produced_by_a_test() {
         scanned >= 47,
         "found only {scanned} snapshot files, so the scan cannot be trusted"
     );
-    assert!(
-        orphans.is_empty(),
+    assert_eq!(
+        orphans,
+        Vec::<String>::new(),
         "no test in these crates names these snapshots:\n{}\n\nDelete them, or restore the test.",
         orphans.join("\n")
     );

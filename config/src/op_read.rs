@@ -396,8 +396,9 @@ mod tests {
             .args(["-P", &std::process::id().to_string(), "-x", "sleep"])
             .output()
             .unwrap();
-        assert!(
-            children.stdout.is_empty(),
+        assert_eq!(
+            children.stdout,
+            Vec::<u8>::new(),
             "a sleep child is still running: {}",
             String::from_utf8_lossy(&children.stdout)
         );

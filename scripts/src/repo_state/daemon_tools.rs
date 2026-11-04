@@ -212,8 +212,9 @@ fn daemon_tools_are_every_program_the_daemon_runs() {
         "found no program the daemon runs, so the check checked nothing"
     );
     let unaccounted = spawns.unaccounted(&WRAPPERS);
-    assert!(
-        unaccounted.is_empty(),
+    assert_eq!(
+        unaccounted,
+        Vec::<String>::new(),
         "the check cannot see what these start, so it cannot hold them to DAEMON_TOOLS:\n{}",
         unaccounted.join("\n")
     );

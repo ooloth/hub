@@ -53,8 +53,9 @@ fn no_two_decision_records_share_a_number() {
         .map(|(number, records)| format!("  {number}: {}", records.join(", ")))
         .collect();
 
-    assert!(
-        shared.is_empty(),
+    assert_eq!(
+        shared,
+        Vec::<String>::new(),
         "these decision records share a number, so a reference to it names more than one:\n{}\n\n\
          Give the record that merged last the next free number.",
         shared.join("\n")
@@ -93,6 +94,6 @@ mod tests {
     fn records_with_their_own_numbers_share_none() {
         let shared = shared_numbers(&names(&["029-hub-opens-windows.md", "030-whether.md"]));
 
-        assert!(shared.is_empty(), "{shared:?}");
+        assert_eq!(shared, BTreeMap::<String, Vec<String>>::new(), "{shared:?}");
     }
 }

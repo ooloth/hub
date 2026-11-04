@@ -53,8 +53,8 @@ fn the_dev_profile_packs_line_tables_and_the_test_profile_inherits_them() {
 
     let shortfalls = shortfalls(&manifest).unwrap();
 
-    assert!(
-        shortfalls.is_empty(),
+    assert_eq!(
+        shortfalls, Vec::<String>::new(),
         "{} needs\n\n[profile.dev]\n  debug = \"line-tables-only\"\n  split-debuginfo = \"packed\"\n\n\
          and no override of either under [profile.test]:\n{}",
         path.display(),

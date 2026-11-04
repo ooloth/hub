@@ -102,8 +102,9 @@ fn domain_reads_no_ambient_state() {
         })
         .collect();
 
-    assert!(
-        reads.is_empty(),
+    assert_eq!(
+        reads,
+        Vec::<String>::new(),
         "domain/ must not read ambient state, but does:\n{}\n\n\
          Take the value as an argument instead. See docs/invariants/domain-is-pure.md",
         reads.join("\n")

@@ -64,8 +64,9 @@ fn only_the_store_names_the_daemon_health_table() {
         })
         .collect();
 
-    assert!(
-        mentions.is_empty(),
+    assert_eq!(
+        mentions,
+        Vec::<String>::new(),
         "only {OWNER} may name the {TABLE} table, but these do:\n{}\n\n\
          Write the health record through store::daemon_health::record.",
         mentions.join("\n")
@@ -100,6 +101,10 @@ mod tests {
     #[case::a_module("pub mod daemon_health;")]
     #[case::an_import("use store::daemon_health::RecordedPass;")]
     fn naming_the_module_is_allowed(#[case] line: &str) {
-        assert!(table_mentions(line).is_empty(), "{line}");
+        assert_eq!(
+            table_mentions(line),
+            Vec::<(usize, String)>::new(),
+            "{line}"
+        );
     }
 }

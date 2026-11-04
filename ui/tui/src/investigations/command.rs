@@ -496,8 +496,9 @@ mod tests {
                 }
             }
         }
-        assert!(
-            offenders.is_empty(),
+        assert_eq!(
+            offenders,
+            Vec::<String>::new(),
             "unexplained exposure of untrusted text; add a `// expose: <why>` line above each, \
              or fence the text with InvestigationPrompt::untrusted instead: {offenders:?}"
         );

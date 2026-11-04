@@ -168,7 +168,7 @@ mod tests {
         assert_eq!(result.credentials.github_username, "testuser");
         assert!(result.credentials.linear_token.is_none());
         assert!(result.credentials.loki_token.is_none());
-        assert!(result.credentials.extra.is_empty());
+        assert_eq!(result.credentials.extra, HashMap::<String, String>::new());
         assert_eq!(result.project, vec![]);
         assert!(result.monitor.is_none());
     }

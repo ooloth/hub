@@ -164,7 +164,7 @@ mod tests {
                     prop_assert_eq!(sum, waiting.len());
                     prop_assert_eq!(card.total(), waiting.len());
                 }
-                CardChange::Remove | CardChange::Leave => prop_assert!(waiting.is_empty()),
+                CardChange::Remove | CardChange::Leave => prop_assert_eq!(waiting, WaitingOnMe::default()),
             }
         }
     }

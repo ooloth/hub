@@ -178,7 +178,7 @@ mod tests {
         let stream = make_stream(&[], &[("1", "unlabeled line")]);
         let entries = entries_from_response(make_response(vec![stream])).unwrap();
         assert_eq!(entries.len(), 1);
-        assert!(entries[0].labels.is_empty());
+        assert_eq!(entries[0].labels, HashMap::<String, String>::new());
     }
 
     #[rstest]

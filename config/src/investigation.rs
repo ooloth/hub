@@ -79,7 +79,10 @@ mod tests {
 
     #[test]
     fn no_mcp_servers_table_means_no_servers() {
-        assert!(parse("").unwrap().mcp_servers().unwrap().is_empty());
+        assert_eq!(
+            parse("").unwrap().mcp_servers().unwrap(),
+            InvestigationMcpServers::default()
+        );
     }
 
     #[rstest]

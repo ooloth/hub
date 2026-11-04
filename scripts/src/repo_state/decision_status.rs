@@ -40,8 +40,8 @@ fn no_superseded_decision_is_listed_as_pending() {
         .map(|path| format!("  {}", path.display()))
         .collect();
 
-    assert!(
-        pending.is_empty(),
+    assert_eq!(
+        pending, Vec::<String>::new(),
         "these decision records are superseded but still say \"not yet implemented\", so they read \
          as designs to build:\n{}\n\nSay instead that the record is superseded and not to be built.",
         pending.join("\n")

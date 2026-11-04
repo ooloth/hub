@@ -443,7 +443,7 @@ pub(crate) mod tests {
                 "removing the card took too long".to_string()
             )]
         );
-        assert!(third.leftovers_removed.is_empty(), "{third}");
+        assert_eq!(third.leftovers_removed, Vec::<String>::new(), "{third}");
     }
 
     #[tokio::test]
@@ -459,7 +459,7 @@ pub(crate) mod tests {
             failed.map(|found| found.found),
             Some(Err("listing the cards showing took too long".to_string()))
         );
-        assert!(first.leftovers_removed.is_empty(), "{first}");
+        assert_eq!(first.leftovers_removed, Vec::<String>::new(), "{first}");
         assert_eq!(
             listed.map(|found| found.found),
             Some(Ok(vec!["hub-dev-pr-ooloth/hub#1".to_string()]))
