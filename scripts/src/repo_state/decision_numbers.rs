@@ -10,9 +10,10 @@ use crate::repo_root::repo_root;
 fn shared_numbers(names: &[String]) -> BTreeMap<String, Vec<String>> {
     let mut by_number: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for name in names {
-        let number = name
-            .split_once('-')
-            .map_or(name.as_str(), |(number, _)| number);
+        let number = match name.split_once('-') {
+            Some((number, _)) => number,
+            None => name.as_str(),
+        };
         by_number
             .entry(number.to_string())
             .or_default()

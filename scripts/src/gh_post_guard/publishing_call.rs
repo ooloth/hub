@@ -104,7 +104,10 @@ fn api_publishes(args: &[Word]) -> bool {
             has_body = true;
         }
     }
-    method.map_or(has_body, |method| !method.eq_ignore_ascii_case("GET"))
+    match method {
+        Some(method) => !method.eq_ignore_ascii_case("GET"),
+        None => has_body,
+    }
 }
 
 fn is_api_body_flag(arg: &str) -> bool {

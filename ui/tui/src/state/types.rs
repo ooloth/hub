@@ -284,9 +284,10 @@ impl Screen {
                 flat_rows,
                 selected,
                 ..
-            } => flat_rows
-                .get(*selected)
-                .map_or(SelectedItemKind::Other, SelectedItemKind::from_row),
+            } => match flat_rows.get(*selected) {
+                Some(row) => SelectedItemKind::from_row(row),
+                None => SelectedItemKind::Other,
+            },
             Self::MergingPr { .. } => SelectedItemKind::Other,
         }
     }

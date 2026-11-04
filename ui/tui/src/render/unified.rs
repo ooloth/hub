@@ -17,8 +17,11 @@ pub(crate) fn build_unified_list_item(
     parts: LineParts,
     inner_width: usize,
 ) -> ListItem<'static> {
-    let chrome_width =
-        parts.source.as_ref().map_or(0, |s| s.chars().count() + 3) + parts.age.chars().count();
+    let source_width = match &parts.source {
+        Some(source) => source.chars().count() + 3,
+        None => 0,
+    };
+    let chrome_width = source_width + parts.age.chars().count();
     let chrome_total = if chrome_width > 0 {
         2 + chrome_width
     } else {
@@ -29,11 +32,11 @@ pub(crate) fn build_unified_list_item(
         _ => 3,                          // " · " / " ▸ " / " ▾ "
     };
     // A subcategory narrows the category, so it shares the label's width, which is never truncated.
-    let label_width = parts.category.chars().count()
-        + parts
-            .subcategory
-            .as_ref()
-            .map_or(0, |s| 3 + s.chars().count());
+    let subcategory_width = match &parts.subcategory {
+        Some(subcategory) => 3 + subcategory.chars().count(),
+        None => 0,
+    };
+    let label_width = parts.category.chars().count() + subcategory_width;
     let category_prefix_width = label_width + separator_width;
     let content_budget = inner_width
         .saturating_sub(chrome_total)

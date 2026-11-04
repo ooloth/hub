@@ -17,6 +17,8 @@
     expect_used = "warn"
     indexing_slicing = "warn"
     nursery = { level = "warn", priority = -1 }
+    # Suggests map_or, which disallowed-methods in clippy.toml rules out in favour of a match.
+    map_unwrap_or = "allow"
     # A match names both cases in order; map_or_else hides them in two closures, None first.
     option_if_let_else = "allow"
     panic = "warn"

@@ -73,13 +73,14 @@ impl fmt::Display for PassReport {
                     " recorded=no record_error=\"{}\"",
                     one_line(error.reason().as_str())
                 )?;
-                fallback_error.as_ref().map_or(Ok(()), |fallback_error| {
-                    write!(
+                match fallback_error {
+                    Some(fallback_error) => write!(
                         f,
                         " fallback_error=\"{}\"",
                         one_line(fallback_error.reason().as_str())
-                    )
-                })
+                    ),
+                    None => Ok(()),
+                }
             }
         }
     }

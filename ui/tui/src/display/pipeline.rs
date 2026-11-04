@@ -17,9 +17,10 @@ pub(crate) fn flatten(items: &[DisplayItem], expanded: &HashSet<GroupKey>) -> Ve
             } => {
                 let is_expanded = expanded.contains(label);
 
-                let urgency = group_items
-                    .first()
-                    .map_or(domain::Urgency::Low, item_urgency);
+                let urgency = match group_items.first() {
+                    Some(first) => item_urgency(first),
+                    None => domain::Urgency::Low,
+                };
 
                 let Some(first_item) = group_items.first().cloned() else {
                     continue;

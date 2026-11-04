@@ -59,12 +59,13 @@ pub(crate) fn check(repo: &Path) -> Result<StagedTerms> {
     }
 
     let mut hits = terms.find_hits(&texts).into_iter();
-    Ok(hits
-        .next()
-        .map_or(StagedTerms::Clean, |first| StagedTerms::Found {
+    Ok(match hits.next() {
+        Some(first) => StagedTerms::Found {
             first,
             rest: hits.collect(),
-        }))
+        },
+        None => StagedTerms::Clean,
+    })
 }
 
 /// Runs the check on the repository in the current directory, as the pre-commit hook does.

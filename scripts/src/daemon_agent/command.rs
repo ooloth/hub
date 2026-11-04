@@ -233,9 +233,11 @@ fn on_disk(path: &Path, rendered: &AgentDefinition) -> Result<DefinitionOnDisk> 
 /// launchd creates the log file but not its directory, and the daemon creates the profile
 /// directory only after launchd has already opened the log.
 fn create_log_dir(log: &LogFile) -> Result<()> {
-    log.path().as_path().parent().map_or(Ok(()), |dir| {
-        std::fs::create_dir_all(dir).with_context(|| format!("failed to create {}", dir.display()))
-    })
+    match log.path().as_path().parent() {
+        Some(dir) => std::fs::create_dir_all(dir)
+            .with_context(|| format!("failed to create {}", dir.display())),
+        None => Ok(()),
+    }
 }
 
 /// Replaces this process with `tail`, so the log is followed until interrupted.

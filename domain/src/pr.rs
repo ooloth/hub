@@ -185,7 +185,10 @@ impl RepoSlug {
     /// Returns the repository name portion of the slug (everything after the `/`).
     #[must_use]
     pub fn repo_name(&self) -> &str {
-        self.0.split_once('/').map_or(&self.0, |(_, repo)| repo)
+        match self.0.split_once('/') {
+            Some((_, repo)) => repo,
+            None => &self.0,
+        }
     }
 }
 

@@ -120,12 +120,13 @@ pub(crate) fn decide(
     }
 
     let mut hits = terms.find_hits(&texts).into_iter();
-    hits.next().map_or(Verdict::Allow, |first| {
-        Verdict::Deny(DenyReason::BannedTerm {
+    match hits.next() {
+        Some(first) => Verdict::Deny(DenyReason::BannedTerm {
             first,
             rest: hits.collect(),
-        })
-    })
+        }),
+        None => Verdict::Allow,
+    }
 }
 
 /// A body file's text, if it exists and is small enough to read.

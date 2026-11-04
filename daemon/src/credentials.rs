@@ -378,13 +378,14 @@ impl fmt::Display for AttemptReport {
             " error=\"{}\"",
             one_line(attempt.failure.reason().as_str())
         )?;
-        self.record_error.as_ref().map_or(Ok(()), |error| {
-            write!(
+        match &self.record_error {
+            Some(error) => write!(
                 f,
                 " recorded=no record_error=\"{}\"",
                 one_line(error.reason().as_str())
-            )
-        })
+            ),
+            None => Ok(()),
+        }
     }
 }
 
@@ -412,9 +413,10 @@ impl fmt::Display for NotificationRemoval {
             self.pid,
             self.profile
         )?;
-        self.error
-            .as_ref()
-            .map_or(Ok(()), |error| write!(f, " error=\"{}\"", one_line(error)))
+        match &self.error {
+            Some(error) => write!(f, " error=\"{}\"", one_line(error)),
+            None => Ok(()),
+        }
     }
 }
 
