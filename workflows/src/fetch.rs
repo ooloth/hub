@@ -230,30 +230,6 @@ pub async fn fetch_and_create_investigation_worktree(bare: &Path) -> Result<Path
     create_investigation_worktree(bare).await
 }
 
-/// Fetches the latest remote refs and syncs the default-branch worktree to them.
-///
-/// Unlike `ensure_default_branch_worktree` (which skips the fetch), this always
-/// runs `git fetch origin` first so the subsequent reset lands on the actual
-/// latest commit. Called only by the background fetch path (not investigations).
-///
-/// # Errors
-/// Returns an error if a git operation fails.
-pub async fn sync_default_branch_worktree(bare: &Path) -> Result<()> {
-    let bare_str = bare.to_string_lossy().into_owned();
-
-    let fetch = Command::new("git")
-        .args(["-C", &bare_str, "fetch", "origin"])
-        .output()
-        .await
-        .context("git fetch origin failed")?;
-    if !fetch.status.success() {
-        let stderr = String::from_utf8_lossy(&fetch.stderr);
-        anyhow::bail!("git fetch origin failed: {stderr}");
-    }
-
-    ensure_default_branch_worktree(bare).await
-}
-
 /// Creates the default-branch worktree if absent, then resets it to `origin/<branch>`.
 ///
 /// # Errors
@@ -540,32 +516,6 @@ mod tests {
             after, new_sha,
             "ensure_pr_worktree must fetch origin on re-entry"
         );
-    }
-
-    #[tokio::test]
-    async fn sync_default_branch_worktree_fetches_then_resets_to_latest_commit() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (origin, bare) = setup_origin_and_bare(tmp.path()).await;
-
-        // Create the default-branch worktree at the initial commit.
-        ensure_default_branch_worktree(&bare).await.unwrap();
-        let worktree = bare.join("main");
-        assert!(worktree.is_dir());
-
-        // Push a new commit to origin.
-        let new_sha = push_commit(&origin, "second").await;
-
-        // Before sync: worktree HEAD and remote tracking ref are both stale.
-        let wt_before = git_rev_parse(&worktree, "HEAD").await;
-        assert_ne!(wt_before, new_sha, "setup: worktree should be stale");
-
-        sync_default_branch_worktree(&bare).await.unwrap();
-
-        // After sync: both the remote tracking ref and the worktree HEAD are current.
-        let remote_after = git_rev_parse(&bare, "refs/remotes/origin/main").await;
-        assert_eq!(remote_after, new_sha, "remote tracking ref must be updated");
-        let wt_after = git_rev_parse(&worktree, "HEAD").await;
-        assert_eq!(wt_after, new_sha, "worktree HEAD must be reset to latest");
     }
 
     #[rstest]
