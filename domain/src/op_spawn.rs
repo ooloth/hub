@@ -44,12 +44,6 @@ impl OpSpawnsUsed {
     pub fn add(&mut self, spawn: OpSpawn) {
         let _ = self.0.insert(spawn);
     }
-
-    /// Whether `spawn` answered for any credential.
-    #[must_use]
-    pub fn contains(&self, spawn: OpSpawn) -> bool {
-        self.0.contains(&spawn)
-    }
 }
 
 impl fmt::Display for OpSpawnsUsed {

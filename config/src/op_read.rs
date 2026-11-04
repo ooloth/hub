@@ -39,8 +39,9 @@ const _: () = assert!(
     "the extra wait would end a Touch ID prompt op is still showing"
 );
 
-/// The credentials one call to [`ConfigFile::resolve`] has resolved so far, which a later failure
-/// in the same call must not repeat, how that call may start `op`, and which ways answered.
+/// The credentials one call to [`crate::ConfigFile::resolve`] has resolved so far, which a later
+/// failure in the same call must not repeat, how that call may start `op`, and which ways
+/// answered.
 #[derive(Debug)]
 pub(crate) struct ResolvedSoFar {
     responsibility: OpResponsibility,
@@ -139,9 +140,10 @@ impl ResolvedSoFar {
     }
 
     /// What `read`, from an `op` started as `spawn`, gave for `reference`, or when it had not
-    /// finished by `deadline`, a [`CredentialFailure::no_answer`] naming what `look` then found. When `look` finds 1Password's
-    /// Touch ID prompt, `read` gets [`TOUCH_ID_GRACE`] longer instead, since `op` gives up on that
-    /// prompt by itself. Dropping `read` ends the `op` it started.
+    /// finished by `deadline`, a [`CredentialFailure::no_answer`] naming what `look` then found.
+    /// When `look` finds 1Password's Touch ID prompt, `read` gets [`TOUCH_ID_GRACE`] longer
+    /// instead, since `op` gives up on that prompt by itself. Dropping `read` ends the `op` it
+    /// started.
     async fn answered_within<Look, Seen>(
         &mut self,
         reference: &str,
