@@ -11,32 +11,163 @@ expression: "serde_json::json!({ \"schema_version\": SCHEMA_VERSION, \"payload\"
       {
         "Pr": {
           "activity": {
-            "bodies": [],
-            "my_latest": null,
-            "open_threads": [],
-            "requests": [],
-            "verdicts": []
+            "bodies": [
+              {
+                "at": "2026-11-01T12:06:00Z",
+                "by": "carol"
+              }
+            ],
+            "my_latest": "2026-11-01T12:07:00Z",
+            "open_threads": [
+              {
+                "at": "2026-11-01T12:03:00Z",
+                "last": "Me",
+                "people": [
+                  "bob"
+                ]
+              }
+            ],
+            "requests": [
+              {
+                "Person": "bob"
+              },
+              {
+                "Bot": "a-bot"
+              },
+              {
+                "Team": "a-team"
+              }
+            ],
+            "verdicts": [
+              {
+                "at": "2026-11-01T12:04:00Z",
+                "by": {
+                  "Person": "bob"
+                },
+                "opinion": "Approved"
+              },
+              {
+                "at": "2026-11-01T12:05:00Z",
+                "by": {
+                  "Bot": "a-bot"
+                },
+                "opinion": "ChangesRequested"
+              }
+            ]
           },
-          "age": 0,
+          "age": 10800,
           "author": "alice",
           "base_branch": "main",
-          "body": null,
-          "changed_files": [],
-          "ci_status": null,
-          "comment_count": 0,
-          "draft": false,
+          "body": "the body",
+          "changed_files": [
+            {
+              "additions": 4,
+              "deletions": 1,
+              "patch": "@@ -1 +1 @@",
+              "path": "src/lib.rs"
+            }
+          ],
+          "ci_status": "Failure",
+          "comment_count": 2,
+          "draft": true,
           "head_branch": "feat",
-          "kind": "ToReview",
-          "merge_readiness": "NotYetKnown",
-          "number": 1,
-          "pr_comments": [],
+          "kind": "Mine",
+          "merge_readiness": {
+            "Blocked": "Conflict"
+          },
+          "number": 7,
+          "pr_comments": [
+            {
+              "age": 1200,
+              "author": "carol",
+              "body": "a top-level comment"
+            }
+          ],
           "repo": "owner/repo",
-          "review_decision": null,
-          "review_threads": [],
+          "review_decision": "ChangesRequested",
+          "review_threads": [
+            {
+              "comments": [
+                {
+                  "age": 1800,
+                  "author": "bob",
+                  "body": "a thread comment"
+                }
+              ],
+              "line": 12,
+              "path": "src/lib.rs"
+            }
+          ],
           "title": "a pull request",
-          "total_changed_files": 0,
+          "total_changed_files": 3,
+          "urgency": "High",
+          "url": "https://github.com/owner/repo/pull/7"
+        }
+      },
+      {
+        "Issue": {
+          "age": 172800,
+          "author": "dave",
+          "body": "the issue body",
+          "labels": [
+            "bug"
+          ],
+          "number": 8,
+          "repo": "owner/repo",
+          "title": "an issue",
+          "urgency": "Low",
+          "url": "https://github.com/owner/repo/issues/8"
+        }
+      },
+      {
+        "Ci": {
+          "age": 300,
+          "error": "a warning",
+          "job_name": "check",
+          "repo": "owner/repo",
+          "step_name": "clippy",
+          "urgency": "High",
+          "url": "https://github.com/owner/repo/actions/runs/1",
+          "workflow_name": "CI"
+        }
+      },
+      {
+        "Linear": {
+          "age": 86400,
+          "identifier": "ENG-1",
+          "state": "In Progress",
+          "title": "a linear issue",
           "urgency": "Medium",
-          "url": "https://github.com/owner/repo/pull/1"
+          "url": "https://linear.app/team/issue/ENG-1"
+        }
+      },
+      {
+        "Loki": {
+          "age": 120,
+          "env": "prod",
+          "line": "{\"message\":\"a loki message\"}",
+          "lookback": "15m",
+          "message": "a loki message",
+          "project": "myapp",
+          "repo": "owner/repo",
+          "title": "app errors",
+          "urgency": "High",
+          "url": "https://grafana.example.com/explore"
+        }
+      },
+      {
+        "Gcp": {
+          "age": 540,
+          "env": "staging",
+          "gcp_project": "myapp-staging",
+          "line": "{\"message\":\"a gcp message\"}",
+          "lookback": "1h",
+          "message": "a gcp message",
+          "project": "myapp",
+          "repo": "owner/repo",
+          "title": "worker errors",
+          "urgency": "Medium",
+          "url": "https://console.cloud.google.com/logs"
         }
       }
     ]

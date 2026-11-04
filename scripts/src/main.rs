@@ -63,8 +63,9 @@ enum Command {
         #[command(subcommand)]
         command: daemon_agent::DaemonCommand,
     },
-    /// Clippy with `-D warnings` in every configuration this checkout can build: always
-    /// without hub-private, and with each hub-private module whose sources are linked in.
+    /// Clippy with `-D warnings` on every target, tests included, in every configuration this
+    /// checkout can build: always without hub-private, and with each hub-private module whose
+    /// sources are linked in.
     ///
     /// Runs every configuration even after one fails, then names the failures.
     LintConfigurations,

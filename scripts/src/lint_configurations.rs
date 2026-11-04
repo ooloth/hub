@@ -65,7 +65,8 @@ impl fmt::Display for LintSummary {
 }
 
 /// Runs clippy with `-D warnings` on every target in `configuration`, tests included, letting its
-/// output through. `clippy.toml` lets tests unwrap, expect, index and panic.
+/// output through. `clippy.toml` lets `#[test]` functions and `#[cfg(test)]` modules unwrap,
+/// expect, index and panic.
 ///
 /// # Errors
 /// Returns an error when cargo cannot be started.

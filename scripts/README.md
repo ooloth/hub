@@ -89,6 +89,8 @@ No output means allowed. A refusal prints the hook's deny JSON with the reason.
 - `src/lint_configurations.rs` — the configuration lint
 - `src/repo_root.rs` — the checkout this binary was built from
 - `src/setup_private.rs` — the device setup
+- `src/prek_hooks.rs`: the check that every git hook `prek.toml` declares is installed
+- `src/test_support.rs`: helpers shared by the crate's tests
 - `src/daemon_agent/` — the launchd agent: `launch_agent` (what the plist is rendered from),
   `definition` (the plist), `plan` (what each command does, pure) and `command`, which reads
   launchd and the disk, plans and acts

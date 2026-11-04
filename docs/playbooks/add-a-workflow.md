@@ -62,7 +62,9 @@ Workflows that surface items plug into the unified status pipeline in
 `workflows/src/status.rs`. They don't get their own CLI command.
 
 1. Add one or more variants for your item type(s) to the `StatusItem` enum, and an arm for
-   each in `StatusItem::urgency()` and `StatusItem::age()`
+   each in `StatusItem::urgency()` and `StatusItem::age()`. Add one of each to
+   `every_public_signal` in the same file's tests, and bump `SCHEMA_VERSION`, as
+   `ui/tui/README.md` says under "Cache and schema version"
 2. Add a `Source` to `sources()` that calls your workflow and wraps its items in those
    variants. Its name is what `StatusReport::errors` reports when the source fails
 3. Add an arm for each new variant to the matches on `StatusItem` in `ui/tui/src/display/`:

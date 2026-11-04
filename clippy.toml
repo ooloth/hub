@@ -8,7 +8,7 @@ allow-panic-in-tests = true
 allow-unwrap-in-tests = true
 
 # Branching on an Option or Result is a `match`, which names both cases in order. These combinators
-# hide the two branches in closures with the default first, and no clippy lint asks for `match`.
+# take the default case first, as a value or a closure, and no clippy lint asks for `match`.
 disallowed-methods = [
   { path = "core::option::Option::map_or", reason = "write a match: it names both cases in order" },
   { path = "core::option::Option::map_or_else", reason = "write a match: it names both cases in order" },

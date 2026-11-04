@@ -76,10 +76,10 @@ struct PrAuthor {
 /// The login GitHub shows for an account that was deleted.
 const DELETED_ACCOUNT: &str = "ghost";
 
-/// `author`'s login, or the one GitHub shows when the account was deleted.
-fn login_or_ghost(author: Option<PrAuthor>) -> String {
-    match author {
-        Some(a) => a.login,
+/// The author's login, or the one GitHub shows when the account was deleted.
+fn login_or_ghost(login: Option<String>) -> String {
+    match login {
+        Some(login) => login,
         None => DELETED_ACCOUNT.to_string(),
     }
 }
@@ -375,10 +375,7 @@ fn node_to_pr(node: PrNode, search: &Search, me: &str) -> Result<PullRequest> {
                     .nodes
                     .into_iter()
                     .map(|c| ReviewComment {
-                        author: match c.author {
-                            Some(a) => a.login,
-                            None => DELETED_ACCOUNT.to_string(),
-                        },
+                        author: login_or_ghost(c.author.map(|a| a.login)),
                         age: age(&c.created_at),
                         body: c.body,
                     })
@@ -390,10 +387,7 @@ fn node_to_pr(node: PrNode, search: &Search, me: &str) -> Result<PullRequest> {
             .nodes
             .into_iter()
             .map(|c| ReviewComment {
-                author: match c.author {
-                    Some(a) => a.login,
-                    None => DELETED_ACCOUNT.to_string(),
-                },
+                author: login_or_ghost(c.author.map(|a| a.login)),
                 age: age(&c.created_at),
                 body: c.body,
             })
@@ -402,7 +396,7 @@ fn node_to_pr(node: PrNode, search: &Search, me: &str) -> Result<PullRequest> {
         urgency: search.urgency,
         kind: search.kind,
         draft: node.is_draft,
-        author: login_or_ghost(node.author),
+        author: login_or_ghost(node.author.map(|a| a.login)),
         review_decision: parse_review_decision(node.review_decision.as_deref()),
         comment_count,
         head_branch: node.head_ref_name,
@@ -822,17 +816,27 @@ mod tests {
 
     /// GitHub returns `null` for the author of a deleted account.
     #[test]
-    fn a_pull_request_and_comment_from_deleted_accounts_still_parse() {
+    fn deleted_accounts_show_as_ghost_on_a_pull_request_and_its_comments() {
         let mut json = node_json("alice", "owner/repo", &[], false);
         json["author"] = serde_json::Value::Null;
         json["comments"] = serde_json::json!({ "nodes": [
             { "author": null, "createdAt": "2024-01-01T00:00:00Z", "body": "gone" }
         ] });
+        json["reviewThreads"] = serde_json::json!({ "nodes": [{
+            "isResolved": false,
+            "path": "src/lib.rs",
+            "line": 1,
+            "diffSide": "RIGHT",
+            "comments": { "nodes": [
+                { "author": null, "createdAt": "2024-01-01T00:00:00Z", "body": "gone" }
+            ] }
+        }] });
         let node: PrNode = serde_json::from_value(json).unwrap();
 
         let pr = node_to_pr(node, &search(PrKind::External, false), "me").unwrap();
 
         assert_eq!(pr.author, "ghost");
         assert_eq!(pr.pr_comments[0].author, "ghost");
+        assert_eq!(pr.review_threads[0].comments[0].author, "ghost");
     }
 }

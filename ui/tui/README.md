@@ -245,11 +245,18 @@ Today both the TUI (its own refresh, when the signals on screen are older than
 
 **Bump `SCHEMA_VERSION` whenever `StatusReport` or any nested type changes in
 a way that would break deserialization of a cached row.** Forgetting to bump
-means old cached bytes get deserialized into the new shape and will likely
-panic or produce garbage.
+means a binary reads a payload of another shape, and serde's error stops the TUI with "failed to
+deserialize cached status" at startup, or "failed to deserialize the cached signals" in the
+once-a-minute read.
+
+`the_cached_payload_format_is_pinned_to_its_schema_version` in `workflows/src/status.rs`
+snapshots one signal of each public kind with every field filled, beside `SCHEMA_VERSION`. A
+change to the format fails it, and accepting the new snapshot is the moment to decide on the bump.
+It does not show a renamed enum variant the payload does not use, or a change to the private
+signals. A new public kind of signal is added to `every_public_signal` in the same file by hand.
 
 Rules of thumb:
-- Adding a new variant to `StatusItem` → bump (old cache won't have the tag)
+- Adding a new variant to `StatusItem` → bump (a binary built before it cannot read a row that holds it)
 - Removing or renaming a field → bump
 - Changing a field's type → bump
 - Adding a new optional field with `#[serde(default)]` → no bump needed

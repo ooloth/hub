@@ -102,7 +102,7 @@ impl App {
     }
 
     const fn handle_back(&mut self) -> Vec<Effect> {
-        // Collapse the detail pane before any deeper back navigation.
+        // Back collapses a visible detail pane, and does nothing otherwise.
         let is_split_visible = matches!(
             &self.ui.screen,
             Screen::UnifiedList {
@@ -1266,12 +1266,27 @@ mod tests {
     }
 
     #[test]
-    fn back_on_the_full_list_does_nothing() {
-        let mut app = app_with_items(vec![DisplayItem::Single(ci_failure())]);
+    fn back_with_the_detail_pane_hidden_does_nothing() {
+        let mut app = app_with_items(vec![]);
+        app.data.raw_items = vec![stub_issue(), ci_failure(), gcp_item(), ci_failure()];
+        apply(
+            &mut app,
+            &[
+                Action::FilterCategory(Category::Errors),
+                Action::MoveDown,
+                Action::MoveDown,
+            ],
+        );
+
         let effects = app.update(Action::Back);
+
         assert!(effects.is_empty());
         assert_eq!(detail_mode(&app), DetailMode::Hidden);
-        assert_eq!(selected(&app), 0);
+        assert_eq!(selected(&app), 2);
+        let Screen::UnifiedList { filter, .. } = app.current_screen() else {
+            panic!("expected UnifiedList");
+        };
+        assert_eq!(filter.category, Some(Category::Errors));
     }
 
     #[test]

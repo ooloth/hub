@@ -27,6 +27,9 @@ pub const MY_DRAFT_PRS: &str = "github my draft prs";
 pub const PRS_AWAITING_REVIEW: &str = "github prs awaiting review";
 
 /// Bump when the serialized `StatusReport` format changes incompatibly.
+///
+/// The test `the_cached_payload_format_is_pinned_to_its_schema_version` fails when the format
+/// changes, and `ui/tui/README.md` says which changes need a bump.
 pub const SCHEMA_VERSION: i32 = 22;
 
 /// A single signal from any source, as stored in the unified status list.
@@ -539,12 +542,163 @@ mod tests {
         assert_eq!(titles(&items), vec!["first match", "other"]);
     }
 
-    /// The cached payload's format, under the schema version it is stored with. A change to
-    /// the format shows here, and its review is where `SCHEMA_VERSION` gets bumped.
+    /// A fixed moment, so the snapshot does not change from run to run.
+    fn at(minute: u32) -> chrono::DateTime<chrono::Utc> {
+        format!("2026-11-01T12:{minute:02}:00Z").parse().unwrap()
+    }
+
+    /// A pull request with every optional field set, every list holding an entry, and each
+    /// variant of who can take part in its activity.
+    fn pull_request_with_everything_set() -> StatusItem {
+        use domain::pr_activity::{
+            LatestVerdict, OpenThread, Opinion, Participant, PrActivity, Requested, ReviewBody,
+        };
+
+        StatusItem::Pr(PullRequest {
+            number: 7,
+            title: "a pull request".to_string(),
+            repo: domain::RepoSlug::new("owner", "repo"),
+            url: "https://github.com/owner/repo/pull/7".to_string(),
+            age: chrono::Duration::hours(3),
+            urgency: Urgency::High,
+            kind: domain::PrKind::Mine,
+            draft: true,
+            author: "alice".to_string(),
+            review_decision: Some(domain::ReviewDecision::ChangesRequested),
+            comment_count: 2,
+            head_branch: "feat".to_string(),
+            base_branch: "main".to_string(),
+            body: Some("the body".to_string()),
+            ci_status: Some(domain::CiStatus::Failure),
+            changed_files: vec![domain::ChangedFile {
+                path: "src/lib.rs".to_string(),
+                additions: 4,
+                deletions: 1,
+                patch: Some("@@ -1 +1 @@".to_string()),
+            }],
+            total_changed_files: 3,
+            review_threads: vec![domain::ReviewThread {
+                path: "src/lib.rs".to_string(),
+                line: Some(12),
+                comments: vec![domain::ReviewComment {
+                    author: "bob".to_string(),
+                    age: chrono::Duration::minutes(30),
+                    body: "a thread comment".to_string(),
+                }],
+            }],
+            pr_comments: vec![domain::ReviewComment {
+                author: "carol".to_string(),
+                age: chrono::Duration::minutes(20),
+                body: "a top-level comment".to_string(),
+            }],
+            merge_readiness: domain::MergeReadiness::Blocked(domain::MergeBlocker::Conflict),
+            activity: PrActivity {
+                requests: vec![
+                    Requested::Person("bob".to_string()),
+                    Requested::Bot("a-bot".to_string()),
+                    Requested::Team("a-team".to_string()),
+                ],
+                open_threads: OpenThread::from_comments(&[
+                    (Participant::Person("bob".to_string()), at(1)),
+                    (Participant::Bot("a-bot".to_string()), at(2)),
+                    (Participant::Me, at(3)),
+                ])
+                .into_iter()
+                .collect(),
+                verdicts: vec![
+                    LatestVerdict {
+                        by: Participant::Person("bob".to_string()),
+                        opinion: Opinion::Approved,
+                        at: at(4),
+                    },
+                    LatestVerdict {
+                        by: Participant::Bot("a-bot".to_string()),
+                        opinion: Opinion::ChangesRequested,
+                        at: at(5),
+                    },
+                ],
+                bodies: vec![ReviewBody {
+                    by: "carol".to_string(),
+                    at: at(6),
+                }],
+                my_latest: Some(at(7)),
+            },
+        })
+    }
+
+    /// One signal of each public kind, with every optional field set and every list holding
+    /// an entry.
+    fn every_public_signal() -> Vec<StatusItem> {
+        let repo = domain::RepoSlug::new("owner", "repo");
+        vec![
+            pull_request_with_everything_set(),
+            StatusItem::Issue(Issue {
+                number: 8,
+                title: "an issue".to_string(),
+                repo: repo.clone(),
+                url: "https://github.com/owner/repo/issues/8".to_string(),
+                author: "dave".to_string(),
+                age: chrono::Duration::days(2),
+                urgency: Urgency::Low,
+                labels: vec!["bug".to_string()],
+                body: Some("the issue body".to_string()),
+            }),
+            StatusItem::Ci(CiFailure {
+                repo: repo.clone(),
+                workflow_name: "CI".to_string(),
+                job_name: Some("check".to_string()),
+                step_name: Some("clippy".to_string()),
+                error: Some("a warning".to_string()),
+                age: chrono::Duration::minutes(5),
+                urgency: Urgency::High,
+                url: "https://github.com/owner/repo/actions/runs/1".to_string(),
+            }),
+            StatusItem::Linear(LinearIssue {
+                identifier: "ENG-1".to_string(),
+                title: "a linear issue".to_string(),
+                url: "https://linear.app/team/issue/ENG-1".to_string(),
+                state: "In Progress".to_string(),
+                age: chrono::Duration::days(1),
+                urgency: Urgency::Medium,
+            }),
+            StatusItem::Loki(domain::LokiEntry {
+                title: "app errors".to_string(),
+                project: "myapp".to_string(),
+                repo: repo.clone(),
+                env: "prod".to_string(),
+                message: domain::UntrustedText::new("a loki message"),
+                line: domain::UntrustedText::new("{\"message\":\"a loki message\"}"),
+                lookback: "15m".to_string(),
+                age: chrono::Duration::minutes(2),
+                urgency: Urgency::High,
+                url: "https://grafana.example.com/explore".to_string(),
+            }),
+            StatusItem::Gcp(domain::GcpEntry {
+                title: "worker errors".to_string(),
+                project: "myapp".to_string(),
+                repo,
+                env: "staging".to_string(),
+                message: domain::UntrustedText::new("a gcp message"),
+                line: domain::UntrustedText::new("{\"message\":\"a gcp message\"}"),
+                lookback: "1h".to_string(),
+                age: chrono::Duration::minutes(9),
+                urgency: Urgency::Medium,
+                url: "https://console.cloud.google.com/logs".to_string(),
+                gcp_project: "myapp-staging".to_string(),
+            }),
+        ]
+    }
+
+    /// The cached payload's format, under the schema version it is stored with. It holds one
+    /// signal of each public kind with every field filled, so renaming, adding or removing a
+    /// field shows here, and so does renaming any enum variant the payload uses. Renaming a
+    /// variant it does not use, and the private signals, which public CI cannot build, do not
+    /// show. Accepting a change here is where to decide whether `SCHEMA_VERSION` needs a bump,
+    /// by the rules in `ui/tui/README.md`.
     #[test]
     fn the_cached_payload_format_is_pinned_to_its_schema_version() {
         let report = StatusReport {
-            items: vec![pr(1, "a pull request")],
+            items: every_public_signal(),
             errors: vec!["github issues".to_string()],
         };
 

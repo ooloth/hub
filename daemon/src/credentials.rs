@@ -770,7 +770,8 @@ mod tests {
     }
 
     /// A resolver that fails with `failures` in order, each after `takes`, then returns
-    /// `credentials`.
+    /// `credentials`. Its futures are `Send` because `notified_for` awaits `obtain`, which holds
+    /// one across its sleeps, and clippy's `future_not_send` fails `notified_for` otherwise.
     fn failing_slowly_then(
         failures: Vec<CredentialFailure>,
         takes: Duration,
