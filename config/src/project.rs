@@ -125,10 +125,10 @@ impl Projects {
     /// get by default.
     #[must_use]
     pub fn short_name_for(&self, repo: &RepoSlug) -> ProjectShortName {
-        self.tracked(repo).map_or_else(
-            |_| ProjectShortName::from_repo(repo),
-            |project| project.short_name.clone(),
-        )
+        match self.tracked(repo) {
+            Ok(project) => project.short_name.clone(),
+            Err(_) => ProjectShortName::from_repo(repo),
+        }
     }
 
     /// The projects, in the order `hub.toml` lists them.
@@ -282,7 +282,7 @@ mod tests {
     }
 
     /// Both would clone into ~/.hub/repos/<repo name>, so a different
-    /// short_name cannot keep them apart.
+    /// `short_name` cannot keep them apart.
     #[rstest]
     #[case::same_case("ooloth/hub", "work/hub")]
     #[case::different_case("ooloth/Hub", "work/hub")]

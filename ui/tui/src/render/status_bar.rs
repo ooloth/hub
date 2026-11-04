@@ -139,7 +139,10 @@ fn refresh_status_text(
     match state {
         RefreshState::InProgress => "refreshing…".to_string(),
         RefreshState::Partial(failed_sources) => {
-            let time_str = last_updated.map_or_else(|| "unknown".to_string(), age_str);
+            let time_str = match last_updated {
+                Some(updated) => age_str(updated),
+                None => "unknown".to_string(),
+            };
             let sources = failed_sources.join(", ");
             format!("! {sources} unreachable (updated {time_str})")
         }

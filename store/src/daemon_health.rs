@@ -227,9 +227,8 @@ pub fn record_credential_attempt(
 
 fn upsert(conn: &Connection, pass: &Pass, schedule: Schedule) -> Result<()> {
     let outcome = &pass.outcome;
-    let (answered, failed) = outcome.sources().map_or_else(
-        || (serde_json::json!([]), serde_json::json!([])),
-        |sources| {
+    let (answered, failed) = match outcome.sources() {
+        Some(sources) => {
             let failed: Vec<serde_json::Value> = sources
                 .failed()
                 .iter()
@@ -244,8 +243,9 @@ fn upsert(conn: &Connection, pass: &Pass, schedule: Schedule) -> Result<()> {
                 serde_json::json!(sources.answered()),
                 serde_json::json!(failed),
             )
-        },
-    );
+        }
+        None => (serde_json::json!([]), serde_json::json!([])),
+    };
     let duration_ms = i64::try_from(pass.duration.as_millis())
         .context("a pass lasted longer than the health record can hold")?;
     let items = outcome
@@ -521,7 +521,7 @@ mod tests {
     use super::*;
 
     /// The schedule every test records with, unless it is about the schedule.
-    const SCHEDULE: Schedule = Schedule::Every(Duration::from_secs(15 * 60));
+    const SCHEDULE: Schedule = Schedule::Every(Duration::from_mins(15));
 
     fn in_memory() -> Connection {
         let conn = Connection::open_in_memory().unwrap();

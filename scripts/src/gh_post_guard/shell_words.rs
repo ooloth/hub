@@ -231,10 +231,10 @@ fn read_delimiter(chars: &[char], start: usize) -> (Option<OpenHeredoc>, usize) 
     }
     let mut delimiter = String::new();
     while let Some(&c) = chars.get(i) {
-        let ends = quote.map_or_else(
-            || c.is_whitespace() || matches!(c, ';' | '&' | '|' | '<' | '>' | ')'),
-            |q| c == q,
-        );
+        let ends = match quote {
+            Some(q) => c == q,
+            None => c.is_whitespace() || matches!(c, ';' | '&' | '|' | '<' | '>' | ')'),
+        };
         if ends {
             break;
         }

@@ -34,7 +34,12 @@ fn no_two_decision_records_share_a_number() {
     let names: Vec<String> = std::fs::read_dir(&dir)
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .filter(|name| name.ends_with(".md") && name != "README.md")
+        .filter(|name| {
+            std::path::Path::new(name)
+                .extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
+                && name != "README.md"
+        })
         .collect();
     assert!(
         names.len() >= 25,

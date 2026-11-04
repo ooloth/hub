@@ -419,8 +419,7 @@ impl fmt::Display for NotificationRemoval {
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
-    use std::rc::Rc;
+    use std::sync::{Arc, Mutex};
 
     use chrono::TimeZone;
     use domain::known_secrets::KnownSecrets;
@@ -542,8 +541,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn unanswered_prompts_then_approval_give_credentials_with_each_wait_recorded() {
-        let recorded = Rc::new(RefCell::new(Vec::new()));
-        let log = Rc::clone(&recorded);
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&recorded);
         let resolve = failing_then(vec![failure(UNANSWERED), failure(UNANSWERED)], "secrets");
 
         let obtained = obtain(
@@ -552,7 +551,8 @@ mod tests {
             &mut never_opens(),
             &mut never_posts(),
             move |attempt| {
-                log.borrow_mut()
+                log.lock()
+                    .unwrap()
                     .push((attempt.failure.cause(), attempt.retry_in));
             },
         )
@@ -567,7 +567,7 @@ mod tests {
         );
         // Each stubbed attempt takes almost no time, so each wait is nearly the whole minute,
         // where the backoff would have waited 1 then 2 seconds.
-        let recorded = recorded.borrow();
+        let recorded = recorded.lock().unwrap();
         assert_eq!(recorded.len(), 2);
         for (cause, wait) in recorded.iter() {
             assert_eq!(*cause, CredentialCause::TouchIdPromptUnanswered);
@@ -582,10 +582,10 @@ mod tests {
     type OpenResult = std::future::Ready<anyhow::Result<()>>;
 
     /// An opener whose open always succeeds, counting its calls in `opens`.
-    fn counting_opener(opens: &Rc<RefCell<u32>>) -> AppOpener<impl FnMut() -> OpenResult> {
-        let opens = Rc::clone(opens);
+    fn counting_opener(opens: &Arc<Mutex<u32>>) -> AppOpener<impl FnMut() -> OpenResult> {
+        let opens = Arc::clone(opens);
         AppOpener::new(move || {
-            *opens.borrow_mut() += 1;
+            *opens.lock().unwrap() += 1;
             std::future::ready(Ok(()))
         })
     }
@@ -605,12 +605,12 @@ mod tests {
 
     /// A notifier that records every notification it posts in `posted`, with the real timing.
     fn recording_notifier(
-        posted: &Rc<RefCell<Vec<Notification>>>,
+        posted: &Arc<Mutex<Vec<Notification>>>,
     ) -> Notifier<impl FnMut(Notification) -> OpenResult, impl FnMut() -> OpenResult> {
-        let posted = Rc::clone(posted);
+        let posted = Arc::clone(posted);
         Notifier::new(
             move |notification| {
-                posted.borrow_mut().push(notification);
+                posted.lock().unwrap().push(notification);
                 std::future::ready(Ok(()))
             },
             || std::future::ready(Ok(())),
@@ -621,21 +621,24 @@ mod tests {
     async fn notified_for(
         failures: Vec<CredentialFailure>,
         takes: Duration,
-        notifier: &mut Notifier<impl FnMut(Notification) -> OpenResult, impl FnMut() -> OpenResult>,
+        notifier: &mut Notifier<
+            impl FnMut(Notification) -> OpenResult + Send,
+            impl FnMut() -> OpenResult + Send,
+        >,
     ) -> Vec<Option<Notifying>> {
-        let recorded = Rc::new(RefCell::new(Vec::new()));
-        let log = Rc::clone(&recorded);
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&recorded);
         let resolve = failing_slowly_then(failures, takes, "secrets");
         let obtained = obtain(
             resolve,
             Retries::until_obtained(),
             &mut never_opens(),
             notifier,
-            move |attempt| log.borrow_mut().push(attempt.notified.clone()),
+            move |attempt| log.lock().unwrap().push(attempt.notified.clone()),
         )
         .await;
         assert_eq!(obtained.map(|got| got.credentials), Some("secrets"));
-        let recorded = recorded.borrow().clone();
+        let recorded = recorded.lock().unwrap().clone();
         recorded
     }
 
@@ -643,7 +646,7 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn nothing_is_posted_before_ten_minutes_and_one_is_after() {
-        let posted = Rc::new(RefCell::new(Vec::new()));
+        let posted = Arc::new(Mutex::new(Vec::new()));
         // Failures end at about 4, 8, 12 and 16 minutes; ten minutes after the first is 14.
         let notified = notified_for(
             vec![
@@ -652,25 +655,25 @@ mod tests {
                 failure(NETWORK),
                 failure(NETWORK),
             ],
-            Duration::from_secs(4 * 60),
+            Duration::from_mins(4),
             &mut recording_notifier(&posted),
         )
         .await;
 
         assert_eq!(notified, vec![None, None, None, Some(Notifying::Sent)]);
         assert_eq!(
-            *posted.borrow(),
+            *posted.lock().unwrap(),
             vec![Notification::for_cause(CredentialCause::Unreachable)]
         );
     }
 
     #[tokio::test(start_paused = true)]
     async fn while_credentials_stay_missing_another_is_posted_each_hour() {
-        let posted = Rc::new(RefCell::new(Vec::new()));
+        let posted = Arc::new(Mutex::new(Vec::new()));
         // Failures end about every 25 minutes: at 25, 50, 75, 100, 125 and 150.
         let notified = notified_for(
             (0..6).map(|_| failure(NETWORK)).collect(),
-            Duration::from_secs(25 * 60),
+            Duration::from_mins(25),
             &mut recording_notifier(&posted),
         )
         .await;
@@ -690,46 +693,46 @@ mod tests {
 
     /// A notifier that posts at once and counts its removals in `removals`.
     fn removal_counting_notifier(
-        removals: &Rc<RefCell<u32>>,
+        removals: &Arc<Mutex<u32>>,
     ) -> Notifier<impl FnMut(Notification) -> OpenResult, impl FnMut() -> OpenResult> {
-        let removals = Rc::clone(removals);
+        let removals = Arc::clone(removals);
         Notifier::with_timing(
             |_| std::future::ready(Ok(())),
             move || {
-                *removals.borrow_mut() += 1;
+                *removals.lock().unwrap() += 1;
                 std::future::ready(Ok(()))
             },
             Duration::ZERO,
-            Duration::from_secs(60 * 60),
+            Duration::from_hours(1),
         )
     }
 
     #[tokio::test(start_paused = true)]
     async fn once_credentials_arrive_a_posted_notification_is_removed_once() {
-        let removals = Rc::new(RefCell::new(0));
+        let removals = Arc::new(Mutex::new(0));
         let mut notifier = removal_counting_notifier(&removals);
         let _ = notified_for(vec![failure(NETWORK)], Duration::ZERO, &mut notifier).await;
 
         let cleared = notifier.clear().await;
 
         assert!(matches!(cleared, Some(Ok(()))), "{cleared:?}");
-        assert_eq!(*removals.borrow(), 1);
+        assert_eq!(*removals.lock().unwrap(), 1);
         assert!(notifier.clear().await.is_none(), "removed twice");
     }
 
     #[tokio::test(start_paused = true)]
     async fn nothing_is_removed_when_nothing_was_posted() {
-        let removals = Rc::new(RefCell::new(0));
+        let removals = Arc::new(Mutex::new(0));
         let mut notifier = Notifier::new(|_| std::future::ready(Ok(())), {
-            let removals = Rc::clone(&removals);
+            let removals = Arc::clone(&removals);
             move || {
-                *removals.borrow_mut() += 1;
+                *removals.lock().unwrap() += 1;
                 std::future::ready(Ok(()))
             }
         });
 
         assert!(notifier.clear().await.is_none());
-        assert_eq!(*removals.borrow(), 0);
+        assert_eq!(*removals.lock().unwrap(), 0);
     }
 
     #[tokio::test(start_paused = true)]
@@ -742,7 +745,7 @@ mod tests {
             },
             || async { Ok(()) },
             Duration::ZERO,
-            Duration::from_secs(60 * 60),
+            Duration::from_hours(1),
         );
         let resolve = failing_then(vec![failure(NETWORK), failure(NETWORK)], "secrets");
 
@@ -765,7 +768,7 @@ mod tests {
             |_| std::future::ready(Err(anyhow::anyhow!("terminal-notifier exited 1"))),
             || std::future::ready(Ok(())),
             Duration::ZERO,
-            Duration::from_secs(60 * 60),
+            Duration::from_hours(1),
         );
 
         let notified = notified_for(vec![failure(NETWORK)], Duration::ZERO, &mut failing).await;
@@ -788,8 +791,9 @@ mod tests {
         failures: Vec<CredentialFailure>,
         takes: Duration,
         credentials: &'static str,
-    ) -> impl FnMut() -> std::pin::Pin<Box<dyn Future<Output = Result<&'static str, CredentialFailure>>>>
-    {
+    ) -> impl FnMut() -> std::pin::Pin<
+        Box<dyn Future<Output = Result<&'static str, CredentialFailure>> + Send>,
+    > {
         let mut failures = failures.into_iter();
         move || {
             let next = failures.next();
@@ -802,9 +806,9 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn the_app_is_opened_on_the_first_quit_attempt_and_not_again_within_a_minute() {
-        let opens = Rc::new(RefCell::new(0));
-        let recorded = Rc::new(RefCell::new(Vec::new()));
-        let log = Rc::clone(&recorded);
+        let opens = Arc::new(Mutex::new(0));
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&recorded);
         let resolve = failing_then(
             vec![failure(APP_QUIT), failure(APP_QUIT), failure(APP_QUIT)],
             "secrets",
@@ -816,22 +820,22 @@ mod tests {
             &mut counting_opener(&opens),
             &mut never_posts(),
             move |attempt| {
-                log.borrow_mut().push(attempt.opened_app.clone());
+                log.lock().unwrap().push(attempt.opened_app.clone());
             },
         )
         .await;
 
         assert_eq!(obtained.map(|got| got.credentials), Some("secrets"));
-        assert_eq!(*opens.borrow(), 1);
+        assert_eq!(*opens.lock().unwrap(), 1);
         assert_eq!(
-            *recorded.borrow(),
+            *recorded.lock().unwrap(),
             vec![Some(AppOpening::Opened), None, None]
         );
     }
 
     #[tokio::test(start_paused = true)]
     async fn the_app_is_opened_again_once_a_minute_has_passed() {
-        let opens = Rc::new(RefCell::new(0));
+        let opens = Arc::new(Mutex::new(0));
         // Attempts start at 0 s, about 41 s and about 83 s.
         let resolve = failing_slowly_then(
             vec![failure(APP_QUIT), failure(APP_QUIT), failure(APP_QUIT)],
@@ -848,7 +852,7 @@ mod tests {
         )
         .await;
 
-        assert_eq!(*opens.borrow(), 2);
+        assert_eq!(*opens.lock().unwrap(), 2);
     }
 
     #[rstest]
@@ -873,8 +877,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn a_failed_open_is_recorded_and_the_daemon_keeps_trying() {
-        let recorded = Rc::new(RefCell::new(Vec::new()));
-        let log = Rc::clone(&recorded);
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&recorded);
         let mut opener = AppOpener::new(|| {
             std::future::ready(Err(anyhow::anyhow!("LSOpenURLsWithRole() failed")))
         });
@@ -886,14 +890,14 @@ mod tests {
             &mut opener,
             &mut never_posts(),
             move |attempt| {
-                log.borrow_mut().push(attempt.opened_app.clone());
+                log.lock().unwrap().push(attempt.opened_app.clone());
             },
         )
         .await;
 
         assert_eq!(obtained.map(|got| got.credentials), Some("secrets"));
         assert_eq!(
-            *recorded.borrow(),
+            *recorded.lock().unwrap(),
             vec![Some(AppOpening::failed(
                 &anyhow::anyhow!("LSOpenURLsWithRole() failed"),
                 &no_secrets()
@@ -912,8 +916,8 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn credentials_arrive_after_every_failed_attempt_is_recorded_in_order() {
-        let recorded = Rc::new(RefCell::new(Vec::new()));
-        let log = Rc::clone(&recorded);
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&recorded);
         let resolve = failing_then(
             vec![failure("dial tcp"), failure("desktop"), failure("dial tcp")],
             "secrets",
@@ -925,14 +929,16 @@ mod tests {
             &mut never_opens(),
             &mut never_posts(),
             move |attempt| {
-                log.borrow_mut().push((attempt.attempt, attempt.retry_in));
+                log.lock()
+                    .unwrap()
+                    .push((attempt.attempt, attempt.retry_in));
             },
         )
         .await;
 
         assert_eq!(obtained.map(|got| got.credentials), Some("secrets"));
         assert_eq!(
-            *recorded.borrow(),
+            *recorded.lock().unwrap(),
             vec![
                 (1, Some(Duration::from_secs(1))),
                 (2, Some(Duration::from_secs(2))),
@@ -960,12 +966,12 @@ mod tests {
 
     #[tokio::test(start_paused = true)]
     async fn with_no_retries_one_failure_is_recorded_and_nothing_is_tried_again() {
-        let calls = Rc::new(RefCell::new(0));
-        let counted = Rc::clone(&calls);
-        let recorded = Rc::new(RefCell::new(Vec::new()));
-        let log = Rc::clone(&recorded);
+        let calls = Arc::new(Mutex::new(0));
+        let counted = Arc::clone(&calls);
+        let recorded = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&recorded);
         let resolve = move || {
-            *counted.borrow_mut() += 1;
+            *counted.lock().unwrap() += 1;
             std::future::ready(Err::<(), _>(failure("dial tcp")))
         };
 
@@ -975,14 +981,16 @@ mod tests {
             &mut never_opens(),
             &mut never_posts(),
             move |attempt| {
-                log.borrow_mut().push((attempt.attempt, attempt.retry_in));
+                log.lock()
+                    .unwrap()
+                    .push((attempt.attempt, attempt.retry_in));
             },
         )
         .await;
 
         assert_eq!(obtained.map(|got| got.credentials), None);
-        assert_eq!(*calls.borrow(), 1);
-        assert_eq!(*recorded.borrow(), vec![(1, None)]);
+        assert_eq!(*calls.lock().unwrap(), 1);
+        assert_eq!(*recorded.lock().unwrap(), vec![(1, None)]);
     }
 
     fn report(retry_in: Option<Duration>, record_error: Option<PassFailure>) -> AttemptReport {

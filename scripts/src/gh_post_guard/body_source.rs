@@ -281,6 +281,6 @@ mod tests {
     #[case::escaped_dollar("gh issue comment 1 -b price\\$5")]
     #[case::escaped_inside_double_quotes(r#"gh issue comment 1 -b "costs \$5 and \`x\`""#)]
     fn inline_text_is_left_to_the_command_scan(#[case] command: &str) {
-        assert!(sources(command).is_empty());
+        assert_eq!(sources(command), Vec::<BodySource>::new());
     }
 }

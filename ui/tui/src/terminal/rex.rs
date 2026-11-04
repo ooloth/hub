@@ -248,7 +248,7 @@ mod tests {
 
     #[test]
     fn a_session_with_no_windows_parses_to_none() {
-        assert!(pairs(r#"{"windows":[]}"#).is_empty());
+        assert_eq!(pairs(r#"{"windows":[]}"#), Vec::<(String, String)>::new());
     }
 
     #[test]

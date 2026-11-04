@@ -78,7 +78,10 @@ const DELETED_ACCOUNT: &str = "ghost";
 
 /// `author`'s login, or the one GitHub shows when the account was deleted.
 fn login_or_ghost(author: Option<PrAuthor>) -> String {
-    author.map_or_else(|| DELETED_ACCOUNT.to_string(), |a| a.login)
+    match author {
+        Some(a) => a.login,
+        None => DELETED_ACCOUNT.to_string(),
+    }
 }
 
 #[derive(Deserialize)]
@@ -372,9 +375,10 @@ fn node_to_pr(node: PrNode, search: &Search, me: &str) -> Result<PullRequest> {
                     .nodes
                     .into_iter()
                     .map(|c| ReviewComment {
-                        author: c
-                            .author
-                            .map_or_else(|| DELETED_ACCOUNT.to_string(), |a| a.login),
+                        author: match c.author {
+                            Some(a) => a.login,
+                            None => DELETED_ACCOUNT.to_string(),
+                        },
                         age: age(&c.created_at),
                         body: c.body,
                     })
@@ -386,7 +390,10 @@ fn node_to_pr(node: PrNode, search: &Search, me: &str) -> Result<PullRequest> {
             .nodes
             .into_iter()
             .map(|c| ReviewComment {
-                author: login_or_ghost(c.author),
+                author: match c.author {
+                    Some(a) => a.login,
+                    None => DELETED_ACCOUNT.to_string(),
+                },
                 age: age(&c.created_at),
                 body: c.body,
             })

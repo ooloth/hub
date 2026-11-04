@@ -90,15 +90,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::cell::RefCell;
-    use std::rc::Rc;
 
     use proptest::prelude::*;
     use rstest::rstest;
 
     use super::*;
 
-    const FIFTEEN_MINUTES: Duration = Duration::from_secs(15 * 60);
+    const FIFTEEN_MINUTES: Duration = Duration::from_mins(15);
 
     proptest! {
         #[test]
@@ -175,17 +173,15 @@ mod tests {
         C: Fn() -> DateTime<Utc>,
     {
         let started = Instant::now();
-        let starts = Rc::new(RefCell::new(Vec::new()));
-        let recorded = Rc::clone(&starts);
+        let mut starts = Vec::new();
         let _ = tokio::time::timeout(
             for_how_long,
-            every(period, wall(started), move || {
-                recorded.borrow_mut().push(started.elapsed().as_secs());
+            every(period, wall(started), || {
+                starts.push(started.elapsed().as_secs());
                 tokio::time::sleep(pass_takes)
             }),
         )
         .await;
-        let starts = starts.borrow().clone();
         starts
     }
 
@@ -208,8 +204,8 @@ mod tests {
     async fn a_pass_that_overruns_delays_the_next_without_a_burst() {
         let starts = pass_starts(
             FIFTEEN_MINUTES,
-            Duration::from_secs(46 * 60),
-            Duration::from_secs(20 * 60),
+            Duration::from_mins(46),
+            Duration::from_mins(20),
             steady_wall_clock,
         )
         .await;
@@ -225,7 +221,7 @@ mod tests {
 
         let starts = pass_starts(
             FIFTEEN_MINUTES,
-            Duration::from_secs(25 * 60),
+            Duration::from_mins(25),
             Duration::ZERO,
             |origin| wall_clock(origin, woke_at, chrono::Duration::hours(2)),
         )
@@ -238,15 +234,9 @@ mod tests {
     async fn a_wall_clock_set_back_leaves_passes_once_per_period() {
         let starts = pass_starts(
             FIFTEEN_MINUTES,
-            Duration::from_secs(46 * 60),
+            Duration::from_mins(46),
             Duration::ZERO,
-            |origin| {
-                wall_clock(
-                    origin,
-                    Duration::from_secs(5 * 60),
-                    chrono::Duration::hours(-1),
-                )
-            },
+            |origin| wall_clock(origin, Duration::from_mins(5), chrono::Duration::hours(-1)),
         )
         .await;
 

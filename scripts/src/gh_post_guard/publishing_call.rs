@@ -162,7 +162,7 @@ mod tests {
     #[case::not_gh("cargo build")]
     #[case::in_a_comment("echo hi # gh issue comment 1 -b x")]
     fn a_read_is_not_a_publishing_call(#[case] command: &str) {
-        assert!(kinds(command).is_empty());
+        assert_eq!(kinds(command), Vec::<PublishKind>::new());
     }
 
     #[test]

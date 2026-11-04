@@ -321,24 +321,22 @@ pub(crate) mod tests {
     /// A notifier for the dev profile whose listings, posts and removals are recorded in the calls
     /// returned. Its listings fail as many times as `listing_fails`, then find the groups in
     /// `showing`, and its removals of the groups in `failing` fail.
+    type ListCards = Box<dyn FnMut() -> std::future::Ready<Result<String>>>;
+    type PostCard = Box<dyn FnMut(String, WaitingCard) -> std::future::Ready<Result<()>>>;
+    type RemoveCard = Box<dyn FnMut(String) -> std::future::Ready<Result<()>>>;
+    type RecordingNotifier = PrNotifier<ListCards, PostCard, RemoveCard>;
+
     fn recording(
         listing_fails: usize,
         showing: &[&str],
         failing: &'static [&'static str],
-    ) -> (
-        Rc<RefCell<Calls>>,
-        PrNotifier<
-            impl FnMut() -> std::future::Ready<Result<String>>,
-            impl FnMut(String, WaitingCard) -> std::future::Ready<Result<()>>,
-            impl FnMut(String) -> std::future::Ready<Result<()>>,
-        >,
-    ) {
+    ) -> (Rc<RefCell<Calls>>, RecordingNotifier) {
         let calls = Rc::new(RefCell::new(Calls::default()));
         let (lists, posts, removes) = (Rc::clone(&calls), Rc::clone(&calls), Rc::clone(&calls));
         let listed = showing.join("\n");
-        let notifier = PrNotifier::new(
+        let notifier: RecordingNotifier = PrNotifier::new(
             Profile::Dev,
-            move || {
+            Box::new(move || {
                 let mut calls = lists.borrow_mut();
                 calls.listings += 1;
                 std::future::ready(if calls.listings <= listing_fails {
@@ -346,12 +344,12 @@ pub(crate) mod tests {
                 } else {
                     Ok(listed.clone())
                 })
-            },
-            move |group, card: WaitingCard| {
+            }),
+            Box::new(move |group, card: WaitingCard| {
                 posts.borrow_mut().posted.push((group, card.title()));
                 std::future::ready(Ok(()))
-            },
-            move |group: String| {
+            }),
+            Box::new(move |group: String| {
                 let fails = failing.contains(&group.as_str());
                 removes.borrow_mut().removed.push(group);
                 std::future::ready(if fails {
@@ -359,7 +357,7 @@ pub(crate) mod tests {
                 } else {
                     Ok(())
                 })
-            },
+            }),
         );
         (calls, notifier)
     }
@@ -411,7 +409,7 @@ pub(crate) mod tests {
 
         assert_eq!(report.counted, vec![id(1)]);
         assert_eq!(report.card, CardOutcome::Posted);
-        assert!(calls.borrow().removed.is_empty());
+        assert_eq!(calls.borrow().removed, Vec::<String>::new());
     }
 
     #[tokio::test]

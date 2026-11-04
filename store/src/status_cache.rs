@@ -247,7 +247,7 @@ mod tests {
 
         let _ = conn1.execute("BEGIN IMMEDIATE", []).unwrap();
 
-        let path_for_writer2 = path.clone();
+        let path_for_writer2 = path;
         let writer2_finished = Arc::new(AtomicBool::new(false));
         let writer2_finished_flag = writer2_finished.clone();
 
@@ -322,7 +322,7 @@ mod tests {
         let home = tmp.path();
         let legacy = seed_pre_profile_db(home, r#"{"items":[42]}"#);
 
-        let conn = connect_in(home, Profile::Dev, &[legacy.clone()]).unwrap();
+        let conn = connect_in(home, Profile::Dev, std::slice::from_ref(&legacy)).unwrap();
         ensure_table(&conn).unwrap();
 
         assert!(

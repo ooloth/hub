@@ -174,8 +174,9 @@ mod tests {
     fn clean_text_has_no_hits() {
         let terms = BannedTerms::parse("alpha\nbeta");
 
-        assert!(terms
-            .find_hits(&[command_text("nothing to see")])
-            .is_empty());
+        assert_eq!(
+            terms.find_hits(&[command_text("nothing to see")]),
+            Vec::<Hit>::new()
+        );
     }
 }

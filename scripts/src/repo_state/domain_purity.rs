@@ -144,7 +144,7 @@ mod tests {
     fn receiving_a_value_as_an_argument_is_allowed() {
         let source = "use std::path::Path;\nfn f(now: DateTime<Utc>, dir: &Path) {}\n";
 
-        assert!(AmbientRead::find_in(source).is_empty());
+        assert_eq!(AmbientRead::find_in(source), Vec::<AmbientRead>::new());
     }
 
     #[test]

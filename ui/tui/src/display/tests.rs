@@ -958,10 +958,10 @@ fn build_unified_sorts_by_urgency_ascending_critical_first() {
         .iter()
         .map(|item| match item {
             DisplayItem::Single(s) => item_urgency(s),
-            DisplayItem::Group { items, .. } => items
-                .first()
-                .map(item_urgency)
-                .unwrap_or(domain::Urgency::Low),
+            DisplayItem::Group { items, .. } => match items.first() {
+                Some(first) => item_urgency(first),
+                None => domain::Urgency::Low,
+            },
         })
         .collect();
     assert_eq!(
@@ -1051,5 +1051,5 @@ fn an_alert_row_still_shows_its_project_and_environment(#[case] item: StatusItem
         "{:?}",
         line.source
     );
-    assert!(line.search_only.is_empty());
+    assert_eq!(line.search_only, Vec::<String>::new());
 }

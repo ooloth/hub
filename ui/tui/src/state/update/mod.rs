@@ -588,7 +588,7 @@ mod tests {
         let _ = app.update(Action::Enter);
         let len = match app.current_screen() {
             Screen::UnifiedList { flat_rows, .. } => flat_rows.len(),
-            _ => panic!(),
+            Screen::MergingPr { .. } => panic!(),
         };
         assert_eq!(len, 1);
     }
@@ -604,7 +604,7 @@ mod tests {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 0 });
             }
-            _ => panic!("expected UnifiedList"),
+            Screen::MergingPr { .. } => panic!("expected UnifiedList"),
         }
     }
 
@@ -654,14 +654,14 @@ mod tests {
         let _ = app.update(Action::MoveDown);
         let before_selected = match app.current_screen() {
             Screen::UnifiedList { selected, .. } => *selected,
-            _ => panic!(),
+            Screen::MergingPr { .. } => panic!(),
         };
         assert_eq!(before_selected, 1);
         let _ = app.update(Action::CollapseGroup);
         // Should collapse and jump back to header at index 0
         let after_selected = match app.current_screen() {
             Screen::UnifiedList { selected, .. } => *selected,
-            _ => panic!(),
+            Screen::MergingPr { .. } => panic!(),
         };
         assert_eq!(after_selected, 0);
         assert_eq!(app.active_list_len(), 1);
@@ -934,7 +934,7 @@ mod tests {
     fn recorded_daemon() -> DaemonRecord {
         DaemonRecord::Recorded(DaemonHealth {
             started_at: chrono::Utc::now(),
-            schedule: Schedule::every(std::time::Duration::from_secs(15 * 60)),
+            schedule: Schedule::every(std::time::Duration::from_mins(15)),
             activity: LastActivity::Pass(PassStatus::Ok),
         })
     }
@@ -1211,7 +1211,7 @@ mod tests {
     fn selected(app: &App) -> usize {
         match app.current_screen() {
             Screen::UnifiedList { selected, .. } => *selected,
-            _ => panic!("expected UnifiedList"),
+            Screen::MergingPr { .. } => panic!("expected UnifiedList"),
         }
     }
 
@@ -1312,7 +1312,7 @@ mod tests {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 0 });
             }
-            _ => panic!("expected UnifiedList"),
+            Screen::MergingPr { .. } => panic!("expected UnifiedList"),
         }
     }
 
@@ -1324,7 +1324,7 @@ mod tests {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 0 });
             }
-            _ => panic!("expected UnifiedList"),
+            Screen::MergingPr { .. } => panic!("expected UnifiedList"),
         }
     }
 
@@ -1765,7 +1765,7 @@ mod tests {
     fn app_in_split_view_with_scroll(detail_scroll: u16) -> App {
         let item = DisplayItem::Single(ci_failure());
         let expanded = HashSet::new();
-        let flat_rows = flatten(&[item.clone()], &expanded);
+        let flat_rows = flatten(std::slice::from_ref(&item), &expanded);
         App {
             ui: UiState {
                 screen: Screen::UnifiedList {
@@ -1791,7 +1791,7 @@ mod tests {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 0 });
             }
-            _ => panic!("expected UnifiedList"),
+            Screen::MergingPr { .. } => panic!("expected UnifiedList"),
         }
     }
 
@@ -1804,7 +1804,7 @@ mod tests {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 3 });
             }
-            _ => panic!("expected UnifiedList"),
+            Screen::MergingPr { .. } => panic!("expected UnifiedList"),
         }
     }
 
@@ -1817,7 +1817,7 @@ mod tests {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(detail_mode, &DetailMode::Hidden);
             }
-            _ => panic!("expected UnifiedList"),
+            Screen::MergingPr { .. } => panic!("expected UnifiedList"),
         }
     }
 
@@ -1826,7 +1826,7 @@ mod tests {
     fn clear_filter_while_hidden_clears_filter_and_leaves_detail_hidden() {
         let item = DisplayItem::Single(ci_failure());
         let expanded = HashSet::new();
-        let flat_rows = flatten(&[item.clone()], &expanded);
+        let flat_rows = flatten(std::slice::from_ref(&item), &expanded);
         let mut app = App {
             ui: UiState {
                 screen: Screen::UnifiedList {
@@ -1854,7 +1854,7 @@ mod tests {
                 assert!(filter.is_empty());
                 assert_eq!(detail_mode, &DetailMode::Hidden);
             }
-            _ => panic!("expected UnifiedList"),
+            Screen::MergingPr { .. } => panic!("expected UnifiedList"),
         }
     }
 
@@ -1891,7 +1891,7 @@ mod tests {
                 assert_eq!(*selected, 1);
                 assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 0 });
             }
-            _ => panic!("expected UnifiedList"),
+            Screen::MergingPr { .. } => panic!("expected UnifiedList"),
         }
     }
 
@@ -1904,7 +1904,7 @@ mod tests {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 1 });
             }
-            _ => panic!("expected UnifiedList"),
+            Screen::MergingPr { .. } => panic!("expected UnifiedList"),
         }
     }
 
@@ -1917,7 +1917,7 @@ mod tests {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(detail_mode, &DetailMode::Hidden);
             }
-            _ => panic!("expected UnifiedList"),
+            Screen::MergingPr { .. } => panic!("expected UnifiedList"),
         }
     }
 
@@ -1930,7 +1930,7 @@ mod tests {
             Screen::UnifiedList { detail_mode, .. } => {
                 assert_eq!(detail_mode, &DetailMode::Visible { detail_scroll: 2 });
             }
-            _ => panic!("expected UnifiedList"),
+            Screen::MergingPr { .. } => panic!("expected UnifiedList"),
         }
     }
 

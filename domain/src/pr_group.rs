@@ -71,7 +71,7 @@ mod tests {
 
     #[test]
     fn no_cards_showing_leaves_nothing_over() {
-        assert!(leftover_cards(Profile::Default, "").is_empty());
+        assert_eq!(leftover_cards(Profile::Default, ""), Vec::<String>::new());
     }
 
     fn profile() -> impl Strategy<Value = Profile> {
@@ -96,7 +96,8 @@ mod tests {
             let listed: String = groups
                 .iter()
                 .map(|group| format!("{group}\tt\ts\tm\t2026-10-17 23:27:04 +0000\n"))
-                .collect();
+                .collect::<Vec<_>>()
+                .concat();
 
             let leftovers = leftover_cards(profile, &listed);
 

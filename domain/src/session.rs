@@ -151,6 +151,26 @@ fn format_tool_input(name: &str, input: &serde_json::Value) -> String {
     }
 }
 
+fn extract_tool_result_content(block: &serde_json::Value) -> String {
+    match block.get("content") {
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|item| {
+                if item.get("type").and_then(|t| t.as_str()) == Some("text") {
+                    item.get("text")
+                        .and_then(|t| t.as_str())
+                        .map(str::to_string)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n"),
+        _ => String::new(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,25 +289,5 @@ mod tests {
         let blocks = parse_session_jsonl(jsonl);
         assert_eq!(blocks.len(), 1);
         assert!(matches!(&blocks[0], StreamBlock::HumanTurn(t) if t == "hello"));
-    }
-}
-
-fn extract_tool_result_content(block: &serde_json::Value) -> String {
-    match block.get("content") {
-        Some(serde_json::Value::String(s)) => s.clone(),
-        Some(serde_json::Value::Array(arr)) => arr
-            .iter()
-            .filter_map(|item| {
-                if item.get("type").and_then(|t| t.as_str()) == Some("text") {
-                    item.get("text")
-                        .and_then(|t| t.as_str())
-                        .map(str::to_string)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n"),
-        _ => String::new(),
     }
 }

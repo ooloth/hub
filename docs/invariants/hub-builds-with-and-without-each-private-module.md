@@ -44,7 +44,9 @@ an orb unable to build hub at all, and the orb is then the one place that cannot
 ## How it is enforced
 
 `scripts lint-configurations` (`scripts/src/lint_configurations.rs`) runs clippy with
-`-D warnings` once for each configuration whose sources are present in the checkout. It always
+`--all-targets -D warnings` once for each configuration whose sources are present in the checkout,
+so test code is linted with the rest. `clippy.toml` lets tests unwrap, expect, index and panic, and
+every other lint applies to them as it does to library code. It always
 builds without hub-private. It builds `--features private` when `clients/src/private` exists. It
 builds `-p hub-tui --features media` when `ui/tui/src/investigations/media.rs` exists. `just lint`
 runs it, `just check` runs `just lint`, and prek runs `just lint` before every commit. When it
@@ -62,9 +64,6 @@ What the check misses:
 - **A private configuration on the other platform.** Public CI has no hub-private, so a private
   module that compiles on macOS but not on Linux is found only when an orb next sets up and runs
   `just lint`, and the reverse only on the next Mac commit.
-- **Test code.** The check lints library and binary targets, not tests, because hub's test code has
-  never been linted and fails clippy's `unwrap_used` and `indexing_slicing` rules. A test that
-  compiles only in one configuration fails in `just test`, which runs by hand and before a push.
 - **Runtime behaviour.** A stub that compiles can still do the wrong thing. `media_stub.rs` has a
   test asserting that it returns an error. That test runs only on a device without the media
   module.

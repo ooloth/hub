@@ -630,14 +630,11 @@ mod tests {
     #[case::anything_else("isn't a vault in this account")]
     #[tokio::test]
     async fn the_daemon_keeps_any_other_ordinary_failure(#[case] stderr: &'static str) {
-        let spawned = Spawned::default();
+        let mut spawned = Vec::new();
         let mut so_far = ResolvedSoFar::new(OpResponsibility::InheritedUnlessRefused);
-        let read = {
-            let spawned = spawned.clone();
-            move |spawn| {
-                spawned.borrow_mut().push(spawn);
-                std::future::ready(Err::<String, _>(op_said(stderr)))
-            }
+        let read = |spawn| {
+            spawned.push(spawn);
+            std::future::ready(Err::<String, _>(op_said(stderr)))
         };
 
         let failure = so_far
@@ -647,7 +644,7 @@ mod tests {
 
         assert_ne!(failure.cause(), CredentialCause::NoAccounts);
         assert_eq!(failure.spawn(), OpSpawn::Inherited);
-        assert_eq!(*spawned.borrow(), vec![OpSpawn::Inherited]);
+        assert_eq!(spawned, vec![OpSpawn::Inherited]);
     }
 
     #[tokio::test(start_paused = true)]

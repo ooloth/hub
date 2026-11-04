@@ -46,7 +46,10 @@ pub(crate) enum LogLine {
 
 impl LogLine {
     pub(crate) fn parse(s: &str) -> Self {
-        serde_json::from_str(s).map_or_else(|_| Self::Raw(s.to_string()), Self::Json)
+        match serde_json::from_str(s) {
+            Ok(json) => Self::Json(json),
+            Err(_) => Self::Raw(s.to_string()),
+        }
     }
 }
 

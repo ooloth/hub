@@ -131,7 +131,7 @@ mod tests {
         let without_the_app: String = PROCESSES_WITH_THE_APP
             .lines()
             .filter(|line| *line != "/Applications/1Password.app/Contents/MacOS/1Password")
-            .map(|line| format!("{line}\n"))
+            .flat_map(|line| [line, "\n"])
             .collect();
 
         assert!(!the_app_is_among(&without_the_app));

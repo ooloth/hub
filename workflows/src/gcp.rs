@@ -149,7 +149,7 @@ mod tests {
         clients::gcp::LogEntry {
             timestamp: Utc::now(),
             severity: None,
-            text_payload: text_payload.map(|s| s.to_string()),
+            text_payload: text_payload.map(std::string::ToString::to_string),
             json_payload,
             http_request: None,
             resource_labels: HashMap::new(),
@@ -194,7 +194,7 @@ mod tests {
         clients::gcp::LogEntry {
             timestamp: Utc::now(),
             severity: None,
-            text_payload: text_payload.map(|s| s.to_string()),
+            text_payload: text_payload.map(std::string::ToString::to_string),
             json_payload,
             http_request: None,
             resource_labels: HashMap::new(),
@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn lookback_to_seconds_days() {
-        assert_eq!(lookback_to_seconds("7d"), 604800);
+        assert_eq!(lookback_to_seconds("7d"), 604_800);
     }
 
     #[test]

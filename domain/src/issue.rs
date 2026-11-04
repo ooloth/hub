@@ -148,7 +148,10 @@ mod tests {
             &[],
         ];
         for labels in inputs {
-            let input: Vec<String> = labels.iter().map(|s| s.to_string()).collect();
+            let input: Vec<String> = labels
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect();
             let result = agent_ready_labels(&input);
             assert!(
                 !result.iter().any(|l| l == NEEDS_HUMAN_REVIEW_LABEL),
@@ -203,7 +206,10 @@ mod tests {
             &[],
         ];
         for labels in inputs {
-            let input: Vec<String> = labels.iter().map(|s| s.to_string()).collect();
+            let input: Vec<String> = labels
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect();
             let result = dismissed_labels(&input);
             assert!(
                 !result.iter().any(|l| l == NEEDS_HUMAN_REVIEW_LABEL),

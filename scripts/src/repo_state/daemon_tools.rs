@@ -61,7 +61,7 @@ fn calls_to(source: &str, callee: &str) -> Vec<(usize, String)> {
     source
         .match_indices(&opening)
         .filter(|(at, _)| {
-            let before = source[..*at].trim_end_matches(|c: char| c == ' ');
+            let before = source[..*at].trim_end_matches(' ');
             !before.ends_with(is_identifier_char) && !before.ends_with("fn")
         })
         .map(|(at, _)| (at, first_argument(&source[at + opening.len()..])))

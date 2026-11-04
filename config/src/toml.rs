@@ -500,7 +500,7 @@ mod tests {
 
         let projects = crate::Projects::resolve(hub_toml.project).unwrap();
 
-        assert!(!projects.as_slice().is_empty());
+        assert_ne!(projects.as_slice(), []);
     }
 
     #[test]

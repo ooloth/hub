@@ -1,0 +1,6 @@
+# Tests may unwrap, expect, index and panic: a panic is how a test reports failure, and test code
+# never reaches a binary. Every other lint applies to test code as it does to library code.
+allow-expect-in-tests = true
+allow-indexing-slicing-in-tests = true
+allow-panic-in-tests = true
+allow-unwrap-in-tests = true

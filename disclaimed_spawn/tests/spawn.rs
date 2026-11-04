@@ -7,13 +7,15 @@ use std::io;
 use std::time::{Duration, Instant};
 
 /// Whether `pid` is still in the process table, as a running process or a zombie.
-fn exists(pid: u32) -> bool {
-    std::process::Command::new("kill")
+///
+/// # Errors
+/// Returns an error when `kill` cannot be run.
+fn exists(pid: u32) -> std::io::Result<bool> {
+    let status = std::process::Command::new("kill")
         .args(["-0", &pid.to_string()])
         .stderr(std::process::Stdio::null())
-        .status()
-        .unwrap()
-        .success()
+        .status()?;
+    Ok(status.success())
 }
 
 #[tokio::test]
@@ -49,7 +51,10 @@ async fn a_mebibyte_on_each_stream_comes_back_whole() {
 async fn dropping_output_before_the_child_exits_ends_the_child() {
     let child = disclaimed_spawn::spawn("/bin/sleep", &["30"]).unwrap();
     let pid = child.pid();
-    assert!(exists(pid), "the child was not running to begin with");
+    assert!(
+        exists(pid).unwrap(),
+        "the child was not running to begin with"
+    );
 
     let unfinished = tokio::time::timeout(Duration::from_millis(200), child.output()).await;
     assert!(unfinished.is_err(), "sleep 30 finished within 200ms");
@@ -57,7 +62,7 @@ async fn dropping_output_before_the_child_exits_ends_the_child() {
     // The child is killed and reaped, so its pid leaves the process table: a zombie would still
     // answer `kill -0`.
     let deadline = Instant::now() + Duration::from_secs(5);
-    while exists(pid) {
+    while exists(pid).unwrap() {
         assert!(
             Instant::now() < deadline,
             "pid {pid} still there 5s after the drop"

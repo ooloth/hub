@@ -64,7 +64,8 @@ impl fmt::Display for LintSummary {
     }
 }
 
-/// Runs clippy with `-D warnings` in `configuration`, letting its output through.
+/// Runs clippy with `-D warnings` on every target in `configuration`, tests included, letting its
+/// output through. `clippy.toml` lets tests unwrap, expect, index and panic.
 ///
 /// # Errors
 /// Returns an error when cargo cannot be started.
@@ -73,6 +74,7 @@ fn lint(root: &Path, configuration: Configuration) -> Result<bool> {
     eprintln!("clippy: {}", configuration.name);
     let status = Command::new(&cargo)
         .arg("clippy")
+        .arg("--all-targets")
         .args(configuration.cargo_args)
         .args(["--", "-D", "warnings"])
         .current_dir(root)

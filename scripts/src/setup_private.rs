@@ -416,7 +416,7 @@ mod tests {
     fn a_relative_link_to_the_same_file_is_already_linked() {
         let (_dir, hub, private) = checkouts(&[]);
         std::fs::write(private.join("ui/tui/src/investigations/media.rs"), "").unwrap();
-        std::os::unix::fs::symlink(&private.join("ui/tui/src"), hub.join("ui/tui/src/private"))
+        std::os::unix::fs::symlink(private.join("ui/tui/src"), hub.join("ui/tui/src/private"))
             .unwrap();
         std::os::unix::fs::symlink(
             "../private/investigations/media.rs",

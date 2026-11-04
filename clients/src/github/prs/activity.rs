@@ -277,8 +277,11 @@ mod tests {
             "recentReviews": { "nodes": [] },
             "recentComments": { "nodes": [] }
         });
-        for (field, value) in json.as_object().unwrap() {
-            full[field] = value.clone();
+        let serde_json::Value::Object(fields) = json else {
+            panic!("activity JSON must be an object: {json}");
+        };
+        for (field, value) in fields {
+            full[field.as_str()] = value;
         }
         serde_json::from_value(full).unwrap()
     }

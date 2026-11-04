@@ -309,10 +309,10 @@ mod tests {
         }
     }
 
-    fn feedback_from(login: &str) -> Option<TurnReason> {
-        Some(TurnReason::Feedback {
+    fn feedback_from(login: &str) -> TurnReason {
+        TurnReason::Feedback {
             by: login.to_string(),
-        })
+        }
     }
 
     // ── someone else's pull requests ─────────────────────────────────────────
@@ -357,7 +357,7 @@ mod tests {
             Requested::Person("grace".to_string()),
         );
 
-        assert_eq!(reason(&TurnReading::of(&pr)), feedback_from(login));
+        assert_eq!(reason(&TurnReading::of(&pr)), Some(feedback_from(login)));
     }
 
     #[test]
@@ -367,7 +367,7 @@ mod tests {
             .verdicts
             .push(verdict(person("ada"), Opinion::ChangesRequested, 1));
 
-        assert_eq!(reason(&TurnReading::of(&pr)), feedback_from("ada"));
+        assert_eq!(reason(&TurnReading::of(&pr)), Some(feedback_from("ada")));
     }
 
     #[test]
@@ -391,7 +391,7 @@ mod tests {
         });
         pr.activity.my_latest = mine_at.map(minute);
 
-        assert_eq!(reason(&TurnReading::of(&pr)), feedback_from("ada"));
+        assert_eq!(reason(&TurnReading::of(&pr)), Some(feedback_from("ada")));
     }
 
     #[rstest]
@@ -415,7 +415,7 @@ mod tests {
             .verdicts
             .push(verdict(person("grace"), Opinion::ChangesRequested, 5));
 
-        assert_eq!(reason(&TurnReading::of(&pr)), feedback_from("grace"));
+        assert_eq!(reason(&TurnReading::of(&pr)), Some(feedback_from("grace")));
     }
 
     // ── fixing ────────────────────────────────────────────────────────────────
@@ -437,7 +437,7 @@ mod tests {
         let mut pr = with_threads(mine(), vec![thread(&[(person("ada"), 1)])]);
         pr.ci_status = Some(CiStatus::Failure);
 
-        assert_eq!(reason(&TurnReading::of(&pr)), feedback_from("ada"));
+        assert_eq!(reason(&TurnReading::of(&pr)), Some(feedback_from("ada")));
     }
 
     // ── drafts ────────────────────────────────────────────────────────────────
@@ -455,7 +455,7 @@ mod tests {
         let mut pr = with_threads(mine(), vec![thread(&[(person("ada"), 1)])]);
         pr.draft = true;
 
-        assert_eq!(reason(&TurnReading::of(&pr)), feedback_from("ada"));
+        assert_eq!(reason(&TurnReading::of(&pr)), Some(feedback_from("ada")));
     }
 
     // ── approval ──────────────────────────────────────────────────────────────
@@ -623,7 +623,7 @@ mod tests {
     fn participant() -> impl Strategy<Value = Participant> {
         prop_oneof![
             Just(Participant::Me),
-            prop::sample::select(vec!["ada", "grace"]).prop_map(|l| person(l)),
+            prop::sample::select(vec!["ada", "grace"]).prop_map(person),
             Just(bot("copilot-pull-request-reviewer")),
         ]
     }
@@ -752,7 +752,7 @@ mod tests {
                 thread(&[(person("grace"), at)]),
             ];
 
-            prop_assert_eq!(reason(&TurnReading::of(&pr)), feedback_from("grace"));
+            prop_assert_eq!(reason(&TurnReading::of(&pr)), Some(feedback_from("grace")));
         }
 
         #[test]

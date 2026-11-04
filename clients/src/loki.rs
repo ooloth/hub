@@ -142,9 +142,10 @@ mod tests {
 
     #[test]
     fn returns_empty_for_no_streams() {
-        assert!(entries_from_response(make_response(vec![]))
-            .unwrap()
-            .is_empty());
+        assert_eq!(
+            entries_from_response(make_response(vec![])).unwrap(),
+            Vec::<LogEntry>::new()
+        );
     }
 
     #[test]

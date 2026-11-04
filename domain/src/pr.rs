@@ -304,14 +304,14 @@ mod tests {
     }
 
     #[rstest::rstest]
-    #[case("hub", "no slash")]
-    #[case("/hub", "empty owner")]
-    #[case("ooloth/", "empty repo")]
-    #[case("", "empty string")]
-    #[case("a/b/c", "extra slash")]
-    #[case("ooloth/.", "repo name GitHub forbids")]
-    #[case("ooloth/..", "repo name that would leave the clone directory")]
-    fn from_str_rejects_invalid_slugs(#[case] input: &str, #[case] _reason: &str) {
+    #[case::no_slash("hub")]
+    #[case::empty_owner("/hub")]
+    #[case::empty_repo("ooloth/")]
+    #[case::empty_string("")]
+    #[case::extra_slash("a/b/c")]
+    #[case::repo_name_github_forbids("ooloth/.")]
+    #[case::repo_name_that_would_leave_the_clone_directory("ooloth/..")]
+    fn from_str_rejects_invalid_slugs(#[case] input: &str) {
         assert!(
             input.parse::<RepoSlug>().is_err(),
             "expected error for {input:?}"

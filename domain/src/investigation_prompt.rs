@@ -280,7 +280,7 @@ mod tests {
 
     #[test]
     fn an_empty_prompt_renders_to_nothing() {
-        assert!(InvestigationPrompt::new().render(None).is_empty());
+        assert_eq!(InvestigationPrompt::new().render(None), "");
         assert!(InvestigationPrompt::new().is_empty());
     }
 

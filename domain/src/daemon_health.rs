@@ -131,7 +131,7 @@ mod tests {
         })
     }
 
-    const FIFTEEN_MINUTES: Duration = Duration::from_secs(15 * 60);
+    const FIFTEEN_MINUTES: Duration = Duration::from_mins(15);
 
     proptest! {
         #[test]

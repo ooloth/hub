@@ -340,7 +340,7 @@ mod tests {
     fn current_daemon() -> DaemonRecord {
         DaemonRecord::Recorded(DaemonHealth {
             started_at: Utc::now(),
-            schedule: Schedule::every(std::time::Duration::from_secs(15 * 60)),
+            schedule: Schedule::every(std::time::Duration::from_mins(15)),
             activity: LastActivity::Pass(PassStatus::Ok),
         })
     }
@@ -761,7 +761,7 @@ mod tests {
     }
 
     fn every_fifteen_minutes() -> Schedule {
-        Schedule::every(std::time::Duration::from_secs(15 * 60))
+        Schedule::every(std::time::Duration::from_mins(15))
     }
 
     #[rstest::rstest]

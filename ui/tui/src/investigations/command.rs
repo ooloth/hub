@@ -161,12 +161,10 @@ mod tests {
     }
 
     fn env_value(command: &InvestigationCommand, key: &str) -> String {
-        command
-            .env
-            .iter()
-            .find(|(k, _)| k == key)
-            .map(|(_, v)| v.clone())
-            .unwrap_or_else(|| panic!("no {key} in environment"))
+        match command.env.iter().find(|(k, _)| k == key) {
+            Some((_, v)) => v.clone(),
+            None => panic!("no {key} in environment"),
+        }
     }
 
     /// Renders a command for snapshotting.
@@ -178,17 +176,19 @@ mod tests {
     /// rendered in full: it is where signal text ends up, so it is the part
     /// worth pinning.
     fn render(command: &InvestigationCommand) -> String {
+        use std::fmt::Write as _;
+
         let mut out = format!("cwd: {}\n", command.cwd.display());
         out.push_str("env:\n");
         for (key, value) in &command.env {
             if key == "HUB_SYSTEM_PROMPT" {
                 let first = value.lines().next().unwrap_or_default();
-                out.push_str(&format!("  {key}=<system prompt starting {first:?}>\n"));
+                writeln!(out, "  {key}=<system prompt starting {first:?}>").unwrap();
             } else {
-                out.push_str(&format!("  {key}={value}\n"));
+                writeln!(out, "  {key}={value}").unwrap();
             }
         }
-        out.push_str(&format!("shell: {}\n", command.shell));
+        writeln!(out, "shell: {}", command.shell).unwrap();
         out
     }
 

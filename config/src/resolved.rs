@@ -388,7 +388,7 @@ mod tests {
             "ooloth/hub",
             vec![toml::WorkflowConfig::GithubCi { lookback: None }],
         )]);
-        assert!(cfg.github_issue_repos().is_empty());
+        assert_eq!(cfg.github_issue_repos(), Vec::<String>::new());
     }
 
     // github_ci_repos
@@ -430,7 +430,7 @@ mod tests {
                 exclude_authors: vec![],
             }],
         )]);
-        assert!(cfg.github_ci_repos().is_empty());
+        assert_eq!(cfg.github_ci_repos(), Vec::<(String, String)>::new());
     }
 
     // private_monitor_workflow_names
@@ -456,7 +456,10 @@ mod tests {
 
     #[test]
     fn private_monitor_workflow_names_empty_when_no_monitor() {
-        assert!(config(vec![]).private_monitor_workflow_names().is_empty());
+        assert_eq!(
+            config(vec![]).private_monitor_workflow_names(),
+            Vec::<String>::new()
+        );
     }
 
     // loki_envs

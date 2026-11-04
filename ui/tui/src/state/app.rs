@@ -146,7 +146,7 @@ mod tests {
     fn list_selected(app: &App) -> usize {
         match &app.ui.screen {
             Screen::UnifiedList { selected, .. } => *selected,
-            _ => panic!("not in list screen"),
+            Screen::MergingPr { .. } => panic!("not in list screen"),
         }
     }
 
@@ -199,7 +199,7 @@ mod tests {
             Screen::UnifiedList { flat_rows, .. } => {
                 assert!(flat_rows.iter().all(|r| matches!(r, FlatRow::Single(_))));
             }
-            _ => panic!(),
+            Screen::MergingPr { .. } => panic!(),
         }
     }
 }

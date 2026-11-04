@@ -122,7 +122,7 @@ mod tests {
     use workflows::freshness::{classify, RefreshOutcome};
 
     /// The schedule every test records with, unless it is about the schedule.
-    const SCHEDULE: Schedule = Schedule::Every(Duration::from_secs(15 * 60));
+    const SCHEDULE: Schedule = Schedule::Every(Duration::from_mins(15));
 
     fn no_secrets() -> KnownSecrets {
         KnownSecrets::new(Vec::new())

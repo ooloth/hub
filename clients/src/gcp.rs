@@ -280,7 +280,7 @@ mod tests {
                 .as_ref()
                 .unwrap()
                 .get("status")
-                .and_then(|v| v.as_u64()),
+                .and_then(serde_json::Value::as_u64),
             Some(503)
         );
     }
@@ -299,7 +299,7 @@ mod tests {
             entries[0]
                 .resource_labels
                 .get("service_name")
-                .map(|s| s.as_str()),
+                .map(String::as_str),
             Some("my-service")
         );
     }

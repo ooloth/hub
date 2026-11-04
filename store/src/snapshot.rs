@@ -160,7 +160,7 @@ mod tests {
     #[test]
     fn a_credential_attempt_reads_back_as_waiting_for_credentials() {
         let conn = in_memory();
-        let schedule = Schedule::every(Duration::from_secs(15 * 60));
+        let schedule = Schedule::every(Duration::from_mins(15));
         crate::daemon_health::record_credential_attempt(&conn, &credential_attempt(), schedule)
             .unwrap();
 

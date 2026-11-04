@@ -359,13 +359,13 @@ where
         self.push_line(Line::default());
         let width = self.list_indices.len() * 4 - 3;
         if let Some(last_index) = self.list_indices.last_mut() {
-            let span = last_index.as_mut().map_or_else(
-                || Span::from(" ".repeat(width - 1) + "- "),
-                |index| {
+            let span = match last_index.as_mut() {
+                Some(index) => {
                     *index += 1;
                     format!("{:width$}. ", *index - 1).light_blue()
-                },
-            );
+                }
+                None => Span::from(" ".repeat(width - 1) + "- "),
+            };
             self.push_span(span);
         }
         self.needs_newline = false;

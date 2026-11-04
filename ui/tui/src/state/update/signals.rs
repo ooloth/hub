@@ -212,9 +212,10 @@ impl App {
 
     fn handle_list_action(&mut self, action: Action) -> Vec<Effect> {
         match action {
-            Action::OpenUrl => self
-                .selected_url()
-                .map_or_else(Vec::new, |url| vec![Effect::OpenUrl(url.to_string())]),
+            Action::OpenUrl => match self.selected_url() {
+                Some(url) => vec![Effect::OpenUrl(url.to_string())],
+                None => vec![],
+            },
             Action::OpenReviewPicker => {
                 let Some(StatusItem::Pr(pr)) = self.ui.screen.selected_status_item() else {
                     return vec![];

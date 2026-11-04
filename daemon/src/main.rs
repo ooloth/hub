@@ -361,7 +361,7 @@ mod tests {
 
     #[test]
     fn the_interval_defaults_to_fifteen_minutes() {
-        assert_eq!(parse(&[]).unwrap().interval, Duration::from_secs(15 * 60));
+        assert_eq!(parse(&[]).unwrap().interval, Duration::from_mins(15));
     }
 
     #[rstest]

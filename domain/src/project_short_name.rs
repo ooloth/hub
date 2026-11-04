@@ -87,18 +87,15 @@ mod tests {
     }
 
     #[rstest]
-    #[case("", "empty")]
-    #[case("Hub", "uppercase")]
-    #[case("my app", "space")]
-    #[case("-hub", "leading hyphen")]
-    #[case("hub-", "trailing hyphen")]
-    #[case("hub--private", "doubled hyphen")]
-    #[case("hub.private", "punctuation a window would rewrite")]
-    #[case("abcdefghij-klmnopqrst", "21 characters")]
-    fn a_short_name_a_window_would_change_is_refused_naming_it(
-        #[case] raw: &str,
-        #[case] _reason: &str,
-    ) {
+    #[case::empty("")]
+    #[case::uppercase("Hub")]
+    #[case::space("my app")]
+    #[case::leading_hyphen("-hub")]
+    #[case::trailing_hyphen("hub-")]
+    #[case::doubled_hyphen("hub--private")]
+    #[case::punctuation_a_window_would_rewrite("hub.private")]
+    #[case::twenty_one_characters("abcdefghij-klmnopqrst")]
+    fn a_short_name_a_window_would_change_is_refused_naming_it(#[case] raw: &str) {
         let error = ProjectShortName::parse(raw).unwrap_err();
         assert!(error.contains(&format!("{raw:?}")), "{error}");
     }

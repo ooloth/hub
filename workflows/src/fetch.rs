@@ -378,9 +378,10 @@ async fn clean_merged_worktrees(bare_dir: &str) -> Result<()> {
             .context("git config branch.merge check failed")?;
         let tracking_branch = if merge_out.status.success() {
             let raw = String::from_utf8_lossy(&merge_out.stdout);
-            raw.trim()
-                .strip_prefix("refs/heads/")
-                .map_or_else(|| branch.clone(), std::string::ToString::to_string)
+            match raw.trim().strip_prefix("refs/heads/") {
+                Some(name) => name.to_string(),
+                None => branch.clone(),
+            }
         } else {
             branch.clone()
         };

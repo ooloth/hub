@@ -71,19 +71,15 @@ impl InstanceLock {
 /// What a second daemon says before it exits.
 pub(crate) fn refusal(profile: &str, path: &Path, pid: Option<u32>) -> String {
     let lock = path.display();
-    pid.map_or_else(
-        || {
-            format!(
-                "hub-daemon is already running for profile {profile} (pid unknown, lock {lock})"
-            )
-        },
-        |pid| {
-            format!(
-                "hub-daemon is already running for profile {profile} (pid {pid}, lock {lock}). \
-                 Stop it with: /bin/kill {pid}"
-            )
-        },
-    )
+    match pid {
+        Some(pid) => format!(
+            "hub-daemon is already running for profile {profile} (pid {pid}, lock {lock}). \
+             Stop it with: /bin/kill {pid}"
+        ),
+        None => format!(
+            "hub-daemon is already running for profile {profile} (pid unknown, lock {lock})"
+        ),
+    }
 }
 
 #[cfg(test)]

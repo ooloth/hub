@@ -23,7 +23,7 @@ check:
     taplo fmt
     taplo check
     cargo fmt
-    cargo clippy --fix --allow-dirty --allow-staged {{_features}} -- -D warnings
+    cargo clippy --fix --all-targets --allow-dirty --allow-staged {{_features}} -- -D warnings
     @just lint
 
 build:
