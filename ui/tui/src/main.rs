@@ -446,7 +446,7 @@ async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &con
 }
 
 fn open_pr_diff(app: &mut App, config: &config::Config, repo: &str, number: u64, login: &str) {
-    let Some(login) = author_login(app, login) else {
+    let Some(login) = author_login(app, login, &format!("PR #{number}")) else {
         return;
     };
     let project = config.projects.window_project_for(&signal_repo(repo));
@@ -490,15 +490,17 @@ fn signal_repo(repo: &str) -> domain::RepoSlug {
         .unwrap_or_else(|err| unreachable!("signal carried a repo that is not a slug: {err}"))
 }
 
-/// The login a signal carried, or `None` with why it is not a GitHub login shown to the user.
+/// The login `subject`'s signal carried, such as `PR #12`'s, or `None` with why it is not a
+/// GitHub login shown to the user.
 ///
 /// A tab's label names the login, so one that could change what the label says stops the launch
-/// rather than the signal (decision 033).
-fn author_login(app: &mut App, raw: &str) -> Option<domain::GitHubLogin> {
+/// rather than the signal (decision 033). The message says "window" in tmux and Rex alike,
+/// because it is written before hub knows the terminal, and Rex calls a tab a window too.
+fn author_login(app: &mut App, raw: &str, subject: &str) -> Option<domain::GitHubLogin> {
     match domain::GitHubLogin::parse(raw) {
         Ok(login) => Some(login),
         Err(reason) => {
-            app.ui.flash = Some(format!("couldn't name the tab: {reason}"));
+            app.ui.flash = Some(format!("couldn't open a window for {subject}: {reason}"));
             None
         }
     }
@@ -550,7 +552,7 @@ async fn handle_launch_issue(
     number: u64,
     login: &str,
 ) {
-    let Some(login) = author_login(app, login) else {
+    let Some(login) = author_login(app, login, &format!("issue #{number}")) else {
         return;
     };
     let Some(project) = tracked_project(app, config, &signal_repo(&repo)) else {
@@ -576,7 +578,7 @@ async fn handle_launch_pr(
     login: &str,
     head_branch: String,
 ) {
-    let Some(login) = author_login(app, login) else {
+    let Some(login) = author_login(app, login, &format!("PR #{number}")) else {
         return;
     };
     let Some(project) = tracked_project(app, config, &signal_repo(&repo)) else {
@@ -608,7 +610,7 @@ async fn handle_review_pr(
     target: &PrReviewTarget,
     review: PrReview,
 ) {
-    let Some(login) = author_login(app, &target.login) else {
+    let Some(login) = author_login(app, &target.login, &format!("PR #{}", target.number)) else {
         return;
     };
     let Some(project) = tracked_project(app, config, &signal_repo(&target.repo)) else {
@@ -722,7 +724,7 @@ async fn handle_open_pr_tool(
     login: &str,
     head_branch: String,
 ) {
-    let Some(login) = author_login(app, login) else {
+    let Some(login) = author_login(app, login, &format!("PR #{number}")) else {
         return;
     };
     let Some(project) = tracked_project(app, config, &signal_repo(&repo)) else {

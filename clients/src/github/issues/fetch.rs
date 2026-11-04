@@ -134,7 +134,7 @@ fn to_domain_issue(item: ApiIssue, repo: RepoSlug, username: &str) -> Option<Iss
         title: item.title,
         repo,
         url: item.html_url,
-        author: item.user.login,
+        author: graphql_login(item.user.login),
         age: age(&item.created_at),
         urgency: classify_urgency(&assignees, &labels, username),
         labels,
@@ -149,6 +149,19 @@ fn classify_urgency(assignees: &[String], labels: &[String], username: &str) -> 
         Urgency::Medium
     } else {
         Urgency::Low
+    }
+}
+
+/// `rest_login` as GraphQL spells it, which is how pull request authors reach hub.
+///
+/// REST gives an app's account its login with `[bot]` after it, such as `renovate[bot]`, and
+/// GraphQL gives the same account as `renovate`. A person's login can't contain `[`, so only an
+/// app's changes. One spelling means a tab label names an app the same way whatever it wrote
+/// (decision 033).
+fn graphql_login(rest_login: String) -> String {
+    match rest_login.strip_suffix("[bot]") {
+        Some(app) => app.to_string(),
+        None => rest_login,
     }
 }
 
@@ -252,5 +265,55 @@ mod tests {
         };
         let issue = to_domain_issue(item, RepoSlug::new("owner", "repo"), "alice").unwrap();
         assert_eq!(issue.urgency, Urgency::Low);
+    }
+
+    // ── authors an app wrote ──────────────────────────────────────────────────
+
+    /// `renovatebot/renovate#41263` as the REST API returned it, without `closed_by`, which names
+    /// a person and which hub doesn't read. REST spells the app's login `renovate[bot]`.
+    const RENOVATE_ISSUE: &str = include_str!("renovate_bot_issue.json");
+
+    fn renovate_issue() -> Issue {
+        let item: ApiIssue = serde_json::from_str(RENOVATE_ISSUE).unwrap();
+        to_domain_issue(item, RepoSlug::new("renovatebot", "renovate"), "alice").unwrap()
+    }
+
+    /// GraphQL, which PR authors come from, spells the same account `renovate`.
+    #[test]
+    fn an_issue_an_app_opened_is_written_by_its_graphql_login() {
+        assert_eq!(renovate_issue().author, "renovate");
+    }
+
+    #[test]
+    fn an_issue_an_app_opened_labels_its_tab() {
+        let issue = renovate_issue();
+        let author = domain::GitHubLogin::parse(&issue.author).unwrap();
+        let project = domain::WindowProject::new(
+            domain::ProjectShortName::parse("renovate").unwrap(),
+            issue.repo.clone(),
+        );
+        let window = domain::InvestigationWindow::issue(&project, issue.number, &author);
+        assert_eq!(
+            window.label().as_str(),
+            "Issue 41263 (renovate): investigate"
+        );
+    }
+
+    proptest::proptest! {
+        /// Any app's REST login gives an author a tab label accepts. An app's slug is letters,
+        /// digits and hyphens, and its login with `[bot]` is at most 39 characters.
+        #[test]
+        fn any_app_login_gives_an_author_a_label_accepts(slug in "[a-z0-9][a-z0-9-]{0,33}") {
+            let item = ApiIssue {
+                user: ApiUser { login: format!("{slug}[bot]") },
+                ..make_api_issue(None)
+            };
+            let issue = to_domain_issue(item, RepoSlug::new("owner", "repo"), "alice").unwrap();
+            proptest::prop_assert!(
+                domain::GitHubLogin::parse(&issue.author).is_ok(),
+                "{}",
+                issue.author
+            );
+        }
     }
 }

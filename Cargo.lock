@@ -283,6 +283,7 @@ dependencies = [
  "domain",
  "futures",
  "humantime",
+ "proptest",
  "reqwest",
  "rstest",
  "serde",

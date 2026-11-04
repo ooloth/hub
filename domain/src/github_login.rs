@@ -73,7 +73,7 @@ mod tests {
     #[case::colon("alice:")]
     #[case::newline("alice\n")]
     #[case::leading_dash("-alice")]
-    #[case::brackets("dependabot[bot]")]
+    #[case::brackets("a[b")]
     #[case::too_long("abcdefghijklmnopqrstuvwxyz-0123456789abc")]
     fn anything_else_is_refused(#[case] raw: &str) {
         let reason = GitHubLogin::parse(raw).unwrap_err();
