@@ -674,6 +674,80 @@ mod tests {
         assert_eq!(*spawned.borrow(), vec![OpSpawn::Inherited]);
     }
 
+    #[rstest::rstest]
+    #[case::macos_alert(
+        ScreenAtDeadline::MacosAlert { windows: 1 },
+        CredentialCause::MacosPromptWaitingForYou
+    )]
+    #[case::nothing_on_screen(
+        ScreenAtDeadline::AppRunningNoAlert,
+        CredentialCause::AppRunningNotAnswering
+    )]
+    #[tokio::test(start_paused = true)]
+    async fn a_disclaimed_read_silent_at_its_own_deadline_is_named_by_the_screen(
+        #[case] screen: ScreenAtDeadline,
+        #[case] cause: CredentialCause,
+    ) {
+        let spawned = Spawned::default();
+        let mut so_far = ResolvedSoFar::new(OpResponsibility::InheritedUnlessRefused);
+        let read = {
+            let spawned = spawned.clone();
+            move |spawn| {
+                spawned.borrow_mut().push(spawn);
+                async move {
+                    match spawn {
+                        OpSpawn::Inherited => Err(op_said(NO_ACCOUNTS)),
+                        OpSpawn::Disclaimed => std::future::pending().await,
+                    }
+                }
+            }
+        };
+
+        let failure = so_far
+            .read_with("op://x/y/z", read, move || {
+                let screen = screen.clone();
+                async move { screen }
+            })
+            .await
+            .unwrap_err();
+
+        assert_eq!(failure.cause(), cause);
+        assert_eq!(failure.spawn(), OpSpawn::Disclaimed);
+        assert!(
+            failure.reason().as_str().contains("within 90s"),
+            "{}",
+            failure.reason()
+        );
+        assert_eq!(
+            *spawned.borrow(),
+            vec![OpSpawn::Inherited, OpSpawn::Disclaimed]
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_disclaimed_read_with_the_touch_id_prompt_up_at_its_deadline_gets_the_grace() {
+        let mut so_far = ResolvedSoFar::new(OpResponsibility::InheritedUnlessRefused);
+        let read = |spawn| async move {
+            match spawn {
+                OpSpawn::Inherited => Err(op_said(NO_ACCOUNTS)),
+                OpSpawn::Disclaimed => {
+                    tokio::time::sleep(OP_DEADLINE + Duration::from_secs(10)).await;
+                    Ok("value".to_string())
+                }
+            }
+        };
+
+        let read = so_far
+            .read_with("op://x/y/z", read, || async {
+                ScreenAtDeadline::TouchIdPrompt
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(read.expose_secret(), "value");
+        assert_eq!(so_far.spawns.to_string(), "disclaimed");
+    }
+
     #[tokio::test]
     async fn the_tui_never_disclaims_a_refused_credential() {
         let spawned = Spawned::default();
@@ -724,10 +798,23 @@ mod tests {
         assert_eq!(so_far.spawns.to_string(), "inherited,disclaimed");
     }
 
+    /// How a credential read earlier in the attempt was resolved.
+    #[derive(Debug, Clone, Copy)]
+    enum EarlierRead {
+        Plain,
+        Ordinary,
+        DisclaimedAfterRefusal,
+    }
+
     proptest::proptest! {
         #[test]
         fn no_failure_from_either_read_holds_a_credential_resolved_before_it(
             secret in "[A-Za-z0-9]{12,24}",
+            earlier in proptest::prop_oneof![
+                proptest::strategy::Just(EarlierRead::Plain),
+                proptest::strategy::Just(EarlierRead::Ordinary),
+                proptest::strategy::Just(EarlierRead::DisclaimedAfterRefusal),
+            ],
         ) {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_time()
@@ -735,10 +822,38 @@ mod tests {
                 .unwrap();
             let failure = runtime.block_on(async {
                 let mut so_far = ResolvedSoFar::new(OpResponsibility::InheritedUnlessRefused);
-                let _ = so_far
-                    .read_with(&secret, |_| async { unreachable!() }, nothing_on_screen)
-                    .await
-                    .unwrap();
+                let answer = secret.clone();
+                let _ = match earlier {
+                    EarlierRead::Plain => {
+                        so_far
+                            .read_with(&secret, |_| async { unreachable!() }, nothing_on_screen)
+                            .await
+                    }
+                    EarlierRead::Ordinary => {
+                        so_far
+                            .read_with(
+                                "op://x/earlier/z",
+                                move |_| std::future::ready(Ok(answer.clone())),
+                                nothing_on_screen,
+                            )
+                            .await
+                    }
+                    EarlierRead::DisclaimedAfterRefusal => {
+                        so_far
+                            .read_with(
+                                "op://x/earlier/z",
+                                move |spawn| {
+                                    std::future::ready(match spawn {
+                                        OpSpawn::Inherited => Err(op_said(NO_ACCOUNTS)),
+                                        OpSpawn::Disclaimed => Ok(answer.clone()),
+                                    })
+                                },
+                                nothing_on_screen,
+                            )
+                            .await
+                    }
+                }
+                .unwrap();
                 let echoed = secret.clone();
                 so_far
                     .read_with(
