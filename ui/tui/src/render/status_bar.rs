@@ -147,9 +147,10 @@ fn refresh_status_text(
             format!("! {sources} unreachable (updated {time_str})")
         }
         RefreshState::Failed(err) => format!("refresh failed: {err}"),
-        RefreshState::Idle => last_updated
-            .map(|t| format!("updated {}", age_str(t)))
-            .unwrap_or_default(),
+        RefreshState::Idle => match last_updated {
+            Some(t) => format!("updated {}", age_str(t)),
+            None => String::new(),
+        },
     }
 }
 

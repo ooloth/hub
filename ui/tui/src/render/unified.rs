@@ -144,10 +144,10 @@ pub(super) fn wrap_text(text: &str, width: usize) -> Vec<String> {
 
 pub(crate) fn unified_title(filter: &Filter, query_input: Option<&str>) -> String {
     if let Some(q) = query_input {
-        let cat_prefix = filter
-            .category
-            .map(|c| format!("{} · ", c.label()))
-            .unwrap_or_default();
+        let cat_prefix = match filter.category {
+            Some(c) => format!("{} · ", c.label()),
+            None => String::new(),
+        };
         return format!(" {cat_prefix}\"{q}\" ");
     }
     match (&filter.category, &filter.query) {
