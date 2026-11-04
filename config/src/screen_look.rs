@@ -5,7 +5,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use domain::screen_at_deadline::{OnScreenWindow, ScreenAtDeadline};
 
-use crate::op_read::killed_on_drop;
+use crate::op_process::killed_on_drop;
 
 /// How long each look at the screen or the process list may take.
 const LOOK_DEADLINE: Duration = Duration::from_secs(5);

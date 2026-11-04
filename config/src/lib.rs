@@ -10,6 +10,9 @@ pub mod investigation;
 /// `hub.toml` as read, before any credential is resolved.
 pub mod config_file;
 
+/// Starting `op` as an ordinary child or as one that answers for itself.
+mod op_process;
+
 /// Reading one credential through `op`, and the fallback to a disclaimed `op`.
 mod op_read;
 
