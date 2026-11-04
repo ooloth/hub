@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use domain::{InvestigationPrompt, UntrustedText};
@@ -45,16 +45,15 @@ pub(crate) struct LaunchConfig {
 ///
 /// # This enum is for human-interactive investigation sessions only
 ///
-/// `WorktreeSpec` is consumed by `launch()` → `open_in_lazygit` / `open_in_octo`.
-/// See `docs/architecture/worktrees.md` for how these worktrees are laid out
-/// and cleaned up.
+/// `WorktreeSpec` is consumed by `launch()`. `open_in_lazygit` and `open_in_octo`
+/// open the PR worktree themselves. See `docs/architecture/worktrees.md` for how
+/// these worktrees are laid out and cleaned up.
 ///
 /// # Choosing the right variant
 ///
 /// **Never route an investigation to the default-branch worktree directly.**
 /// That worktree (`~/.hub/repos/<repo name>/<branch>/`) is reset unconditionally
-/// to `origin/<branch>` every 30 minutes by the background fetch loop *and* again
-/// at every investigation launch. Any agent working there longer than the refresh
+/// to `origin/<branch>` by every refresh. Any agent working there longer than the refresh
 /// interval — or running concurrently with another launch — will have its working
 /// tree silently wiped mid-session.
 ///
@@ -88,13 +87,15 @@ pub(crate) enum WorktreeSpec {
 /// already investigating this signal, and returns where it is.
 ///
 /// `window` names the window, and naming it is what makes it addressable
-/// afterwards: several investigations run side by side, each reachable from
-/// the terminal's window list, without subdividing the TUI's own pane.
+/// afterwards: several investigations run side by side, each in its own window
+/// or tab, without subdividing the TUI's own pane.
 ///
 /// The claim comes before `resolve_worktree`, and that ordering is load bearing.
-/// `WorktreeSpec::EphemeralFresh` and `Ephemeral` create a worktree whose only
+/// `WorktreeSpec::EphemeralFresh` and `Ephemeral` create a worktree whose
 /// cleanup is appended to the command the window runs, so one resolved for a launch
-/// that then finds an open window instead would have nothing to remove it.
+/// that then finds an open window instead would have nothing to remove it. A window
+/// that fails to open never runs that command, so its worktree is removed here, along
+/// with its supporting-data file.
 pub(crate) async fn launch(
     config: LaunchConfig,
     window: &domain::InvestigationWindow,
@@ -106,23 +107,17 @@ pub(crate) async fn launch(
         WindowClaim::Vacant(vacant) => vacant,
     };
 
-    let (cwd, cleanup) = resolve_worktree(spec).await?;
+    let (cwd, ephemeral) = resolve_worktree(spec).await?;
 
     let supporting_data_path = match config.supporting_data {
-        Some(ref data) => {
-            let nanos = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos();
-            let path = PathBuf::from(format!("/tmp/hub-supporting-data-{nanos}.json"));
-            std::fs::write(&path, data.file_contents()).with_context(|| {
-                format!("failed to write supporting data to {}", path.display())
-            })?;
-            Some(path)
-        }
+        Some(ref data) => match write_supporting_data(data) {
+            Ok(path) => Some(path),
+            Err(err) => return Err(discard(err, ephemeral.as_ref(), None).await),
+        },
         None => None,
     };
 
+    let cleanup = ephemeral.as_ref().map(EphemeralWorktree::removal_command);
     let command = compose(
         config,
         &cwd,
@@ -131,7 +126,72 @@ pub(crate) async fn launch(
         supporting_data_path.as_deref(),
     );
 
-    vacant.open(Some(&command.cwd), &command.env, &command.shell)
+    match vacant.open(Some(&command.cwd), &command.env, &command.shell) {
+        Ok(place) => Ok(place),
+        Err(err) => Err(discard(err, ephemeral.as_ref(), supporting_data_path.as_deref()).await),
+    }
+}
+
+/// Writes `data` where the investigation's agent will read it, returning the path.
+fn write_supporting_data(data: &SupportingData) -> Result<PathBuf> {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let path = PathBuf::from(format!("/tmp/hub-supporting-data-{nanos}.json"));
+    std::fs::write(&path, data.file_contents())
+        .with_context(|| format!("failed to write supporting data to {}", path.display()))?;
+    Ok(path)
+}
+
+/// Removes what a launch made for a window that never opened, and returns the launch's error.
+///
+/// The worktree's only other cleanup is the command its window runs once the agent exits, and
+/// a window that failed to open never runs it. A removal that fails too is added to the
+/// error, so the status bar names what was left behind.
+async fn discard(
+    err: anyhow::Error,
+    ephemeral: Option<&EphemeralWorktree>,
+    supporting_data: Option<&Path>,
+) -> anyhow::Error {
+    let mut left = Vec::new();
+    if let Some(worktree) = ephemeral {
+        if let Err(removal) =
+            workflows::fetch::remove_investigation_worktree(&worktree.bare, &worktree.path).await
+        {
+            left.push(format!("{removal:#}"));
+        }
+    }
+    if let Some(path) = supporting_data {
+        if let Err(removal) = std::fs::remove_file(path) {
+            left.push(format!("couldn't remove {}: {removal}", path.display()));
+        }
+    }
+    match left.as_slice() {
+        [] => err,
+        _ => err.context(format!(
+            "left behind after the failed launch: {}",
+            left.join("; ")
+        )),
+    }
+}
+
+/// A worktree made for one investigation, removed when its window's command ends.
+struct EphemeralWorktree {
+    bare: PathBuf,
+    path: PathBuf,
+}
+
+impl EphemeralWorktree {
+    /// The shell command the window runs after the agent exits. A launch whose window never
+    /// opened removes the worktree with `remove_investigation_worktree` instead.
+    fn removal_command(&self) -> String {
+        format!(
+            "cd ~ && git -C '{}' worktree remove --force '{}' 2>/dev/null || true",
+            self.bare.display(),
+            self.path.display()
+        )
+    }
 }
 
 pub(crate) async fn open_in_lazygit(
@@ -180,19 +240,14 @@ pub(crate) async fn open_in_octo(
     )
 }
 
-async fn resolve_worktree(spec: WorktreeSpec) -> Result<(PathBuf, Option<String>)> {
+async fn resolve_worktree(spec: WorktreeSpec) -> Result<(PathBuf, Option<EphemeralWorktree>)> {
     match spec {
         WorktreeSpec::EphemeralFresh { project } => {
             let bare = synced_clone(&project)?;
-            let worktree = workflows::fetch::fetch_and_create_investigation_worktree(&bare)
+            let path = workflows::fetch::fetch_and_create_investigation_worktree(&bare)
                 .await
                 .context("Failed to create investigation worktree")?;
-            let cleanup = format!(
-                "cd ~ && git -C '{}' worktree remove --force '{}' 2>/dev/null || true",
-                bare.display(),
-                worktree.display()
-            );
-            Ok((worktree, Some(cleanup)))
+            Ok((path.clone(), Some(EphemeralWorktree { bare, path })))
         }
         WorktreeSpec::PullRequest {
             project,
@@ -207,15 +262,10 @@ async fn resolve_worktree(spec: WorktreeSpec) -> Result<(PathBuf, Option<String>
         }
         WorktreeSpec::Ephemeral { project } => {
             let bare = synced_clone(&project)?;
-            let worktree = workflows::fetch::create_investigation_worktree(&bare)
+            let path = workflows::fetch::create_investigation_worktree(&bare)
                 .await
                 .context("Failed to create investigation worktree")?;
-            let cleanup = format!(
-                "cd ~ && git -C '{}' worktree remove --force '{}' 2>/dev/null || true",
-                bare.display(),
-                worktree.display()
-            );
-            Ok((worktree, Some(cleanup)))
+            Ok((path.clone(), Some(EphemeralWorktree { bare, path })))
         }
         #[cfg(feature = "private")]
         WorktreeSpec::CurrentDir => {
@@ -245,6 +295,41 @@ fn synced_clone(project: &config::Project) -> Result<PathBuf> {
 mod tests {
     use super::*;
     use domain::RepoSlug;
+
+    /// A launch whose window never opened removes the supporting-data file it wrote, and the
+    /// status bar still says why the window didn't open.
+    #[tokio::test]
+    async fn a_launch_that_could_not_open_removes_its_supporting_data() {
+        let dir = std::env::temp_dir().join(format!("hub-discard-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("supporting-data.json");
+        std::fs::write(&path, "{}").unwrap();
+
+        let err = discard(anyhow::anyhow!("rex session new failed"), None, Some(&path)).await;
+
+        assert!(!path.exists(), "{} is still there", path.display());
+        assert_eq!(format!("{err:#}"), "rex session new failed");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// When the removal fails too, the error names what was left behind.
+    #[tokio::test]
+    async fn what_a_failed_launch_could_not_remove_is_named() {
+        let path = std::env::temp_dir().join(format!(
+            "hub-discard-never-written-{}.json",
+            std::process::id()
+        ));
+
+        let err = discard(anyhow::anyhow!("rex session new failed"), None, Some(&path)).await;
+
+        let shown = format!("{err:#}");
+        assert!(
+            shown.starts_with("left behind after the failed launch: couldn't remove ")
+                && shown.contains("hub-discard-never-written-")
+                && shown.ends_with(": rex session new failed"),
+            "{shown}"
+        );
+    }
 
     /// A tracked repo that has not been fetched yet has no clone, so the error
     /// has to say which repo and where it looked rather than only that it failed.

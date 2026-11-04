@@ -465,20 +465,23 @@ mod tests {
         assert!(!name.contains("--"), "{name} has a doubled separator");
     }
 
-    /// Truncation must not be able to manufacture a collision.
+    /// Truncation must not be able to manufacture a collision. The names are compared, not the
+    /// windows, because the two windows' sessions differ whatever their names are.
     #[test]
-    fn two_long_projects_sharing_a_prefix_get_different_windows() {
+    fn two_long_projects_sharing_a_prefix_get_different_window_names() {
         assert_ne!(
             InvestigationWindow::pr(
                 &of("ooloth/a-very-long-repository-name-one"),
                 &slug("ooloth/a-very-long-repository-name-one"),
                 1
-            ),
+            )
+            .to_string(),
             InvestigationWindow::pr(
                 &of("ooloth/a-very-long-repository-name-two"),
                 &slug("ooloth/a-very-long-repository-name-two"),
                 1
-            ),
+            )
+            .to_string(),
         );
     }
 

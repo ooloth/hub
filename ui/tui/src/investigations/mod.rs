@@ -3,8 +3,10 @@
 //! This module handles **investigation sessions** — short-lived, interactive Claude Code
 //! sessions launched from TUI signal items (PRs, CI failures, Loki alerts, GitHub issues).
 //! The human presses `i` on a signal item and a tmux window or Rex tab opens, named after that
-//! signal by `domain::InvestigationWindow`. The TUI keeps its own window, several
-//! investigations run side by side, and each one is reachable from the terminal's window list.
+//! signal by `domain::InvestigationWindow`. The TUI keeps its own window, and several
+//! investigations run side by side. In tmux each one joins the TUI's window list, and in Rex
+//! each one opens in the background in its repository's `Workers (<repo>)` session
+//! (decision 032).
 
 pub(crate) mod ci;
 pub(crate) mod command;

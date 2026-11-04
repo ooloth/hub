@@ -426,17 +426,18 @@ async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &con
 }
 
 fn open_pr_diff(app: &mut App, config: &config::Config, repo: &str, number: u64) {
-    let project = config.projects.short_name_for(&signal_repo(repo));
-    report_launch(app, show_pr_diff(repo, &project, number));
+    let repo = signal_repo(repo);
+    let project = config.projects.short_name_for(&repo);
+    report_launch(app, show_pr_diff(&repo, &project, number));
 }
 
 fn show_pr_diff(
-    repo: &str,
+    repo: &domain::RepoSlug,
     project: &domain::ProjectShortName,
     number: u64,
 ) -> Result<terminal::WindowPlace> {
     let vacant = match terminal::claim(
-        &domain::InvestigationWindow::diff(project, &signal_repo(repo), number),
+        &domain::InvestigationWindow::diff(project, repo, number),
         "opening the diff",
     )? {
         terminal::WindowClaim::Reused(place) => return Ok(place),
@@ -450,13 +451,8 @@ fn show_pr_diff(
 /// Puts what became of a launch in the status bar: the error, or where the
 /// window is when the user cannot see it (decision 032).
 fn report_launch(app: &mut App, result: Result<terminal::WindowPlace>) {
-    match result {
-        Ok(place) => {
-            if let Some(notice) = place.notice() {
-                app.ui.flash = Some(notice);
-            }
-        }
-        Err(err) => app.ui.flash = Some(err.to_string()),
+    if let Some(notice) = terminal::launch_notice(result) {
+        app.ui.flash = Some(notice);
     }
 }
 
@@ -483,7 +479,7 @@ fn tracked_project(
     match config.projects.tracked(repo) {
         Ok(project) => Some(project.clone()),
         Err(err) => {
-            app.ui.flash = Some(err.to_string());
+            app.ui.flash = Some(format!("{err:#}"));
             None
         }
     }

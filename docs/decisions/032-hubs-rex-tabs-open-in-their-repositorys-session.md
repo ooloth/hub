@@ -56,6 +56,10 @@ Two repositories with the same name under different owners share a session. If t
 hub create a missing session at the same moment, two sessions share the label, and each uses the
 first.
 
+Tabs an earlier hub opened in the TUI's session are not looked for. Asking again for a signal whose
+investigation is still open there opens a second tab in `Workers (<repo>)`, and for a pull request
+both tabs work in the same `pr-<n>` worktree. This lasts until those older tabs close.
+
 ## Revisit when
 
 hub tracks two repositories with the same name, or Rex lets a process bring a tab into view without
@@ -64,4 +68,5 @@ Remote Control.
 ## Also update
 
 - [x] 029: marked as superseded for its session rule.
-- [x] CLAUDE.md's Rex QA loop: investigations open in `Workers (hub)`, not the QA session.
+- [x] CLAUDE.md's Rex QA loop: investigations open in their repository's `Workers (<repo>)`
+  session, not the QA session.

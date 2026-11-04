@@ -67,8 +67,9 @@ is mutated:
 3. Handle it in `App::update()` in `state/update/mod.rs` — mutate state and/or return
    one or more `Effect` values
 4. If a new `Effect` variant is needed, add it to the enum in `state/types.rs`,
-   handle it in `handle_effect()` in `main.rs`, and if it launches an
-   investigation add a file in `investigations/` (see below)
+   handle it in `handle_effect()` in `main.rs` (an effect that launches a window goes in
+   `handle_investigation_effect()`, which `handle_effect()` falls through to), and if it
+   launches an investigation add a file in `investigations/` (see below)
 
 ## Render model
 
@@ -178,8 +179,8 @@ Use the existing types in `investigations/` as templates when adding a new one.
 
 ### Worktree routing
 
-Each investigation type declares a `WorktreeSpec` variant that controls which git
-worktree the agent session opens in. The right choice depends on whether the agent
+Each investigation's handler in `main.rs` passes `launch()` a `WorktreeSpec` variant that
+controls which git worktree the agent session opens in. The right choice depends on whether the agent
 needs a fresh fetch, whether it may run longer than 30 minutes, and whether the work
 is PR-specific.
 
@@ -193,18 +194,17 @@ is PR-specific.
 **Do not route investigations to the default-branch worktree directly.**
 
 `~/.hub/repos/<repo name>/<branch>/` is reset unconditionally with
-`git reset --hard origin/<branch>` in two places:
+`git reset --hard origin/<branch>` by the TUI's own refresh, which runs at startup, on `r`,
+and every 30 minutes while the signals on screen are older than that, which happens only
+when the daemon has stopped writing the cache.
 
-1. The TUI's own refresh runs at startup, on `r`, and every 30 minutes while the signals on screen
-   are older than that, which happens only when the daemon has stopped writing the cache.
-2. `sync_default_branch_worktree` runs at the start of every `EphemeralFresh`
-   worktree creation (it fetches latest refs before spawning the investigation).
-
-An agent working directly in that directory is reset mid-session whenever either
-trigger fires — silently discarding scratch changes, checked-out branches, or local
-commits that haven't been pushed yet. `EphemeralFresh` and `Ephemeral` are immune
-because each investigation gets its own detached-HEAD worktree that the refresh loop
-never touches, and that is cleaned up on exit.
+An agent working directly in that directory is reset mid-session whenever the refresh
+runs, silently discarding scratch changes, checked-out branches, or local commits that
+haven't been pushed yet. `EphemeralFresh` and `Ephemeral` are immune because each
+investigation gets its own detached-HEAD worktree that the refresh loop never touches.
+Its window's command removes it once the agent exits, and the launch removes it when the
+window fails to open. Closing the tab or window before the agent exits skips that
+command and leaves the worktree behind.
 
 ### PR sessions
 

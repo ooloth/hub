@@ -5,4 +5,4 @@ mod rex;
 mod tmux;
 mod window;
 
-pub(crate) use window::{claim, WindowClaim, WindowPlace};
+pub(crate) use window::{claim, launch_notice, WindowClaim, WindowPlace};

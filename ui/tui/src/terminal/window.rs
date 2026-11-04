@@ -1,9 +1,10 @@
-//! Claiming a window by name: finding it if it is open, or the right to open it.
+//! Claiming a window by name: finding it if it is open, or the right to open it, and what
+//! the status bar says about where it is.
 
 use super::detect::Terminal;
 use super::rex::RexSession;
 use super::{rex, tmux};
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use domain::{InvestigationWindow, RexSessionId, WorkersSession};
 use std::path::Path;
 
@@ -70,6 +71,17 @@ impl WindowPlace {
     }
 }
 
+/// What the status bar says after a launch, if anything.
+///
+/// A failure shows its whole chain, because the cause, such as `rex`'s stderr, sits below the
+/// context that names what failed, and the status bar is the only place a launch error goes.
+pub(crate) fn launch_notice(result: Result<WindowPlace>) -> Option<String> {
+    match result {
+        Ok(place) => place.notice(),
+        Err(err) => Some(format!("{err:#}")),
+    }
+}
+
 /// Finds `window` if the enclosing terminal already has it, or hands back the
 /// right to open it.
 ///
@@ -101,7 +113,8 @@ pub(crate) fn claim(window: &InvestigationWindow, purpose: &str) -> Result<Windo
             })),
         },
         Terminal::Rex => {
-            let sessions = rex::sessions()?;
+            let sessions = rex::sessions()
+                .with_context(|| format!("couldn't look for {}", window.session()))?;
             claim_in_rex(window, &sessions, rex::open_windows)
         }
     }
@@ -204,9 +217,11 @@ fn find_window(open: &[OpenWindow], window: &InvestigationWindow) -> Option<Stri
 #[cfg(test)]
 mod tests {
     use super::{
-        claim_in_rex, find_session, find_window, OpenWindow, Target, WindowClaim, WindowPlace,
+        claim_in_rex, find_session, find_window, launch_notice, OpenWindow, Target, WindowClaim,
+        WindowPlace,
     };
     use crate::terminal::rex::RexSession;
+    use anyhow::Context as _;
     use domain::{InvestigationWindow, RepoSlug, RexSessionId, WorkersSession};
     use proptest::prelude::*;
     use rstest::rstest;
@@ -375,6 +390,7 @@ mod tests {
     #[rstest]
     #[case("Workers (hub-private)")]
     #[case("Workers (hu)")]
+    #[case("Workers (hub) 2")]
     #[case("Workers")]
     #[case("workers (hub)")]
     fn a_neighbouring_session_label_is_not_the_repositorys_session(#[case] label: &str) {
@@ -415,12 +431,19 @@ mod tests {
         NewSession,
     }
 
-    fn rex_outcome(labels: &[&str], open_in_session: &[&str]) -> Outcome {
+    /// The claim for `hub:pr:330` when Rex has `tabs`, each session's label beside the
+    /// windows open in it. The listing answers only for the session it is asked about, so a
+    /// claim that looked in the wrong session would see that session's windows.
+    fn rex_outcome(tabs: &[(&str, Vec<&str>)]) -> Outcome {
         let window = InvestigationWindow::pr(&hub(), &repo_slug(), 330);
-        let open_names: Vec<String> = open_in_session.iter().map(ToString::to_string).collect();
-        let claim = claim_in_rex(&window, &sessions(labels), |_| {
-            let names: Vec<&str> = open_names.iter().map(String::as_str).collect();
-            Ok(open(&names))
+        let labels: Vec<&str> = tabs.iter().map(|(label, _)| *label).collect();
+        let all = sessions(&labels);
+        let claim = claim_in_rex(&window, &all, |id| {
+            let index = all
+                .iter()
+                .position(|session| &session.id == id)
+                .expect("the claim listed a session Rex does not have");
+            Ok(open(&tabs[index].1))
         })
         .unwrap();
         match claim {
@@ -433,24 +456,31 @@ mod tests {
         }
     }
 
+    /// The window is looked for only in its repository's session. The same name open in any
+    /// other session, such as the TUI's own or one with no repository, is another tab, and a
+    /// new one opens.
     #[rstest]
     #[case::open_in_its_session(
-        &["Signals", "Workers (hub)"],
-        &["hub:pr:330"],
+        vec![("Signals", vec![]), ("Workers (hub)", vec!["hub:pr:330"])],
         Outcome::Reused(WindowPlace::AlreadyOpenIn(hub_session()))
     )]
     #[case::not_open_in_its_session(
-        &["Signals", "Workers (hub)"],
-        &["hub:git:330"],
+        vec![("Signals", vec![]), ("Workers (hub)", vec!["hub:git:330"])],
         Outcome::InSession("session:1".to_string())
     )]
-    #[case::no_session_for_its_repository(&["Signals", "Workers"], &["hub:pr:330"], Outcome::NewSession)]
+    #[case::open_only_in_another_session(
+        vec![("Signals", vec!["hub:pr:330"]), ("Workers (hub)", vec![])],
+        Outcome::InSession("session:1".to_string())
+    )]
+    #[case::no_session_for_its_repository(
+        vec![("Signals", vec![]), ("Workers", vec!["hub:pr:330"])],
+        Outcome::NewSession
+    )]
     fn a_rex_claim_looks_only_in_the_repositorys_session(
-        #[case] labels: &[&str],
-        #[case] open_in_session: &[&str],
+        #[case] tabs: Vec<(&str, Vec<&str>)>,
         #[case] expected: Outcome,
     ) {
-        assert_eq!(rex_outcome(labels, open_in_session), expected);
+        assert_eq!(rex_outcome(&tabs), expected);
     }
 
     /// A Rex tab never comes into view, so the status bar is the only sign a launch worked.
@@ -470,5 +500,24 @@ mod tests {
         #[case] expected: Option<&str>,
     ) {
         assert_eq!(place.notice().as_deref(), expected);
+    }
+
+    /// The status bar is the only record of a failed launch, so it carries `rex`'s own words
+    /// as well as what hub was doing.
+    #[test]
+    fn a_failed_launch_shows_the_cause_beneath_its_context() {
+        let failure: anyhow::Result<WindowPlace> = Err(anyhow::anyhow!(
+            "exit status: 1: Error: no Rex server is running"
+        ))
+        .context("rex session new failed for Workers (hub)");
+        assert_eq!(
+            launch_notice(failure).as_deref(),
+            Some("rex session new failed for Workers (hub): exit status: 1: Error: no Rex server is running")
+        );
+    }
+
+    #[test]
+    fn a_launch_in_view_says_nothing() {
+        assert_eq!(launch_notice(Ok(WindowPlace::InView)), None);
     }
 }

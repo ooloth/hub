@@ -1,10 +1,8 @@
 //! The window command an investigation turns into, built without running it.
 //!
-//! `launch()` used to resolve a worktree, write a temp file and assemble the
-//! command in one async function, so the only way to see what it produced was
-//! to spawn a process. Everything here is pure: `cwd` and the supporting-data
-//! path arrive as arguments rather than being computed, which is what lets a
-//! test pin the whole invocation.
+//! Everything here is pure: `cwd` and the supporting-data path arrive as
+//! arguments rather than being computed, which is what lets a test pin the
+//! whole invocation without spawning a process.
 
 use domain::InvestigationMcpServers;
 use std::path::{Path, PathBuf};

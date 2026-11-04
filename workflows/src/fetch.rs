@@ -1,8 +1,12 @@
-//! PR investigation worktrees — fetch, create, and clean up worktrees for
-//! human-initiated PR review and fix sessions.
+//! Bare clones and the worktrees investigations run in.
 //!
-//! Worktrees are ephemeral: created on demand for a human session and cleaned
-//! up when the remote head branch is deleted. See `docs/architecture/worktrees.md`.
+//! This covers fetching each tracked repository, its default-branch worktree,
+//! PR worktrees, and detached investigation worktrees.
+//!
+//! A PR worktree is removed when its remote head branch is deleted. An
+//! investigation worktree is removed by its window's command when the agent
+//! exits, or by `remove_investigation_worktree` when the window never opened.
+//! See `docs/architecture/worktrees.md`.
 
 use anyhow::{Context, Result};
 use domain::RepoSlug;
@@ -200,13 +204,13 @@ pub async fn ensure_pr_worktree(bare: &Path, number: u64, head_branch: &str) -> 
 /// Fetches the latest remote refs, then creates a fresh detached-HEAD investigation worktree.
 ///
 /// Returns the worktree path under `bare`. The caller is responsible for
-/// removing it via `git worktree remove --force` when done.
+/// removing it when done, with [`remove_investigation_worktree`].
 ///
 /// Use this at investigation launch time (CI, Issue) where the agent needs a
 /// stable, isolated worktree starting from the latest trunk state. Prefer this over
 /// opening the default-branch worktree directly — that worktree is reset
-/// unconditionally every 30 minutes and at every investigation launch, so it is not
-/// safe for any agent that runs longer than the refresh interval.
+/// unconditionally by every refresh, so it is not safe for any agent that runs
+/// longer than the refresh interval.
 ///
 /// # Errors
 /// Returns an error if a git or filesystem operation fails.
@@ -309,7 +313,7 @@ pub async fn ensure_default_branch_worktree(bare: &Path) -> Result<()> {
 /// Creates a fresh detached-HEAD investigation worktree under `bare` at a timestamped path.
 ///
 /// Returns the worktree path. The caller is responsible for removing it
-/// via `git worktree remove --force` when done.
+/// when done, with [`remove_investigation_worktree`].
 ///
 /// # Errors
 /// Returns an error if a git operation fails.
@@ -340,6 +344,33 @@ pub async fn create_investigation_worktree(bare: &Path) -> Result<PathBuf> {
     }
 
     Ok(worktree)
+}
+
+/// Removes an investigation worktree from `bare`, as its window's cleanup would have.
+///
+/// For a launch that created the worktree and then could not open the window that was to
+/// remove it.
+///
+/// # Errors
+/// Returns an error if git cannot remove it, with git's stderr.
+pub async fn remove_investigation_worktree(bare: &Path, worktree: &Path) -> Result<()> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(bare)
+        .args(["worktree", "remove", "--force"])
+        .arg(worktree)
+        .output()
+        .await
+        .with_context(|| format!("git worktree remove failed for {}", worktree.display()))?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        anyhow::bail!(
+            "git worktree remove failed for {}: {}",
+            worktree.display(),
+            stderr.trim()
+        );
+    }
+    Ok(())
 }
 
 async fn clean_merged_worktrees(bare_dir: &str) -> Result<()> {
@@ -452,6 +483,38 @@ mod tests {
             let repos = PathBuf::from("/tmp/repos");
             proptest::prop_assert_eq!(bare_clone_path(&repos, &slug), repos.join(&repo));
         }
+    }
+
+    /// A launch that could not open its window removes the worktree it made, so neither the
+    /// directory nor git's record of it is left behind.
+    #[tokio::test]
+    async fn an_investigation_worktree_is_removed_with_its_record() {
+        let tmp = tempfile::tempdir().unwrap();
+        let (_origin, bare) = setup_origin_and_bare(tmp.path()).await;
+        let worktree = create_investigation_worktree(&bare).await.unwrap();
+
+        remove_investigation_worktree(&bare, &worktree)
+            .await
+            .unwrap();
+
+        assert!(!worktree.exists(), "{} is still there", worktree.display());
+        let list = Command::new("git")
+            .args([
+                "-C",
+                &bare.to_string_lossy(),
+                "worktree",
+                "list",
+                "--porcelain",
+            ])
+            .output()
+            .await
+            .unwrap();
+        let listed = String::from_utf8_lossy(&list.stdout).into_owned();
+        assert!(
+            !listed.contains(&*worktree.to_string_lossy()),
+            "git still lists {}:\n{listed}",
+            worktree.display()
+        );
     }
 
     #[tokio::test]

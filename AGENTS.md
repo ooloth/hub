@@ -250,18 +250,27 @@ sleep 12                                          # wait for the first render
 rex capture -s "$S" -b "$B" --trim
 rex send -s "$S" -b "$B" i
 sleep 12
-W=$(rex session list --json | jq -er '.sessions | map(select(.label == "Workers (hub)")) | .[0].session_id')
-rex window ls -s "$W" --json | jq -r '.windows[] | "\(.window_id) \(.label)"'
+rex capture -s "$S" -b "$B" --trim | grep -E 'Opened in|Already open in'
+L='Workers (hub)'                                 # the session the status bar names
+W=$(rex session list --json | jq -er --arg l "$L" '.sessions | map(select(.label == $l)) | .[0].session_id') \
+  && rex window ls -s "$W" --json | jq -r '.windows[] | "\(.window_id) \(.label)"'
 ```
 
-The tab opens in the session for the selected signal's repository, so pick an `ooloth/hub`
-signal, or put that repository's name in place of `hub`. Kill any `Workers (<repo>)` session the
-run created once its tabs are closed.
+The tab opens in the session for the selected signal's repository, which the status bar names:
+`Opened in Workers (<repo>)`, with `, a new session` when the run created it, or
+`Already open in Workers (<repo>)` when the tab was there before the run. Set `L` to that label.
+When no session has it, `W` stays empty and nothing after it runs, because the launch opened no
+tab: read the status bar for the error.
 
-Clean up the same way, with `rex session kill "$S"` in place of the tmux one, and close each tab
-the run opened in `Workers (hub)` with `rex window close -s "$W" <window_id>`, leaving that
-session's other tabs alone. Closing a tab ends its investigation before its own cleanup runs, so
-its worktree is always left behind to remove.
+Clean up in this order, every time:
+
+1. Close each tab the status bar said the run opened, with `rex window close -s "$W" <window_id>`.
+   Leave the session's other tabs alone, including one that was already open.
+2. If the status bar said `a new session` and the session now has no tabs, `rex session kill "$W"`.
+3. `rex session kill "$S"`.
+4. Remove the worktree and `/tmp/hub-supporting-data-*.json` file of each tab you closed, as the
+   tmux loop does. Closing a tab ends its investigation before its own cleanup runs, so its
+   worktree is always left behind.
 
 **Gotchas that cost time**
 

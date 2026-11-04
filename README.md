@@ -14,7 +14,8 @@ prioritized view with agentic capabilities built in:
 - **Cross-domain triage** — signals from GitHub, Linear, Loki, home servers, and any other
   source appear in one ranked list; hub is the only place their urgency is compared
 - **Pre-loaded investigation** — `i` on any signal opens a Claude Code session in its own
-  tmux window or Rex tab with `hub.toml` context already loaded (endpoint, query, project name), and `v`
+  tmux window or Rex tab with `hub.toml` context already loaded (endpoint, query, project name). A Rex tab
+  opens in the background in its repository's `Workers (<repo>)` session, and the status bar says so. `v`
   on a pull request picks a review skill to run; investigation starts immediately, not after
   setup
 - **Agent hand-off** — `a` on an agent-filed issue open in the detail pane approves it,
