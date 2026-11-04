@@ -55,7 +55,7 @@ fails, it names the configurations that failed and points here.
 
 Public CI checks only the first configuration, because it has no hub-private. It checks it on
 both platforms: `.github/workflows/ci.yml` runs fmt, clippy, the tests, audit and deny on
-`macos-latest` and on `ubuntu-latest` for every push.
+`macos-latest` and on `ubuntu-latest` for every push to `main` and every pull request.
 
 What the check misses:
 
@@ -65,6 +65,11 @@ What the check misses:
 - **A private configuration on the other platform.** Public CI has no hub-private, so a private
   module that compiles on macOS but not on Linux is found only when an orb next sets up and runs
   `just lint`, and the reverse only on the next Mac commit.
+- **Tests outside the checkout's fullest configuration.** `scripts lint-configurations` compiles
+  every configuration's tests but runs none of them. `just test` runs them, by hand and before every
+  push, in only the fullest configuration the checkout has, and public CI runs only the one without
+  hub-private. So the private configurations' tests run on Linux only when an orb runs `just test`,
+  and the tests of hub-private without the media module never run on a device that has it.
 - **Runtime behaviour.** A stub that compiles can still do the wrong thing. `media_stub.rs` has a
   test asserting that it returns an error. That test runs only on a device without the media
   module.

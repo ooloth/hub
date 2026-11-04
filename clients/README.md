@@ -1,6 +1,8 @@
 # clients
 
-External API wrappers. The only code that makes network calls.
+External API wrappers. The only code that calls external services' APIs, over HTTP with `reqwest`
+or through the `gcloud` CLI. Other crates reach the network only through programs they run:
+`workflows` runs `git fetch`, and `config` runs `op read`.
 
 **Rules:**
 - One file or subdirectory per external service

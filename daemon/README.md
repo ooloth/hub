@@ -84,8 +84,10 @@ database (#364). The TUI asking the daemon for a pass is
   falls back to recording the pass as failed, and `record_credential_attempt`. The SQLite edge
 
 `refresh::fetch` takes no database handle on purpose: `rusqlite::Connection` is not `Sync`, so
-holding one across the fetch would make the surrounding future non-`Send` and unspawnable, which
-the interval loop (`schedule::every`) needs and the socket server will.
+holding one across the fetch would make the surrounding future non-`Send` and unspawnable. The
+interval loop (`schedule::every`) needs it spawnable, and so will the socket server planned in
+[#327](https://github.com/ooloth/hub/issues/327) and named in
+[Decision 021](../docs/decisions/021-daemon-owns-signal-refresh.md).
 
 ## The rule that makes this more than a wrapper
 
@@ -308,7 +310,7 @@ Expect `outcome=no_source_answered payload=kept` naming every failed source, exi
 naming the running one.
 
 ```bash
-cargo run -q -p hub-daemon --features private -- --once >/dev/null 2>&1; echo $?
+just daemon --once >/dev/null 2>&1; echo $?
 ```
 
 ## Gotchas that cost time

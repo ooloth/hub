@@ -69,7 +69,7 @@ domain/      # types + pure logic; no I/O; no imports from other hub crates
 store/       # local SQLite reads/writes
 workflows/   # orchestrated operations; the "what hub does"
 ui/
-  cli/       # hub binary — bootstraps config, wires deps, calls workflows
+  cli/       # hub binary: a stub with no subcommands (decision 010)
   tui/       # hub-tui binary
 prompts/     # investigation prompts loaded by the TUI
 scripts/     # the `scripts` crate: dev/ops tooling, ships in no binary (Decision 025)
@@ -81,18 +81,23 @@ interface and the daemon has no user. Both are entry points: they bootstrap
 config, wire deps, and call workflows. Decision 020 settles that the daemon
 is its own binary; the directory is the only part this repo chose.
 
-Import direction (never import rightward's left neighbor):
+Import direction (each crate imports only the crates on its right, and never
+the other way):
 
 ```
-ui/     → config/               → domain/
-          config/               → disclaimed_spawn/
-daemon/ → workflows/ → clients/ → domain/
-                     → store/   → domain/
+ui/tui     → workflows/, clients/, store/, config/, domain/
+daemon/    → workflows/, store/, config/, domain/
+workflows/ → clients/, store/, domain/
+clients/   → domain/
+store/     → domain/
+config/    → domain/, disclaimed_spawn/
+scripts/   → domain/
 ```
 
-`config/` is a direct dependency of `ui/tui` and `daemon/`; `ui/cli` is a stub
-that depends only on `clap`. Config values are passed as function arguments
-into workflows and clients — those crates do not depend on `config/` directly.
+`ui/tui` calls `clients/` itself to merge pull requests and set issue labels,
+and `store/` to open, read and write the database. `ui/cli` is a stub that
+depends only on `clap`. Config values are passed as function arguments into
+workflows and clients, so those crates do not depend on `config/` directly.
 
 ## Stack
 
@@ -103,7 +108,7 @@ into workflows and clients — those crates do not depend on `config/` directly.
 | CLI            | clap (derive)                         |
 | TUI            | ratatui                               |
 | HTTP clients   | reqwest                               |
-| SQLite         | rusqlite (bundled) or sqlx            |
+| SQLite         | rusqlite (bundled)                    |
 | Serialization  | serde                                 |
 | Secrets        | 1Password CLI (`secrecy` + `op read`) |
 | Error handling | anyhow                                |
@@ -383,6 +388,8 @@ Every `lib.rs` and `mod.rs` is navigation only — module declarations and re-ex
 
 ## Directory notes
 
-`.agents/` is the agent harness tracking directory — it holds skill files and
-session state for agent runs. It is not a Rust crate. The `agents/` Rust crate
+`.agents/` holds the Amp orb scripts: `setup` prepares a fresh orb to build,
+test and lint hub, and `resume` updates `../hub-private` each time an orb wakes.
+Its `skills/` directory, which `.claude/skills/` links to, is empty. It is not a
+Rust crate. The `agents/` Rust crate
 for background automation is described in Decision 005 but has not been built yet.

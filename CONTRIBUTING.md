@@ -33,8 +33,8 @@ just build
 just check
 ```
 
-`just build` produces the `scripts` binary that the Claude Code hook guarding `gh` posts runs. The
-hook refuses `gh` calls until that binary exists.
+Without hub-private there are no banned terms to guard, so the Claude Code hook that guards `gh`
+posts allows every call, built or not.
 
 `hub.toml` lives as a plain local file in the repo root, gitignored.
 
@@ -100,8 +100,9 @@ just daemon             # refresh every 15 minutes with nobody present (--once f
 just db                 # open the profile's SQLite database in visidata
 ```
 
-Every recipe uses the `dev` profile, so it reads and writes `~/.hub/dev/`. `HUB_PROFILE=default
-just tui` reaches the installed hub's state instead.
+Every recipe that runs hub from source uses the `dev` profile, so it reads and writes
+`~/.hub/dev/`. `HUB_PROFILE=default just tui` reaches the installed hub's state instead. The
+`daemon-*` recipes manage the installed daemon, which always uses `default`.
 
 ## Common tasks
 
@@ -114,9 +115,10 @@ just build              # build all crates
 
 ## Verifying a change by hand
 
-Tests are not enough for anything that affects keybindings, navigation,
-subprocess launching, tmux or Rex integration or the cache format. Those are verified
-by running the TUI and driving it.
+Every change that alters what the TUI shows or how it behaves, rendering and layout included, is
+verified by running the TUI and driving it, even when every test and snapshot passes. Tests and
+snapshots cannot show the real terminal's width, real signal text, the startup path, timing, or
+how the screen behaves once keys arrive.
 
 [AGENTS.md](AGENTS.md) has the full loop, including how to read what an
 investigation was actually launched with, and the handful of tmux and 1Password

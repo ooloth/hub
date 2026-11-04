@@ -75,7 +75,8 @@ No output means allowed. A refusal prints the hook's deny JSON with the reason.
   exact copy of the workspace lints with `unsafe_code = "deny"`), `domain_purity` (nothing under
   `domain/src` names a way of reading ambient state), `decision_numbers` (no two decision records
   share a number), `decision_status` (no superseded decision record still says "not yet
-  implemented"), `snapshot_coverage` (every snapshot file is named by a test in its crate),
+  implemented"), `snapshot_coverage` (every snapshot file's name appears in its crate's source, so
+  a deleted test's snapshot still passes when its name is part of a longer name that remains),
   `daemon_tools` (every program the daemon's crates start by name is in `DAEMON_TOOLS`),
   `daemon_health_writer` (only `store` names the daemon health table), `packed_debug_info` (the
   dev profile packs its debug information and the test profile leaves that to it),

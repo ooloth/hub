@@ -26,7 +26,9 @@ moment. See [the invariant](../docs/invariants/the-daemons-health-and-the-signal
 
 ## Database path
 
-`store::status_cache::connect(profile)` uses `~/.hub/<profile>/hub.db`. The profile comes
+`store::status_cache::connect(profile)` opens the whole of `~/.hub/<profile>/hub.db`, the file that
+holds both tables, sets WAL mode and a 5-second busy timeout, and drops the `tasks` and
+`task_comments` tables if they exist. The profile comes
 from `HUB_PROFILE` via `config::profile::from_env()` and is `default` when unset, so the
 installed hub reads `~/.hub/default/hub.db` and anything run through `just` reads
 `~/.hub/dev/hub.db`. See [decision 024](../docs/decisions/024-hub-state-is-per-profile.md).

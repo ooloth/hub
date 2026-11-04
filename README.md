@@ -17,8 +17,9 @@ prioritized view with agentic capabilities built in:
   tmux window or Rex tab with `hub.toml` context already loaded (endpoint, query, project name), and `v`
   on a pull request picks a review skill to run; investigation starts immediately, not after
   setup
-- **Agent hand-off** — `a` on an agent-filed issue approves it, relabelling it
-  `status:ready-for-agent` for the agent workflows that pick it up
+- **Agent hand-off** — `a` on an agent-filed issue open in the detail pane approves it,
+  relabelling it `status:ready-for-agent` for the agent workflows that pick it up (in the list
+  alone, `a` clears the filter)
 - **Trust-building flywheel** — every agent run is visible, reviewable, and mined to
   improve the next one's context and instructions; the goal is agents you can delegate to
   at scale, not steer one at a time; see [Vision](docs/vision.md)
