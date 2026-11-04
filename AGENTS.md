@@ -216,8 +216,11 @@ they were, and the status bar names the sources that failed.
 **Which terminal to drive it in.** hub opens its windows in whichever terminal
 encloses the TUI, so the terminal the loop runs the TUI in decides which path
 is exercised, whatever terminal the agent itself is in. A change under
-`ui/tui/src/terminal/` is driven live in both tmux and Rex. Every other change
-is driven in tmux, which exists wherever an agent runs and takes an exact size.
+`ui/tui/src/terminal/`, or to where a Rex tab goes or what a launch does when it
+fails (`domain/src/investigation_window.rs`, `domain/src/workers_session.rs`,
+`ui/tui/src/investigations/launch.rs`, `report_launch` in `ui/tui/src/main.rs`),
+is driven live in both tmux and Rex. Every other change is driven in tmux, which
+exists wherever an agent runs and takes an exact size.
 
 **The loop.**
 
@@ -248,29 +251,39 @@ B=$(rex api call -s "$S" session.new_window \
 rex send -s "$S" -b "$B" 'just tui' && rex send-key -s "$S" -b "$B" enter
 sleep 12                                          # wait for the first render
 rex capture -s "$S" -b "$B" --trim
+ls -d ~/.hub/repos/*/investigation-*               # before i, to tell the run's worktree apart
 rex send -s "$S" -b "$B" i
 sleep 12
 rex capture -s "$S" -b "$B" --trim | grep -E 'Opened in|Already open in'
-L='Workers (hub)'                                 # the session the status bar names
+```
+
+The status bar names the session the tab went to, which is the selected signal's repository's:
+`Opened in Workers (<repo>)`, with `, a new session` when the run created it, or
+`Already open in Workers (<repo>)` when the tab was there before the run. It names the session,
+not the tab. The tab is labelled with the signal's window name, such as `hub:ci:ci`. Put the
+session's label in `L` and list its tabs:
+
+```bash
+L='Workers (hub)'                                 # the label the status bar printed
 W=$(rex session list --json | jq -er --arg l "$L" '.sessions | map(select(.label == $l)) | .[0].session_id') \
   && rex window ls -s "$W" --json | jq -r '.windows[] | "\(.window_id) \(.label)"'
 ```
 
-The tab opens in the session for the selected signal's repository, which the status bar names:
-`Opened in Workers (<repo>)`, with `, a new session` when the run created it, or
-`Already open in Workers (<repo>)` when the tab was there before the run. Set `L` to that label.
-When no session has it, `W` stays empty and nothing after it runs, because the launch opened no
-tab: read the status bar for the error.
+When no session has that label, `jq -e` fails, `W` holds the string `null`, and the listing does
+not run. Either `L` does not match the status bar, or the launch opened no tab and the status bar
+shows its error. Run nothing below that uses `W` until the listing works.
 
 Clean up in this order, every time:
 
-1. Close each tab the status bar said the run opened, with `rex window close -s "$W" <window_id>`.
-   Leave the session's other tabs alone, including one that was already open.
+1. If the status bar said `Opened in`, close the tab labelled with the signal's window name:
+   `rex window close -s "$W" <window_id>`. Leave the session's other tabs alone, including a tab
+   that was already open.
 2. If the status bar said `a new session` and the session now has no tabs, `rex session kill "$W"`.
 3. `rex session kill "$S"`.
-4. Remove the worktree and `/tmp/hub-supporting-data-*.json` file of each tab you closed, as the
-   tmux loop does. Closing a tab ends its investigation before its own cleanup runs, so its
-   worktree is always left behind.
+4. Remove the `investigation-*` worktree the run created, which the listing taken before `i` tells
+   apart from the user's own, and the run's `/tmp/hub-supporting-data-*.json` file. Closing a tab
+   ends its investigation before its own cleanup runs, so that worktree is left behind. A PR tab
+   works in the shared `pr-<N>` worktree, which stays.
 
 **Gotchas that cost time**
 
@@ -292,14 +305,15 @@ Clean up in this order, every time:
   running.** `op read` fails within a second with that message, before any
   fetch starts. Start the app and run again. The first run after starting it
   can fail the same way while the app finishes launching (observed 2026-10-02).
-- **A hang with nothing in the terminal is a different state.** `op read` is
-  waiting on an approval prompt nobody has answered, and it waits with no limit
-  rather than failing (measured 2026-10-10). Look for a Touch ID prompt, or a
+- **A wait with nothing in the terminal is a different state.** `op read` is
+  waiting on an approval prompt nobody has answered. After about a minute it
+  fails with `authorization timeout`, and hub exits (observed twice,
+  2026-11-04). Look for a Touch ID prompt, or a
   macOS "would like to access data from other apps" dialog, waiting on screen.
   Diagnose on this symptom, not on anything `op whoami` says.
 - **You cannot `echo` inside a launched investigation window** — it is running
   Claude Code. Read the prompts off the process instead:
-  `ps -p $(tmux display-message -p -t qa:2.0 '#{pane_pid}') -wwE -o command=`.
+  `ps -p $(tmux display-message -p -t qa:2 '#{pane_pid}') -wwE -o command=`.
 - **`#{pane_start_command}` is the exact command tmux was handed**, which is what
   to assert against when the change affects how an investigation is launched.
 - **An investigation can open at Claude Code's "trust this folder" prompt
@@ -327,10 +341,19 @@ Clean up in this order, every time:
   command nobody typed. Read the capture for the TUI before sending keys.
 - **There is no `#{pane_start_command}`.** Read an investigation's launch
   command off its process. `pgrep -n` takes the newest, so an investigation
-  left open from earlier answers if this one did not start:
+  left open from earlier answers if this one did not start. When a cleanup
+  step follows `claude`, `/bin/sh` stays as its parent and holds hub's command:
 
   ```bash
   ps -p $(ps -o ppid= -p $(pgrep -n -f "claude --permission-mode auto")) -ww -o command=
+  ```
+
+  When `claude` is the whole command, as in every PR investigation, `/bin/sh`
+  hands itself to `claude`, so the parent is Rex's own process. Read `claude`
+  itself, whose environment carries the prompts:
+
+  ```bash
+  ps -p $(pgrep -n -f "claude --permission-mode auto") -wwE -o command=
   ```
 
 **tmux send-keys pitfalls**
