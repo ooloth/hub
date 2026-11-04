@@ -16,7 +16,7 @@ in every terminal, so every `just daemon-start` would rewrite the plist and rest
 A program the code starts that is not in the list is therefore found only if it happens to live in
 a system directory. Otherwise the daemon fails to run it under launchd while it works from
 `just daemon`, which reads the developer's own `PATH`. If the program is `op`, the daemon never
-starts. If it is a source's tool, that source fails on every pass.
+obtains its credentials and never runs a pass. If it is a source's tool, that source fails on every pass.
 
 ## What it forbids
 
