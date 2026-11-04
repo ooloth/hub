@@ -16,15 +16,16 @@ pub(crate) fn config(
     gcp_project: &str,
 ) -> LaunchConfig {
     // expose: reading the log's own timestamp out of it, not building prompt text.
-    let incident_at = serde_json::from_str::<serde_json::Value>(line.expose())
-        .ok()
-        .and_then(|v| {
-            v.get(0)
-                .and_then(|e| e.get("timestamp"))
-                .and_then(|t| t.as_str())
-                .map(String::from)
-        })
-        .unwrap_or_default();
+    let log = serde_json::from_str::<serde_json::Value>(line.expose()).ok();
+    let timestamp = log
+        .as_ref()
+        .and_then(|v| v.get(0))
+        .and_then(|e| e.get("timestamp"))
+        .and_then(|t| t.as_str());
+    let incident_at = match timestamp {
+        Some(t) => t.to_string(),
+        None => String::new(),
+    };
 
     LaunchConfig {
         system_prompt: PROMPT.to_string(),

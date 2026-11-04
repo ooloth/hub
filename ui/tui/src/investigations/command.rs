@@ -103,7 +103,10 @@ pub(crate) fn compose(
     } else {
         " \"$HUB_TASK_PROMPT\"".to_string()
     };
-    let cleanup_suffix = cleanup.map(|c| format!("; {c}")).unwrap_or_default();
+    let cleanup_suffix = match cleanup {
+        Some(c) => format!("; {c}"),
+        None => String::new(),
+    };
     let shell = format!(
         "claude --permission-mode auto --strict-mcp-config{mcp_config_arg} --model {} --allowedTools '{}' --append-system-prompt \"$HUB_SYSTEM_PROMPT\"{task_arg}{cleanup_suffix}",
         config.model, config.allowed_tools,
