@@ -140,10 +140,10 @@ mod tests {
 
     /// The card as it reads: title, the note when there is one, then the rows.
     fn rendered(card: &WaitingCard) -> String {
-        let note = card
-            .note()
-            .map(|note| format!("{note}\n"))
-            .unwrap_or_default();
+        let note = match card.note() {
+            Some(note) => format!("{note}\n"),
+            None => String::new(),
+        };
         format!("{}\n{note}{}", card.title(), card.message())
     }
 

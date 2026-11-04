@@ -117,9 +117,10 @@ impl InvestigationPrompt {
                 PromptSegment::Untrusted { source, body } => fence(source, body.expose()),
                 // Unreachable when it matters: the assertion above has already
                 // run for any prompt that reaches this arm with `None`.
-                PromptSegment::SupportingDataPath => supporting_data_path
-                    .map(|path| path.display().to_string())
-                    .unwrap_or_default(),
+                PromptSegment::SupportingDataPath => match supporting_data_path {
+                    Some(path) => path.display().to_string(),
+                    None => String::new(),
+                },
             })
             .collect::<Vec<_>>()
             .join("\n")
@@ -193,14 +194,14 @@ mod tests {
 
     /// The text between the opening and closing fence lines.
     fn fenced_body(rendered: &str) -> String {
-        let after_open = rendered
-            .split_once('\n')
-            .map(|(_, rest)| rest)
-            .unwrap_or_default();
-        after_open
-            .rsplit_once('\n')
-            .map(|(body, _)| body.to_string())
-            .unwrap_or_default()
+        let after_open = match rendered.split_once('\n') {
+            Some((_, rest)) => rest,
+            None => "",
+        };
+        match after_open.rsplit_once('\n') {
+            Some((body, _)) => body.to_string(),
+            None => String::new(),
+        }
     }
 
     /// Bodies built from the pieces a fence-escape attempt is made of, plus

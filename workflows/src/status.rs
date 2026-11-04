@@ -630,7 +630,7 @@ mod tests {
     /// an entry.
     fn every_public_signal() -> Vec<StatusItem> {
         let repo = domain::RepoSlug::new("owner", "repo");
-        vec![
+        let items = vec![
             pull_request_with_everything_set(),
             StatusItem::Issue(Issue {
                 number: 8,
@@ -686,7 +686,23 @@ mod tests {
                 url: "https://console.cloud.google.com/logs".to_string(),
                 gcp_project: "myapp-staging".to_string(),
             }),
-        ]
+        ];
+        // A compile error here means a public kind of signal was added: add one of it, with
+        // every field filled, to the list above, then add its arm. The private kinds share the
+        // last arm, so only a build without the `private` feature catches a missing public one.
+        for item in &items {
+            match item {
+                StatusItem::Pr(_)
+                | StatusItem::Issue(_)
+                | StatusItem::Ci(_)
+                | StatusItem::Linear(_)
+                | StatusItem::Loki(_)
+                | StatusItem::Gcp(_) => {}
+                #[cfg(feature = "private")]
+                _ => {}
+            }
+        }
+        items
     }
 
     /// The cached payload's format, under the schema version it is stored with. It holds one

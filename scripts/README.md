@@ -13,32 +13,32 @@ Not imported by anything.
 
 ## Subcommands
 
-- `guard-gh-posts --banned-terms <path>` — the Claude Code `PreToolUse` hook wired in
+- `guard-gh-posts --banned-terms <path>`: the Claude Code `PreToolUse` hook wired in
   `.claude/settings.json`. Refuses a `gh` call that would publish a term from hub-private's
   `scripts/blocked-terms.txt`: in the command text, a heredoc, or a body file. Also refuses a body
   it cannot read, such as a path behind `$VAR`. Allows everything when the list does not exist,
   which is every checkout without hub-private beside it.
-- `check-staged-terms` — the pre-commit check prek runs. Refuses a commit whose staged content
+- `check-staged-terms`: the pre-commit check prek runs. Refuses a commit whose staged content
   holds a term from hub-private's list, naming each file and term. Reads the git index, not the
   working copy, and finds the list beside the main checkout, so it works in worktrees too.
-- `check-prek-hooks` — what `just check` runs first. Fails when a git hook type that `prek.toml`
+- `check-prek-hooks`: what `just check` runs first. Fails when a git hook type that `prek.toml`
   declares in `default_install_hook_types` (only `pre-commit` when unset) is missing from this
   clone, not executable, or not written by prek, and says to run `prek install`. It reads the hooks
   directory git reports, so it works in worktrees and with `core.hooksPath`. That setting only
   changes what the next `prek install` writes, so without this a hook type added to it never runs
   in a clone that installed its hooks before. CI runs `cargo` directly, not `just check`, so it is
   never asked there.
-- `lint-configurations` — what `just lint` runs. Clippy with `--all-targets -D warnings`, tests
+- `lint-configurations`: what `just lint` runs. Clippy with `--all-targets -D warnings`, tests
   included, once per configuration whose sources this checkout has: without hub-private always,
   then with each linked module. Runs them all, then names the failures. hub-private's pre-commit
   check calls it too.
-- `daemon start|stop|restart|uninstall|restart-if-running|logs` — what the `just daemon-*` recipes
+- `daemon start|stop|restart|uninstall|restart-if-running|logs`: what the `just daemon-*` recipes
   and the end of `just install` run. `start` writes the LaunchAgent for the installed `hub-daemon`
   and loads it, rewriting the plist and reloading only when it changed. `stop` unloads it until the
   next login. `restart` restarts a running daemon and exits 1 otherwise. `uninstall` unloads it and
   removes the plist. `restart-if-running` restarts it only when launchd has it loaded. `logs`
   follows `~/.hub/default/daemon.log`. See `daemon/README.md` for what the plist holds and why.
-- `setup-private <device> [hub-private path]` — what `just setup-private` runs. Omitting the device
+- `setup-private <device> [hub-private path]`: what `just setup-private` runs. Omitting the device
   lists the devices hub-private has configs for and links nothing. Links hub-private's sources and
   the device's config into this checkout. Safe to rerun: an existing link is left alone, a link
   pointing at another checkout is reported and left alone, and anything that is not a symlink stops
@@ -68,8 +68,8 @@ No output means allowed. A refusal prints the hook's deny JSON with the reason.
 
 ## Files
 
-- `src/main.rs` — the subcommands
-- `src/repo_state/` — checks over the repository's own state, compiled only for tests:
+- `src/main.rs`: the subcommands
+- `src/repo_state/`: checks over the repository's own state, compiled only for tests:
   `crate_readmes` (every workspace member has a non-empty README), `lint_inheritance` (every
   member's manifest sets `[lints] workspace = true`, except `disclaimed_spawn`, which carries an
   exact copy of the workspace lints with `unsafe_code = "deny"`), `domain_purity` (nothing under
@@ -83,16 +83,16 @@ No output means allowed. A refusal prints the hook's deny JSON with the reason.
   `test_isolation` (`just test` and `just test-update` clear git's hook variables first) and
   `workspace` (the member list, from `cargo metadata`).
   Run them alone with `cargo nextest run -p scripts -E 'test(repo_state)'`
-- `src/banned_terms.rs`, `src/scanned_text.rs` — the one matching rule the guard and the
+- `src/banned_terms.rs`, `src/scanned_text.rs`: the one matching rule the guard and the
   pre-commit check share
-- `src/staged_terms.rs` — the pre-commit check
-- `src/lint_configurations.rs` — the configuration lint
-- `src/repo_root.rs` — the checkout this binary was built from
-- `src/setup_private.rs` — the device setup
+- `src/staged_terms.rs`: the pre-commit check
+- `src/lint_configurations.rs`: the configuration lint
+- `src/repo_root.rs`: the checkout this binary was built from
+- `src/setup_private.rs`: the device setup
 - `src/prek_hooks.rs`: the check that every git hook `prek.toml` declares is installed
 - `src/test_support.rs`: helpers shared by the crate's tests
-- `src/daemon_agent/` — the launchd agent: `launch_agent` (what the plist is rendered from),
+- `src/daemon_agent/`: the launchd agent: `launch_agent` (what the plist is rendered from),
   `definition` (the plist), `plan` (what each command does, pure) and `command`, which reads
   launchd and the disk, plans and acts
-- `src/gh_post_guard/` — the guard, one concept per file: `shell_words`, `publishing_call`,
+- `src/gh_post_guard/`: the guard, one concept per file: `shell_words`, `publishing_call`,
   `body_source`, `verdict`, `hook_io`, and `respond`, which joins them
