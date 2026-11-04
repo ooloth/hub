@@ -2,7 +2,7 @@
 //! started it. See `README.md` for why hub needs this and decision 027 for the choice.
 //!
 //! The crate is empty on every other platform. hub builds there too (decision 031), but no other
-//! platform holds a child responsible for its parent, so there is nothing to disclaim.
+//! platform holds a parent responsible for its child, so there is nothing to disclaim.
 
 #![cfg(target_os = "macos")]
 #![warn(clippy::undocumented_unsafe_blocks)]

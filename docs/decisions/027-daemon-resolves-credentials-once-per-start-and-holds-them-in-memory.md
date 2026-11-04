@@ -306,7 +306,9 @@ credentials, as on 2026-10-29.
 
 ### Revisit when
 
-A `credentials_obtained` line written on the macOS 26 machine has `disclaimed` among its `spawns`,
-which means the refusal has happened again and has a cost. The line names no macOS version, so this
-is read from the work laptop's log. Or a macOS or 1Password update makes the ordinary spawn on macOS 26
+The work laptop's log, on macOS 26, holds a `credentials_obtained` line with `disclaimed` among its
+`spawns`, or a failed `credentials` line with `spawn=disclaimed`. Either means the refusal has
+happened again and has a cost; the second is the costlier case, where the disclaimed dialogs went
+unanswered and no `credentials_obtained` line follows. Neither line names a macOS version, so this
+is read from that laptop's log. Or a macOS or 1Password update makes the ordinary spawn on macOS 26
 raise more than one dialog per start.

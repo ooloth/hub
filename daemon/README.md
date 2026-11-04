@@ -16,8 +16,9 @@ when it replaced it, and the health record always), and the pull request notific
 
 ## What it does today
 
-A startup line, then a pass, then one every 15 minutes (`--interval` changes it), each logged as one
-line and recorded in the health record. One daemon per profile: a second refuses, naming the first.
+A startup line, a `credentials_obtained` line once credentials arrive, then a pass, then one every
+15 minutes (`--interval` changes it), each pass logged as one line and recorded in the health
+record. One daemon per profile: a second refuses, naming the first.
 `--once` runs a single pass and exits. `just daemon-start` runs the installed binary under launchd
 for the `default` profile, at every login, logging to `~/.hub/default/daemon.log`. When the daemon
 cannot obtain its credentials, it records who was not answering and tries again in the same
@@ -63,7 +64,8 @@ database (#364). The TUI asking the daemon for a pass is
 - `credentials.rs` — `obtain`, which resolves credentials until they arrive, `Backoff`, the waits
   between attempts, `AttemptReport`, the log line for a failed attempt, and `ObtainedReport`, the
   line once they arrive. No I/O of its own
-- `startup.rs` — `Startup`, the line printed before credentials load. Pure
+- `startup.rs` — `Startup`, the line printed before credentials load, and `StartupFailure`, the
+  `start_failed` line for a start that ends before them. Pure
 - `instance_lock.rs` — one daemon per profile: the `flock` on `~/.hub/<profile>/daemon.lock`
 - `schedule.rs` — `every`, which runs a pass now and then once per period, never catching up
 - `pass.rs` — `PassReport`, the per-pass log line, and what `--once` exits with. Pure. The pass
@@ -76,6 +78,8 @@ database (#364). The TUI asking the daemon for a pass is
 - `pr_notifier.rs` — `PrNotifier`, which posts, removes or leaves the card to match the turns each
   pass hands it, removes leftover per-pull-request cards, and its log lines. What is counted is
   decided in `domain::waiting_on_me` and what to do with the card in `domain::waiting_card`, purely
+- `onepassword_app.rs` — `open`, which runs `open -a 1Password` when the app is not running. The
+  1Password app edge
 - `cache.rs` — `open` and `record`, which writes the pass and its payload in one transaction and
   falls back to recording the pass as failed, and `record_credential_attempt`. The SQLite edge
 
@@ -120,8 +124,8 @@ answers.
 
 The daemon starts each `op` the ordinary way first, so on macOS 26 one macOS dialog naming
 `hub-daemon` covers every `op` a start makes. A credential 1Password refuses with "No accounts
-configured", as it did every time it was measured on macOS 27 for an `op` that answers to the ad-hoc-signed
-`hub-daemon`, is read again through an `op` that answers for itself. On macOS 26 that costs one
+configured", as it did every time it was measured on macOS 27 for an `op` that answers to the
+ad-hoc-signed `hub-daemon`, is read again through an `op` that answers for itself. On macOS 26 that costs one
 dialog naming `op` per `op` process. Each failed attempt's `credentials` line says which way its
 `op` was started (`spawn=inherited` or `spawn=disclaimed`), and once credentials arrive a
 `credentials_obtained` line says which ways answered:
@@ -293,9 +297,7 @@ sqlite3 ~/.hub/dev/hub.db "SELECT refreshed_at FROM status_cache WHERE id=1;"
 credentials still resolve:
 
 ```bash
-NO_PROXY=my.1password.com,.1password.com,1password.com \
-HTTPS_PROXY=http://127.0.0.1:1 HTTP_PROXY=http://127.0.0.1:1 \
-cargo run -p hub-daemon --features private -- --once; echo "exit $?"
+just sources-unreachable daemon --once; echo "exit $?"
 ```
 
 Expect `outcome=no_source_answered payload=kept` naming every failed source, exit 1,
@@ -319,10 +321,11 @@ cargo run -q -p hub-daemon --features private -- --once >/dev/null 2>&1; echo $?
   `../ui/tui/src/main.rs`), and it is still a second cache writer until Phase 5. Check the daemon's
   work within that window, or the TUI will overwrite the row and it will look like the daemon did
   nothing.
-- **Dropping `NO_PROXY` from the failure test exercises the wrong path.** The proxy also blocks
-  `op read`, which reaches `my.1password.com` even with the 1Password desktop integration enabled,
-  so the run fails at config load before any refresh happens. Exit 1 and an intact row either way,
-  for two different reasons — read the error, not the exit code.
+- **Pointing egress at a dead port without exempting 1Password exercises the wrong path.** The
+  proxy also blocks `op read`, which reaches `my.1password.com` even with the 1Password desktop
+  integration enabled, so credentials never arrive and no pass runs: the log shows a failed
+  `credentials` line instead of a pass line. Exit 1 and an intact row either way, for two different
+  reasons, so read the log, not the exit code. `just sources-unreachable` exempts 1Password.
 - **`op whoami` is not a test of whether credentials work.** With the desktop integration it
   reports "account is not signed in" while `op read` succeeds, because the integration authorises
   individual reads rather than creating a CLI session. Run the binary instead.

@@ -4,13 +4,14 @@
 use std::future::Future;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use domain::credential_failure::{CredentialCause, CredentialFailure};
 use domain::known_secrets::KnownSecrets;
 use domain::op_spawn::{OpSpawn, OpSpawnsUsed};
 use domain::screen_at_deadline::ScreenAtDeadline;
 use secrecy::Secret;
 
+use crate::op_process::read_reference;
 use crate::op_responsibility::OpResponsibility;
 use crate::screen_look::look_at_screen_and_app;
 
@@ -38,8 +39,9 @@ const _: () = assert!(
     "the extra wait would end a Touch ID prompt op is still showing"
 );
 
-/// The credentials one call to [`ConfigFile::resolve`] has resolved so far, which a later failure
-/// in the same call must not repeat, how that call may start `op`, and which ways answered.
+/// The credentials one call to [`crate::ConfigFile::resolve`] has resolved so far, which a later
+/// failure in the same call must not repeat, how that call may start `op`, and which ways
+/// answered.
 #[derive(Debug)]
 pub(crate) struct ResolvedSoFar {
     responsibility: OpResponsibility,
@@ -138,9 +140,10 @@ impl ResolvedSoFar {
     }
 
     /// What `read`, from an `op` started as `spawn`, gave for `reference`, or when it had not
-    /// finished by `deadline`, a [`CredentialFailure::no_answer`] naming what `look` then found. When `look` finds 1Password's
-    /// Touch ID prompt, `read` gets [`TOUCH_ID_GRACE`] longer instead, since `op` gives up on that
-    /// prompt by itself. Dropping `read` ends the `op` it started.
+    /// finished by `deadline`, a [`CredentialFailure::no_answer`] naming what `look` then found.
+    /// When `look` finds 1Password's Touch ID prompt, `read` gets [`TOUCH_ID_GRACE`] longer
+    /// instead, since `op` gives up on that prompt by itself. Dropping `read` ends the `op` it
+    /// started.
     async fn answered_within<Look, Seen>(
         &mut self,
         reference: &str,
@@ -204,71 +207,6 @@ impl ResolvedSoFar {
 /// Whether `value` is an `op://` reference for 1Password to resolve, rather than a plain value.
 fn is_reference(value: &str) -> bool {
     value.starts_with("op://")
-}
-
-/// What `op read` returns for `reference`, from an `op` started as `spawn`.
-async fn read_reference(reference: &str, spawn: OpSpawn) -> Result<String> {
-    let output = start_op("op", &["read", reference], spawn)
-        .await
-        .map_err(|error| {
-            let why = why_op_did_not_start(&error);
-            anyhow::Error::new(error).context(why)
-        })?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!(
-            "failed to resolve credential from 1Password: {}",
-            stderr.trim()
-        );
-    }
-    let resolved = String::from_utf8(output.stdout).context("op read returned non-UTF-8 output")?;
-    Ok(resolved.trim().to_string())
-}
-
-/// Runs `program` with `args`, started as `spawn`, and returns everything it wrote and its
-/// status. This is the one place the two spawns part.
-async fn start_op(
-    program: &str,
-    args: &[&str],
-    spawn: OpSpawn,
-) -> std::io::Result<std::process::Output> {
-    match spawn {
-        OpSpawn::Inherited => killed_on_drop(program).args(args).output().await,
-        OpSpawn::Disclaimed => start_disclaimed(program, args).await,
-    }
-}
-
-/// What starting `op` failed on, in words that point at the fix. `op`'s own error follows it.
-fn why_op_did_not_start(error: &std::io::Error) -> &'static str {
-    match error.kind() {
-        std::io::ErrorKind::NotFound => "`op` is not on the PATH; is the 1Password CLI installed?",
-        // Only the disclaimed spawn reports this, when macOS lacks the function that disclaims.
-        std::io::ErrorKind::Unsupported => "macOS cannot start `op` so that it answers for itself",
-        _ => "failed to start `op read`",
-    }
-}
-
-/// Runs `program` so that it answers for itself, and returns everything it wrote and its status.
-///
-/// On macOS that means disclaiming responsibility, because macOS otherwise judges a child by the
-/// process that started it (decision 027's addendum of 2026-11-01). Linux holds no process
-/// responsible for another, so there an ordinary child already answers for itself (decision 031).
-async fn start_disclaimed(program: &str, args: &[&str]) -> std::io::Result<std::process::Output> {
-    #[cfg(target_os = "macos")]
-    let output = disclaimed_spawn::spawn(program, args)?.output().await;
-    #[cfg(not(target_os = "macos"))]
-    let output = killed_on_drop(program).args(args).output().await;
-    output
-}
-
-/// A command whose process is killed when the future running it is dropped.
-///
-/// A read gives up on `op` at its deadline by dropping its future. Without this, an `op` that never
-/// answers would keep running after the attempt that gave up on it.
-pub(crate) fn killed_on_drop(program: &str) -> tokio::process::Command {
-    let mut command = tokio::process::Command::new(program);
-    let _ = command.kill_on_drop(true);
-    command
 }
 
 #[cfg(test)]
@@ -380,119 +318,6 @@ mod tests {
             "1Password did not answer within 155s reading op://x/y/z; 1Password's Touch ID prompt \
              is on screen"
         );
-    }
-
-    #[tokio::test]
-    async fn a_process_still_running_at_the_deadline_is_gone_straight_after_it() {
-        let read = killed_on_drop("sleep").arg("30").output();
-
-        let timed = tokio::time::timeout(Duration::from_millis(200), read).await;
-        tokio::time::sleep(Duration::from_millis(200)).await;
-
-        assert!(timed.is_err(), "sleep 30 finished within 200 ms");
-        // Options before the pattern: BSD pgrep stops reading options at the pattern, so a `-P`
-        // after it is taken as another pattern, and any `sleep` on the machine would match.
-        let children = std::process::Command::new("pgrep")
-            .args(["-P", &std::process::id().to_string(), "-x", "sleep"])
-            .output()
-            .unwrap();
-        assert_eq!(
-            children.stdout,
-            Vec::<u8>::new(),
-            "a sleep child is still running: {}",
-            String::from_utf8_lossy(&children.stdout)
-        );
-    }
-
-    #[rstest]
-    #[case::not_found(
-        std::io::ErrorKind::NotFound,
-        "`op` is not on the PATH; is the 1Password CLI installed?"
-    )]
-    #[case::unsupported(
-        std::io::ErrorKind::Unsupported,
-        "macOS cannot start `op` so that it answers for itself"
-    )]
-    #[case::anything_else(std::io::ErrorKind::PermissionDenied, "failed to start `op read`")]
-    fn a_failed_start_is_named_by_its_kind(#[case] kind: std::io::ErrorKind, #[case] name: &str) {
-        assert_eq!(why_op_did_not_start(&std::io::Error::from(kind)), name);
-    }
-
-    /// The pid of a shell started as `spawn`, and the process macOS holds
-    /// responsible for a `sleep` that shell started, asked while the shell is still running:
-    /// once a disclaimed shell exits, macOS holds the `sleep` responsible for itself instead.
-    #[cfg(target_os = "macos")]
-    async fn who_a_child_of_the_started_program_answers_to(spawn: OpSpawn) -> (u32, u32) {
-        let pids_file =
-            std::env::temp_dir().join(format!("hub-config-spawn-{}-{spawn:?}", std::process::id()));
-        let _ = std::fs::remove_file(&pids_file);
-        let script = format!(
-            "sleep 5 >/dev/null 2>&1 & echo $$ $! > '{}'; sleep 2",
-            pids_file.display()
-        );
-        let shell = tokio::spawn(async move { start_op("/bin/sh", &["-c", &script], spawn).await });
-
-        let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        let text = loop {
-            match std::fs::read_to_string(&pids_file) {
-                Ok(text) if text.ends_with('\n') => break text,
-                _ => {
-                    assert!(
-                        std::time::Instant::now() < deadline,
-                        "the shell wrote no pids"
-                    );
-                    tokio::time::sleep(Duration::from_millis(20)).await;
-                }
-            }
-        };
-        let pids: Vec<u32> = text
-            .split_whitespace()
-            .map(|pid| pid.parse().unwrap())
-            .collect();
-        let [shell_pid, child] = pids[..] else {
-            panic!("expected two pids, got {text:?}");
-        };
-        let answers_to = disclaimed_spawn::responsible_for(child);
-        let _ = std::process::Command::new("kill")
-            .arg(child.to_string())
-            .status();
-        let _ = shell.await.unwrap().unwrap();
-        let _ = std::fs::remove_file(&pids_file);
-        (shell_pid, answers_to.unwrap())
-    }
-
-    #[cfg(target_os = "macos")]
-    #[tokio::test]
-    async fn a_child_of_a_program_started_disclaimed_answers_to_that_program() {
-        let test_answers_to = disclaimed_spawn::responsible_for(std::process::id()).unwrap();
-
-        let (shell, answers_to) =
-            who_a_child_of_the_started_program_answers_to(OpSpawn::Disclaimed).await;
-
-        assert_eq!(answers_to, shell);
-        assert_ne!(answers_to, test_answers_to);
-    }
-
-    #[cfg(target_os = "macos")]
-    #[tokio::test]
-    async fn a_child_of_a_program_started_inherited_answers_to_what_the_test_answers_to() {
-        let test_answers_to = disclaimed_spawn::responsible_for(std::process::id()).unwrap();
-
-        let (_, answers_to) =
-            who_a_child_of_the_started_program_answers_to(OpSpawn::Inherited).await;
-
-        assert_eq!(answers_to, test_answers_to);
-    }
-
-    #[tokio::test]
-    async fn a_disclaimed_start_returns_the_programs_exit_status_and_output() {
-        let output = start_disclaimed("/bin/sh", &["-c", "printf out; printf err >&2; exit 3"])
-            .await
-            .unwrap();
-
-        assert_eq!(output.status.code(), Some(3));
-        assert_eq!(output.stdout, b"out");
-        assert_eq!(output.stderr, b"err");
     }
 
     #[rstest]
@@ -671,6 +496,74 @@ mod tests {
         assert_eq!(spawned, vec![OpSpawn::Inherited]);
     }
 
+    #[rstest]
+    #[case::macos_alert(
+        ScreenAtDeadline::MacosAlert { windows: 1 },
+        CredentialCause::MacosPromptWaitingForYou
+    )]
+    #[case::nothing_on_screen(
+        ScreenAtDeadline::AppRunningNoAlert,
+        CredentialCause::AppRunningNotAnswering
+    )]
+    #[tokio::test(start_paused = true)]
+    async fn a_disclaimed_read_silent_at_its_own_deadline_is_named_by_the_screen(
+        #[case] screen: ScreenAtDeadline,
+        #[case] cause: CredentialCause,
+    ) {
+        let mut spawned = Vec::new();
+        let mut so_far = ResolvedSoFar::new(OpResponsibility::InheritedUnlessRefused);
+        let read = |spawn| {
+            spawned.push(spawn);
+            async move {
+                match spawn {
+                    OpSpawn::Inherited => Err(op_said(NO_ACCOUNTS)),
+                    OpSpawn::Disclaimed => std::future::pending().await,
+                }
+            }
+        };
+
+        let failure = so_far
+            .read_with("op://x/y/z", read, move || {
+                let screen = screen.clone();
+                async move { screen }
+            })
+            .await
+            .unwrap_err();
+
+        assert_eq!(failure.cause(), cause);
+        assert_eq!(failure.spawn(), OpSpawn::Disclaimed);
+        assert!(
+            failure.reason().as_str().contains("within 90s"),
+            "{}",
+            failure.reason()
+        );
+        assert_eq!(spawned, vec![OpSpawn::Inherited, OpSpawn::Disclaimed]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_disclaimed_read_with_the_touch_id_prompt_up_at_its_deadline_gets_the_grace() {
+        let mut so_far = ResolvedSoFar::new(OpResponsibility::InheritedUnlessRefused);
+        let read = |spawn| async move {
+            match spawn {
+                OpSpawn::Inherited => Err(op_said(NO_ACCOUNTS)),
+                OpSpawn::Disclaimed => {
+                    tokio::time::sleep(OP_DEADLINE + Duration::from_secs(10)).await;
+                    Ok("value".to_string())
+                }
+            }
+        };
+
+        let read = so_far
+            .read_with("op://x/y/z", read, || async {
+                ScreenAtDeadline::TouchIdPrompt
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(read.expose_secret(), "value");
+        assert_eq!(so_far.spawns.to_string(), "disclaimed");
+    }
+
     #[tokio::test]
     async fn the_tui_never_disclaims_a_refused_credential() {
         let spawned = Spawned::default();
@@ -721,10 +614,23 @@ mod tests {
         assert_eq!(so_far.spawns.to_string(), "inherited,disclaimed");
     }
 
+    /// How a credential read earlier in the attempt was resolved.
+    #[derive(Debug, Clone, Copy)]
+    enum EarlierRead {
+        Plain,
+        Ordinary,
+        DisclaimedAfterRefusal,
+    }
+
     proptest::proptest! {
         #[test]
         fn no_failure_from_either_read_holds_a_credential_resolved_before_it(
             secret in "[A-Za-z0-9]{12,24}",
+            earlier in proptest::prop_oneof![
+                proptest::strategy::Just(EarlierRead::Plain),
+                proptest::strategy::Just(EarlierRead::Ordinary),
+                proptest::strategy::Just(EarlierRead::DisclaimedAfterRefusal),
+            ],
         ) {
             let runtime = tokio::runtime::Builder::new_current_thread()
                 .enable_time()
@@ -732,10 +638,38 @@ mod tests {
                 .unwrap();
             let failure = runtime.block_on(async {
                 let mut so_far = ResolvedSoFar::new(OpResponsibility::InheritedUnlessRefused);
-                let _ = so_far
-                    .read_with(&secret, |_| async { unreachable!() }, nothing_on_screen)
-                    .await
-                    .unwrap();
+                let answer = secret.clone();
+                let _ = match earlier {
+                    EarlierRead::Plain => {
+                        so_far
+                            .read_with(&secret, |_| async { unreachable!() }, nothing_on_screen)
+                            .await
+                    }
+                    EarlierRead::Ordinary => {
+                        so_far
+                            .read_with(
+                                "op://x/earlier/z",
+                                move |_| std::future::ready(Ok(answer.clone())),
+                                nothing_on_screen,
+                            )
+                            .await
+                    }
+                    EarlierRead::DisclaimedAfterRefusal => {
+                        so_far
+                            .read_with(
+                                "op://x/earlier/z",
+                                move |spawn| {
+                                    std::future::ready(match spawn {
+                                        OpSpawn::Inherited => Err(op_said(NO_ACCOUNTS)),
+                                        OpSpawn::Disclaimed => Ok(answer.clone()),
+                                    })
+                                },
+                                nothing_on_screen,
+                            )
+                            .await
+                    }
+                }
+                .unwrap();
                 let echoed = secret.clone();
                 so_far
                     .read_with(

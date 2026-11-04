@@ -33,7 +33,7 @@ struct SpawnSite {
 }
 
 /// Every call to a start or a listed wrapper in `source`, outside its test module. Tests start
-/// helpers such as `sh` and `ps` that the daemon never runs.
+/// helpers such as `sh` and `sleep` that the daemon never runs.
 fn spawn_sites(source: &str) -> Vec<SpawnSite> {
     let outside_tests = match source.find("#[cfg(test)]") {
         Some(start) => &source[..start],

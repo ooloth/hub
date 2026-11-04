@@ -6,9 +6,10 @@ use domain::profile::Profile;
 
 use crate::pass::one_line;
 
-/// Printed once the daemon holds its profile's lock and before it loads credentials, which can
-/// wait on a 1Password prompt for up to 90 seconds an attempt. A startup line with nothing after it
-/// is a daemon in its first attempt.
+/// Printed once the daemon holds its profile's lock and before it loads credentials, where each
+/// `op read` can wait on a prompt for 90 seconds, 65 more while 1Password's Touch ID prompt is up,
+/// and a credential 1Password refuses is read twice. A startup line with nothing after it is a
+/// daemon in its first attempt.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Startup {
     pub(crate) at: DateTime<Utc>,

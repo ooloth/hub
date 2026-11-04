@@ -11,6 +11,9 @@ place where config file structure and credential sourcing are known.
 
 **Lives here:** `hub.toml` parsing, async credential resolution, `validate_required()`,
 typed config structs, and the JSON schemas used to validate `hub.toml` in editors (`schemas/`).
+Credential resolution starts `op` itself: `op_read.rs` reads one credential under its deadline and
+falls back to an `op` that answers for itself, `op_process.rs` starts `op` either way, and
+`screen_look.rs` runs `osascript` and `ps` to see who was not answering at a deadline.
 
 **Credentials** live in `hub.toml`'s `[credentials]` table. Values starting with
 `op://` are resolved at startup via `op read`; plain strings pass through unchanged.

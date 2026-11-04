@@ -173,7 +173,8 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
     let Some(obtained) = obtained else {
         return Ok(ExitCode::FAILURE);
     };
-    let config = log_obtained(profile, obtained);
+    log_obtained(profile, &obtained);
+    let config = obtained.credentials.config;
     // A notification about missing credentials would now be out of date.
     if let Some(removed) = notifier.clear().await {
         log_notification_removal(profile, removed);
@@ -224,27 +225,18 @@ async fn serve(cli: &Cli, profile: Profile) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Logs which attempt obtained the credentials and how each `op` that answered was started, and
-/// hands back the configuration they complete.
-fn log_obtained(
-    profile: Profile,
-    obtained: credentials::Obtained<config::Resolved>,
-) -> config::Config {
-    let credentials::Obtained {
-        credentials: config::Resolved { config, spawns },
-        attempt,
-    } = obtained;
+/// Logs which attempt obtained the credentials and how each `op` that answered was started.
+fn log_obtained(profile: Profile, obtained: &credentials::Obtained<config::Resolved>) {
     println!(
         "{}",
         credentials::ObtainedReport {
             profile: profile.as_str().to_string(),
             at: Utc::now(),
             pid: std::process::id(),
-            attempt,
-            spawns,
+            attempt: obtained.attempt,
+            spawns: obtained.credentials.spawns.clone(),
         }
     );
-    config
 }
 
 /// Logs how removing the notification about missing credentials went.

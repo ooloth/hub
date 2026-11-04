@@ -21,6 +21,8 @@ impl ConfigFile {
     pub async fn resolve(&self, responsibility: OpResponsibility)
         -> Result<Resolved, CredentialFailure> { /* op read each reference */ }
 }
+// config/src/op_read.rs — one credential: the deadline, the screen look, the disclaimed fallback
+// config/src/op_process.rs — starting `op` as an ordinary child or as one that answers for itself
 
 // config/src/resolved.rs
 pub struct Resolved {
@@ -43,7 +45,7 @@ preventing accidental logging.
 
 The TUI calls `config::Config::load()`, which reads the file and
 resolves it in one step, once in `main()`, and pass the struct down as an
-argument. Nothing else calls `op read` or knows about 1Password.
+argument. The daemon is the only other caller, below.
 
 Every caller of `resolve` says which process macOS may hold responsible for the
 `op` it starts (`config::OpResponsibility`). The TUI passes `Inherited`, so its
@@ -57,11 +59,15 @@ macOS 27, where the ordinary `op` was refused every time it was measured.
 The daemon reads the file and resolves it as two steps
 ([Decision 027](../decisions/027-daemon-resolves-credentials-once-per-start-and-holds-them-in-memory.md)).
 A broken `hub.toml` ends the start. Each `op read` has a 90-second
-deadline, and an `op` still silent at the deadline is ended. A credential
+deadline, 65 seconds more while 1Password's Touch ID prompt is on screen, and
+an `op` still silent after that is ended. A credential refused with "No
+accounts configured" is read a second time, through the disclaimed spawn, with
+a deadline of its own. A credential
 that fails is a `CredentialFailure` naming its cause: a Touch ID prompt
 nobody answered, a macOS prompt waiting for you, the app running but not
 answering, the desktop app not running, 1Password unreachable, no 1Password
-account visible to `op` ("No accounts configured"), or something else, with `op`'s message redacted of every credential resolved before it.
+account visible to `op` ("No accounts configured"), or something else, with
+`op`'s message redacted of every credential resolved before it.
 At the deadline the daemon reads which programs own the windows on screen,
 through `osascript`, to tell those apart. The daemon records it and resolves again in
 the same process, so a restart never raises fresh prompts. Credentials are

@@ -104,13 +104,17 @@ impl CredentialFailure {
     /// The failure `error` describes, from an `op` started as `spawn`, its reason redacted of
     /// every value in `secrets`: the credentials the same attempt had already resolved.
     ///
+    /// The cause is read from `error`'s own words before they are redacted or cut, so an earlier
+    /// credential that occurs inside `op`'s message, or a long message, cannot hide it. Only the
+    /// cause is kept from those words.
+    ///
     /// # Panics
     /// If the redacted reason still holds a known secret, spans lines, or is too long. Only a bug
     /// in redaction can cause any of these.
     #[must_use]
     pub fn new(error: &anyhow::Error, secrets: &KnownSecrets, spawn: OpSpawn) -> Self {
+        let cause = CredentialCause::named_in(&format!("{error:#}"));
         let reason = FailureReason::redacted(error, secrets, "the credentials");
-        let cause = CredentialCause::named_in(reason.as_str());
         Self {
             cause,
             reason,
@@ -119,7 +123,8 @@ impl CredentialFailure {
     }
 
     /// The `op` started as `spawn` had not answered for `reference` after `after`, so it was
-    /// ended, and `screen` is what was then on screen. Known from the deadline and the screen, never read back from text.
+    /// ended, and `screen` is what was then on screen. Known from the deadline and the screen,
+    /// never read back from text.
     ///
     /// # Panics
     /// As [`Self::new`].
@@ -191,6 +196,24 @@ mod tests {
     #[case::any_case("1PASSWORD CLI COULDN'T CONNECT TO THE 1PASSWORD DESKTOP APP")]
     fn a_message_naming_the_desktop_app_is_the_app_not_running(#[case] stderr: &str) {
         assert_eq!(from_op(stderr).cause(), CredentialCause::AppNotRunning);
+    }
+
+    /// What `op` 2.41.1 said on macOS 27.2 under launchd, on one line.
+    const REFUSED: &str = "No accounts configured for use with 1Password CLI. - Turn on the \
+                           1Password desktop app integration";
+
+    #[test]
+    fn a_refusal_whose_words_are_cut_from_the_reason_is_still_no_accounts() {
+        let error = anyhow!(
+            "failed to resolve credential from 1Password: [ERROR] could not read secret \
+             'op://{}': {REFUSED}",
+            "a".repeat(300)
+        );
+
+        let failure = CredentialFailure::new(&error, &no_secrets(), OpSpawn::Inherited);
+
+        assert!(!failure.reason().as_str().contains("No accounts"));
+        assert_eq!(failure.cause(), CredentialCause::NoAccounts);
     }
 
     #[rstest]
@@ -307,6 +330,7 @@ mod tests {
         "[a-z ':./\"0-9]{0,120}".prop_filter("names a cause", |message| {
             let lower = message.to_lowercase();
             ![
+                "no accounts",
                 "desktop app",
                 "dial tcp",
                 "no such host",
@@ -332,10 +356,29 @@ mod tests {
         fn no_resolved_credential_survives_into_the_reason(
             hidden in hidden_secrets::strategy()
         ) {
-            let failure = CredentialFailure::new(&hidden.error(), &hidden.secrets(), OpSpawn::Inherited);
+            let failure =
+                CredentialFailure::new(&hidden.error(), &hidden.secrets(), OpSpawn::Inherited);
             let text = failure.reason().as_str();
 
             prop_assert!(hidden.survives_in(text).is_none(), "{:?} in {}", hidden.secret, text);
+        }
+
+        #[test]
+        fn a_refusal_is_no_accounts_whatever_earlier_credential_occurs_in_it(
+            (start, length) in (0..REFUSED.len()).prop_flat_map(|start| {
+                (Just(start), 1..=REFUSED.len() - start)
+            })
+        ) {
+            let earlier = REFUSED[start..start + length].to_string();
+            let error = anyhow!("failed to resolve credential from 1Password: {REFUSED}");
+
+            let failure = CredentialFailure::new(
+                &error,
+                &KnownSecrets::new(vec![earlier]),
+                OpSpawn::Inherited,
+            );
+
+            prop_assert_eq!(failure.cause(), CredentialCause::NoAccounts);
         }
     }
 }

@@ -292,7 +292,8 @@ where
     None
 }
 
-/// Credentials [`obtain`] got, and which attempt since the daemon started got them, counting from 1.
+/// Credentials [`obtain`] got, and which attempt since the daemon started got them, counting
+/// from 1.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Obtained<T> {
     pub(crate) credentials: T,
@@ -1033,16 +1034,16 @@ mod tests {
     #[case::retrying(
         report(Some(Duration::from_secs(4)), None),
         "hub-daemon credentials at=2026-10-12T08:59:03Z pid=4242 profile=default attempt=3 \
-         cause=app_not_running spawn=inherited duration_ms=812 retry_in=4s error=\"failed to resolve credential \
-         from 1Password: could not read secret 'op://Scripts/GitHub/token': 1Password CLI \
-         couldn't connect to the 1Password desktop app.\""
+         cause=app_not_running spawn=inherited duration_ms=812 retry_in=4s error=\"failed to \
+         resolve credential from 1Password: could not read secret 'op://Scripts/GitHub/token': \
+         1Password CLI couldn't connect to the 1Password desktop app.\""
     )]
     #[case::giving_up(
         report(None, None),
         "hub-daemon credentials at=2026-10-12T08:59:03Z pid=4242 profile=default attempt=3 \
-         cause=app_not_running spawn=inherited duration_ms=812 error=\"failed to resolve credential from \
-         1Password: could not read secret 'op://Scripts/GitHub/token': 1Password CLI couldn't \
-         connect to the 1Password desktop app.\""
+         cause=app_not_running spawn=inherited duration_ms=812 error=\"failed to resolve \
+         credential from 1Password: could not read secret 'op://Scripts/GitHub/token': 1Password \
+         CLI couldn't connect to the 1Password desktop app.\""
     )]
     #[case::unrecorded(
         report(
@@ -1050,9 +1051,9 @@ mod tests {
             Some(PassFailure::new(&anyhow::anyhow!("database is locked"), &no_secrets())),
         ),
         "hub-daemon credentials at=2026-10-12T08:59:03Z pid=4242 profile=default attempt=3 \
-         cause=app_not_running spawn=inherited duration_ms=812 retry_in=1m error=\"failed to resolve credential \
-         from 1Password: could not read secret 'op://Scripts/GitHub/token': 1Password CLI \
-         couldn't connect to the 1Password desktop app.\" recorded=no \
+         cause=app_not_running spawn=inherited duration_ms=812 retry_in=1m error=\"failed to \
+         resolve credential from 1Password: could not read secret 'op://Scripts/GitHub/token': \
+         1Password CLI couldn't connect to the 1Password desktop app.\" recorded=no \
          record_error=\"database is locked\""
     )]
     fn a_failed_attempt_logs_when_who_which_why_and_what_next(
