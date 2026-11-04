@@ -260,8 +260,8 @@ rex capture -s "$S" -b "$B" --trim | grep -E 'Opened in|Already open in'
 The status bar names the session the tab went to, which is the selected signal's repository's:
 `Opened in Workers (<repo>)`, with `, a new session` when the run created it, or
 `Already open in Workers (<repo>)` when the tab was there before the run. It names the session,
-not the tab. The tab is labelled with the signal's window name, such as `hub:ci:ci`. Put the
-session's label in `L` and list its tabs:
+not the tab. The tab is labelled as decision 033 says, such as `Issue 66 (ooloth): investigate`.
+Put the session's label in `L` and list its tabs:
 
 ```bash
 L='Workers (hub)'                                 # the label the status bar printed
@@ -275,7 +275,7 @@ shows its error. Run nothing below that uses `W` until the listing works.
 
 Clean up in this order, every time:
 
-1. If the status bar said `Opened in`, close the tab labelled with the signal's window name:
+1. If the status bar said `Opened in`, close the tab with that label:
    `rex window close -s "$W" <window_id>`. Leave the session's other tabs alone, including a tab
    that was already open.
 2. If the status bar said `a new session` and the session now has no tabs, `rex session kill "$W"`.

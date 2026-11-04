@@ -1,5 +1,5 @@
 use anyhow::{anyhow, bail, Result};
-use domain::{ProjectShortName, RepoSlug};
+use domain::{ProjectShortName, RepoSlug, WindowProject};
 use std::collections::HashMap;
 
 use crate::toml;
@@ -21,6 +21,12 @@ pub struct Project {
 }
 
 impl Project {
+    /// The project the windows hub opens for it belong to.
+    #[must_use]
+    pub fn window_project(&self) -> WindowProject {
+        WindowProject::new(self.short_name.clone(), self.repo.clone())
+    }
+
     /// Settles the labels `raw` left out, and refuses the ones it set badly.
     ///
     /// # Errors
@@ -120,14 +126,14 @@ impl Projects {
             })
     }
 
-    /// What windows for `repo` are called: its project's short name, or, for
-    /// a repository no project tracks, the name a project tracking it would
-    /// get by default.
+    /// The project windows for `repo` belong to: its tracking project's, or, for
+    /// a repository no project tracks, the short name a project tracking it would
+    /// get by default, with `repo` itself.
     #[must_use]
-    pub fn short_name_for(&self, repo: &RepoSlug) -> ProjectShortName {
+    pub fn window_project_for(&self, repo: &RepoSlug) -> WindowProject {
         match self.tracked(repo) {
-            Ok(project) => project.short_name.clone(),
-            Err(_) => ProjectShortName::from_repo(repo),
+            Ok(project) => project.window_project(),
+            Err(_) => WindowProject::untracked(repo),
         }
     }
 
@@ -249,12 +255,9 @@ mod tests {
     fn a_tracked_repo_is_called_by_its_projects_short_name() {
         let projects = Projects::resolve(vec![raw("ooloth/hub", None, Some("h"))]).unwrap();
 
-        assert_eq!(
-            projects
-                .short_name_for(&"ooloth/hub".parse().unwrap())
-                .as_str(),
-            "h"
-        );
+        let project = projects.window_project_for(&"ooloth/hub".parse().unwrap());
+        assert_eq!(project.short_name().as_str(), "h");
+        assert_eq!(project.repo().to_string(), "ooloth/hub");
     }
 
     /// A review request can come from a repository hub does not track.
@@ -264,8 +267,8 @@ mod tests {
         let other: domain::RepoSlug = "work/client-operations-site".parse().unwrap();
 
         assert_eq!(
-            projects.short_name_for(&other),
-            domain::ProjectShortName::from_repo(&other)
+            projects.window_project_for(&other),
+            domain::WindowProject::untracked(&other)
         );
     }
 

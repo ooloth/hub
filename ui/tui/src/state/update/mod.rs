@@ -216,6 +216,7 @@ impl App {
                     vec![Effect::OpenPrDiffInDelta {
                         repo: pr.repo.to_string(),
                         number: pr.number,
+                        login: pr.author,
                     }]
                 } else {
                     vec![]
@@ -227,6 +228,7 @@ impl App {
                     vec![Effect::OpenInOcto {
                         repo: pr.repo.to_string(),
                         number: pr.number,
+                        login: pr.author,
                         head_branch: pr.head_branch,
                     }]
                 } else {
@@ -239,6 +241,7 @@ impl App {
                     vec![Effect::OpenInLazygit {
                         repo: pr.repo.to_string(),
                         number: pr.number,
+                        login: pr.author,
                         head_branch: pr.head_branch,
                     }]
                 } else {
@@ -556,6 +559,7 @@ mod tests {
             InvestigateAction::LaunchIssue {
                 repo: "ooloth/hub".to_string(),
                 number: 31,
+                login: "agent".to_string(),
             }
         );
     }
@@ -1458,16 +1462,22 @@ mod tests {
     // --- OpenInOcto / OpenInLazygit from split view ---
 
     fn opens_the_pr_in_octo(effect: &Effect) -> bool {
-        matches!(effect, Effect::OpenInOcto { repo, number: 7, head_branch }
-            if repo == "ooloth/hub" && head_branch == "feat/thing")
+        matches!(effect, Effect::OpenInOcto { repo, number: 7, login, head_branch }
+            if repo == "ooloth/hub" && login == "ooloth" && head_branch == "feat/thing")
     }
 
     fn opens_the_pr_in_lazygit(effect: &Effect) -> bool {
-        matches!(effect, Effect::OpenInLazygit { repo, number: 7, head_branch }
-            if repo == "ooloth/hub" && head_branch == "feat/thing")
+        matches!(effect, Effect::OpenInLazygit { repo, number: 7, login, head_branch }
+            if repo == "ooloth/hub" && login == "ooloth" && head_branch == "feat/thing")
+    }
+
+    fn opens_the_pr_diff(effect: &Effect) -> bool {
+        matches!(effect, Effect::OpenPrDiffInDelta { repo, number: 7, login }
+            if repo == "ooloth/hub" && login == "ooloth")
     }
 
     #[rstest]
+    #[case::diff(Action::OpenPrDiffInDelta, opens_the_pr_diff)]
     #[case::octo(Action::OpenInOcto, opens_the_pr_in_octo)]
     #[case::lazygit(Action::OpenInLazygit, opens_the_pr_in_lazygit)]
     fn opening_the_pr_from_its_submenu_emits_the_effect_with_its_identity(

@@ -108,12 +108,17 @@ pub(crate) enum PrReview {
 }
 
 impl PrReview {
-    pub(crate) const fn slash_command(self) -> &'static str {
+    /// The skill the review runs, which names both its slash command and its Rex tab.
+    pub(crate) const fn skill(self) -> domain::ReviewSkill {
         match self {
-            Self::ReviewMine | Self::ReviewPeer => "/review-code",
-            Self::FixMine => "/review-converge",
-            Self::AnswerReviewers => "/review-pr-comments-converge",
+            Self::ReviewMine | Self::ReviewPeer => domain::ReviewSkill::ReviewCode,
+            Self::FixMine => domain::ReviewSkill::ReviewConverge,
+            Self::AnswerReviewers => domain::ReviewSkill::ReviewPrCommentsConverge,
         }
+    }
+
+    pub(crate) fn slash_command(self) -> String {
+        self.skill().slash_command()
     }
 
     pub(crate) const fn author(self) -> PrAuthor {
@@ -140,6 +145,8 @@ pub(crate) struct PrReviewTarget {
     pub(crate) number: u64,
     pub(crate) head_branch: String,
     pub(crate) author: PrAuthor,
+    /// The login of whoever opened the PR, which its Rex tab's label names.
+    pub(crate) login: String,
 }
 
 impl PrReviewTarget {
@@ -149,6 +156,7 @@ impl PrReviewTarget {
             number: pr.number,
             head_branch: pr.head_branch.clone(),
             author: PrAuthor::from_kind(pr.kind),
+            login: pr.author.clone(),
         }
     }
 }
@@ -304,6 +312,7 @@ pub(crate) enum InvestigateAction {
     LaunchIssue {
         repo: String,
         number: u64,
+        login: String,
     },
     LaunchGcp {
         project: String,
@@ -390,6 +399,7 @@ pub(crate) enum Effect {
     OpenPrDiffInDelta {
         repo: String,
         number: u64,
+        login: String,
     },
     SetIssueLabels {
         repo: String,
@@ -408,6 +418,7 @@ pub(crate) enum Effect {
     LaunchIssue {
         repo: String,
         number: u64,
+        login: String,
     },
     LaunchGcp {
         project: String,
@@ -434,6 +445,7 @@ pub(crate) enum Effect {
         repo: String,
         number: u64,
         author: PrAuthor,
+        login: String,
         head_branch: String,
     },
     ReviewPr {
@@ -443,11 +455,13 @@ pub(crate) enum Effect {
     OpenInOcto {
         repo: String,
         number: u64,
+        login: String,
         head_branch: String,
     },
     OpenInLazygit {
         repo: String,
         number: u64,
+        login: String,
         head_branch: String,
     },
     #[cfg(feature = "private")]

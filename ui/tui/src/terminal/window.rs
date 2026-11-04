@@ -1,4 +1,4 @@
-//! Claiming a window by name: finding it if it is open, or the right to open it, and what
+//! Claiming a window by name or label: finding it if it is open, or the right to open it, and what
 //! the status bar says about where it is.
 
 use super::detect::Terminal;
@@ -102,7 +102,7 @@ pub(crate) fn claim(window: &InvestigationWindow, purpose: &str) -> Result<Windo
     )?;
 
     match terminal {
-        Terminal::Tmux => match find_window(&tmux::open_windows()?, window) {
+        Terminal::Tmux => match find_window(&tmux::open_windows()?, &window.to_string()) {
             Some(id) => {
                 tmux::select_window(&id)?;
                 Ok(WindowClaim::Reused(WindowPlace::InView))
@@ -132,7 +132,7 @@ fn claim_in_rex(
 ) -> Result<WindowClaim> {
     let target = match find_session(sessions, window.session()) {
         None => Target::NewRexSession,
-        Some(id) => match find_window(&windows_in(&id)?, window) {
+        Some(id) => match find_window(&windows_in(&id)?, window.label().as_str()) {
             Some(_) => {
                 return Ok(WindowClaim::Reused(WindowPlace::AlreadyOpenIn(
                     window.session().clone(),
@@ -174,19 +174,19 @@ impl VacantWindow {
         assert!(!command.is_empty(), "window command must not be empty");
 
         let Self { target, window } = self;
-        let name = window.to_string();
+        let label = window.label().as_str();
         let session = window.session().clone();
         match target {
             Target::Tmux => {
-                tmux::new_window(&name, cwd, env, command)?;
+                tmux::new_window(&window.to_string(), cwd, env, command)?;
                 Ok(WindowPlace::InView)
             }
             Target::RexSession(id) => {
-                rex::new_window(&id, &name, cwd, env, command)?;
+                rex::new_window(&id, label, cwd, env, command)?;
                 Ok(WindowPlace::OpenedIn(session))
             }
             Target::NewRexSession => {
-                rex::new_session(session.label(), &name, cwd, env, command)?;
+                rex::new_session(session.label(), label, cwd, env, command)?;
                 Ok(WindowPlace::OpenedInNew(session))
             }
         }
@@ -202,15 +202,15 @@ pub(super) struct OpenWindow {
     pub(super) name: String,
 }
 
-/// The id of the window under this name, if the terminal has one.
+/// The id of the window called `name`, if the terminal has one: the tmux name in tmux, and the
+/// tab's label in Rex (decision 033).
 ///
 /// Comparison is on the whole name in both directions: a substring match would
 /// let `hub:pr:33` find `hub:pr:330`, or the reverse, and hijacking another
 /// investigation's window is worse than opening a second one.
-fn find_window(open: &[OpenWindow], window: &InvestigationWindow) -> Option<String> {
-    let target = window.to_string();
+fn find_window(open: &[OpenWindow], name: &str) -> Option<String> {
     open.iter()
-        .find(|candidate| candidate.name == target)
+        .find(|candidate| candidate.name == name)
         .map(|candidate| candidate.id.clone())
 }
 
@@ -222,12 +222,33 @@ mod tests {
     };
     use crate::terminal::rex::RexSession;
     use anyhow::Context as _;
-    use domain::{InvestigationWindow, RepoSlug, RexSessionId, WorkersSession};
+    use domain::{
+        GitHubLogin, InvestigationWindow, PrWindowActivity, RepoSlug, ReviewSkill, RexSessionId,
+        WindowProject, WorkersSession,
+    };
     use proptest::prelude::*;
     use rstest::rstest;
 
     fn hub() -> domain::ProjectShortName {
         short("hub")
+    }
+
+    fn on_pr(
+        short: &domain::ProjectShortName,
+        number: u64,
+        activity: PrWindowActivity,
+    ) -> InvestigationWindow {
+        InvestigationWindow::pr(
+            &WindowProject::new(short.clone(), repo_slug()),
+            number,
+            &GitHubLogin::parse("alice").unwrap(),
+            activity,
+        )
+    }
+
+    /// The tmux name of `short`'s investigation of pull request `number`.
+    fn pr_name(short: &domain::ProjectShortName, number: u64) -> String {
+        on_pr(short, number, PrWindowActivity::Investigate).to_string()
     }
 
     fn short(name: &str) -> domain::ProjectShortName {
@@ -270,32 +291,20 @@ mod tests {
     fn a_window_already_open_is_found_by_its_id() {
         let windows = open(&["nvim", "hub:pr:330", "shell"]);
         assert_eq!(
-            find_window(
-                &windows,
-                &InvestigationWindow::pr(&hub(), &repo_slug(), 330)
-            ),
+            find_window(&windows, &pr_name(&hub(), 330)),
             Some("@1".to_string())
         );
     }
 
     #[test]
     fn an_empty_window_list_reports_not_open() {
-        assert_eq!(
-            find_window(&[], &InvestigationWindow::pr(&hub(), &repo_slug(), 330)),
-            None
-        );
+        assert_eq!(find_window(&[], &pr_name(&hub(), 330)), None);
     }
 
     #[test]
     fn an_unrelated_window_list_reports_not_open() {
         let windows = open(&["nvim", "claude.exe", "just-", "scripts:ci:lint"]);
-        assert_eq!(
-            find_window(
-                &windows,
-                &InvestigationWindow::pr(&hub(), &repo_slug(), 330)
-            ),
-            None
-        );
+        assert_eq!(find_window(&windows, &pr_name(&hub(), 330)), None);
     }
 
     /// The open window is longer or shorter than the one being looked for, so
@@ -307,27 +316,15 @@ mod tests {
     #[case("x-hub:pr:330")]
     fn a_neighbouring_window_name_is_not_a_match(#[case] open_name: &str) {
         let windows = open(&[open_name]);
-        assert_eq!(
-            find_window(
-                &windows,
-                &InvestigationWindow::pr(&hub(), &repo_slug(), 330)
-            ),
-            None
-        );
+        assert_eq!(find_window(&windows, &pr_name(&hub(), 330)), None);
     }
 
     /// A pull request's lazygit window shares its project and number with the
     /// investigation, so only the kind segment stops a lookup switching to it.
     #[test]
     fn a_pull_requests_lazygit_window_is_not_its_investigation_window() {
-        let windows = open(&[&InvestigationWindow::lazygit(&hub(), &repo_slug(), 330).to_string()]);
-        assert_eq!(
-            find_window(
-                &windows,
-                &InvestigationWindow::pr(&hub(), &repo_slug(), 330)
-            ),
-            None
-        );
+        let windows = open(&[&on_pr(&hub(), 330, PrWindowActivity::Lazygit).to_string()]);
+        assert_eq!(find_window(&windows, &pr_name(&hub(), 330)), None);
     }
 
     /// The id is what the terminal is told to switch to, so the wrong one switches to the
@@ -345,10 +342,7 @@ mod tests {
             },
         ];
         assert_eq!(
-            find_window(
-                &windows,
-                &InvestigationWindow::pr(&hub(), &repo_slug(), 330)
-            ),
+            find_window(&windows, &pr_name(&hub(), 330)),
             Some("@9".to_string())
         );
     }
@@ -362,9 +356,9 @@ mod tests {
             number in 1u64..=100_000,
             others in prop::collection::vec("[a-z:0-9-]{0,20}", 0..6),
         ) {
-            let window = InvestigationWindow::pr(&short(&repo), &repo_slug(), number);
+            let window = pr_name(&short(&repo), number);
             let mut names: Vec<String> = others;
-            names.push(window.to_string());
+            names.push(window.clone());
             let borrowed: Vec<&str> = names.iter().map(String::as_str).collect();
             prop_assert!(find_window(&open(&borrowed), &window).is_some());
         }
@@ -378,10 +372,8 @@ mod tests {
             b in 1u64..=400,
         ) {
             prop_assume!(a != b);
-            let present = InvestigationWindow::pr(&short(&repo), &repo_slug(), a).to_string();
-            prop_assert!(
-                find_window(&open(&[&present]), &InvestigationWindow::pr(&short(&repo), &repo_slug(), b)).is_none()
-            );
+            let present = pr_name(&short(&repo), a);
+            prop_assert!(find_window(&open(&[&present]), &pr_name(&short(&repo), b)).is_none());
         }
     }
 
@@ -431,14 +423,13 @@ mod tests {
         NewSession,
     }
 
-    /// The claim for `hub:pr:330` when Rex has `tabs`, each session's label beside the
-    /// windows open in it. The listing answers only for the session it is asked about, so a
-    /// claim that looked in the wrong session would see that session's windows.
-    fn rex_outcome(tabs: &[(&str, Vec<&str>)]) -> Outcome {
-        let window = InvestigationWindow::pr(&hub(), &repo_slug(), 330);
+    /// The claim for `window` when Rex has `tabs`, each session's label beside the labels of
+    /// the tabs open in it. The listing answers only for the session it is asked about, so a
+    /// claim that looked in the wrong session would see that session's tabs.
+    fn rex_outcome_for(window: &InvestigationWindow, tabs: &[(&str, Vec<&str>)]) -> Outcome {
         let labels: Vec<&str> = tabs.iter().map(|(label, _)| *label).collect();
         let all = sessions(&labels);
-        let claim = claim_in_rex(&window, &all, |id| {
+        let claim = claim_in_rex(window, &all, |id| {
             let index = all
                 .iter()
                 .position(|session| &session.id == id)
@@ -456,31 +447,78 @@ mod tests {
         }
     }
 
+    /// The claim for the investigation of PR 330, `PR 330 (alice): investigate`.
+    fn rex_outcome(tabs: &[(&str, Vec<&str>)]) -> Outcome {
+        rex_outcome_for(&on_pr(&hub(), 330, PrWindowActivity::Investigate), tabs)
+    }
+
     /// The window is looked for only in its repository's session. The same name open in any
     /// other session, such as the TUI's own or one with no repository, is another tab, and a
     /// new one opens.
     #[rstest]
     #[case::open_in_its_session(
-        vec![("Signals", vec![]), ("Workers (hub)", vec!["hub:pr:330"])],
+        vec![("Signals", vec![]), ("Workers (hub)", vec!["PR 330 (alice): investigate"])],
         Outcome::Reused(WindowPlace::AlreadyOpenIn(hub_session()))
     )]
     #[case::not_open_in_its_session(
-        vec![("Signals", vec![]), ("Workers (hub)", vec!["hub:git:330"])],
+        vec![("Signals", vec![]), ("Workers (hub)", vec!["PR 330 (alice): lazygit"])],
         Outcome::InSession("session:1".to_string())
     )]
     #[case::open_only_in_another_session(
-        vec![("Signals", vec!["hub:pr:330"]), ("Workers (hub)", vec![])],
+        vec![("Signals", vec!["PR 330 (alice): investigate"]), ("Workers (hub)", vec![])],
         Outcome::InSession("session:1".to_string())
     )]
     #[case::no_session_for_its_repository(
-        vec![("Signals", vec![]), ("Workers", vec!["hub:pr:330"])],
+        vec![("Signals", vec![]), ("Workers", vec!["PR 330 (alice): investigate"])],
         Outcome::NewSession
+    )]
+    #[case::open_under_its_tmux_name(
+        vec![("Workers (hub)", vec!["hub:pr:330"])],
+        Outcome::InSession("session:0".to_string())
     )]
     fn a_rex_claim_looks_only_in_the_repositorys_session(
         #[case] tabs: Vec<(&str, Vec<&str>)>,
         #[case] expected: Outcome,
     ) {
         assert_eq!(rex_outcome(&tabs), expected);
+    }
+
+    /// A review the dotfiles launcher opened carries the label hub builds for the same review,
+    /// so hub reuses that tab rather than starting a second review.
+    #[test]
+    fn a_review_tab_the_launcher_opened_is_reused() {
+        let review = on_pr(
+            &hub(),
+            330,
+            PrWindowActivity::Review(ReviewSkill::ReviewCode),
+        );
+        assert_eq!(
+            rex_outcome_for(
+                &review,
+                &[("Workers (hub)", vec!["PR 330 (alice): review-code"])]
+            ),
+            Outcome::Reused(WindowPlace::AlreadyOpenIn(hub_session()))
+        );
+    }
+
+    /// Each review skill has its own tab, so an open investigation does not swallow a review.
+    #[test]
+    fn a_review_opens_beside_the_prs_open_investigation() {
+        let review = on_pr(
+            &hub(),
+            330,
+            PrWindowActivity::Review(ReviewSkill::ReviewConverge),
+        );
+        assert_eq!(
+            rex_outcome_for(
+                &review,
+                &[(
+                    "Workers (hub)",
+                    vec!["PR 330 (alice): investigate", "PR 330 (alice): review-code"]
+                )]
+            ),
+            Outcome::InSession("session:0".to_string())
+        );
     }
 
     /// A Rex tab never comes into view, so the status bar is the only sign a launch worked.

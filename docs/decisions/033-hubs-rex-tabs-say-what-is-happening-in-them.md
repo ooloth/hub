@@ -6,8 +6,6 @@ date: 2026-11-04
 
 # 033 — hub's Rex tabs say what is happening in them
 
-_Status: accepted; not yet implemented. `domain::InvestigationWindow` has no Rex label yet._
-
 ## Forced by
 
 - `monitor-prs` recognises a review it or anyone else prepared only by a tab labelled
@@ -44,9 +42,9 @@ parentheses. The activity is the skill the tab runs, or one plain word, so each 
 its own tab. A tab the launcher opened with the same label is the same tab, and hub reuses it.
 
 Text that comes from a signal has its line breaks and control characters removed and is cut to a
-fixed length. An alert's excerpt is the start of its message. When the excerpt differs from the
-message, it ends in `…` and a six-character hash of the environment and message, so two alerts
-never share a label.
+fixed length. An alert's excerpt is the start of its message. When a piece of a
+signal's text, such as an alert's message, a CI workflow's name or a media item's title, is not
+shown whole, it ends in `…` and a six-character hash, so two signals never share a label.
 
 tmux window names don't change, and in tmux a PR's investigation and reviews still share one
 window.
@@ -77,4 +75,4 @@ could find it by instead of its label.
 ## Also update
 
 - [ ] dotfiles `monitor-prs`: put back "and hub opens them in each repository's".
-- [ ] CLAUDE.md's Rex QA loop: the tab it lists is labelled `Issue <n> (<login>): investigate`.
+- [x] CLAUDE.md's Rex QA loop: the tab it lists is labelled `Issue <n> (<login>): investigate`.

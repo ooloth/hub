@@ -14,6 +14,8 @@ pub mod daemon_health;
 pub mod daemon_pass;
 /// GCP Cloud Logging query configuration and log entry types.
 pub mod gcp;
+/// The GitHub login of whoever wrote a pull request or issue.
+pub mod github_login;
 /// The MCP servers an investigation may use, chosen per device.
 pub mod investigation_mcp_servers;
 /// Investigation prompts, assembled from parts that say where each came from.
@@ -40,12 +42,16 @@ pub mod pr_group;
 pub mod pr_id;
 /// Whether a pull request is waiting on me, and why.
 pub mod pr_turn;
+/// What a window hub opens on a pull request does there.
+pub mod pr_window_activity;
 /// Which set of hub's own state a process reads and writes.
 pub mod profile;
 /// The label a project goes by in window and tab names.
 pub mod project_short_name;
 /// Why a pull request is waiting on me, as the card counts it.
 pub mod reason_kind;
+/// The label a Rex tab hub opens carries.
+pub mod rex_label;
 /// A Rex session's id.
 pub mod rex_session_id;
 /// What the screen showed when an `op read` reached its deadline.
@@ -68,6 +74,8 @@ pub mod urgency;
 pub mod waiting_card;
 /// Which pull requests the card counts as waiting on me.
 pub mod waiting_on_me;
+/// The project a window belongs to.
+pub mod window_project;
 /// The segments a window name is built from, and the hashes that keep them apart.
 mod window_segment;
 /// The Rex session a signal's tabs open in.
@@ -79,16 +87,20 @@ pub use serde_helpers::duration_secs;
 
 pub use ci::*;
 pub use gcp::*;
+pub use github_login::*;
 pub use investigation_mcp_servers::*;
 pub use investigation_prompt::*;
 pub use investigation_window::*;
 pub use issue::*;
 pub use loki::*;
 pub use pr::*;
+pub use pr_window_activity::*;
 pub use profile::*;
 pub use project_short_name::*;
+pub use rex_label::*;
 pub use rex_session_id::*;
 pub use session::*;
 pub use untrusted::*;
 pub use urgency::*;
+pub use window_project::*;
 pub use workers_session::*;

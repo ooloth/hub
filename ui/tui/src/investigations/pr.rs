@@ -74,6 +74,7 @@ mod tests {
             number: 7,
             head_branch: "feature".to_string(),
             author,
+            login: "alice".to_string(),
         }
     }
 

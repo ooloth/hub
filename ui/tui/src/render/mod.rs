@@ -1341,6 +1341,7 @@ mod tests {
                     number: 1,
                     head_branch: "feature".to_string(),
                     author,
+                    login: "alice".to_string(),
                 }),
                 ..split.ui
             },

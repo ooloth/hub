@@ -318,7 +318,11 @@ async fn handle_effect(
         Effect::OpenUrl(url) => {
             let _ = open::that_detached(url);
         }
-        Effect::OpenPrDiffInDelta { repo, number } => open_pr_diff(app, config, &repo, number),
+        Effect::OpenPrDiffInDelta {
+            repo,
+            number,
+            login,
+        } => open_pr_diff(app, config, &repo, number, &login),
         Effect::SetIssueLabels {
             repo,
             number,
@@ -348,16 +352,21 @@ async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &con
             workflow,
             run_url,
         } => handle_launch_ci(app, config, repo, workflow, run_url).await,
-        Effect::LaunchIssue { repo, number } => {
-            handle_launch_issue(app, config, repo, number).await;
+        Effect::LaunchIssue {
+            repo,
+            number,
+            login,
+        } => {
+            handle_launch_issue(app, config, repo, number, &login).await;
         }
         Effect::LaunchPr {
             repo,
             number,
             author,
+            login,
             head_branch,
         } => {
-            handle_launch_pr(app, config, repo, number, author, head_branch).await;
+            handle_launch_pr(app, config, repo, number, author, &login, head_branch).await;
         }
         Effect::ReviewPr { target, review } => {
             handle_review_pr(app, config, &target, review).await;
@@ -365,16 +374,27 @@ async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &con
         Effect::OpenInOcto {
             repo,
             number,
+            login,
             head_branch,
         } => {
-            handle_open_in_octo(app, config, repo, number, head_branch).await;
+            handle_open_pr_tool(app, config, PrTool::Octo, repo, number, &login, head_branch).await;
         }
         Effect::OpenInLazygit {
             repo,
             number,
+            login,
             head_branch,
         } => {
-            handle_open_in_lazygit(app, config, repo, number, head_branch).await;
+            handle_open_pr_tool(
+                app,
+                config,
+                PrTool::Lazygit,
+                repo,
+                number,
+                &login,
+                head_branch,
+            )
+            .await;
         }
         Effect::LaunchGcp {
             project,
@@ -425,25 +445,28 @@ async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &con
     }
 }
 
-fn open_pr_diff(app: &mut App, config: &config::Config, repo: &str, number: u64) {
-    let repo = signal_repo(repo);
-    let project = config.projects.short_name_for(&repo);
-    report_launch(app, show_pr_diff(&repo, &project, number));
+fn open_pr_diff(app: &mut App, config: &config::Config, repo: &str, number: u64, login: &str) {
+    let Some(login) = author_login(app, login) else {
+        return;
+    };
+    let project = config.projects.window_project_for(&signal_repo(repo));
+    report_launch(app, show_pr_diff(&project, number, &login));
 }
 
 fn show_pr_diff(
-    repo: &domain::RepoSlug,
-    project: &domain::ProjectShortName,
+    project: &domain::WindowProject,
     number: u64,
+    login: &domain::GitHubLogin,
 ) -> Result<terminal::WindowPlace> {
     let vacant = match terminal::claim(
-        &domain::InvestigationWindow::diff(project, repo, number),
+        &domain::InvestigationWindow::pr(project, number, login, domain::PrWindowActivity::Diff),
         "opening the diff",
     )? {
         terminal::WindowClaim::Reused(place) => return Ok(place),
         terminal::WindowClaim::Vacant(vacant) => vacant,
     };
 
+    let repo = project.repo();
     let cmd = format!("gh pr diff {number} -R {repo} | delta; read");
     vacant.open(None, &[], &cmd)
 }
@@ -465,6 +488,20 @@ fn report_launch(app: &mut App, result: Result<terminal::WindowPlace>) {
 fn signal_repo(repo: &str) -> domain::RepoSlug {
     repo.parse()
         .unwrap_or_else(|err| unreachable!("signal carried a repo that is not a slug: {err}"))
+}
+
+/// The login a signal carried, or `None` with why it is not a GitHub login shown to the user.
+///
+/// A tab's label names the login, so one that could change what the label says stops the launch
+/// rather than the signal (decision 033).
+fn author_login(app: &mut App, raw: &str) -> Option<domain::GitHubLogin> {
+    match domain::GitHubLogin::parse(raw) {
+        Ok(login) => Some(login),
+        Err(reason) => {
+            app.ui.flash = Some(format!("couldn't name the tab: {reason}"));
+            None
+        }
+    }
 }
 
 /// The project tracking `repo`, or `None` with the reason it has none shown to the user.
@@ -495,7 +532,7 @@ async fn handle_launch_ci(
     let Some(project) = tracked_project(app, config, &signal_repo(&repo)) else {
         return;
     };
-    let window = domain::InvestigationWindow::ci(&project.short_name, &project.repo, &workflow);
+    let window = domain::InvestigationWindow::ci(&project.window_project(), &workflow);
     let result = investigations::launch(
         investigations::ci::config(&repo, &run_url),
         &window,
@@ -506,11 +543,20 @@ async fn handle_launch_ci(
     report_launch(app, result);
 }
 
-async fn handle_launch_issue(app: &mut App, config: &config::Config, repo: String, number: u64) {
+async fn handle_launch_issue(
+    app: &mut App,
+    config: &config::Config,
+    repo: String,
+    number: u64,
+    login: &str,
+) {
+    let Some(login) = author_login(app, login) else {
+        return;
+    };
     let Some(project) = tracked_project(app, config, &signal_repo(&repo)) else {
         return;
     };
-    let window = domain::InvestigationWindow::issue(&project.short_name, &project.repo, number);
+    let window = domain::InvestigationWindow::issue(&project.window_project(), number, &login);
     let result = investigations::launch(
         investigations::issue::config(&repo, number),
         &window,
@@ -527,12 +573,21 @@ async fn handle_launch_pr(
     repo: String,
     number: u64,
     author: PrAuthor,
+    login: &str,
     head_branch: String,
 ) {
+    let Some(login) = author_login(app, login) else {
+        return;
+    };
     let Some(project) = tracked_project(app, config, &signal_repo(&repo)) else {
         return;
     };
-    let window = domain::InvestigationWindow::pr(&project.short_name, &project.repo, number);
+    let window = domain::InvestigationWindow::pr(
+        &project.window_project(),
+        number,
+        &login,
+        domain::PrWindowActivity::Investigate,
+    );
     let result = investigations::launch(
         investigations::pr::ask_config(number, &repo, author),
         &window,
@@ -553,10 +608,18 @@ async fn handle_review_pr(
     target: &PrReviewTarget,
     review: PrReview,
 ) {
+    let Some(login) = author_login(app, &target.login) else {
+        return;
+    };
     let Some(project) = tracked_project(app, config, &signal_repo(&target.repo)) else {
         return;
     };
-    let window = domain::InvestigationWindow::pr(&project.short_name, &project.repo, target.number);
+    let window = domain::InvestigationWindow::pr(
+        &project.window_project(),
+        target.number,
+        &login,
+        domain::PrWindowActivity::Review(review.skill()),
+    );
     let result = investigations::launch(
         investigations::pr::review_config(target, review),
         &window,
@@ -600,8 +663,7 @@ async fn handle_launch_gcp(
             &gcp_project,
         ),
         &domain::InvestigationWindow::alert(
-            &tracked.short_name,
-            &tracked.repo,
+            &tracked.window_project(),
             domain::AlertSource::Gcp,
             &env,
             message.expose(),
@@ -632,8 +694,7 @@ async fn handle_launch_loki(
     let result = investigations::launch(
         investigations::loki::config(&project, &env, &title, &message, &line, &url, &lookback),
         &domain::InvestigationWindow::alert(
-            &tracked.short_name,
-            &tracked.repo,
+            &tracked.window_project(),
             domain::AlertSource::Loki,
             &env,
             message.expose(),
@@ -645,31 +706,34 @@ async fn handle_launch_loki(
     report_launch(app, result);
 }
 
-async fn handle_open_in_octo(
-    app: &mut App,
-    config: &config::Config,
-    repo: String,
-    number: u64,
-    head_branch: String,
-) {
-    let Some(project) = tracked_project(app, config, &signal_repo(&repo)) else {
-        return;
-    };
-    let result = investigations::open_in_octo(&project, number, &head_branch).await;
-    report_launch(app, result);
+/// A tool the PR submenu opens in the PR's worktree.
+#[derive(Clone, Copy)]
+enum PrTool {
+    Octo,
+    Lazygit,
 }
 
-async fn handle_open_in_lazygit(
+async fn handle_open_pr_tool(
     app: &mut App,
     config: &config::Config,
+    tool: PrTool,
     repo: String,
     number: u64,
+    login: &str,
     head_branch: String,
 ) {
+    let Some(login) = author_login(app, login) else {
+        return;
+    };
     let Some(project) = tracked_project(app, config, &signal_repo(&repo)) else {
         return;
     };
-    let result = investigations::open_in_lazygit(&project, number, &head_branch).await;
+    let result = match tool {
+        PrTool::Octo => investigations::open_in_octo(&project, number, &login, &head_branch).await,
+        PrTool::Lazygit => {
+            investigations::open_in_lazygit(&project, number, &login, &head_branch).await
+        }
+    };
     report_launch(app, result);
 }
 

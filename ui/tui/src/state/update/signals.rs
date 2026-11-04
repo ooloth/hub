@@ -298,19 +298,27 @@ impl App {
                     run_url,
                 }]
             }
-            InvestigateAction::LaunchIssue { repo, number } => {
-                vec![Effect::LaunchIssue { repo, number }]
-            }
+            InvestigateAction::LaunchIssue {
+                repo,
+                number,
+                login,
+            } => vec![Effect::LaunchIssue {
+                repo,
+                number,
+                login,
+            }],
             InvestigateAction::LaunchPr {
                 repo,
                 number,
                 kind,
+                author,
                 head_branch,
                 ..
             } => vec![Effect::LaunchPr {
                 repo,
                 number,
                 author: PrAuthor::from_kind(kind),
+                login: author,
                 head_branch,
             }],
             InvestigateAction::LaunchGcp {
@@ -393,9 +401,15 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
             workflow,
             run_url,
         },
-        Some(InvestigationKind::Issue { repo, number }) => {
-            InvestigateAction::LaunchIssue { repo, number }
-        }
+        Some(InvestigationKind::Issue {
+            repo,
+            number,
+            login,
+        }) => InvestigateAction::LaunchIssue {
+            repo,
+            number,
+            login,
+        },
         Some(InvestigationKind::Pr {
             repo,
             number,

@@ -584,6 +584,7 @@ mod tests {
             number: 7,
             head_branch: "feature".to_string(),
             author: PrAuthor::Me,
+            login: "ooloth".to_string(),
         }
     }
 
