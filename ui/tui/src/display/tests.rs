@@ -283,7 +283,7 @@ fn each_signal_is_listed_under_its_category(#[case] item: StatusItem, #[case] ca
 }
 
 #[test]
-fn item_investigation_gcp_returns_kind() {
+fn a_gcp_error_opens_a_gcp_investigation() {
     assert!(matches!(
         item_investigation(&gcp()),
         Some(InvestigationKind::Gcp { .. })
@@ -436,7 +436,7 @@ fn each_media_signal_opens_its_own_url(#[case] item: StatusItem, #[case] url: &s
 }
 
 #[test]
-fn item_investigation_ci_returns_kind() {
+fn a_ci_failure_opens_a_ci_investigation() {
     assert!(matches!(
         item_investigation(&ci()),
         Some(InvestigationKind::Ci { .. })
@@ -444,7 +444,7 @@ fn item_investigation_ci_returns_kind() {
 }
 
 #[test]
-fn item_investigation_issue_returns_kind() {
+fn an_issue_opens_an_issue_investigation() {
     assert!(matches!(
         item_investigation(&issue()),
         Some(InvestigationKind::Issue { .. })
@@ -452,7 +452,7 @@ fn item_investigation_issue_returns_kind() {
 }
 
 #[test]
-fn item_investigation_pr_returns_pr_kind() {
+fn a_pr_opens_a_pr_investigation() {
     assert!(matches!(
         item_investigation(&pr()),
         Some(InvestigationKind::Pr { .. })
@@ -461,7 +461,7 @@ fn item_investigation_pr_returns_pr_kind() {
 
 #[cfg(feature = "private")]
 #[test]
-fn item_investigation_media_blocked_returns_media_kind() {
+fn a_blocked_media_download_opens_a_media_investigation() {
     assert!(matches!(
         item_investigation(&media_blocked()),
         Some(InvestigationKind::MediaBlocked { .. })
@@ -470,13 +470,13 @@ fn item_investigation_media_blocked_returns_media_kind() {
 
 #[cfg(feature = "private")]
 #[test]
-fn item_investigation_media_missing_returns_none() {
+fn missing_media_has_no_investigation() {
     assert!(item_investigation(&media_missing()).is_none());
 }
 
 #[cfg(feature = "private")]
 #[test]
-fn item_investigation_media_health_returns_none() {
+fn a_media_health_warning_has_no_investigation() {
     assert!(item_investigation(&media_health()).is_none());
 }
 
@@ -493,7 +493,7 @@ fn flat_row_urgency_group_header_uses_urgency_field() {
 }
 
 #[test]
-fn aggregate_wraps_singles_without_grouping() {
+fn signals_without_a_group_stay_separate_items() {
     let items = vec![pr(), issue()];
     let result = aggregate(items);
     assert_eq!(result.len(), 2);
@@ -502,7 +502,7 @@ fn aggregate_wraps_singles_without_grouping() {
 }
 
 #[test]
-fn aggregate_empty_input_gives_empty_output() {
+fn no_signals_make_no_display_items() {
     assert!(aggregate(vec![]).is_empty());
 }
 
@@ -618,7 +618,7 @@ fn text_wider_than_its_width_is_cut_with_an_ellipsis(
 }
 
 #[test]
-fn build_unified_sorts_by_urgency_ascending_critical_first() {
+fn the_most_urgent_signal_is_listed_first() {
     // issue=Low, pr=Medium, ci=High — input in reverse order
     let result = build_unified(vec![issue(), pr(), ci()], &Filter::default());
     let urgencies: Vec<_> = result
@@ -642,13 +642,13 @@ fn build_unified_sorts_by_urgency_ascending_critical_first() {
 }
 
 #[test]
-fn from_row_single_pr_returns_pr_kind() {
+fn a_selected_pr_row_offers_pr_actions() {
     let row = FlatRow::Single(pr());
     assert_eq!(SelectedItemKind::from_row(&row), SelectedItemKind::Pr);
 }
 
 #[test]
-fn from_row_group_header_returns_other() {
+fn a_selected_group_header_offers_no_item_actions() {
     let row = FlatRow::GroupHeader {
         key: GroupKey::new("g".to_string()),
         count: 1,

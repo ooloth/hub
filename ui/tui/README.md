@@ -4,7 +4,8 @@ The `hub-tui` binary — the **human-facing surface for hub**. This is where you
 read urgency-ranked signals, open them in the browser, and launch agent investigation sessions
 in their own tmux windows or Rex tabs.
 
-Agents do not interact with the TUI — they use the `hub` CLI toolkit.
+Agents do not interact with the TUI. [Decision 010](../../docs/decisions/010-hub-cli-as-agent-toolkit.md)
+makes the `hub` CLI their toolkit, and it has no subcommands.
 
 A Ratatui terminal dashboard that renders status items in one list ranked by urgency,
 auto-refreshes from SQLite, and opens items in the browser via keyboard shortcuts.
@@ -44,9 +45,12 @@ Keyboard events flow through a pure Elm-style pipeline before any state
 is mutated:
 
 1. `key_to_action(app, key) -> Option<Action>` (`input.rs`) — maps a raw
-   key event to an `Action` variant. Universal keys (quit, help, back) are
-   handled first; the remainder delegates to a per-view function
-   (`unified_list_keys` or `merge_confirm_key`). Returns `None` for unmapped keys.
+   key event to an `Action` variant. Three modes take every key before anything
+   else, in this order: an open submenu (`review_picker_submenu_key` or
+   `pr_action_submenu_key`), the query being typed (`query_mode_key`), and the
+   merge confirmation (`merge_confirm_key`). Universal keys (quit, help, refresh,
+   back) come next, then `gg`, and the remainder goes to `unified_list_keys`.
+   Returns `None` for unmapped keys.
 2. `App::update(action) -> Vec<Effect>` (`state/update/mod.rs`) — applies the action
    to app state and returns zero or more `Effect` values describing required
    side effects, one variant per kind, such as `OpenUrl`, `LaunchPr` or `Quit`
@@ -69,10 +73,14 @@ is mutated:
 ## Render model
 
 Render functions take `&mut Frame` and cannot be unit tested in isolation.
-Decision logic is extracted into pure helper functions that can be:
+Decision logic is extracted into pure helper functions that unit tests call directly:
 
-- `status_bar_left(app)` (`render/status_bar.rs`) — computes the left status bar
+- `status_bar_left(app)` (`render/status_bar.rs`): computes the left status bar
   string from the current view state and selected item
+- `right_status_text(profile, state, last_updated, now)` (`render/status_bar.rs`): the
+  profile and the refresh state on the right of the status bar
+- `daemon_warning(daemon, database_error, now)` (`render/status_bar.rs`): the warning that
+  ends the status bar when the daemon's refreshes stop or `hub.db` cannot be read
 
 Visual constants live in `render/theme.rs` (`urgency_color` and `urgency_style` are in
 `render/shared.rs`) and are accessed by submodules via `super::`:
@@ -129,8 +137,16 @@ The test suite keeps one full-screen snapshot per major screen state:
 | `full_screen_unified_list_refreshes_overdue` | the daemon warning crowding the key hints at 80 columns |
 | `full_screen_unified_list_turn_reasons_{80,200}` | a turn's reason after `PR`, in one column, never truncated |
 | `full_screen_merging_pr` | merge confirmation prompt over the PR body |
-| `full_screen_detail_view_first_selected` | group expanded, first item selected |
-| `full_screen_detail_view_last_selected` | group expanded, last item selected |
+| `full_screen_expanded_group_first_child_selected` | group expanded, first item selected |
+| `full_screen_expanded_group_last_child_selected` | group expanded, last item selected |
+| `split_view_pr_selected` | detail pane open on a PR |
+| `split_view_issue_selected` | detail pane open on an issue |
+| `split_view_placeholder_for_ci_item` | placeholder in the detail pane for an item with no detail view |
+| `split_view_pr_scrolled` | detail pane scrolled down |
+| `split_view_narrow_terminal` | detail pane on an 80-col terminal |
+| `split_view_multi_urgency_tiers` | list height includes the urgency divider |
+| `split_view_list_capped_at_20_percent_of_viewport_height` | list capped at a fifth of the screen |
+| `fullscreen_list_after_esc_from_split_view` | the list on its own once the pane is closed |
 
 **Add a new snapshot whenever you introduce** a new screen variant, a new
 item type that changes how a row renders (different hint, different dot

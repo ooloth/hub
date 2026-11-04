@@ -1185,7 +1185,7 @@ mod tests {
     // ── Full-screen detail view snapshots ─────────────────────────────────────
 
     #[test]
-    fn full_screen_detail_view_first_selected() {
+    fn full_screen_expanded_group_first_child_selected() {
         // D1: Group expanded inline, first child selected.
         let mut app = expanded_group_app(vec![ci_item(), ci_item()], 1);
         let buf = draw(&mut app, 80, 15);
@@ -1193,7 +1193,7 @@ mod tests {
     }
 
     #[test]
-    fn full_screen_detail_view_last_selected() {
+    fn full_screen_expanded_group_last_child_selected() {
         // D2: Group expanded inline, last child selected.
         let mut app = expanded_group_app(vec![ci_item(), ci_item()], 2);
         let buf = draw(&mut app, 80, 15);
@@ -1217,7 +1217,7 @@ mod tests {
     }
 
     #[test]
-    fn status_bar_single_frame_detail_view() {
+    fn status_bar_single_frame_expanded_group_child_selected() {
         // S2: Group expanded inline, child selected — enter hint shows "open" (item has URL).
         let mut app = expanded_group_app(vec![ci_item(), ci_item()], 1);
         let buf = draw(&mut app, 120, 5);

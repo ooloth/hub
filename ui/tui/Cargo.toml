@@ -59,7 +59,7 @@
 [dev-dependencies]
   insta = "1"
   proptest = "1"
-  rstest = "0.23"
+  rstest = "0.25"
 
 [lints]
   workspace = true

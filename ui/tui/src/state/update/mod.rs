@@ -415,17 +415,8 @@ mod tests {
         })
     }
 
-    /// My pull request #7 on `ooloth/hub`, from `feat/thing` into `main`, with a body.
-    fn pr_with_body() -> domain::PullRequest {
-        domain::PullRequest {
-            title: "Test PR".to_string(),
-            body: Some("PR body".to_string()),
-            ..crate::test_support::pull_request()
-        }
-    }
-
     fn stub_pr() -> StatusItem {
-        StatusItem::Pr(pr_with_body())
+        StatusItem::Pr(crate::test_support::pull_request())
     }
 
     #[cfg(feature = "private")]
@@ -607,7 +598,7 @@ mod tests {
                 draft,
                 review_decision,
                 activity,
-                ..pr_with_body()
+                ..crate::test_support::pull_request()
             },
         ))]);
         assert_eq!(
