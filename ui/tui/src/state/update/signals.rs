@@ -5,8 +5,8 @@ use crate::display::{
     ListSnapshot,
 };
 use crate::state::{
-    Action, App, DetailMode, Effect, InvestigateAction, PrOwnership, PrPrevScreen, PrReviewTarget,
-    Screen, SubmenuState,
+    Action, App, DetailMode, Effect, InvestigateAction, Launch, PrOwnership, PrPrevScreen,
+    PrReviewTarget, Screen, SubmenuState,
 };
 use workflows::status::StatusItem;
 
@@ -229,10 +229,10 @@ impl App {
                 let SubmenuState::ReviewPicker(target) = &self.ui.submenu else {
                     return vec![];
                 };
-                let effect = Effect::ReviewPr {
+                let effect = Effect::Launch(Launch::Review {
                     target: target.clone(),
                     review,
-                };
+                });
                 self.ui.submenu = SubmenuState::None;
                 vec![effect]
             }
@@ -292,21 +292,21 @@ impl App {
                 workflow,
                 run_url,
             } => {
-                vec![Effect::LaunchCi {
+                vec![Effect::Launch(Launch::Ci {
                     repo,
                     workflow,
                     run_url,
-                }]
+                })]
             }
             InvestigateAction::LaunchIssue {
                 repo,
                 number,
                 author,
-            } => vec![Effect::LaunchIssue {
+            } => vec![Effect::Launch(Launch::Issue {
                 repo,
                 number,
                 author,
-            }],
+            })],
             InvestigateAction::LaunchPr {
                 repo,
                 number,
@@ -314,13 +314,13 @@ impl App {
                 author,
                 head_branch,
                 ..
-            } => vec![Effect::LaunchPr {
+            } => vec![Effect::Launch(Launch::Pr {
                 repo,
                 number,
                 ownership: PrOwnership::from_kind(kind),
                 author,
                 head_branch,
-            }],
+            })],
             InvestigateAction::LaunchGcp {
                 project,
                 repo,
@@ -331,7 +331,7 @@ impl App {
                 url,
                 lookback,
                 gcp_project,
-            } => vec![Effect::LaunchGcp {
+            } => vec![Effect::Launch(Launch::Gcp {
                 project,
                 repo,
                 env,
@@ -341,7 +341,7 @@ impl App {
                 url,
                 lookback,
                 gcp_project,
-            }],
+            })],
             InvestigateAction::LaunchLoki {
                 project,
                 repo,
@@ -351,7 +351,7 @@ impl App {
                 line,
                 url,
                 lookback,
-            } => vec![Effect::LaunchLoki {
+            } => vec![Effect::Launch(Launch::Loki {
                 project,
                 repo,
                 env,
@@ -360,10 +360,10 @@ impl App {
                 line,
                 url,
                 lookback,
-            }],
+            })],
             #[cfg(feature = "private")]
             InvestigateAction::LaunchMediaBlocked { title, error } => {
-                vec![Effect::LaunchMediaBlocked { title, error }]
+                vec![Effect::Launch(Launch::MediaBlocked { title, error })]
             }
             InvestigateAction::None => {
                 self.ui.flash = Some("No investigation mapped".to_string());
@@ -416,14 +416,12 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
             kind,
             author,
             head_branch,
-            base_branch,
         }) => InvestigateAction::LaunchPr {
             repo,
             number,
             kind,
             author,
             head_branch,
-            base_branch,
         },
         Some(InvestigationKind::Gcp {
             project,

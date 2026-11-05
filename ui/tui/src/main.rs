@@ -1,4 +1,4 @@
-//! Hub TUI — the human-facing terminal dashboard for signal triage and task management.
+//! Hub TUI — the human-facing terminal dashboard for signal triage and launching investigations.
 use anyhow::{Context, Result};
 use chrono::Utc;
 use crossterm::{
@@ -17,8 +17,8 @@ use crate::display::{build_unified, flatten, Filter};
 use crate::input::key_to_action;
 use crate::render::render;
 use crate::state::{
-    handle_msg, App, DataState, DetailMode, Effect, Msg, PrOwnership, PrReview, PrReviewTarget,
-    RefreshState, Screen, UiState,
+    handle_msg, App, DataState, DetailMode, Effect, Launch, Msg, PrOwnership, PrReview,
+    PrReviewTarget, RefreshState, Screen, UiState,
 };
 use std::collections::HashSet;
 
@@ -373,27 +373,27 @@ async fn handle_effect(
             store::status_cache::upsert(conn, &payload.json, payload.schema_version)
                 .context("failed to upsert status cache")?;
         }
-        other => handle_investigation_effect(other, app, config).await,
+        Effect::Launch(launch) => handle_launch(launch, app, config).await,
     }
     Ok(false)
 }
 
-/// Dispatches investigation/launch effects that only need `app` and `config`.
-async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &config::Config) {
-    match effect {
-        Effect::LaunchCi {
+/// Opens the window a launch asks for and starts its agent session there.
+async fn handle_launch(launch: Launch, app: &mut App, config: &config::Config) {
+    match launch {
+        Launch::Ci {
             repo,
             workflow,
             run_url,
         } => handle_launch_ci(app, config, repo, workflow, run_url).await,
-        Effect::LaunchIssue {
+        Launch::Issue {
             repo,
             number,
             author,
         } => {
             handle_launch_issue(app, config, repo, number, &author).await;
         }
-        Effect::LaunchPr {
+        Launch::Pr {
             repo,
             number,
             ownership,
@@ -402,10 +402,10 @@ async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &con
         } => {
             handle_launch_pr(app, config, repo, number, ownership, &author, head_branch).await;
         }
-        Effect::ReviewPr { target, review } => {
+        Launch::Review { target, review } => {
             handle_review_pr(app, config, &target, review).await;
         }
-        Effect::LaunchGcp {
+        Launch::Gcp {
             project,
             repo,
             env,
@@ -431,7 +431,7 @@ async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &con
             )
             .await;
         }
-        Effect::LaunchLoki {
+        Launch::Loki {
             project,
             repo,
             env,
@@ -447,10 +447,9 @@ async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &con
             .await;
         }
         #[cfg(feature = "private")]
-        Effect::LaunchMediaBlocked { title, error } => {
+        Launch::MediaBlocked { title, error } => {
             handle_launch_media(app, config, title, error).await;
         }
-        _ => {}
     }
 }
 

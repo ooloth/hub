@@ -67,10 +67,11 @@ is mutated:
 3. Handle it in `App::update()` in `state/update/mod.rs` — mutate state and/or return
    one or more `Effect` values
 4. If a new `Effect` variant is needed, add it to the enum in `state/types.rs`,
-   handle it in `handle_effect()` in `main.rs` (an effect that launches an investigation goes
-   in `handle_investigation_effect()`, which `handle_effect()` falls through to, and one that
-   opens a PR tool, such as the diff, lazygit or Octo, stays in `handle_effect()`), and if it
-   launches an investigation add a file in `investigations/` (see below)
+   handle it in `handle_effect()` in `main.rs`, and if it launches an investigation add a file
+   in `investigations/` (see below). A launch is a `Launch` variant, carried as
+   `Effect::Launch` and handled in `handle_launch()`, and an effect that opens a PR tool, such
+   as the diff, lazygit or Octo, is an `Effect` variant of its own. Both matches list every
+   variant, so an effect nobody handles fails the build.
 
 ## Render model
 

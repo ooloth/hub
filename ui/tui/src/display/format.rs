@@ -151,7 +151,6 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
             kind: pr.kind,
             author: pr.author.clone(),
             head_branch: pr.head_branch.clone(),
-            base_branch: pr.base_branch.clone(),
         }),
         StatusItem::Gcp(g) => Some(InvestigationKind::Gcp {
             project: g.project.clone(),

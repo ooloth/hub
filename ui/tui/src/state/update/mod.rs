@@ -284,8 +284,8 @@ mod tests {
     use super::{compute_investigate_action, handle_msg};
     use crate::display::{flatten, Category, DisplayItem, Filter, GroupKey};
     use crate::state::{
-        Action, App, DataState, DetailMode, Effect, InvestigateAction, Msg, RefreshState, Screen,
-        SubmenuState, UiState,
+        Action, App, DataState, DetailMode, Effect, InvestigateAction, Launch, Msg, RefreshState,
+        Screen, SubmenuState, UiState,
     };
     use domain::daemon_health::{DaemonHealth, DaemonRecord, LastActivity, Schedule};
     use domain::daemon_pass::PassStatus;
@@ -613,7 +613,6 @@ mod tests {
                 kind,
                 author: author.to_string(),
                 head_branch: "feat/thing".to_string(),
-                base_branch: "main".to_string(),
             }
         );
     }
@@ -1534,7 +1533,7 @@ mod tests {
     fn investigating_a_pr_launches_with_its_authors_login() {
         let mut app = app_with_items(vec![DisplayItem::Single(pr_by_alice())]);
         let effects = app.update(Action::Investigate);
-        let [Effect::LaunchPr { author, .. }] = effects.as_slice() else {
+        let [Effect::Launch(Launch::Pr { author, .. })] = effects.as_slice() else {
             panic!("expected one LaunchPr");
         };
         assert_eq!(author, "alice");
@@ -1544,7 +1543,7 @@ mod tests {
     fn investigating_an_issue_launches_with_its_authors_login() {
         let mut app = app_with_items(vec![DisplayItem::Single(stub_issue())]);
         let effects = app.update(Action::Investigate);
-        let [Effect::LaunchIssue { author, .. }] = effects.as_slice() else {
+        let [Effect::Launch(Launch::Issue { author, .. })] = effects.as_slice() else {
             panic!("expected one LaunchIssue");
         };
         assert_eq!(author, "agent");
@@ -1569,10 +1568,10 @@ mod tests {
         let effects = app.update(Action::CommitReview(review));
         assert_eq!(app.ui.submenu, SubmenuState::None);
         assert_eq!(effects.len(), 1);
-        let Effect::ReviewPr {
+        let Effect::Launch(Launch::Review {
             target: launched,
             review: launched_review,
-        } = effects.into_iter().next().unwrap()
+        }) = effects.into_iter().next().unwrap()
         else {
             panic!("expected ReviewPr");
         };
@@ -1591,9 +1590,9 @@ mod tests {
 
         let effects = app.update(Action::CommitReview(crate::state::PrReview::FixMine));
         assert_eq!(effects.len(), 1);
-        let Effect::ReviewPr {
+        let Effect::Launch(Launch::Review {
             target: launched, ..
-        } = effects.into_iter().next().unwrap()
+        }) = effects.into_iter().next().unwrap()
         else {
             panic!("expected ReviewPr");
         };

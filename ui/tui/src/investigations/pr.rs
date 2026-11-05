@@ -6,10 +6,10 @@ use super::LaunchConfig;
 
 /// A session opened on a PR with no task prompt and no skill.
 ///
-/// `i` deliberately chooses nothing. Routing it by PR kind was tried and removed
-/// in 9f402d6 for being too prescriptive; the picker behind `v` is the only place
-/// a skill gets selected. An empty `prompt` is what makes `launch` omit the
-/// positional argument entirely, so the session opens ready for a question.
+/// `i` deliberately chooses nothing. Routing it by PR kind is too prescriptive, so
+/// the picker behind `v` is the only place a skill gets selected. An empty
+/// `prompt` is what makes `compose` omit the positional argument entirely, so the
+/// session opens ready for a question.
 pub(crate) fn ask_config(number: u64, repo: &str, ownership: PrOwnership) -> LaunchConfig {
     LaunchConfig {
         system_prompt: ask_prompt(number, repo, ownership),
@@ -126,9 +126,7 @@ mod tests {
         assert!(prompt.contains("Reviewers have requested changes"));
     }
 
-    /// `i` chooses no skill. Auto-routing it by PR kind was removed deliberately
-    /// in 9f402d6 and drifted back in unnoticed; this is the check that stops it
-    /// happening a third time.
+    /// `i` chooses no skill, whatever the PR's kind.
     #[rstest]
     #[case::mine(PrOwnership::Mine)]
     #[case::a_peers(PrOwnership::Peer)]
