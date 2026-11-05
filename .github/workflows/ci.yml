@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+# CI only reads the repository, so its token can do nothing else, whatever the repo's default is.
+permissions:
+  contents: read
+
 jobs:
   check:
     # hub runs on macOS and is also developed in Linux sandboxes, so every push to main and every
@@ -16,16 +20,27 @@ jobs:
         os: [macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      # Each action is pinned to a full commit SHA, so a moved tag cannot change the action code CI
+      # runs. Dependabot proposes new pins (.github/dependabot.yml). The `stable` toolchain still
+      # follows the latest Rust release.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: dtolnay/rust-toolchain@stable
+      # rustup is already on the hosted runners, so no third-party action installs the toolchain.
+      - name: install toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+      # Prebuilt binaries at exact versions, each checked against the checksum in the action's
+      # manifest, so CI compiles none of them, and a new release reaches CI only through a commit
+      # that changes its version here. `fallback: none` fails the step rather than building a
+      # version the manifest lacks. Dependabot does not read `tool`, so these versions are bumped
+      # by hand. This runs after rust-cache, so binaries the cache restores into ~/.cargo/bin are
+      # replaced rather than used.
+      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
         with:
-          components: rustfmt, clippy
-
-      - uses: Swatinem/rust-cache@v2
-
-      - name: install tools
-        run: cargo install cargo-audit cargo-deny cargo-nextest --locked
+          tool: cargo-audit@0.22.2,cargo-deny@0.20.2,cargo-nextest@0.9.149,taplo@0.10.0
+          fallback: none
 
       # rustfmt resolves mod declarations even behind #[cfg(feature = "private")],
       # so it fails if the private symlinks (from hub-private) aren't present.
@@ -40,6 +55,14 @@ jobs:
 
       - name: fmt
         run: cargo fmt --check
+
+      # Dependabot edits the Cargo.toml files without running prek's hooks, so CI checks their
+      # formatting and TOML syntax the way prek.toml does.
+      - name: taplo fmt
+        run: taplo fmt --check
+
+      - name: taplo check
+        run: taplo check
 
       - name: clippy
         run: cargo clippy --all-targets -- -D warnings

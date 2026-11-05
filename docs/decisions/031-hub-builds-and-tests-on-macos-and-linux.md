@@ -21,8 +21,8 @@ date: 2026-11-01
 ## Decision
 
 Every commit of hub, with or without each hub-private module, builds, passes clippy and passes its
-tests on macOS and on Linux. CI builds, lints and tests every push on both, as a matrix of
-`macos-latest` and `ubuntu-latest`.
+tests on macOS and on Linux. CI builds, lints and tests every push to `main` and every pull
+request on both, as a matrix of `macos-latest` and `ubuntu-latest`.
 
 hub runs on macOS. What only macOS has stays macOS-only behind `cfg(target_os = "macos")`: the
 disclaimed spawn of decision 027's addendum of 2026-11-01, launchd, and the notifications the
