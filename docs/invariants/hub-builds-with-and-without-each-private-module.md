@@ -72,7 +72,7 @@ What the check misses:
   and the tests of hub-private without the media module never run on a device that has it.
 - **Dependabot's commits.** Dependabot commits on GitHub, where prek never runs `just lint`.
   AGENTS.md has a Dependabot PR that changes the Cargo files merged only after `just lint` and
-  `just test` pass in a checkout with hub-private linked.
+  `just test` pass in a checkout with every hub-private module linked.
 - **Runtime behaviour.** A stub that compiles can still do the wrong thing. `media_stub.rs` has a
   test asserting that it returns an error. That test runs only on a device without the media
   module.
