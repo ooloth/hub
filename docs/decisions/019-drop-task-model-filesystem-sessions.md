@@ -1,5 +1,7 @@
 # 019 — Drop the task model; filesystem-based session tracking
 
+_Status: accepted; not yet implemented. Nothing writes `~/.hub/sessions/`._
+
 > **Status: accepted 2026-06-20; the removals and the named investigation window
 > landed, the session records did not.**
 > This decision supersedes ADRs 011–018 (see "What this supersedes"), and the
