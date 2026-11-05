@@ -11,7 +11,7 @@ pub(crate) mod unified;
 
 pub(crate) use theme::{dim, list_highlight, FOCUS_COLOR, LAVENDER, YELLOW};
 
-use crate::render::shared::{KEYBINDS_LIST, KEYBINDS_PR_READER};
+use crate::render::shared::{KEYBINDS_LIST, KEYBINDS_MERGE_CONFIRM};
 
 use chrono::Utc;
 use ratatui::{
@@ -183,7 +183,7 @@ fn render_status_bar_left(frame: &mut ratatui::Frame, app: &App, bar_left: ratat
 fn render_help_popup(frame: &mut ratatui::Frame, app: &App) {
     let keybinds = match &app.ui.screen {
         Screen::UnifiedList { .. } => KEYBINDS_LIST,
-        Screen::MergingPr { .. } => KEYBINDS_PR_READER,
+        Screen::MergingPr { .. } => KEYBINDS_MERGE_CONFIRM,
     };
     let text = crate::render::shared::format_keybinds(keybinds);
     let lines = u16::try_from(keybinds.len()).unwrap_or(u16::MAX);

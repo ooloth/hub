@@ -81,20 +81,10 @@ pub(crate) const KEYBINDS_LIST: &[(&str, &str)] = &[
     ("q / Ctrl-C", "quit"),
 ];
 
-pub(crate) const KEYBINDS_PR_READER: &[(&str, &str)] = &[
-    ("?", "toggle help"),
-    ("k / j", "scroll up / down"),
-    ("gg / G", "go to top / bottom"),
-    ("Ctrl-u / Ctrl-d", "page up / down"),
-    ("Enter", "open in browser"),
-    ("i", "investigate PR"),
-    ("o", "open in octo"),
-    ("l", "open in lazygit"),
-    ("v", "review"),
-    ("m", "squash and merge"),
-    ("r", "refresh"),
-    ("Esc", "back to list"),
-    ("q / Ctrl-C", "quit"),
+pub(crate) const KEYBINDS_MERGE_CONFIRM: &[(&str, &str)] = &[
+    ("Enter", "squash and merge"),
+    ("Esc", "cancel"),
+    ("Ctrl-C", "quit"),
 ];
 
 pub(crate) fn format_keybinds(keybinds: &[(&str, &str)]) -> String {
