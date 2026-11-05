@@ -68,7 +68,9 @@ in `ui/tui/src/investigations/command.rs` walks the prompt-building modules and 
 What that test misses: it reads source text, not meaning. It cannot tell a truthful justification
 from a careless one, and a justification comment satisfies it whatever it says. It also exempts
 `launch.rs` and `command.rs`, where exposure is the point, so a prompt assembled inside either of
-those would not be caught. It is a tripwire against the reflexive `.expose()` rather than a proof.
+those would not be caught. It reads only `src/investigations/`, so an exposure elsewhere, such as
+the alert and media text `main.rs` builds Rex labels from, is checked by nothing but review. It is
+a tripwire against the reflexive `.expose()` rather than a proof.
 
 What nothing checks: that a value arriving from a new external source is wrapped in `UntrustedText`
 at its boundary in the first place. A field left as `String` in a client or workflow is invisible to

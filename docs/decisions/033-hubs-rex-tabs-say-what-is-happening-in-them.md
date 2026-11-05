@@ -11,8 +11,8 @@ date: 2026-11-04
 - `monitor-prs` recognises a review it or anyone else prepared only by a tab labelled
   `PR <number> (<author login>): <skill>`, and counts every such `review-*` tab toward its limit
   ([dotfiles 010](https://github.com/ooloth/dotfiles/blob/main/docs/decisions/010-an-open-tab-is-the-only-record-of-what-monitor-prs-has-prepared.md)).
-  hub labels its Rex tabs with its tmux window names, such as `hub:pr:330`, so `monitor-prs` can't
-  see hub's reviews. [hub#394](https://github.com/ooloth/hub/issues/394).
+  A tmux window name, such as `hub:pr:330`, is not a label `monitor-prs` can see.
+  [hub#394](https://github.com/ooloth/hub/issues/394).
 - The dotfiles launcher names every Claude tab `<subject> (<person>): <activity>`, and hub's tabs
   share its sessions ([032](032-hubs-rex-tabs-open-in-their-repositorys-session.md)).
 - A PR's investigation and every review share one window name, so asking for a second one reuses
@@ -20,7 +20,8 @@ date: 2026-11-04
 - hub finds an open tab by building its name again
   ([019](019-drop-task-model-filesystem-sessions.md)), so a label must come from the signal alone
   and be the same every time.
-- A tmux window name has no whitespace and at most 40 characters, which these labels can't meet.
+- hub keeps a tmux window name to at most 40 characters with no whitespace, which these labels
+  can't meet.
 
 ## Decision
 
@@ -42,9 +43,11 @@ parentheses. The activity is the skill the tab runs, or one plain word, so each 
 its own tab. A tab the launcher opened with the same label is the same tab, and hub reuses it.
 
 Text that comes from a signal has its line breaks and control characters removed and is cut to a
-fixed length. An alert's excerpt is the start of its message. When a piece of a
+fixed length. An alert's environment is also lowercased, with each run of other characters made
+one hyphen. An alert's excerpt is the start of its message. When a piece of a
 signal's text, such as an alert's message, a CI workflow's name or a media item's title, is not
-shown whole, it ends in `…` and a six-character hash, so two signals never share a label.
+shown whole, it ends in `…` and a six-character hash, so two signals of one repository never share
+a label.
 
 tmux window names don't change, and in tmux a PR's investigation and reviews still share one
 window.

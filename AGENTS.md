@@ -20,7 +20,7 @@ Its three binaries serve three distinct audiences:
 - **`hub`** (CLI) — the **agent's toolkit** (stub). The task subcommand (`hub task *`) was removed with the task model (ADR 019). Future agent-facing subcommands will be added here as the filesystem session model is built out.
 - **`hub-daemon`** — the **unattended surface** (ADR 020). Refreshes the signal cache with nobody present. It refreshes every 15 minutes (`--interval`), one daemon per profile, and `--once` runs a single pass. Each pass is recorded in a health record in the profile's database, and after each refresh that finds pull requests that are my turn, one macOS notification through `terminal-notifier` counts them by reason. `just daemon-start` runs the installed binary under launchd at every login. The TUI's status bar warns when the daemon's refreshes stop. The TUI becoming a client of the daemon and the PR attention model are the rest of [#327](https://github.com/ooloth/hub/issues/327).
 
-The core value is cross-domain triage plus agent delegation: signals from different systems are ranked together in one list, and any signal can be investigated by pressing `i` to launch a Claude Code session with injected context. That session opens in its own tmux window or Rex tab, whichever encloses the TUI, named after the signal by `domain::InvestigationWindow`, so several investigations run side by side: in tmux it joins the TUI's window list, and in Rex it opens in the background in its repository's `Workers (<repo>)` session ([decision 032](docs/decisions/032-hubs-rex-tabs-open-in-their-repositorys-session.md)).
+The core value is cross-domain triage plus agent delegation: signals from different systems are ranked together in one list, and any signal can be investigated by pressing `i` to launch a Claude Code session with injected context. That session opens in its own tmux window or Rex tab, whichever encloses the TUI, named after the signal by `domain::InvestigationWindow`, so several investigations run side by side: in tmux it joins the TUI's window list, and in Rex it opens in the background in its repository's `Workers (<repo>)` session ([decision 032](docs/decisions/032-hubs-rex-tabs-open-in-their-repositorys-session.md)), labelled as [decision 033](docs/decisions/033-hubs-rex-tabs-say-what-is-happening-in-them.md) says.
 
 See [README.md](README.md) for the full feature list and value proposition.
 
@@ -220,8 +220,10 @@ is exercised, whatever terminal the agent itself is in. A change under
 launch does when it fails (`domain/src/investigation_window.rs`,
 `domain/src/rex_label.rs`, `domain/src/github_login.rs`,
 `domain/src/pr_window_activity.rs`, `domain/src/review_skill.rs`,
-`domain/src/window_project.rs`, `domain/src/workers_session.rs`,
-`ui/tui/src/investigations/launch.rs`, `report_launch` in `ui/tui/src/main.rs`),
+`domain/src/window_project.rs`, `domain/src/window_segment.rs`,
+`domain/src/workers_session.rs`, `graphql_login` in
+`clients/src/github/issues/fetch.rs`, `ui/tui/src/investigations/launch.rs`, and
+`author_login`, `report_launch` and `show_pr_diff` in `ui/tui/src/main.rs`),
 is driven live in both tmux and Rex. Every other change is driven in tmux, which
 exists wherever an agent runs and takes an exact size.
 
@@ -233,14 +235,15 @@ tmux new-session -d -s qa -x 200 -y 50 -c "$PWD"
 tmux send-keys -t qa:1 "just tui" Enter
 sleep 12                                          # wait for the first render
 tmux capture-pane -t qa:1 -p
+ls -d ~/.hub/repos/*/investigation-*               # before i, to tell the run's worktree apart
 tmux send-keys -t qa:1 "i"
 sleep 12
 tmux list-panes -s -t qa -F '#{window_name} :: #{pane_start_command}'
 ```
 
-Then clean up every time: `tmux kill-session -t qa`, remove any
-`investigation-*` worktrees left under `~/.hub/repos/<repo name>/`, and delete
-`/tmp/hub-supporting-data-*.json`.
+Then clean up every time: `tmux kill-session -t qa`, and remove the `investigation-*`
+worktree the run created, which the listing taken before `i` tells apart from the user's own,
+and the run's `/tmp/hub-supporting-data-*.json` file.
 
 **The loop in Rex.** The TUI gets its own tab, created with a fixed size so the
 status bar is not cut off:
@@ -351,6 +354,7 @@ Clean up in this order, every time:
 - **Text sent while the TUI is not running goes to the shell.** A key such as
   `i` then shows as whatever zsh suggests from history, which looks like a
   command nobody typed. Read the capture for the TUI before sending keys.
+  Clear the line with `rex send-key -s "$S" -b "$B" ctrl+c`; Rex refuses `ctrl-c`.
 - **There is no `#{pane_start_command}`.** Read an investigation's launch
   command off its process. `pgrep -n` takes the newest, so an investigation
   left open from earlier answers if this one did not start. When a cleanup
