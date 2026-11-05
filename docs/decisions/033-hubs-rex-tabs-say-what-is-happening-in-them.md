@@ -85,6 +85,9 @@ In Rex, a PR's investigation and each review get their own tab, but all of them 
 one `pr-<N>` worktree. A review that changes files, such as `review-converge`, runs beside the
 others there, and nothing stops two of them changing it at once.
 
+hub checks a PR's or issue's author is a GitHub login before it knows which terminal it is in, so
+an author the check refuses stops the launch in tmux too, where no label uses it.
+
 ## Revisit when
 
 `monitor-prs` or the launcher change their label form, or Rex lets a tab carry an identifier hub

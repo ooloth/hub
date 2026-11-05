@@ -16,11 +16,11 @@ Hub is a personal command center that aggregates signals from multiple sources �
 
 Its three binaries serve three distinct audiences:
 
-- **`hub-tui`** (Ratatui dashboard) — the **human-facing surface**. Read signals, launch investigation sessions, watch session progress, review results.
+- **`hub-tui`** (Ratatui dashboard) — the **human-facing surface**. Read signals and launch investigation sessions.
 - **`hub`** (CLI) — the **agent's toolkit** (stub). The task subcommand (`hub task *`) was removed with the task model (ADR 019). Future agent-facing subcommands will be added here as the filesystem session model is built out.
 - **`hub-daemon`** — the **unattended surface** (ADR 020). Refreshes the signal cache with nobody present. It refreshes every 15 minutes (`--interval`), one daemon per profile, and `--once` runs a single pass. Each pass is recorded in a health record in the profile's database, and after each refresh that finds pull requests that are my turn, one macOS notification through `terminal-notifier` counts them by reason. `just daemon-start` runs the installed binary under launchd at every login. The TUI's status bar warns when the daemon's refreshes stop. The TUI becoming a client of the daemon and the PR attention model are the rest of [#327](https://github.com/ooloth/hub/issues/327).
 
-The core value is cross-domain triage plus agent delegation: signals from different systems are ranked together in one list, and any signal can be investigated by pressing `i` to launch a Claude Code session with injected context. That session opens in its own tmux window or Rex tab, whichever encloses the TUI, named after the signal by `domain::InvestigationWindow`, so several investigations run side by side: in tmux it joins the TUI's window list, and in Rex it opens in the background in its repository's `Workers (<repo>)` session ([decision 032](docs/decisions/032-hubs-rex-tabs-open-in-their-repositorys-session.md)), labelled as [decision 033](docs/decisions/033-hubs-rex-tabs-say-what-is-happening-in-them.md) says.
+The core value is cross-domain triage plus agent delegation: signals from different systems are ranked together in one list, and pressing `i` on a signal launches a Claude Code session with injected context, for every kind of signal but Linear issues and some private ones. That session opens in its own tmux window or Rex tab, whichever encloses the TUI, named after the signal by `domain::InvestigationWindow`, so several investigations run side by side: in tmux it joins the TUI's window list, and in Rex it opens in the background in its repository's `Workers (<repo>)` session ([decision 032](docs/decisions/032-hubs-rex-tabs-open-in-their-repositorys-session.md)), labelled as [decision 033](docs/decisions/033-hubs-rex-tabs-say-what-is-happening-in-them.md) says.
 
 See [README.md](README.md) for the full feature list and value proposition.
 
@@ -231,12 +231,12 @@ exists wherever an agent runs and takes an exact size.
 
 ```bash
 just build                                        # send-keys races a cargo build
-tmux new-session -d -s qa -x 200 -y 50 -c "$PWD"
-tmux send-keys -t qa:1 "just tui" Enter
+tmux new-session -d -s qa -n tui -x 200 -y 50 -c "$PWD"
+tmux send-keys -t qa:tui "just tui" Enter
 sleep 12                                          # wait for the first render
-tmux capture-pane -t qa:1 -p
+tmux capture-pane -t qa:tui -p
 ls -d ~/.hub/repos/*/investigation-*               # before i, to tell the run's worktree apart
-tmux send-keys -t qa:1 "i"
+tmux send-keys -t qa:tui "i"
 sleep 12
 tmux list-panes -s -t qa -F '#{window_name} :: #{pane_start_command}'
 ```
@@ -302,10 +302,11 @@ Clean up in this order, every time:
 
 **Gotchas that cost time**
 
-- **Windows are 1-indexed here.** `qa:0` fails with `can't find window: 0`.
+- **The TUI's window is `qa:tui`, not a number.** The first window's index is the user's
+  `base-index`, 1 on this Mac and 0 in a fresh orb, so the loop names the window instead.
 - **`capture-pane` shows the shell until the TUI enters the alternate screen.**
   An empty-looking capture usually means it has not rendered yet, not that it
-  crashed. Poll `tmux display-message -p -t qa:1 '#{alternate_on}'` for `1`.
+  crashed. Poll `tmux display-message -p -t qa:tui '#{alternate_on}'` for `1`.
 - **`op whoami` is not the credentials check.** It reports the CLI session,
   which says `account is not signed in` on a working machine, because the
   1Password desktop app's CLI integration authorises each `op read` on its own
@@ -328,7 +329,8 @@ Clean up in this order, every time:
   Diagnose on this symptom, not on anything `op whoami` says.
 - **You cannot `echo` inside a launched investigation window** — it is running
   Claude Code. Read the prompts off the process instead:
-  `ps -p $(tmux display-message -p -t qa:2 '#{pane_pid}') -wwE -o command=`.
+  `ps -p $(tmux display-message -p -t <window id> '#{pane_pid}') -wwE -o command=`, with the
+  investigation's `@` id from `tmux list-windows -t qa -F '#{window_id} #{window_name}'`.
 - **`#{pane_start_command}` is the exact command tmux was handed**, which is what
   to assert against when the change affects how an investigation is launched.
 - **An investigation can open at Claude Code's "trust this folder" prompt
