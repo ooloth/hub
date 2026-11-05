@@ -1,4 +1,4 @@
-//! Hub TUI — the human-facing terminal dashboard for signal triage and task management.
+//! Hub TUI — the human-facing terminal dashboard for signal triage and launching investigations.
 use anyhow::{Context, Result};
 use chrono::Utc;
 use crossterm::{

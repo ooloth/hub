@@ -60,8 +60,6 @@ pub mod rex_session_id;
 pub mod screen_at_deadline;
 /// Serde helpers for non-standard wire formats (e.g. duration as seconds).
 pub mod serde_helpers;
-/// Claude Code session transcript parsing.
-pub mod session;
 /// A source that failed during a refresh, and why, in a form safe to log and store.
 pub mod source_failure;
 /// Which sources a refresh heard from, and which failed.
@@ -102,7 +100,6 @@ pub use project_short_name::*;
 pub use review_skill::*;
 pub use rex_label::*;
 pub use rex_session_id::*;
-pub use session::*;
 pub use untrusted::*;
 pub use urgency::*;
 pub use window_project::*;

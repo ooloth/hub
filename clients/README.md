@@ -1,8 +1,9 @@
 # clients
 
 External API wrappers. The only code that calls external services' APIs, over HTTP with `reqwest`
-or through the `gcloud` CLI. Other crates reach the network only through programs they run:
-`workflows` runs `git fetch`, and `config` runs `op read`.
+or through the `gcloud` CLI. Other crates reach the network only through programs they run
+(`workflows` runs `git fetch`, `config` runs `op read` and `ui/tui` runs `gh pr diff`) or by calling
+`clients`.
 
 **Rules:**
 - One file or subdirectory per external service
@@ -25,7 +26,6 @@ let prs: Vec<PullRequest> = reqwest::Client::new()
     .get("https://api.github.com/...")
     .bearer_auth(&token)
     .header("User-Agent", "hub-cli")
-    .timeout(std::time::Duration::from_secs(20))
     .send().await?
     .error_for_status()?
     .json().await?;

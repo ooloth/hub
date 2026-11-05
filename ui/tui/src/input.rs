@@ -114,7 +114,7 @@ fn unified_list_keys(
         (KeyCode::Char('m'), _) if split_active && item_kind == SelectedItemKind::Pr => {
             Some(Action::MergePr)
         }
-        // d arms the PR diff submenu when split view shows a PR.
+        // d arms the PR actions submenu (delta diff, lazygit, Octo) when split view shows a PR.
         (KeyCode::Char('d'), _) if split_active && item_kind == SelectedItemKind::Pr => {
             Some(Action::PrActionSubmenu)
         }

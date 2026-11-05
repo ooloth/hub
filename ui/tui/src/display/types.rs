@@ -30,7 +30,6 @@ pub(crate) enum FlatRow {
         first_item: StatusItem,
     },
     GroupChild {
-        #[allow(dead_code)]
         parent_key: GroupKey,
         item: StatusItem,
         is_last: bool,
@@ -53,7 +52,7 @@ impl LogLine {
     }
 }
 
-/// View data for the `LogDetail` screen: shared metadata from one monitoring alert
+/// View data for an alert's detail pane: shared metadata from one monitoring alert
 /// plus all raw log lines from that alert window (one for a single item, many for a group).
 #[derive(Clone, Debug)]
 pub(crate) enum LogDetailView {

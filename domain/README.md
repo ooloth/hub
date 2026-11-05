@@ -17,6 +17,9 @@ Types and pure business logic. The shared vocabulary of the system.
 - `RepoSlug`, `UntrustedText` and the investigation types `InvestigationPrompt` and
   `InvestigationWindow`
 - `ProjectShortName`, what a project is called in tmux window names (`project_short_name.rs`)
-- session transcript parsing: `StreamBlock` (`session.rs`)
+- the window and tab types: `GitHubLogin`, `RexLabel`, `WorkersSession`, `RexSessionId`,
+  `WindowProject`, `PrWindowActivity` and `ReviewSkill`, one file each
+
+`lib.rs` names every module with a line on what it holds.
 
 Config structs are in `config/`, not here.
