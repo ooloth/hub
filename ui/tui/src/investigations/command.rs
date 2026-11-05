@@ -455,54 +455,61 @@ mod tests {
     /// appearance says why: the failure mode becomes a deliberate opt-out
     /// visible in review rather than an omission nobody sees.
     ///
-    /// `launch.rs` and this file are exempt. Writing the supporting-data file
-    /// and rendering the prompt are the I/O and assembly edges where exposure
-    /// is the point.
+    /// It reads every file in `src/investigations/` and `src/main.rs`, which turns alert and media
+    /// text into window labels. `launch.rs` and this file are exempt. Writing the supporting-data
+    /// file and rendering the prompt are the I/O and assembly edges where exposure is the point.
     #[test]
     fn every_exposure_of_untrusted_text_says_why() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/investigations");
-        let entries = std::fs::read_dir(&dir).expect("read investigations dir");
-        let mut offenders = Vec::new();
-        for entry in entries {
-            let path = entry.expect("dir entry").path();
-            if path.extension().is_none_or(|ext| ext != "rs") {
-                continue;
-            }
-            let name = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-            if name == "launch.rs" || name == "command.rs" {
-                continue;
-            }
-            let source = std::fs::read_to_string(&path).expect("read source");
-            let lines: Vec<&str> = source.lines().collect();
-            for (index, line) in lines.iter().enumerate() {
-                if !line.contains(".expose()") {
-                    continue;
-                }
-                // Scan up through the contiguous comment block above the call,
-                // so a justification may run to more than one line.
-                let justified = (0..index)
-                    .rev()
-                    .map_while(|above| lines.get(above))
-                    .map_while(|line| {
-                        let trimmed = line.trim_start();
-                        trimmed.starts_with("//").then_some(trimmed)
-                    })
-                    .any(|line| line.contains("expose:"));
-                if !justified {
-                    offenders.push(format!("{name}:{}", index + 1));
-                }
-            }
-        }
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let investigations = std::fs::read_dir(root.join("investigations"))
+            .expect("read investigations dir")
+            .map(|entry| entry.expect("dir entry").path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "rs"))
+            .filter(|path| {
+                path.file_name()
+                    .is_some_and(|name| name != "launch.rs" && name != "command.rs")
+            });
+        let files: Vec<_> = investigations.chain([root.join("main.rs")]).collect();
+        let offenders: Vec<String> = files
+            .iter()
+            .flat_map(|path| unjustified_exposures(&root, path))
+            .collect();
         assert_eq!(
             offenders,
             Vec::<String>::new(),
             "unexplained exposure of untrusted text; add a `// expose: <why>` line above each, \
              or fence the text with InvestigationPrompt::untrusted instead: {offenders:?}"
         );
+    }
+
+    /// Each `.expose()` in the file at `path` with no `// expose:` line in the comment block
+    /// above it, as `<path under root>:<line>`.
+    fn unjustified_exposures(root: &Path, path: &Path) -> Vec<String> {
+        let source = std::fs::read_to_string(path).expect("read source");
+        let name = path
+            .strip_prefix(root)
+            .unwrap_or(path)
+            .display()
+            .to_string();
+        let lines: Vec<&str> = source.lines().collect();
+        lines
+            .iter()
+            .enumerate()
+            .filter(|(_, line)| line.contains(".expose()"))
+            .filter(|(index, _)| {
+                // Scan up through the contiguous comment block above the call,
+                // so a justification may run to more than one line.
+                !(0..*index)
+                    .rev()
+                    .map_while(|above| lines.get(above))
+                    .map_while(|line| {
+                        let trimmed = line.trim_start();
+                        trimmed.starts_with("//").then_some(trimmed)
+                    })
+                    .any(|line| line.contains("expose:"))
+            })
+            .map(|(index, _)| format!("{name}:{}", index + 1))
+            .collect()
     }
 
     // ── One snapshot per investigation type ───────────────────────────────────
