@@ -6,8 +6,8 @@
 # rest, and the PR limit leaves room for them beside the group. For a 0.x crate Dependabot counts
 # a minor bump (0.28 to 0.29) as a major, as Cargo does. The TUI crates that must move together are
 # the exception, in a group of their own. Security updates ignore the version-update groups and
-# would open one PR per package, so they get their own group, which also leaves majors to their
-# own PRs.
+# would open one PR per package, so they get their own group of minor and patch updates, and a
+# security major opens on its own.
 #
 # rust-toolchain.toml sets `channel = "stable"` rather than a version, so it has nothing for
 # Dependabot to bump and has no entry here.
@@ -27,6 +27,9 @@ updates:
       # ui/tui/Cargo.toml must match. deny.toml rejects duplicate versions, so one moving alone
       # fails CI. They arrive as one PR, majors included. Dependabot gives a dependency to the
       # first group that matches, so this group comes before the catch-all.
+      # Security updates move only the vulnerable crate, so a fix that needs a newer crossterm
+      # than ratatui allows arrives alone and fails deny. cargo audit fails CI meanwhile, and the
+      # fix is the ratatui upgrade this group proposes.
       tui:
         applies-to: version-updates
         patterns: [ansi-to-tui, crossterm, ratatui]
