@@ -455,8 +455,9 @@ mod tests {
     /// appearance says why: the failure mode becomes a deliberate opt-out
     /// visible in review rather than an omission nobody sees.
     ///
-    /// It reads every file in `src/investigations/` and `src/main.rs`, which turns alert and media
-    /// text into window labels. `launch.rs` and this file are exempt. Writing the supporting-data
+    /// It reads every file in `src/investigations/`, `src/main.rs`, which turns alert and media text
+    /// into tmux window names and Rex labels, and `src/state/update/signals.rs`, which turns an
+    /// alert's log line into the text its launch carries. `launch.rs` and this file are exempt. Writing the supporting-data
     /// file and rendering the prompt are the I/O and assembly edges where exposure is the point.
     #[test]
     fn every_exposure_of_untrusted_text_says_why() {
@@ -469,7 +470,9 @@ mod tests {
                 path.file_name()
                     .is_some_and(|name| name != "launch.rs" && name != "command.rs")
             });
-        let files: Vec<_> = investigations.chain([root.join("main.rs")]).collect();
+        let files: Vec<_> = investigations
+            .chain([root.join("main.rs"), root.join("state/update/signals.rs")])
+            .collect();
         let offenders: Vec<String> = files
             .iter()
             .flat_map(|path| unjustified_exposures(&root, path))

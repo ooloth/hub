@@ -218,8 +218,9 @@ encloses the TUI, so the terminal the loop runs the TUI in decides which path
 is exercised, whatever terminal the agent itself is in. A change to code that
 decides where a Rex tab goes, what it is labelled or what a launch does when it
 fails is driven live in both tmux and Rex. That code is everything under
-`ui/tui/src/terminal/`, `domain/src/github_login.rs` and
-`domain/src/window_segment.rs`, and every file this search lists:
+`ui/tui/src/terminal/`, `domain/src/github_login.rs`,
+`domain/src/project_short_name.rs` and `domain/src/window_segment.rs`, and every
+file this search lists:
 
 ```bash
 rg -l -w 'InvestigationWindow|RexLabel|RexSessionId|WorkersSession|WindowProject|PrWindowActivity|ReviewSkill|window_project_for|graphql_login|author_login|report_launch' --type rust
@@ -237,7 +238,7 @@ tmux send-keys -t qa:tui "just tui" Enter
 sleep 12                                          # wait for the first render
 tmux capture-pane -t qa:tui -p
 ls -d ~/.hub/repos/*/investigation-*               # before i, to tell the run's worktree apart
-ls /tmp/hub-supporting-data-*.json                 # before i, to tell the run's data file apart
+ls /tmp/hub-supporting-data-*.json 2>/dev/null     # before i, to tell the run's data file apart
 tmux send-keys -t qa:tui "i"
 sleep 12
 tmux list-panes -s -t qa -F '#{window_name} :: #{pane_start_command}'
@@ -261,7 +262,7 @@ rex send -s "$S" -b "$B" 'just tui' && rex send-key -s "$S" -b "$B" enter
 sleep 12                                          # wait for the first render
 rex capture -s "$S" -b "$B" --trim
 ls -d ~/.hub/repos/*/investigation-*               # before i, to tell the run's worktree apart
-ls /tmp/hub-supporting-data-*.json                 # before i, to tell the run's data file apart
+ls /tmp/hub-supporting-data-*.json 2>/dev/null     # before i, to tell the run's data file apart
 T=$(mktemp); F=0                                  # before i, to tell the run's tab apart
 SL=$(rex session list --json) || F=1
 for s in $(printf '%s\n' "$SL" | jq -r '.sessions[].session_id'); do
