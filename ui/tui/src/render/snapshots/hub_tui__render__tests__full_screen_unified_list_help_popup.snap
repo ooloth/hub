@@ -1,11 +1,9 @@
 ---
 source: ui/tui/src/render/mod.rs
-assertion_line: 1183
 expression: screen_text(&buf)
 ---
 ╭ All ─────────────────────────────────────────────────────────────────────────╮
 │CI · check / fmt · failed                                            hub · now│
-│                                                                              │
 │             ┌ Keybinds ────────────────────────────────────────┐             │
 │             │  ?                 toggle help                   │             │
 │             │  k / j             up / down                     │             │
@@ -14,7 +12,8 @@ expression: screen_text(&buf)
 │             │  h / l             collapse / expand group       │             │
 │             │  Enter             open                          │             │
 │             │  i                 investigate                   │             │
-│             │  p / e / o         filter PRs / Errors / Issues  │             │
+│             │  p / e / O         filter PRs / Errors / Issues  │             │
+│             │  o                 open in browser               │             │
 │             │  /                 search                        │             │
 │             │  a / Esc           clear filter                  │             │
 │             │  r                 refresh                       │             │

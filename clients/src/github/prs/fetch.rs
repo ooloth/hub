@@ -647,8 +647,8 @@ mod tests {
 
     #[rstest]
     #[case::author_excluded_in_its_repo(
-        &["dependabot-preview[bot]"],
-        vec![pr_repo("owner/a", vec!["dependabot-preview[bot]"])],
+        &["dependabot-preview"],
+        vec![pr_repo("owner/a", vec!["dependabot-preview"])],
         0
     )]
     #[case::author_excluded_only_in_another_repo(

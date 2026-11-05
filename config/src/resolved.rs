@@ -331,13 +331,13 @@ mod tests {
                 "gatsby",
                 "ooloth/gatsbytutorials.com",
                 vec![toml::WorkflowConfig::GithubPrs {
-                    exclude_authors: vec!["dependabot-preview[bot]".into()],
+                    exclude_authors: vec!["dependabot-preview".into()],
                 }],
             ),
             project("hub", "ooloth/hub", vec![github_prs()]),
         ]);
         let repos = cfg.github_pr_repos();
-        assert_eq!(repos[0].exclude_authors, vec!["dependabot-preview[bot]"]);
+        assert_eq!(repos[0].exclude_authors, vec!["dependabot-preview"]);
         assert_eq!(repos[1].exclude_authors, Vec::<String>::new());
     }
 
