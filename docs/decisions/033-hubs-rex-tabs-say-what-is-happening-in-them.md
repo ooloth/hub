@@ -38,8 +38,11 @@ open tab by that label in the tab's session.
 | A Loki or GCP alert | `Loki prod <excerpt>: investigate` |
 | A media item | `Media <title>: investigate` |
 
-The author is the GitHub login of whoever opened the PR or issue, and a subject nobody wrote has no
-parentheses. The activity is the skill the tab runs, or one plain word, so each review skill has
+The author is the GitHub login of whoever opened the PR or issue, as GraphQL spells it, and a
+subject nobody wrote has no parentheses. GitHub's REST API spells an app's login with `[bot]` after
+it, such as `renovate[bot]`, and GraphQL spells the same account `renovate`. hub's issue client
+removes the `[bot]`, so a launcher that opens a tab for an app's PR or issue labels it `renovate`
+for hub to find it. The activity is the skill the tab runs, or one plain word, so each review skill has
 its own tab. A tab the launcher opened with the same label is the same tab, and hub reuses it.
 
 Text that comes from a signal has its line breaks and control characters removed and is cut to a

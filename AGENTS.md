@@ -215,17 +215,18 @@ they were, and the status bar names the sources that failed.
 
 **Which terminal to drive it in.** hub opens its windows in whichever terminal
 encloses the TUI, so the terminal the loop runs the TUI in decides which path
-is exercised, whatever terminal the agent itself is in. A change under
-`ui/tui/src/terminal/`, or to where a Rex tab goes, what it is labelled or what a
-launch does when it fails (`domain/src/investigation_window.rs`,
-`domain/src/rex_label.rs`, `domain/src/github_login.rs`,
-`domain/src/pr_window_activity.rs`, `domain/src/review_skill.rs`,
-`domain/src/window_project.rs`, `domain/src/window_segment.rs`,
-`domain/src/workers_session.rs`, `graphql_login` in
-`clients/src/github/issues/fetch.rs`, `ui/tui/src/investigations/launch.rs`, and
-`author_login`, `report_launch` and `show_pr_diff` in `ui/tui/src/main.rs`),
-is driven live in both tmux and Rex. Every other change is driven in tmux, which
-exists wherever an agent runs and takes an exact size.
+is exercised, whatever terminal the agent itself is in. A change to code that
+decides where a Rex tab goes, what it is labelled or what a launch does when it
+fails is driven live in both tmux and Rex. That code is everything under
+`ui/tui/src/terminal/`, `domain/src/github_login.rs` and
+`domain/src/window_segment.rs`, and every file this search lists:
+
+```bash
+rg -l -w 'InvestigationWindow|RexLabel|RexSessionId|WorkersSession|WindowProject|PrWindowActivity|ReviewSkill|window_project_for|graphql_login|author_login|report_launch' --type rust
+```
+
+Every other change is driven in tmux, which exists wherever an agent runs and
+takes an exact size.
 
 **The loop.**
 
@@ -236,14 +237,16 @@ tmux send-keys -t qa:tui "just tui" Enter
 sleep 12                                          # wait for the first render
 tmux capture-pane -t qa:tui -p
 ls -d ~/.hub/repos/*/investigation-*               # before i, to tell the run's worktree apart
+ls /tmp/hub-supporting-data-*.json                 # before i, to tell the run's data file apart
 tmux send-keys -t qa:tui "i"
 sleep 12
 tmux list-panes -s -t qa -F '#{window_name} :: #{pane_start_command}'
 ```
 
-Then clean up every time: `tmux kill-session -t qa`, and remove the `investigation-*`
-worktree the run created, which the listing taken before `i` tells apart from the user's own,
-and the run's `/tmp/hub-supporting-data-*.json` file.
+Then clean up every time: `tmux kill-session -t qa`, and remove the `investigation-*` worktree
+and the `/tmp/hub-supporting-data-*.json` file the run created. The listings taken before `i`
+tell them apart from the user's own, which belong to investigations still running. Only a Loki or
+GCP launch writes a data file, so most runs leave none.
 
 **The loop in Rex.** The TUI gets its own tab, created with a fixed size so the
 status bar is not cut off:
@@ -258,10 +261,14 @@ rex send -s "$S" -b "$B" 'just tui' && rex send-key -s "$S" -b "$B" enter
 sleep 12                                          # wait for the first render
 rex capture -s "$S" -b "$B" --trim
 ls -d ~/.hub/repos/*/investigation-*               # before i, to tell the run's worktree apart
-T=$(mktemp)                                       # before i, to tell the run's tab apart
-for s in $(rex session list --json | jq -r '.sessions[].session_id'); do
-  rex window ls -s "$s" --json | jq -r '.windows[].window_id'
-done > "$T"
+ls /tmp/hub-supporting-data-*.json                 # before i, to tell the run's data file apart
+T=$(mktemp); F=0                                  # before i, to tell the run's tab apart
+SL=$(rex session list --json) || F=1
+for s in $(printf '%s\n' "$SL" | jq -r '.sessions[].session_id'); do
+  WL=$(rex window ls -s "$s" --json) || F=1
+  printf '%s\n' "$WL" | jq -r '.windows[].window_id' >> "$T" || F=1
+done
+[ "$F" = 0 ] && grep -q . "$T" && echo 'tab snapshot ok' || echo 'TAB SNAPSHOT FAILED'
 rex send -s "$S" -b "$B" i
 sleep 12
 rex capture -s "$S" -b "$B" --trim | grep -E 'Opened in|Already open in'
@@ -284,21 +291,26 @@ When no session has that label, `jq -e` fails, `W` holds the string `null`, and 
 not run. Either `L` does not match the status bar, or the launch opened no tab and the status bar
 shows its error. Run nothing below that uses `W` until the listing works.
 
-The listing shows only the tabs the run opened. An empty listing after `Already open in` is
+When the snapshot printed `tab snapshot ok`, the listing shows the tabs opened since it was taken.
+That is the run's tab, plus any tab another process, such as `monitor-prs`, opened in the
+meantime. When it printed `TAB SNAPSHOT FAILED`, `T` misses some or all of the user's tabs, and
+the listing can show tabs the run never opened. An empty listing after `Already open in` is
 expected, because the tab was there before the run.
 
 Clean up in this order, every time:
 
-1. If the status bar said `Opened in`, close the tab the listing shows:
-   `rex window close -s "$W" <window_id>`. Leave every other tab alone, including a tab that was
-   already open.
+1. Close a tab only when all of these hold: the snapshot printed `tab snapshot ok`, the status bar
+   said `Opened in`, and the listing shows exactly one tab, labelled as decision 033 says for the
+   signal `i` was pressed on. Close that one with `rex window close -s "$W" <window_id>`.
+   Otherwise close nothing, and report what the listing showed. Every other tab is the user's,
+   including one that was already open.
 2. If the status bar said `a new session` and the session now has no tabs, `rex session kill "$W"`.
 3. `rex session kill "$S"`.
-4. Remove the `investigation-*` worktree the run created, which the listing taken before `i` tells
-   apart from the user's own, and the run's `/tmp/hub-supporting-data-*.json` file, and
-   `rm "$T"`. Closing a tab
-   ends its investigation before its own cleanup runs, so that worktree is left behind. A PR tab
-   works in the shared `pr-<N>` worktree, which stays.
+4. Remove the `investigation-*` worktree and the `/tmp/hub-supporting-data-*.json` file the run
+   created. The listings taken before `i` tell them apart from the user's own. Closing a tab ends
+   its investigation before its own cleanup runs, so that worktree is left behind. A PR tab works
+   in the shared `pr-<N>` worktree, which stays.
+5. `rm "$T"`.
 
 **Gotchas that cost time**
 

@@ -56,7 +56,8 @@ pub struct Issue {
     pub repo: RepoSlug,
     /// Link to the issue on GitHub.
     pub url: String,
-    /// GitHub username of the issue author.
+    /// GitHub login of the issue author, as GraphQL spells it: an app's login has no `[bot]`, so
+    /// Renovate is `renovate`, the same spelling `PullRequest.author` holds.
     pub author: String,
     /// How long ago the issue was opened.
     #[serde(with = "crate::serde_helpers::duration_secs")]

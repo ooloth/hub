@@ -5,9 +5,9 @@
 > This decision supersedes ADRs 011–018 (see "What this supersedes"), and the
 > task-model code is gone: the `tasks`/`task_comments` tables, the dispatch
 > tick, fold-back and the `hub task *` CLI have all been removed. `i` opens a
-> named tmux window, built by `domain::InvestigationWindow`. 029 has since
-> superseded 015's tmux section, in Rex `i` opens its tab in the background (032),
-> and the attach action was never built.
+> named tmux window, built by `domain::InvestigationWindow`. 029 supersedes
+> 015's tmux section. In Rex, `i` opens its tab in the background (032). hub has
+> no attach action.
 >
 > The session records are not yet implemented. Nothing writes `~/.hub/sessions/`,
 > `origin.toml`, `prompt.md`, `session-id.txt` or `report.md`, and those names

@@ -249,7 +249,8 @@ pub struct PullRequest {
     /// Whether it is still a draft.
     #[serde(default)]
     pub draft: bool,
-    /// GitHub username of the PR author.
+    /// GitHub login of the PR author, as GraphQL spells it: an app's login has no `[bot]`, so
+    /// Renovate is `renovate`.
     pub author: String,
     /// Aggregate review decision, if any reviewers have responded.
     pub review_decision: Option<ReviewDecision>,
