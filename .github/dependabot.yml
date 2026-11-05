@@ -1,0 +1,42 @@
+# Keeps the Cargo dependencies and the SHA-pinned actions in .github/workflows current.
+#
+# Version updates arrive at most monthly, and only for releases at least 7 days old, so a
+# compromised release has time to be found and pulled. Minor and patch updates are grouped into
+# one PR per ecosystem. Majors open as their own PRs, so one breaking upgrade cannot block the
+# rest, and the PR limit leaves room for them beside the group. Security updates ignore the
+# version-update groups and would open one PR per package, so they get their own group.
+#
+# rust-toolchain.toml sets `channel = "stable"` rather than a version, so it has nothing for
+# Dependabot to bump and has no entry here.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      cargo:
+        applies-to: version-updates
+        patterns: ['*']
+        update-types: [minor, patch]
+      cargo-security:
+        applies-to: security-updates
+        patterns: ['*']
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        applies-to: version-updates
+        patterns: ['*']
+        update-types: [minor, patch]
+      actions-security:
+        applies-to: security-updates
+        patterns: ['*']
