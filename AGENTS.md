@@ -157,6 +157,10 @@ commits and the `Fixes #N` lines in them are lost, and the issues they fixed sta
 #384, 2026-10-28). An independent review of the change still runs before the push, and the user
 sees its findings first.
 
+**A Dependabot PR is merged only after `just check` passes on its branch locally.** CI builds only
+the configuration without hub-private, so a dependency update that breaks a hub-private build still
+passes CI. `just check` lints every configuration the checkout can build.
+
 ## Verifying TUI changes
 
 **Every change that alters what the TUI shows or how it behaves is driven live

@@ -31,7 +31,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: install tools
-        run: cargo install cargo-audit cargo-deny cargo-nextest --locked
+        run: cargo install cargo-audit cargo-deny cargo-nextest taplo-cli --locked
 
       # rustfmt resolves mod declarations even behind #[cfg(feature = "private")],
       # so it fails if the private symlinks (from hub-private) aren't present.
@@ -46,6 +46,14 @@ jobs:
 
       - name: fmt
         run: cargo fmt --check
+
+      # Dependabot edits the Cargo.toml files without running prek's hooks, so CI checks their
+      # formatting and schema the way prek.toml does.
+      - name: taplo fmt
+        run: taplo fmt --check
+
+      - name: taplo check
+        run: taplo check
 
       - name: clippy
         run: cargo clippy --all-targets -- -D warnings
