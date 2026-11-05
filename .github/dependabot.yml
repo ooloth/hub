@@ -3,13 +3,15 @@
 # Version updates arrive at most monthly, and only for releases at least 7 days old, so a
 # compromised release has time to be found and pulled. Minor and patch updates are grouped into
 # one PR per ecosystem. Majors open as their own PRs, so one breaking upgrade cannot block the
-# rest, and the PR limit leaves room for them beside the group. The TUI crates that must move
-# together are the exception, in a group of their own. Security updates ignore the version-update
-# groups and would open one PR per package, so they get their own group.
+# rest, and the PR limit leaves room for them beside the group. For a 0.x crate Dependabot counts
+# a minor bump (0.28 to 0.29) as a major, as Cargo does. The TUI crates that must move together are
+# the exception, in a group of their own. Security updates ignore the version-update groups and
+# would open one PR per package, so they get their own group.
 #
 # rust-toolchain.toml sets `channel = "stable"` rather than a version, so it has nothing for
 # Dependabot to bump and has no entry here.
-# The tools CI installs with `cargo install` are in no manifest, so Dependabot does not see them.
+# The tools ci.yml installs with taiki-e/install-action are pinned by version in its `tool` input,
+# which Dependabot does not read, so those versions are bumped by hand.
 version: 2
 updates:
   - package-ecosystem: cargo
@@ -20,13 +22,13 @@ updates:
       default-days: 7
     open-pull-requests-limit: 5
     groups:
-      # ui/tui/Cargo.toml pins these four to versions that build together, and deny.toml rejects
-      # duplicate versions, so one moving alone fails the build. They arrive as one PR, majors
-      # included. Dependabot gives a dependency to the first group that matches, so this group
-      # comes before the catch-all.
+      # ansi-to-tui depends on a ratatui version, and ratatui on a crossterm version, that
+      # ui/tui/Cargo.toml must match. deny.toml rejects duplicate versions, so one moving alone
+      # fails CI. They arrive as one PR, majors included. Dependabot gives a dependency to the
+      # first group that matches, so this group comes before the catch-all.
       tui:
         applies-to: version-updates
-        patterns: [ansi-to-tui, itertools, ratatui, tui-textarea]
+        patterns: [ansi-to-tui, crossterm, ratatui]
       cargo:
         applies-to: version-updates
         patterns: ['*']

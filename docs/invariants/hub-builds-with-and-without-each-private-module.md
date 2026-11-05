@@ -54,7 +54,7 @@ runs it, `just check` runs `just lint`, and prek runs `just lint` before every c
 fails, it names the configurations that failed and points here.
 
 Public CI checks only the first configuration, because it has no hub-private. It checks it on
-both platforms: `.github/workflows/ci.yml` runs fmt, clippy, the tests, audit and deny on
+both platforms: `.github/workflows/ci.yml` runs fmt, taplo, clippy, the tests, audit and deny on
 `macos-latest` and on `ubuntu-latest` for every push to `main` and every pull request.
 
 What the check misses:
@@ -70,6 +70,9 @@ What the check misses:
   push, in only the fullest configuration the checkout has, and public CI runs only the one without
   hub-private. So the private configurations' tests run on Linux only when an orb runs `just test`,
   and the tests of hub-private without the media module never run on a device that has it.
+- **Dependabot's commits.** Dependabot commits on GitHub, where prek never runs `just lint`.
+  AGENTS.md has a Dependabot PR that changes the Cargo files merged only after `just lint` and
+  `just test` pass in a checkout with hub-private linked.
 - **Runtime behaviour.** A stub that compiles can still do the wrong thing. `media_stub.rs` has a
   test asserting that it returns an error. That test runs only on a device without the media
   module.
