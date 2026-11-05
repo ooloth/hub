@@ -158,10 +158,10 @@ commits and the `Fixes #N` lines in them are lost, and the issues they fixed sta
 sees its findings first.
 
 **A Dependabot PR that changes `Cargo.toml` or `Cargo.lock` is merged only after `just lint` and
-`just test` pass at its head commit, in a checkout where `just setup-private` has linked
-hub-private.** CI builds only the configuration without hub-private, so a dependency update that
-breaks a hub-private build still passes CI. `just check` is not enough here: it rewrites files,
-runs no tests, and lints only the public configuration in a checkout without the private links.
+`just test` pass at its head commit, in a checkout where `just setup-private` has linked every
+hub-private module.** CI builds only the configuration without hub-private, so a dependency update
+that breaks a hub-private build still passes CI. `just check` is not enough here: it rewrites files
+and runs no tests.
 
 ## Verifying TUI changes
 
