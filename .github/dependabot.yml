@@ -8,6 +8,7 @@
 #
 # rust-toolchain.toml sets `channel = "stable"` rather than a version, so it has nothing for
 # Dependabot to bump and has no entry here.
+# The tools CI installs with `cargo install` are in no manifest, so Dependabot does not see them.
 version: 2
 updates:
   - package-ecosystem: cargo
