@@ -216,8 +216,11 @@ they were, and the status bar names the sources that failed.
 **Which terminal to drive it in.** hub opens its windows in whichever terminal
 encloses the TUI, so the terminal the loop runs the TUI in decides which path
 is exercised, whatever terminal the agent itself is in. A change under
-`ui/tui/src/terminal/`, or to where a Rex tab goes or what a launch does when it
-fails (`domain/src/investigation_window.rs`, `domain/src/workers_session.rs`,
+`ui/tui/src/terminal/`, or to where a Rex tab goes, what it is labelled or what a
+launch does when it fails (`domain/src/investigation_window.rs`,
+`domain/src/rex_label.rs`, `domain/src/github_login.rs`,
+`domain/src/pr_window_activity.rs`, `domain/src/review_skill.rs`,
+`domain/src/window_project.rs`, `domain/src/workers_session.rs`,
 `ui/tui/src/investigations/launch.rs`, `report_launch` in `ui/tui/src/main.rs`),
 is driven live in both tmux and Rex. Every other change is driven in tmux, which
 exists wherever an agent runs and takes an exact size.
@@ -252,6 +255,10 @@ rex send -s "$S" -b "$B" 'just tui' && rex send-key -s "$S" -b "$B" enter
 sleep 12                                          # wait for the first render
 rex capture -s "$S" -b "$B" --trim
 ls -d ~/.hub/repos/*/investigation-*               # before i, to tell the run's worktree apart
+T=$(mktemp)                                       # before i, to tell the run's tab apart
+for s in $(rex session list --json | jq -r '.sessions[].session_id'); do
+  rex window ls -s "$s" --json | jq -r '.windows[].window_id'
+done > "$T"
 rex send -s "$S" -b "$B" i
 sleep 12
 rex capture -s "$S" -b "$B" --trim | grep -E 'Opened in|Already open in'
@@ -266,22 +273,27 @@ Put the session's label in `L` and list its tabs:
 ```bash
 L='Workers (hub)'                                 # the label the status bar printed
 W=$(rex session list --json | jq -er --arg l "$L" '.sessions | map(select(.label == $l)) | .[0].session_id') \
-  && rex window ls -s "$W" --json | jq -r '.windows[] | "\(.window_id) \(.label)"'
+  && rex window ls -s "$W" --json | jq -r '.windows[] | "\(.window_id) \(.label)"' \
+  | grep -vFf "$T"
 ```
 
 When no session has that label, `jq -e` fails, `W` holds the string `null`, and the listing does
 not run. Either `L` does not match the status bar, or the launch opened no tab and the status bar
 shows its error. Run nothing below that uses `W` until the listing works.
 
+The listing shows only the tabs the run opened. An empty listing after `Already open in` is
+expected, because the tab was there before the run.
+
 Clean up in this order, every time:
 
-1. If the status bar said `Opened in`, close the tab with that label:
-   `rex window close -s "$W" <window_id>`. Leave the session's other tabs alone, including a tab
-   that was already open.
+1. If the status bar said `Opened in`, close the tab the listing shows:
+   `rex window close -s "$W" <window_id>`. Leave every other tab alone, including a tab that was
+   already open.
 2. If the status bar said `a new session` and the session now has no tabs, `rex session kill "$W"`.
 3. `rex session kill "$S"`.
 4. Remove the `investigation-*` worktree the run created, which the listing taken before `i` tells
-   apart from the user's own, and the run's `/tmp/hub-supporting-data-*.json` file. Closing a tab
+   apart from the user's own, and the run's `/tmp/hub-supporting-data-*.json` file, and
+   `rm "$T"`. Closing a tab
    ends its investigation before its own cleanup runs, so that worktree is left behind. A PR tab
    works in the shared `pr-<N>` worktree, which stays.
 

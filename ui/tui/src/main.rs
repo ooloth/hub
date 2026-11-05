@@ -677,6 +677,8 @@ async fn handle_launch_gcp(
             &tracked.window_project(),
             domain::AlertSource::Gcp,
             &env,
+            // expose: cleaned, cut and hashed into a Rex tab label and a tmux window name, never
+            // prompt text.
             message.expose(),
         ),
         investigations::WorktreeSpec::Ephemeral { project: tracked },
@@ -708,6 +710,8 @@ async fn handle_launch_loki(
             &tracked.window_project(),
             domain::AlertSource::Loki,
             &env,
+            // expose: cleaned, cut and hashed into a Rex tab label and a tmux window name, never
+            // prompt text.
             message.expose(),
         ),
         investigations::WorktreeSpec::Ephemeral { project: tracked },
@@ -759,6 +763,8 @@ async fn handle_launch_media(
         Ok(cfg) => {
             investigations::launch(
                 cfg,
+                // expose: cleaned, cut and hashed into a Rex tab label and a tmux window name,
+                // never prompt text.
                 &domain::InvestigationWindow::media(title.expose()),
                 investigations::WorktreeSpec::CurrentDir,
                 config,

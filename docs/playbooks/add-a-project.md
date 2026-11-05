@@ -21,10 +21,11 @@ Two optional labels default to the repository's name:
 
 - **`name`** is what alert rows and the status bar call the project. It can be any text that is not
   blank.
-- **`short_name`** is what the names of the windows and tabs hub opens call the
-  project, where space is short. It must be lowercase letters, digits and
-  single hyphens, at most 20 characters, so it appears exactly as written. Left
-  out, a long repository name is shortened and ends in a short hash.
+- **`short_name`** is what the names of the tmux windows hub opens call the
+  project, where space is short. Rex tabs are labelled after the signal instead
+  ([decision 033](../decisions/033-hubs-rex-tabs-say-what-is-happening-in-them.md)). It must
+  be lowercase letters, digits and single hyphens, at most 20 characters, so it appears
+  exactly as written. Left out, a long repository name is shortened and ends in a short hash.
 
 ```toml
 [[project]]
@@ -34,7 +35,9 @@ short_name = "clinops"
 ```
 
 No two projects can share a short name, including one that comes from the
-default. hub refuses to start if they do, and the error names both projects.
+default, and no two can track repositories with the same name, because both would
+clone into `~/.hub/repos/<repo name>`. hub refuses to start if they do, and the error
+names both projects.
 
 ## 2. Add codebase-level workflows
 

@@ -1,9 +1,9 @@
-//! The label a project goes by where space is short: window and tab names.
+//! The label a project goes by where space is short: tmux window names.
 
 use crate::window_segment::{clamp, segment};
 use crate::RepoSlug;
 
-/// What a project is called in the windows and tabs hub opens for it.
+/// What a project is called in the names of the tmux windows hub opens for it.
 ///
 /// Always lowercase letters, digits and single hyphens, at most
 /// [`Self::MAX_LEN`] characters, which is exactly what a window's project
@@ -40,8 +40,8 @@ impl ProjectShortName {
         }
     }
 
-    /// The short name of a project that chose none: its repository's name, as
-    /// a window has always shown it.
+    /// The short name of a project that chose none: its repository's name, made
+    /// to fit a tmux window's project segment.
     ///
     /// # Panics
     /// Panics if the derived name breaks the rules [`Self::parse`] enforces,

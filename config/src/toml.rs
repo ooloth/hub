@@ -34,7 +34,7 @@ pub struct CredentialsToml {
 pub struct Project {
     /// What the TUI calls the project. Defaults to the repository's name.
     pub name: Option<String>,
-    /// What window and tab names call the project: lowercase letters, digits
+    /// What tmux window names call the project: lowercase letters, digits
     /// and single hyphens, at most 20 characters. Defaults to the repository's
     /// name as a window shows it.
     pub short_name: Option<String>,

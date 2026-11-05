@@ -78,7 +78,7 @@
         },
         "short_name": {
           "type": "string",
-          "description": "What window and tab names call this project. Defaults to the repository's name as a window shows it. Must differ from every other project's.",
+          "description": "What tmux window names call this project. Defaults to the repository's name as a window shows it. Must differ from every other project's.",
           "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
           "maxLength": 20
         },

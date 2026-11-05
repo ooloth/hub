@@ -67,8 +67,9 @@ is mutated:
 3. Handle it in `App::update()` in `state/update/mod.rs` — mutate state and/or return
    one or more `Effect` values
 4. If a new `Effect` variant is needed, add it to the enum in `state/types.rs`,
-   handle it in `handle_effect()` in `main.rs` (an effect that launches a window goes in
-   `handle_investigation_effect()`, which `handle_effect()` falls through to), and if it
+   handle it in `handle_effect()` in `main.rs` (an effect that launches an investigation goes
+   in `handle_investigation_effect()`, which `handle_effect()` falls through to, and one that
+   opens a PR tool, such as the diff, lazygit or Octo, stays in `handle_effect()`), and if it
    launches an investigation add a file in `investigations/` (see below)
 
 ## Render model
@@ -173,7 +174,7 @@ and `review_config()` for pull requests) with a system prompt (loaded via
 `include_str!` from `prompts/`), a context-specific prompt string, and
 tool/model settings. `launch.rs` holds the shared launcher, and
 `command.rs` builds the command it runs. `src/terminal/` opens the window in tmux or Rex,
-whichever encloses the TUI ([Decision 029](../../docs/decisions/029-hub-opens-windows-in-whichever-of-tmux-or-rex-encloses-it.md)). A Rex tab opens in the background, in the session for its repository ([Decision 032](../../docs/decisions/032-hubs-rex-tabs-open-in-their-repositorys-session.md)).
+whichever encloses the TUI ([Decision 029](../../docs/decisions/029-hub-opens-windows-in-whichever-of-tmux-or-rex-encloses-it.md)). A Rex tab opens in the background, in the session for its repository ([Decision 032](../../docs/decisions/032-hubs-rex-tabs-open-in-their-repositorys-session.md)), labelled after its signal, which is how a later launch finds it again ([Decision 033](../../docs/decisions/033-hubs-rex-tabs-say-what-is-happening-in-them.md)).
 
 Use the existing types in `investigations/` as templates when adding a new one.
 
@@ -229,7 +230,9 @@ someone else's branch must not edit it:
 The offered set lives in `PrOwnership::review_options` (`src/state/types.rs`), which
 the status bar renders from and the key handler resolves against. Adding a review
 means adding a `PrReview` variant and a row to that table; the bar and the handler
-cannot drift apart because there is only one table.
+cannot drift apart because there is only one table. A review that runs a skill hub does
+not start yet also needs a `domain::ReviewSkill` variant, which names its slash command
+and the activity its Rex tab's label ends in.
 
 ## Cache and schema version
 

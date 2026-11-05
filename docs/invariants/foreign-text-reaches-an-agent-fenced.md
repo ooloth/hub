@@ -43,8 +43,9 @@ limit of the protection rather than an exception to this invariant.
   below; producing prompt text is not one of them.
 
 What it permits, which is easy to confuse with the above: exposing foreign text to render a list
-row, to hash it into a tmux window name, or to parse a value out of it such as a log's timestamp.
-None of those put the text in front of an agent.
+row, to hash it into a tmux window name, to clean, cut and hash it into a Rex tab label, or to
+parse a value out of it such as a log's timestamp. None of those put the text in a prompt or in a
+file hub hands an agent.
 
 ## How it is enforced
 

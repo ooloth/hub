@@ -20,8 +20,8 @@ pub enum PrWindowActivity {
 impl PrWindowActivity {
     /// The kind segment of the tmux name.
     ///
-    /// An investigation and every review share `pr`, so in tmux they share one window, as they
-    /// always have. Rex gives each its own tab through [`Self::label`].
+    /// An investigation and every review share `pr`, so in tmux they share one window. Rex gives
+    /// each its own tab through [`Self::label`].
     #[must_use]
     pub(crate) const fn tmux_kind(self) -> &'static str {
         match self {

@@ -1,12 +1,12 @@
-//! Deterministic names for the windows hub opens, in tmux or Rex.
+//! What hub calls the windows it opens: a tmux window's name, and a Rex tab's session and label.
 
 use crate::window_segment::{clamp, segment, short_hash};
 use crate::{
     GitHubLogin, PrWindowActivity, ProjectShortName, RexLabel, WindowProject, WorkersSession,
 };
 
-/// Longest window name hub will produce. Beyond this the tmux status bar or
-/// Rex tab bar crowds out everything else.
+/// Longest tmux window name hub will produce. Beyond this the tmux status bar
+/// crowds out everything else.
 const MAX_LEN: usize = 40;
 
 /// Budgets for the three segments. They sum, with the two separators, to
@@ -50,9 +50,10 @@ impl AlertSource {
     }
 }
 
-/// The name of a window hub opened, in tmux or Rex, addressable afterwards.
+/// A window hub opens, named so that a later launch finds it again: by its tmux name in tmux,
+/// and by its label in its session in Rex.
 ///
-/// Every name is `<project>:<kind>:<discriminator>`, built through one
+/// Every tmux name is `<project>:<kind>:<discriminator>`, built through one
 /// constructor per signal kind. The project segment is always a
 /// [`ProjectShortName`], so a configured `short_name` cannot be bypassed.
 ///
@@ -645,7 +646,7 @@ mod tests {
     }
 
     /// In Rex an investigation and each review have their own tab; in tmux they share
-    /// `hub:pr:12`, as they always have.
+    /// `hub:pr:12`.
     #[test]
     fn a_prs_investigation_and_reviews_share_a_tmux_name_but_not_a_label() {
         let windows = [

@@ -9,8 +9,8 @@ use crate::toml;
 pub struct Project {
     /// What the TUI calls the project. The repository's name unless `name` is set.
     pub name: String,
-    /// What window and tab names call the project. The repository's name, as a
-    /// window has always shown it, unless `short_name` is set.
+    /// What tmux window names call the project. The repository's name unless
+    /// `short_name` is set.
     pub short_name: ProjectShortName,
     /// The project's GitHub repository, which also locates its clone.
     pub repo: RepoSlug,

@@ -67,6 +67,21 @@ window.
 A tab someone relabels by hand in Rex is no longer found, and asking for it opens a second one. So
 is a tab whose author renames their GitHub account.
 
+hub looks for a tab only in its repository's session. A tab with the same label in any other
+session, such as one the launcher opened there with `-s` or one moved to another session, is not
+found, and asking for it opens a second one.
+
+A label doesn't name the repository, and a session's label names only the repository, not its
+owner. So a tab for PR 12 of another owner's repository with the same name, by the same author and
+with the same activity, is taken for hub's own and reused. hub refuses two tracked projects whose
+repositories share a name, and launches investigations and reviews only on tracked projects, so
+only a tab from outside them can be taken this way: one the launcher opened, or a diff hub opened
+for a repository no project tracks.
+
+In Rex, a PR's investigation and each review get their own tab, but all of them work in the PR's
+one `pr-<N>` worktree. A review that changes files, such as `review-converge`, runs beside the
+others there, and nothing stops two of them changing it at once.
+
 ## Revisit when
 
 `monitor-prs` or the launcher change their label form, or Rex lets a tab carry an identifier hub

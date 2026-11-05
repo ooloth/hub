@@ -20,7 +20,7 @@ pub mod github_login;
 pub mod investigation_mcp_servers;
 /// Investigation prompts, assembled from parts that say where each came from.
 pub mod investigation_prompt;
-/// Deterministic names for the windows hub opens, in tmux or Rex.
+/// What hub calls the windows it opens: a tmux window's name, and a Rex tab's session and label.
 pub mod investigation_window;
 /// GitHub and Linear issue types and label helpers.
 pub mod issue;
@@ -46,7 +46,7 @@ pub mod pr_turn;
 pub mod pr_window_activity;
 /// Which set of hub's own state a process reads and writes.
 pub mod profile;
-/// The label a project goes by in window and tab names.
+/// The label a project goes by in tmux window names.
 pub mod project_short_name;
 /// Why a pull request is waiting on me, as the card counts it.
 pub mod reason_kind;
