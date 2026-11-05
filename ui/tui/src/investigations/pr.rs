@@ -1,6 +1,6 @@
 use domain::InvestigationPrompt;
 
-use crate::state::{PrAuthor, PrReview, PrReviewTarget};
+use crate::state::{PrOwnership, PrReview, PrReviewTarget};
 
 use super::LaunchConfig;
 
@@ -10,9 +10,9 @@ use super::LaunchConfig;
 /// in 9f402d6 for being too prescriptive; the picker behind `v` is the only place
 /// a skill gets selected. An empty `prompt` is what makes `launch` omit the
 /// positional argument entirely, so the session opens ready for a question.
-pub(crate) fn ask_config(number: u64, repo: &str, author: PrAuthor) -> LaunchConfig {
+pub(crate) fn ask_config(number: u64, repo: &str, ownership: PrOwnership) -> LaunchConfig {
     LaunchConfig {
-        system_prompt: ask_prompt(number, repo, author),
+        system_prompt: ask_prompt(number, repo, ownership),
         prompt: InvestigationPrompt::new(),
         supporting_data: None,
         model: "opus".to_string(),
@@ -21,10 +21,10 @@ pub(crate) fn ask_config(number: u64, repo: &str, author: PrAuthor) -> LaunchCon
     }
 }
 
-fn ask_prompt(number: u64, repo: &str, author: PrAuthor) -> String {
-    let hint = match author {
-        PrAuthor::Me => "This is your PR. You can make local changes.",
-        PrAuthor::Peer => {
+fn ask_prompt(number: u64, repo: &str, ownership: PrOwnership) -> String {
+    let hint = match ownership {
+        PrOwnership::Mine => "This is your PR. You can make local changes.",
+        PrOwnership::Peer => {
             "This PR was authored by someone else. Post comments; do not make local changes."
         }
     };
@@ -66,15 +66,15 @@ mod tests {
     use rstest::rstest;
 
     use super::{ask_config, ask_prompt, review_config, review_prompt, InvestigationPrompt};
-    use crate::state::{PrAuthor, PrReview, PrReviewTarget};
+    use crate::state::{PrOwnership, PrReview, PrReviewTarget};
 
-    fn target(author: PrAuthor) -> PrReviewTarget {
+    fn target(ownership: PrOwnership) -> PrReviewTarget {
         PrReviewTarget {
             repo: "ooloth/hub".to_string(),
             number: 7,
             head_branch: "feature".to_string(),
-            author,
-            login: "alice".to_string(),
+            ownership,
+            author: "alice".to_string(),
         }
     }
 
@@ -87,14 +87,14 @@ mod tests {
         #[case] review: PrReview,
         #[case] expected: &str,
     ) {
-        let config = review_config(&target(review.author()), review);
+        let config = review_config(&target(review.ownership()), review);
         let prompt = config.prompt.render(None);
         assert!(prompt.starts_with(expected), "{prompt}");
     }
 
     #[test]
     fn review_config_prompt_names_the_pr_and_repo() {
-        let config = review_config(&target(PrAuthor::Peer), PrReview::ReviewPeer);
+        let config = review_config(&target(PrOwnership::Peer), PrReview::ReviewPeer);
         assert!(config.prompt.render(None).contains("#7"));
         assert!(config.prompt.render(None).contains("ooloth/hub"));
     }
@@ -130,10 +130,10 @@ mod tests {
     /// in 9f402d6 and drifted back in unnoticed; this is the check that stops it
     /// happening a third time.
     #[rstest]
-    #[case::mine(PrAuthor::Me)]
-    #[case::a_peers(PrAuthor::Peer)]
-    fn ask_config_launches_no_skill(#[case] author: PrAuthor) {
-        let config = ask_config(7, "ooloth/hub", author);
+    #[case::mine(PrOwnership::Mine)]
+    #[case::a_peers(PrOwnership::Peer)]
+    fn ask_config_launches_no_skill(#[case] ownership: PrOwnership) {
+        let config = ask_config(7, "ooloth/hub", ownership);
         assert_eq!(
             config.prompt,
             InvestigationPrompt::new(),
@@ -148,17 +148,17 @@ mod tests {
     }
 
     #[rstest]
-    #[case::mine(PrAuthor::Me)]
-    #[case::a_peers(PrAuthor::Peer)]
-    fn ask_prompt_names_the_pr_and_repo(#[case] author: PrAuthor) {
-        let prompt = ask_prompt(7, "ooloth/hub", author);
+    #[case::mine(PrOwnership::Mine)]
+    #[case::a_peers(PrOwnership::Peer)]
+    fn ask_prompt_names_the_pr_and_repo(#[case] ownership: PrOwnership) {
+        let prompt = ask_prompt(7, "ooloth/hub", ownership);
         assert!(prompt.contains("#7"));
         assert!(prompt.contains("ooloth/hub"));
     }
 
     #[test]
     fn asking_about_a_peer_pr_forbids_local_changes() {
-        let prompt = ask_prompt(7, "ooloth/hub", PrAuthor::Peer);
+        let prompt = ask_prompt(7, "ooloth/hub", PrOwnership::Peer);
         assert!(prompt.contains("someone else"));
         assert!(prompt.contains("do not make local changes"));
     }

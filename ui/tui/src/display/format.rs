@@ -143,7 +143,7 @@ pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind>
         StatusItem::Issue(i) => Some(InvestigationKind::Issue {
             repo: i.repo.to_string(),
             number: i.number,
-            login: i.author.clone(),
+            author: i.author.clone(),
         }),
         StatusItem::Pr(pr) => Some(InvestigationKind::Pr {
             repo: pr.repo.to_string(),

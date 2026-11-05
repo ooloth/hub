@@ -226,7 +226,7 @@ someone else's branch must not edit it:
 | f   | `/review-converge`             | not offered                             |
 | m   | `/review-pr-comments-converge` | not offered                             |
 
-The offered set lives in `PrAuthor::review_options` (`src/state/types.rs`), which
+The offered set lives in `PrOwnership::review_options` (`src/state/types.rs`), which
 the status bar renders from and the key handler resolves against. Adding a review
 means adding a `PrReview` variant and a row to that table; the bar and the handler
 cannot drift apart because there is only one table.

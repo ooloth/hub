@@ -197,14 +197,14 @@ impl EphemeralWorktree {
 pub(crate) async fn open_in_lazygit(
     project: &config::Project,
     number: u64,
-    login: &domain::GitHubLogin,
+    author: &domain::GitHubLogin,
     head_branch: &str,
 ) -> Result<WindowPlace> {
     let vacant = match claim(
         &domain::InvestigationWindow::pr(
             &project.window_project(),
             number,
-            login,
+            author,
             domain::PrWindowActivity::Lazygit,
         ),
         "opening lazygit",
@@ -224,14 +224,14 @@ pub(crate) async fn open_in_lazygit(
 pub(crate) async fn open_in_octo(
     project: &config::Project,
     number: u64,
-    login: &domain::GitHubLogin,
+    author: &domain::GitHubLogin,
     head_branch: &str,
 ) -> Result<WindowPlace> {
     let vacant = match claim(
         &domain::InvestigationWindow::pr(
             &project.window_project(),
             number,
-            login,
+            author,
             domain::PrWindowActivity::Octo,
         ),
         "opening in neovim",

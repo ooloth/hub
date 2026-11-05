@@ -150,7 +150,7 @@ fn render_status_bar_left(frame: &mut ratatui::Frame, app: &App, bar_left: ratat
         // Options come from the same table the key handler resolves against, so
         // the bar cannot advertise a key that does nothing.
         let offered: Vec<String> = target
-            .author
+            .ownership
             .review_options()
             .iter()
             .map(|option| format!("[{}] {}", option.key, option.label))
@@ -1332,7 +1332,7 @@ mod tests {
         insta::assert_snapshot!(status_row(&buf));
     }
 
-    fn armed_review_picker(author: crate::state::PrAuthor) -> App {
+    fn armed_review_picker(ownership: crate::state::PrOwnership) -> App {
         let split = split_view_app(vec![DisplayItem::Single(pr())], 0, 0);
         App {
             ui: UiState {
@@ -1340,8 +1340,8 @@ mod tests {
                     repo: "owner/repo".to_string(),
                     number: 1,
                     head_branch: "feature".to_string(),
-                    author,
-                    login: "alice".to_string(),
+                    ownership,
+                    author: "alice".to_string(),
                 }),
                 ..split.ui
             },
@@ -1352,7 +1352,7 @@ mod tests {
     // SL6: review picker on my own PR offers read, fix and reviewer replies.
     #[test]
     fn status_bar_review_picker_on_my_pr_offers_every_review() {
-        let mut app = armed_review_picker(crate::state::PrAuthor::Me);
+        let mut app = armed_review_picker(crate::state::PrOwnership::Mine);
         let buf = draw(&mut app, 120, 5);
         insta::assert_snapshot!(status_row(&buf));
     }
@@ -1360,7 +1360,7 @@ mod tests {
     // SL7: review picker on a peer's PR offers only the read-only review.
     #[test]
     fn status_bar_review_picker_on_a_peer_pr_offers_only_code() {
-        let mut app = armed_review_picker(crate::state::PrAuthor::Peer);
+        let mut app = armed_review_picker(crate::state::PrOwnership::Peer);
         let buf = draw(&mut app, 120, 5);
         insta::assert_snapshot!(status_row(&buf));
     }

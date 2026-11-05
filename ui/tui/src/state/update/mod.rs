@@ -216,7 +216,7 @@ impl App {
                     vec![Effect::OpenPrDiffInDelta {
                         repo: pr.repo.to_string(),
                         number: pr.number,
-                        login: pr.author,
+                        author: pr.author,
                     }]
                 } else {
                     vec![]
@@ -228,7 +228,7 @@ impl App {
                     vec![Effect::OpenInOcto {
                         repo: pr.repo.to_string(),
                         number: pr.number,
-                        login: pr.author,
+                        author: pr.author,
                         head_branch: pr.head_branch,
                     }]
                 } else {
@@ -241,7 +241,7 @@ impl App {
                     vec![Effect::OpenInLazygit {
                         repo: pr.repo.to_string(),
                         number: pr.number,
-                        login: pr.author,
+                        author: pr.author,
                         head_branch: pr.head_branch,
                     }]
                 } else {
@@ -559,7 +559,7 @@ mod tests {
             InvestigateAction::LaunchIssue {
                 repo: "ooloth/hub".to_string(),
                 number: 31,
-                login: "agent".to_string(),
+                author: "agent".to_string(),
             }
         );
     }
@@ -611,7 +611,7 @@ mod tests {
                 repo: "ooloth/hub".to_string(),
                 number: 7,
                 kind,
-                login: author.to_string(),
+                author: author.to_string(),
                 head_branch: "feat/thing".to_string(),
                 base_branch: "main".to_string(),
             }
@@ -1462,18 +1462,18 @@ mod tests {
     // --- OpenInOcto / OpenInLazygit from split view ---
 
     fn opens_the_pr_in_octo(effect: &Effect) -> bool {
-        matches!(effect, Effect::OpenInOcto { repo, number: 7, login, head_branch }
-            if repo == "ooloth/hub" && login == "ooloth" && head_branch == "feat/thing")
+        matches!(effect, Effect::OpenInOcto { repo, number: 7, author, head_branch }
+            if repo == "ooloth/hub" && author == "ooloth" && head_branch == "feat/thing")
     }
 
     fn opens_the_pr_in_lazygit(effect: &Effect) -> bool {
-        matches!(effect, Effect::OpenInLazygit { repo, number: 7, login, head_branch }
-            if repo == "ooloth/hub" && login == "ooloth" && head_branch == "feat/thing")
+        matches!(effect, Effect::OpenInLazygit { repo, number: 7, author, head_branch }
+            if repo == "ooloth/hub" && author == "ooloth" && head_branch == "feat/thing")
     }
 
     fn opens_the_pr_diff(effect: &Effect) -> bool {
-        matches!(effect, Effect::OpenPrDiffInDelta { repo, number: 7, login }
-            if repo == "ooloth/hub" && login == "ooloth")
+        matches!(effect, Effect::OpenPrDiffInDelta { repo, number: 7, author }
+            if repo == "ooloth/hub" && author == "ooloth")
     }
 
     #[rstest]
@@ -1511,7 +1511,7 @@ mod tests {
         assert_eq!(target.repo, "ooloth/hub");
         assert_eq!(target.number, 7);
         assert_eq!(target.head_branch, "feat/thing");
-        assert_eq!(target.author, crate::state::PrAuthor::Me);
+        assert_eq!(target.ownership, crate::state::PrOwnership::Mine);
         assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
     }
 
@@ -1527,27 +1527,27 @@ mod tests {
     #[test]
     fn the_review_picker_carries_the_prs_author_login() {
         let mut app = split_view_of(pr_by_alice());
-        assert_eq!(armed_picker(&mut app).login, "alice");
+        assert_eq!(armed_picker(&mut app).author, "alice");
     }
 
     #[test]
     fn investigating_a_pr_launches_with_its_authors_login() {
         let mut app = app_with_items(vec![DisplayItem::Single(pr_by_alice())]);
         let effects = app.update(Action::Investigate);
-        let [Effect::LaunchPr { login, .. }] = effects.as_slice() else {
+        let [Effect::LaunchPr { author, .. }] = effects.as_slice() else {
             panic!("expected one LaunchPr");
         };
-        assert_eq!(login, "alice");
+        assert_eq!(author, "alice");
     }
 
     #[test]
     fn investigating_an_issue_launches_with_its_authors_login() {
         let mut app = app_with_items(vec![DisplayItem::Single(stub_issue())]);
         let effects = app.update(Action::Investigate);
-        let [Effect::LaunchIssue { login, .. }] = effects.as_slice() else {
+        let [Effect::LaunchIssue { author, .. }] = effects.as_slice() else {
             panic!("expected one LaunchIssue");
         };
-        assert_eq!(login, "agent");
+        assert_eq!(author, "agent");
     }
 
     #[test]

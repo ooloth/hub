@@ -183,7 +183,7 @@ pub(crate) enum InvestigationKind {
     Issue {
         repo: String,
         number: u64,
-        login: String,
+        author: String,
     },
     Gcp {
         project: String,

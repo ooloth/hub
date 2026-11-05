@@ -5,7 +5,7 @@ use crate::display::{
     ListSnapshot,
 };
 use crate::state::{
-    Action, App, DetailMode, Effect, InvestigateAction, PrAuthor, PrPrevScreen, PrReviewTarget,
+    Action, App, DetailMode, Effect, InvestigateAction, PrOwnership, PrPrevScreen, PrReviewTarget,
     Screen, SubmenuState,
 };
 use workflows::status::StatusItem;
@@ -301,24 +301,24 @@ impl App {
             InvestigateAction::LaunchIssue {
                 repo,
                 number,
-                login,
+                author,
             } => vec![Effect::LaunchIssue {
                 repo,
                 number,
-                login,
+                author,
             }],
             InvestigateAction::LaunchPr {
                 repo,
                 number,
                 kind,
-                login,
+                author,
                 head_branch,
                 ..
             } => vec![Effect::LaunchPr {
                 repo,
                 number,
-                author: PrAuthor::from_kind(kind),
-                login,
+                ownership: PrOwnership::from_kind(kind),
+                author,
                 head_branch,
             }],
             InvestigateAction::LaunchGcp {
@@ -404,11 +404,11 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
         Some(InvestigationKind::Issue {
             repo,
             number,
-            login,
+            author,
         }) => InvestigateAction::LaunchIssue {
             repo,
             number,
-            login,
+            author,
         },
         Some(InvestigationKind::Pr {
             repo,
@@ -421,7 +421,7 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
             repo,
             number,
             kind,
-            login: author,
+            author,
             head_branch,
             base_branch,
         },

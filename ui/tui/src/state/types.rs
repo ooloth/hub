@@ -22,22 +22,22 @@ pub(crate) enum SubmenuState {
     ReviewPicker(PrReviewTarget),
 }
 
-/// Who wrote a PR, from the current user's point of view.
+/// Whether a PR is mine or a peer's, which decides the reviews hub offers for it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum PrAuthor {
-    Me,
+pub(crate) enum PrOwnership {
+    Mine,
     Peer,
 }
 
-impl PrAuthor {
+impl PrOwnership {
     pub(crate) const fn from_kind(kind: PrKind) -> Self {
         match kind {
-            PrKind::Mine => Self::Me,
+            PrKind::Mine => Self::Mine,
             PrKind::ToReview | PrKind::External => Self::Peer,
         }
     }
 
-    /// The review sessions offered for a PR with this author, in picker order.
+    /// The review sessions offered for a PR with this ownership, in picker order.
     ///
     /// Single source of truth for both the status-bar label and the key handler,
     /// so the bar cannot advertise a key the handler ignores.
@@ -68,13 +68,13 @@ impl PrAuthor {
         }];
 
         let options = match self {
-            Self::Me => MINE,
+            Self::Mine => MINE,
             Self::Peer => PEER,
         };
 
         assert!(
             !options.is_empty(),
-            "review picker offers no option for this author"
+            "review picker offers no option for this ownership"
         );
         assert!(
             options
@@ -84,8 +84,10 @@ impl PrAuthor {
             "review picker options share a key"
         );
         assert!(
-            options.iter().all(|option| option.review.author() == self),
-            "review picker offers a review meant for a different author"
+            options
+                .iter()
+                .all(|option| option.review.ownership() == self),
+            "review picker offers a review meant for a different ownership"
         );
         options
     }
@@ -93,7 +95,7 @@ impl PrAuthor {
 
 /// What a review session does to a PR.
 ///
-/// Flat rather than an author-by-mode pair so that a peer's PR combined with a
+/// Flat rather than an ownership-by-mode pair so that a peer's PR combined with a
 /// fixing skill is not a value anyone can write.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PrReview {
@@ -121,10 +123,10 @@ impl PrReview {
         self.skill().slash_command()
     }
 
-    pub(crate) const fn author(self) -> PrAuthor {
+    pub(crate) const fn ownership(self) -> PrOwnership {
         match self {
-            Self::ReviewMine | Self::FixMine | Self::AnswerReviewers => PrAuthor::Me,
-            Self::ReviewPeer => PrAuthor::Peer,
+            Self::ReviewMine | Self::FixMine | Self::AnswerReviewers => PrOwnership::Mine,
+            Self::ReviewPeer => PrOwnership::Peer,
         }
     }
 }
@@ -144,9 +146,9 @@ pub(crate) struct PrReviewTarget {
     pub(crate) repo: String,
     pub(crate) number: u64,
     pub(crate) head_branch: String,
-    pub(crate) author: PrAuthor,
+    pub(crate) ownership: PrOwnership,
     /// The login of whoever opened the PR, which its Rex tab's label names.
-    pub(crate) login: String,
+    pub(crate) author: String,
 }
 
 impl PrReviewTarget {
@@ -155,8 +157,8 @@ impl PrReviewTarget {
             repo: pr.repo.to_string(),
             number: pr.number,
             head_branch: pr.head_branch.clone(),
-            author: PrAuthor::from_kind(pr.kind),
-            login: pr.author.clone(),
+            ownership: PrOwnership::from_kind(pr.kind),
+            author: pr.author.clone(),
         }
     }
 }
@@ -165,18 +167,18 @@ impl PrReviewTarget {
 mod review_option_tests {
     use rstest::rstest;
 
-    use super::{PrAuthor, PrReview};
+    use super::{PrOwnership, PrReview};
 
     #[test]
     fn peer_pr_offers_only_a_read_only_review() {
-        let options = PrAuthor::Peer.review_options();
+        let options = PrOwnership::Peer.review_options();
         let offered: Vec<_> = options.iter().map(|o| (o.key, o.review)).collect();
         assert_eq!(offered, vec![('c', PrReview::ReviewPeer)]);
     }
 
     #[test]
     fn my_pr_offers_read_only_fix_and_reviewer_replies() {
-        let options = PrAuthor::Me.review_options();
+        let options = PrOwnership::Mine.review_options();
         let offered: Vec<_> = options.iter().map(|o| (o.key, o.review)).collect();
         assert_eq!(
             offered,
@@ -189,11 +191,13 @@ mod review_option_tests {
     }
 
     #[rstest]
-    #[case(PrAuthor::Me)]
-    #[case(PrAuthor::Peer)]
-    fn every_offered_review_belongs_to_the_author_it_is_offered_for(#[case] author: PrAuthor) {
-        for option in author.review_options() {
-            assert_eq!(option.review.author(), author, "key {}", option.key);
+    #[case(PrOwnership::Mine)]
+    #[case(PrOwnership::Peer)]
+    fn every_offered_review_belongs_to_the_ownership_it_is_offered_for(
+        #[case] ownership: PrOwnership,
+    ) {
+        for option in ownership.review_options() {
+            assert_eq!(option.review.ownership(), ownership, "key {}", option.key);
         }
     }
 
@@ -312,7 +316,7 @@ pub(crate) enum InvestigateAction {
     LaunchIssue {
         repo: String,
         number: u64,
-        login: String,
+        author: String,
     },
     LaunchGcp {
         project: String,
@@ -339,7 +343,7 @@ pub(crate) enum InvestigateAction {
         repo: String,
         number: u64,
         kind: PrKind,
-        login: String,
+        author: String,
         head_branch: String,
         base_branch: String,
     },
@@ -399,7 +403,7 @@ pub(crate) enum Effect {
     OpenPrDiffInDelta {
         repo: String,
         number: u64,
-        login: String,
+        author: String,
     },
     SetIssueLabels {
         repo: String,
@@ -418,7 +422,7 @@ pub(crate) enum Effect {
     LaunchIssue {
         repo: String,
         number: u64,
-        login: String,
+        author: String,
     },
     LaunchGcp {
         project: String,
@@ -444,8 +448,8 @@ pub(crate) enum Effect {
     LaunchPr {
         repo: String,
         number: u64,
-        author: PrAuthor,
-        login: String,
+        ownership: PrOwnership,
+        author: String,
         head_branch: String,
     },
     ReviewPr {
@@ -455,13 +459,13 @@ pub(crate) enum Effect {
     OpenInOcto {
         repo: String,
         number: u64,
-        login: String,
+        author: String,
         head_branch: String,
     },
     OpenInLazygit {
         repo: String,
         number: u64,
-        login: String,
+        author: String,
         head_branch: String,
     },
     #[cfg(feature = "private")]

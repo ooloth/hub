@@ -17,7 +17,7 @@ use crate::display::{build_unified, flatten, Filter};
 use crate::input::key_to_action;
 use crate::render::render;
 use crate::state::{
-    handle_msg, App, DataState, DetailMode, Effect, Msg, PrAuthor, PrReview, PrReviewTarget,
+    handle_msg, App, DataState, DetailMode, Effect, Msg, PrOwnership, PrReview, PrReviewTarget,
     RefreshState, Screen, UiState,
 };
 use std::collections::HashSet;
@@ -321,8 +321,42 @@ async fn handle_effect(
         Effect::OpenPrDiffInDelta {
             repo,
             number,
-            login,
-        } => open_pr_diff(app, config, &repo, number, &login),
+            author,
+        } => open_pr_diff(app, config, &repo, number, &author),
+        Effect::OpenInOcto {
+            repo,
+            number,
+            author,
+            head_branch,
+        } => {
+            handle_open_pr_tool(
+                app,
+                config,
+                PrTool::Octo,
+                repo,
+                number,
+                &author,
+                head_branch,
+            )
+            .await;
+        }
+        Effect::OpenInLazygit {
+            repo,
+            number,
+            author,
+            head_branch,
+        } => {
+            handle_open_pr_tool(
+                app,
+                config,
+                PrTool::Lazygit,
+                repo,
+                number,
+                &author,
+                head_branch,
+            )
+            .await;
+        }
         Effect::SetIssueLabels {
             repo,
             number,
@@ -355,46 +389,21 @@ async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &con
         Effect::LaunchIssue {
             repo,
             number,
-            login,
+            author,
         } => {
-            handle_launch_issue(app, config, repo, number, &login).await;
+            handle_launch_issue(app, config, repo, number, &author).await;
         }
         Effect::LaunchPr {
             repo,
             number,
+            ownership,
             author,
-            login,
             head_branch,
         } => {
-            handle_launch_pr(app, config, repo, number, author, &login, head_branch).await;
+            handle_launch_pr(app, config, repo, number, ownership, &author, head_branch).await;
         }
         Effect::ReviewPr { target, review } => {
             handle_review_pr(app, config, &target, review).await;
-        }
-        Effect::OpenInOcto {
-            repo,
-            number,
-            login,
-            head_branch,
-        } => {
-            handle_open_pr_tool(app, config, PrTool::Octo, repo, number, &login, head_branch).await;
-        }
-        Effect::OpenInLazygit {
-            repo,
-            number,
-            login,
-            head_branch,
-        } => {
-            handle_open_pr_tool(
-                app,
-                config,
-                PrTool::Lazygit,
-                repo,
-                number,
-                &login,
-                head_branch,
-            )
-            .await;
         }
         Effect::LaunchGcp {
             project,
@@ -445,21 +454,21 @@ async fn handle_investigation_effect(effect: Effect, app: &mut App, config: &con
     }
 }
 
-fn open_pr_diff(app: &mut App, config: &config::Config, repo: &str, number: u64, login: &str) {
-    let Some(login) = author_login(app, login, &format!("PR #{number}")) else {
+fn open_pr_diff(app: &mut App, config: &config::Config, repo: &str, number: u64, author: &str) {
+    let Some(author) = author_login(app, author, &format!("PR #{number}")) else {
         return;
     };
     let project = config.projects.window_project_for(&signal_repo(repo));
-    report_launch(app, show_pr_diff(&project, number, &login));
+    report_launch(app, show_pr_diff(&project, number, &author));
 }
 
 fn show_pr_diff(
     project: &domain::WindowProject,
     number: u64,
-    login: &domain::GitHubLogin,
+    author: &domain::GitHubLogin,
 ) -> Result<terminal::WindowPlace> {
     let vacant = match terminal::claim(
-        &domain::InvestigationWindow::pr(project, number, login, domain::PrWindowActivity::Diff),
+        &domain::InvestigationWindow::pr(project, number, author, domain::PrWindowActivity::Diff),
         "opening the diff",
     )? {
         terminal::WindowClaim::Reused(place) => return Ok(place),
@@ -498,7 +507,7 @@ fn signal_repo(repo: &str) -> domain::RepoSlug {
 /// because it is written before hub knows the terminal, and Rex calls a tab a window too.
 fn author_login(app: &mut App, raw: &str, subject: &str) -> Option<domain::GitHubLogin> {
     match domain::GitHubLogin::parse(raw) {
-        Ok(login) => Some(login),
+        Ok(author) => Some(author),
         Err(reason) => {
             app.ui.flash = Some(format!("couldn't open a window for {subject}: {reason}"));
             None
@@ -550,15 +559,15 @@ async fn handle_launch_issue(
     config: &config::Config,
     repo: String,
     number: u64,
-    login: &str,
+    author: &str,
 ) {
-    let Some(login) = author_login(app, login, &format!("issue #{number}")) else {
+    let Some(author) = author_login(app, author, &format!("issue #{number}")) else {
         return;
     };
     let Some(project) = tracked_project(app, config, &signal_repo(&repo)) else {
         return;
     };
-    let window = domain::InvestigationWindow::issue(&project.window_project(), number, &login);
+    let window = domain::InvestigationWindow::issue(&project.window_project(), number, &author);
     let result = investigations::launch(
         investigations::issue::config(&repo, number),
         &window,
@@ -574,11 +583,11 @@ async fn handle_launch_pr(
     config: &config::Config,
     repo: String,
     number: u64,
-    author: PrAuthor,
-    login: &str,
+    ownership: PrOwnership,
+    author: &str,
     head_branch: String,
 ) {
-    let Some(login) = author_login(app, login, &format!("PR #{number}")) else {
+    let Some(author) = author_login(app, author, &format!("PR #{number}")) else {
         return;
     };
     let Some(project) = tracked_project(app, config, &signal_repo(&repo)) else {
@@ -587,11 +596,11 @@ async fn handle_launch_pr(
     let window = domain::InvestigationWindow::pr(
         &project.window_project(),
         number,
-        &login,
+        &author,
         domain::PrWindowActivity::Investigate,
     );
     let result = investigations::launch(
-        investigations::pr::ask_config(number, &repo, author),
+        investigations::pr::ask_config(number, &repo, ownership),
         &window,
         investigations::WorktreeSpec::PullRequest {
             project,
@@ -610,7 +619,7 @@ async fn handle_review_pr(
     target: &PrReviewTarget,
     review: PrReview,
 ) {
-    let Some(login) = author_login(app, &target.login, &format!("PR #{}", target.number)) else {
+    let Some(author) = author_login(app, &target.author, &format!("PR #{}", target.number)) else {
         return;
     };
     let Some(project) = tracked_project(app, config, &signal_repo(&target.repo)) else {
@@ -619,7 +628,7 @@ async fn handle_review_pr(
     let window = domain::InvestigationWindow::pr(
         &project.window_project(),
         target.number,
-        &login,
+        &author,
         domain::PrWindowActivity::Review(review.skill()),
     );
     let result = investigations::launch(
@@ -721,19 +730,19 @@ async fn handle_open_pr_tool(
     tool: PrTool,
     repo: String,
     number: u64,
-    login: &str,
+    author: &str,
     head_branch: String,
 ) {
-    let Some(login) = author_login(app, login, &format!("PR #{number}")) else {
+    let Some(author) = author_login(app, author, &format!("PR #{number}")) else {
         return;
     };
     let Some(project) = tracked_project(app, config, &signal_repo(&repo)) else {
         return;
     };
     let result = match tool {
-        PrTool::Octo => investigations::open_in_octo(&project, number, &login, &head_branch).await,
+        PrTool::Octo => investigations::open_in_octo(&project, number, &author, &head_branch).await,
         PrTool::Lazygit => {
-            investigations::open_in_lazygit(&project, number, &login, &head_branch).await
+            investigations::open_in_lazygit(&project, number, &author, &head_branch).await
         }
     };
     report_launch(app, result);

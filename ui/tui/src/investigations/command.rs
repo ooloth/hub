@@ -121,7 +121,7 @@ pub(crate) fn compose(
 mod tests {
     use super::{compose, InvestigationCommand, UNTRUSTED_INPUT_GUIDANCE};
     use crate::investigations::{ci, gcp, issue, loki, pr, LaunchConfig};
-    use crate::state::{PrAuthor, PrReview, PrReviewTarget};
+    use crate::state::{PrOwnership, PrReview, PrReviewTarget};
     use domain::{InvestigationMcpServers, InvestigationPrompt, McpServer, UntrustedText};
     use rstest::rstest;
     use std::collections::BTreeMap;
@@ -574,7 +574,7 @@ mod tests {
 
     #[test]
     fn pr_ask_investigation_command() {
-        let config = pr::ask_config(7, "ooloth/hub", PrAuthor::Peer);
+        let config = pr::ask_config(7, "ooloth/hub", PrOwnership::Peer);
         insta::assert_snapshot!(compose_for_snapshot(config, None, None));
     }
 
@@ -583,8 +583,8 @@ mod tests {
             repo: "ooloth/hub".to_string(),
             number: 7,
             head_branch: "feature".to_string(),
-            author: PrAuthor::Me,
-            login: "ooloth".to_string(),
+            ownership: PrOwnership::Mine,
+            author: "ooloth".to_string(),
         }
     }
 
