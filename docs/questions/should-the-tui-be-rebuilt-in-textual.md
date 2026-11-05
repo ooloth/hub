@@ -65,10 +65,10 @@ same discussion and holds regardless of what the spike shows.
   all. Cost: the browser surface Decision 007 deferred stays expensive to reach, and the hand-drawn
   chrome plus the 545-line markdown renderer stay hub's to maintain.
 - **B. Rebuild in Textual.** Strongest case: `textual serve` keeps Decision 007's one reopening
-  condition cheap; Textual ships the `Markdown` widget, `TextArea` and CSS borders that five
-  dependencies currently provide (`pulldown-cmark`, `syntect`, `two-face`, `ansi-to-tui`,
-  `tui-textarea`); and Python is where the Claude Agent SDK lives if hub ever drives investigation
-  sessions rather than launching them through tmux. Cost: 641 tests and 51 snapshots do not port
+  condition cheap; Textual ships the `Markdown` widget and CSS borders that four dependencies
+  currently provide (`pulldown-cmark`, `syntect`, `two-face`, `ansi-to-tui`); and Python is where
+  the Claude Agent SDK lives if hub ever drives investigation sessions rather than launching them
+  through tmux. Cost: 641 tests and 51 snapshots do not port
   mechanically, and the domain newtypes lose compile-time enforcement in exchange for mypy at CI
   time.
 - **C. Not yet.** Strongest case: Decisions 021 and 022 are not fully built (the TUI still fetches
@@ -91,9 +91,9 @@ into a decision record._
   `render/` and `markdown/`, plus `main.rs`; `render/status_bar.rs` imports none of it.
 - *Measured* (2026-09-16): Textual's latest release is v8.2.8, 30 June 2026, from
   https://github.com/Textualize/textual/releases.
-- *Sourced*: `ui/tui/Cargo.toml` pins ratatui at 0.29 because 0.30 moved `Widget` into a separate
-  crate, and pins itertools at 0.13 solely to match ratatui's own copy and satisfy `cargo-deny`'s
-  duplicate-version ban. Both pins carry the reason in a manifest comment.
+- *Sourced*: `ui/tui/Cargo.toml` keeps ratatui at 0.29 because `ansi-to-tui` 7 depends on it, and
+  `ansi-to-tui` 8 moved to `ratatui-core` with ratatui 0.30. `crossterm` follows ratatui's copy to
+  satisfy `cargo-deny`'s duplicate-version ban. The manifest comments carry both reasons.
 - *Sourced*: there is no release pipeline. `.github/workflows/ci.yml` runs checks and produces no
   artifacts; installation is `cargo install --path ui/tui` on the machine that will run it. Neither
   language has a distribution advantage here until that changes.

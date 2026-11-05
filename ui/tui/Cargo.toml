@@ -22,21 +22,16 @@
   chrono = "0.4"
   clients = { path = "../../clients" }
   config = { path = "../../config" }
+  # The crossterm version ratatui depends on (0.28 for ratatui 0.29). deny.toml rejects a second
+  # copy, so this moves with ratatui.
   crossterm = { version = "0.28", features = ["event-stream"] }
   domain = { path = "../../domain" }
   futures = "0.3"
-  # Pinned to 0.13 to unify with ratatui 0.29, which also depends on itertools 0.13.
-  # cargo-deny's bans check rejects duplicate versions; only with_position()/Position
-  # are used here, an API present in both 0.13 and 0.14. Bump in lockstep with ratatui.
-  itertools = "0.13"
   open = "5"
   pulldown-cmark = { version = "0.13", default-features = false }
-  # Pinned to 0.29 to unify with tui-textarea 0.7, which also depends on 0.29.
-  # tui-textarea 0.7 implements ratatui 0.29's Widget trait; ratatui 0.30 moved
-  # Widget into a new ratatui-core crate, making set_block() and direct TextArea
-  # rendering fail to compile. Before bumping this, check that the target
-  # tui-textarea version also supports the new ratatui version — and keep
-  # ansi-to-tui in sync (v8 switched to ratatui-core; v7 uses ratatui 0.29).
+  # ansi-to-tui must depend on this ratatui version: v7 uses ratatui 0.29, and v8 moved to
+  # ratatui-core with ratatui 0.30. ratatui, crossterm and ansi-to-tui move together, and
+  # Dependabot proposes them as one PR (the `tui` group in .github/dependabot.yml).
   ratatui = "0.29"
   rusqlite = { version = "0.31", features = ["bundled"] }
   secrecy = "0.8"
@@ -50,7 +45,6 @@
     "regex-fancy",
   ] }
   tokio = { version = "1", features = ["full"] }
-  tui-textarea = { version = "0.7", features = ["crossterm"] }
   two-face = { version = "0.5", default-features = false, features = [
     "syntect-fancy",
   ] }

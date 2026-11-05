@@ -2,12 +2,12 @@
 //   - SYNTAX_SET uses two-face's extended syntax set (adds TypeScript, TOML, etc.)
 //   - Theme uses two-face's built-in CatppuccinMocha instead of base16-ocean.dark
 //   - tracing instrumentation removed
+//   - multi-line text split with enumerate() instead of itertools' with_position()
 //   - pub(crate) visibility throughout
 
 use std::sync::LazyLock;
 
 use ansi_to_tui::IntoText;
-use itertools::{Itertools, Position};
 use pulldown_cmark::{
     BlockQuoteKind, CodeBlockKind, CowStr, Event, HeadingLevel, Options as ParseOptions, Parser,
     Tag, TagEnd,
@@ -294,12 +294,12 @@ where
             return;
         }
 
-        for (position, line) in text.lines().with_position() {
+        for (i, line) in text.lines().enumerate() {
             if self.needs_newline {
                 self.push_line(Line::default());
                 self.needs_newline = false;
             }
-            if matches!(position, Position::Middle | Position::Last) {
+            if i > 0 {
                 self.push_line(Line::default());
             }
             let style = self.inline_styles.last().copied().unwrap_or_default();
@@ -519,6 +519,24 @@ mod tests {
             styles.contains(&code_style()),
             "expected content lines to carry code() style, got {styles:?}"
         );
+    }
+
+    fn line_texts(lines: &[Line]) -> Vec<String> {
+        lines
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect()
+    }
+
+    #[rstest]
+    #[case::one_line("```\nonly\n```\n", &["```", "only", "```"])]
+    #[case::two_lines("```\nhello\nworld\n```\n", &["```", "hello", "world", "```"])]
+    #[case::blank_middle_line("```\na\n\nb\n```\n", &["```", "a", "", "b", "```"])]
+    fn fence_text_renders_one_line_per_source_line(
+        #[case] markdown: &str,
+        #[case] expected: &[&str],
+    ) {
+        assert_eq!(line_texts(&from_str(markdown).lines), expected);
     }
 
     #[test]

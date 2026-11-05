@@ -2,6 +2,7 @@
 //   - SYNTAX_SET uses two-face's extended syntax set (adds TypeScript, TOML, etc.)
 //   - Theme uses two-face's built-in CatppuccinMocha instead of base16-ocean.dark
 //   - tracing instrumentation removed
+//   - multi-line text split with enumerate() instead of itertools' with_position()
 //   - pub(crate) visibility throughout
 pub(crate) mod options;
 pub(crate) mod render;
