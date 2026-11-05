@@ -345,7 +345,6 @@ pub(crate) enum InvestigateAction {
         kind: PrKind,
         author: String,
         head_branch: String,
-        base_branch: String,
     },
     #[cfg(feature = "private")]
     LaunchMediaBlocked {
@@ -414,48 +413,8 @@ pub(crate) enum Effect {
         repo: String,
         number: u64,
     },
-    LaunchCi {
-        repo: String,
-        workflow: String,
-        run_url: String,
-    },
-    LaunchIssue {
-        repo: String,
-        number: u64,
-        author: String,
-    },
-    LaunchGcp {
-        project: String,
-        repo: domain::RepoSlug,
-        env: String,
-        title: String,
-        message: UntrustedText,
-        line: UntrustedText,
-        url: String,
-        lookback: String,
-        gcp_project: String,
-    },
-    LaunchLoki {
-        project: String,
-        repo: domain::RepoSlug,
-        env: String,
-        title: String,
-        message: UntrustedText,
-        line: UntrustedText,
-        url: String,
-        lookback: String,
-    },
-    LaunchPr {
-        repo: String,
-        number: u64,
-        ownership: PrOwnership,
-        author: String,
-        head_branch: String,
-    },
-    ReviewPr {
-        target: PrReviewTarget,
-        review: PrReview,
-    },
+    /// An agent session to open in a window of its own.
+    Launch(Launch),
     OpenInOcto {
         repo: String,
         number: u64,
@@ -468,14 +427,60 @@ pub(crate) enum Effect {
         author: String,
         head_branch: String,
     },
-    #[cfg(feature = "private")]
-    LaunchMediaBlocked {
-        title: UntrustedText,
-        error: UntrustedText,
-    },
     StartRefresh,
     /// Replace the cache with a refresh the shared rule accepted.
     WriteCache(workflows::freshness::FreshPayload),
+}
+
+/// An agent session hub opens in a window of its own, with what it needs to open it.
+pub(crate) enum Launch {
+    Ci {
+        repo: String,
+        workflow: String,
+        run_url: String,
+    },
+    Issue {
+        repo: String,
+        number: u64,
+        author: String,
+    },
+    Gcp {
+        project: String,
+        repo: domain::RepoSlug,
+        env: String,
+        title: String,
+        message: UntrustedText,
+        line: UntrustedText,
+        url: String,
+        lookback: String,
+        gcp_project: String,
+    },
+    Loki {
+        project: String,
+        repo: domain::RepoSlug,
+        env: String,
+        title: String,
+        message: UntrustedText,
+        line: UntrustedText,
+        url: String,
+        lookback: String,
+    },
+    Pr {
+        repo: String,
+        number: u64,
+        ownership: PrOwnership,
+        author: String,
+        head_branch: String,
+    },
+    Review {
+        target: PrReviewTarget,
+        review: PrReview,
+    },
+    #[cfg(feature = "private")]
+    MediaBlocked {
+        title: UntrustedText,
+        error: UntrustedText,
+    },
 }
 
 pub(crate) enum Msg {

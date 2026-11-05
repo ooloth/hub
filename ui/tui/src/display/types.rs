@@ -212,7 +212,6 @@ pub(crate) enum InvestigationKind {
         kind: domain::PrKind,
         author: String,
         head_branch: String,
-        base_branch: String,
     },
     #[cfg(feature = "private")]
     MediaBlocked {
