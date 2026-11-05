@@ -305,54 +305,6 @@ impl Screen {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
-pub(crate) enum InvestigateAction {
-    None,
-    LaunchCi {
-        repo: String,
-        workflow: String,
-        run_url: String,
-    },
-    LaunchIssue {
-        repo: String,
-        number: u64,
-        author: String,
-    },
-    LaunchGcp {
-        project: String,
-        repo: domain::RepoSlug,
-        env: String,
-        title: String,
-        message: UntrustedText,
-        line: UntrustedText,
-        url: String,
-        lookback: String,
-        gcp_project: String,
-    },
-    LaunchLoki {
-        project: String,
-        repo: domain::RepoSlug,
-        env: String,
-        title: String,
-        message: UntrustedText,
-        line: UntrustedText,
-        url: String,
-        lookback: String,
-    },
-    LaunchPr {
-        repo: String,
-        number: u64,
-        kind: PrKind,
-        author: String,
-        head_branch: String,
-    },
-    #[cfg(feature = "private")]
-    LaunchMediaBlocked {
-        title: UntrustedText,
-        error: UntrustedText,
-    },
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum Action {
     Quit,
@@ -433,6 +385,7 @@ pub(crate) enum Effect {
 }
 
 /// An agent session hub opens in a window of its own, with what it needs to open it.
+#[derive(Debug, Eq, PartialEq)]
 pub(crate) enum Launch {
     Ci {
         repo: String,

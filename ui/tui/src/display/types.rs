@@ -1,7 +1,5 @@
 use std::collections::HashSet;
 
-use domain::UntrustedText;
-
 use workflows::status::StatusItem;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -171,52 +169,6 @@ impl SelectedItemKind {
             FlatRow::GroupHeader { .. } => Self::Other,
         }
     }
-}
-
-pub(crate) enum InvestigationKind {
-    Ci {
-        repo: String,
-        workflow: String,
-        run_url: String,
-    },
-    Issue {
-        repo: String,
-        number: u64,
-        author: String,
-    },
-    Gcp {
-        project: String,
-        repo: domain::RepoSlug,
-        env: String,
-        title: String,
-        message: UntrustedText,
-        line: UntrustedText,
-        url: String,
-        lookback: String,
-        gcp_project: String,
-    },
-    Loki {
-        project: String,
-        repo: domain::RepoSlug,
-        env: String,
-        title: String,
-        message: UntrustedText,
-        line: UntrustedText,
-        url: String,
-        lookback: String,
-    },
-    Pr {
-        repo: String,
-        number: u64,
-        kind: domain::PrKind,
-        author: String,
-        head_branch: String,
-    },
-    #[cfg(feature = "private")]
-    MediaBlocked {
-        title: UntrustedText,
-        error: UntrustedText,
-    },
 }
 
 #[derive(Clone, Debug, Default)]

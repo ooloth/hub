@@ -1,9 +1,7 @@
-use domain::{MergeBlocker, UntrustedText};
+use domain::MergeBlocker;
 use workflows::status::StatusItem;
 
-use super::types::{
-    Category, FlatRow, GroupKey, InvestigationKind, LineParts, LogDetailView, LogLine, RowSeparator,
-};
+use super::types::{Category, FlatRow, GroupKey, LineParts, LogDetailView, LogLine, RowSeparator};
 
 pub(crate) const fn merge_blocker_word(b: MergeBlocker) -> &'static str {
     match b {
@@ -130,55 +128,6 @@ pub(crate) fn log_detail_view_from_group(items: &[StatusItem]) -> Option<LogDeta
                 .collect(),
         }),
         _ => unreachable!(),
-    }
-}
-
-pub(crate) fn item_investigation(item: &StatusItem) -> Option<InvestigationKind> {
-    match item {
-        StatusItem::Ci(c) => Some(InvestigationKind::Ci {
-            repo: c.repo.to_string(),
-            workflow: c.workflow_name.clone(),
-            run_url: c.url.clone(),
-        }),
-        StatusItem::Issue(i) => Some(InvestigationKind::Issue {
-            repo: i.repo.to_string(),
-            number: i.number,
-            author: i.author.clone(),
-        }),
-        StatusItem::Pr(pr) => Some(InvestigationKind::Pr {
-            repo: pr.repo.to_string(),
-            number: pr.number,
-            kind: pr.kind,
-            author: pr.author.clone(),
-            head_branch: pr.head_branch.clone(),
-        }),
-        StatusItem::Gcp(g) => Some(InvestigationKind::Gcp {
-            project: g.project.clone(),
-            repo: g.repo.clone(),
-            env: g.env.clone(),
-            title: g.title.clone(),
-            message: g.message.clone(),
-            line: UntrustedText::new(lines_to_compact_json(&[LogLine::parse(g.line.expose())])),
-            url: g.url.clone(),
-            lookback: g.lookback.clone(),
-            gcp_project: g.gcp_project.clone(),
-        }),
-        StatusItem::Loki(l) => Some(InvestigationKind::Loki {
-            project: l.project.clone(),
-            repo: l.repo.clone(),
-            env: l.env.clone(),
-            title: l.title.clone(),
-            message: l.message.clone(),
-            line: UntrustedText::new(lines_to_compact_json(&[LogLine::parse(l.line.expose())])),
-            url: l.url.clone(),
-            lookback: l.lookback.clone(),
-        }),
-        #[cfg(feature = "private")]
-        StatusItem::MediaBlocked(b) => Some(InvestigationKind::MediaBlocked {
-            title: b.title.clone(),
-            error: b.error.clone(),
-        }),
-        _ => None,
     }
 }
 

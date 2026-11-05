@@ -45,3 +45,28 @@ pub(crate) fn verdicts(approvals: u32, changes_requested: u32) -> PrActivity {
         ..PrActivity::default()
     }
 }
+
+/// A wanted episode that has not been downloaded yet.
+#[cfg(feature = "private")]
+pub(crate) fn media_missing() -> workflows::status::StatusItem {
+    workflows::status::StatusItem::MediaMissing(workflows::private::status::MissingItem {
+        source: "Media".to_string(),
+        urgency: domain::Urgency::Medium,
+        age: chrono::Duration::zero(),
+        title: "Show — S01E02".to_string(),
+        air_date: "2024-01-01".to_string(),
+        url: "http://media-server/wanted".to_string(),
+    })
+}
+
+/// A media server's health warning.
+#[cfg(feature = "private")]
+pub(crate) fn media_health() -> workflows::status::StatusItem {
+    workflows::status::StatusItem::MediaHealth(workflows::private::status::HealthItem {
+        source: "Media".to_string(),
+        urgency: domain::Urgency::Low,
+        age: chrono::Duration::zero(),
+        message: "Indexer unavailable".to_string(),
+        url: "https://wiki.example.com/system#indexers".to_string(),
+    })
+}

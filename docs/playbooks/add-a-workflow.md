@@ -68,12 +68,13 @@ Workflows that surface items plug into the unified status pipeline in
 2. Add a `Source` to `sources()` that calls your workflow and wraps its items in those
    variants. Its name is what `StatusReport::errors` reports when the source fails
 3. Add an arm for each new variant to the matches on `StatusItem` in `ui/tui/src/display/`:
-   `item_line`, `item_urgency` and `item_category` in `format.rs`, plus `item_url`,
-   `item_investigation` and the log detail functions where the item has a link, an
-   investigation or log lines
+   `item_line`, `item_urgency` and `item_category` in `format.rs`, plus `item_url` and the
+   log detail functions where the item has a link or log lines. When `i` should open an
+   investigation for it, also add an arm to `launch_for` in `ui/tui/src/state/update/signals.rs`
 
-The compiler reports the matches that lack an arm, except where a `_` arm hides them
-(`SelectedItemKind::from_item` in `display/types.rs` is one).
+The compiler reports the matches that lack an arm, except where a `_` arm hides them.
+`SelectedItemKind::from_item` in `display/types.rs` is one, and `launch_for` is another, so a
+signal left out of it compiles and `i` on it says "No investigation mapped".
 
 ## 5. Register in the Rust config
 

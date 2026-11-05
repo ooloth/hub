@@ -1,14 +1,13 @@
-use domain::agent_ready_labels;
+use domain::{agent_ready_labels, UntrustedText};
+use workflows::status::StatusItem;
 
 use crate::display::{
-    build_unified, flatten, item_investigation, item_url, Filter, FlatRow, InvestigationKind,
-    ListSnapshot,
+    build_unified, flatten, item_url, lines_to_compact_json, Filter, FlatRow, ListSnapshot, LogLine,
 };
 use crate::state::{
-    Action, App, DetailMode, Effect, InvestigateAction, Launch, PrOwnership, PrPrevScreen,
-    PrReviewTarget, Screen, SubmenuState,
+    Action, App, DetailMode, Effect, Launch, PrOwnership, PrPrevScreen, PrReviewTarget, Screen,
+    SubmenuState,
 };
-use workflows::status::StatusItem;
 
 impl App {
     pub(super) fn rebuild_unified(&mut self, new_filter: Filter) {
@@ -286,86 +285,9 @@ impl App {
     }
 
     pub(super) fn handle_investigate(&mut self) -> Vec<Effect> {
-        match compute_investigate_action(self) {
-            InvestigateAction::LaunchCi {
-                repo,
-                workflow,
-                run_url,
-            } => {
-                vec![Effect::Launch(Launch::Ci {
-                    repo,
-                    workflow,
-                    run_url,
-                })]
-            }
-            InvestigateAction::LaunchIssue {
-                repo,
-                number,
-                author,
-            } => vec![Effect::Launch(Launch::Issue {
-                repo,
-                number,
-                author,
-            })],
-            InvestigateAction::LaunchPr {
-                repo,
-                number,
-                kind,
-                author,
-                head_branch,
-                ..
-            } => vec![Effect::Launch(Launch::Pr {
-                repo,
-                number,
-                ownership: PrOwnership::from_kind(kind),
-                author,
-                head_branch,
-            })],
-            InvestigateAction::LaunchGcp {
-                project,
-                repo,
-                env,
-                title,
-                message,
-                line,
-                url,
-                lookback,
-                gcp_project,
-            } => vec![Effect::Launch(Launch::Gcp {
-                project,
-                repo,
-                env,
-                title,
-                message,
-                line,
-                url,
-                lookback,
-                gcp_project,
-            })],
-            InvestigateAction::LaunchLoki {
-                project,
-                repo,
-                env,
-                title,
-                message,
-                line,
-                url,
-                lookback,
-            } => vec![Effect::Launch(Launch::Loki {
-                project,
-                repo,
-                env,
-                title,
-                message,
-                line,
-                url,
-                lookback,
-            })],
-            #[cfg(feature = "private")]
-            InvestigateAction::LaunchMediaBlocked { title, error } => {
-                vec![Effect::Launch(Launch::MediaBlocked { title, error })]
-            }
-            InvestigateAction::None => {
+        match selected_launch(self) {
+            Some(launch) => vec![Effect::Launch(launch)],
+            None => {
                 self.ui.flash = Some("No investigation mapped".to_string());
                 vec![]
             }
@@ -387,86 +309,59 @@ impl App {
     }
 }
 
-pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
-    let Some(item) = app.ui.screen.selected_status_item() else {
-        return InvestigateAction::None;
-    };
-    match item_investigation(&item) {
-        Some(InvestigationKind::Ci {
-            repo,
-            workflow,
-            run_url,
-        }) => InvestigateAction::LaunchCi {
-            repo,
-            workflow,
-            run_url,
-        },
-        Some(InvestigationKind::Issue {
-            repo,
-            number,
-            author,
-        }) => InvestigateAction::LaunchIssue {
-            repo,
-            number,
-            author,
-        },
-        Some(InvestigationKind::Pr {
-            repo,
-            number,
-            kind,
-            author,
-            head_branch,
-        }) => InvestigateAction::LaunchPr {
-            repo,
-            number,
-            kind,
-            author,
-            head_branch,
-        },
-        Some(InvestigationKind::Gcp {
-            project,
-            repo,
-            env,
-            title,
-            message,
-            line,
-            url,
-            lookback,
-            gcp_project,
-        }) => InvestigateAction::LaunchGcp {
-            project,
-            repo,
-            env,
-            title,
-            message,
-            line,
-            url,
-            lookback,
-            gcp_project,
-        },
-        Some(InvestigationKind::Loki {
-            project,
-            repo,
-            env,
-            title,
-            message,
-            line,
-            url,
-            lookback,
-        }) => InvestigateAction::LaunchLoki {
-            project,
-            repo,
-            env,
-            title,
-            message,
-            line,
-            url,
-            lookback,
-        },
+/// What `i` would launch for the selected signal, or `None` when it has no investigation.
+pub(crate) fn selected_launch(app: &App) -> Option<Launch> {
+    launch_for(&app.ui.screen.selected_status_item()?)
+}
+
+/// The investigation `i` launches for a signal, or `None` for a signal it doesn't cover.
+fn launch_for(item: &StatusItem) -> Option<Launch> {
+    match item {
+        StatusItem::Ci(c) => Some(Launch::Ci {
+            repo: c.repo.to_string(),
+            workflow: c.workflow_name.clone(),
+            run_url: c.url.clone(),
+        }),
+        StatusItem::Issue(i) => Some(Launch::Issue {
+            repo: i.repo.to_string(),
+            number: i.number,
+            author: i.author.clone(),
+        }),
+        StatusItem::Pr(pr) => Some(Launch::Pr {
+            repo: pr.repo.to_string(),
+            number: pr.number,
+            ownership: PrOwnership::from_kind(pr.kind),
+            author: pr.author.clone(),
+            head_branch: pr.head_branch.clone(),
+        }),
+        StatusItem::Gcp(g) => Some(Launch::Gcp {
+            project: g.project.clone(),
+            repo: g.repo.clone(),
+            env: g.env.clone(),
+            title: g.title.clone(),
+            message: g.message.clone(),
+            // expose: parsed as JSON and re-wrapped as `UntrustedText`, so it stays fenced.
+            line: UntrustedText::new(lines_to_compact_json(&[LogLine::parse(g.line.expose())])),
+            url: g.url.clone(),
+            lookback: g.lookback.clone(),
+            gcp_project: g.gcp_project.clone(),
+        }),
+        StatusItem::Loki(l) => Some(Launch::Loki {
+            project: l.project.clone(),
+            repo: l.repo.clone(),
+            env: l.env.clone(),
+            title: l.title.clone(),
+            message: l.message.clone(),
+            // expose: parsed as JSON and re-wrapped as `UntrustedText`, so it stays fenced.
+            line: UntrustedText::new(lines_to_compact_json(&[LogLine::parse(l.line.expose())])),
+            url: l.url.clone(),
+            lookback: l.lookback.clone(),
+        }),
         #[cfg(feature = "private")]
-        Some(InvestigationKind::MediaBlocked { title, error }) => {
-            InvestigateAction::LaunchMediaBlocked { title, error }
-        }
-        None => InvestigateAction::None,
+        StatusItem::MediaBlocked(b) => Some(Launch::MediaBlocked {
+            title: b.title.clone(),
+            error: b.error.clone(),
+        }),
+        _ => None,
     }
 }

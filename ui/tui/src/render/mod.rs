@@ -207,7 +207,7 @@ mod tests {
     };
     use crate::display::{flatten, Category, DisplayItem, Filter, FlatRow, GroupKey, ListSnapshot};
     use crate::state::{
-        App, DataState, DetailMode, InvestigateAction, RefreshState, Screen, SubmenuState, UiState,
+        App, DataState, DetailMode, Launch, RefreshState, Screen, SubmenuState, UiState,
     };
     use chrono::Utc;
     use domain::daemon_health::{DaemonHealth, DaemonRecord, LastActivity, Schedule};
@@ -532,27 +532,20 @@ mod tests {
 
     #[test]
     fn investigate_hint_returns_empty_when_none() {
-        assert_eq!(status_bar::investigate_hint(&InvestigateAction::None), "");
+        assert_eq!(status_bar::investigate_hint(None), "");
     }
 
     #[test]
     fn investigate_hint_returns_hint_when_actionable() {
-        let inv = InvestigateAction::LaunchCi {
+        let launch = Launch::Ci {
             repo: "owner/repo".to_string(),
             workflow: "CI".to_string(),
             run_url: "https://example.com".to_string(),
         };
-        assert_eq!(status_bar::investigate_hint(&inv), " · [i] investigate");
-    }
-
-    #[cfg(feature = "private")]
-    #[test]
-    fn investigate_hint_returns_hint_for_media() {
-        let inv = InvestigateAction::LaunchMediaBlocked {
-            title: domain::UntrustedText::new("Show — S01E01"),
-            error: domain::UntrustedText::new("Invalid video file"),
-        };
-        assert_eq!(status_bar::investigate_hint(&inv), " · [i] investigate");
+        assert_eq!(
+            status_bar::investigate_hint(Some(&launch)),
+            " · [i] investigate"
+        );
     }
 
     #[rstest]
@@ -1070,8 +1063,8 @@ mod tests {
 
     #[test]
     fn full_screen_unified_list_pr_selected() {
-        // U8: PR item (Low urgency, no investigate action) selected as item 2/2.
-        // Tests that: (a) the inline hint is "↩ to open" only (no "i" hint);
+        // U8: PR item (Low urgency) selected as item 2/2.
+        // Tests that: (a) the status bar offers `[i] investigate`, since every PR has a launch;
         // (b) the CI item above it shows no hint; (c) position label is "2/2".
         let mut app = app_on(make_screen(
             vec![DisplayItem::Single(ci_item()), DisplayItem::Single(pr())],

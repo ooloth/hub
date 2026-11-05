@@ -53,8 +53,7 @@ is mutated:
    Returns `None` for unmapped keys.
 2. `App::update(action) -> Vec<Effect>` (`state/update/mod.rs`) — applies the action
    to app state and returns zero or more `Effect` values describing required
-   side effects, one variant per kind, such as `OpenUrl`, `LaunchPr` or `Quit`
-   (`state/types.rs`).
+   side effects, such as `OpenUrl`, `Launch` or `Quit` (`state/types.rs`).
 3. The event loop in `main.rs` carries out each effect: it opens a URL or a
    named tmux window or Rex tab, merges or labels on GitHub, or breaks the loop. `Quit`
    short-circuits any remaining effects in the same vec.
@@ -71,7 +70,9 @@ is mutated:
    in `investigations/` (see below). A launch is a `Launch` variant, carried as
    `Effect::Launch` and handled in `handle_launch()`, and an effect that opens a PR tool, such
    as the diff, lazygit or Octo, is an `Effect` variant of its own. Both matches list every
-   variant, so an effect nobody handles fails the build.
+   variant, so an effect nobody handles fails the build. Which signal `i` launches what for is
+   decided by `launch_for` in `state/update/signals.rs`, whose `_` arm means a signal left out
+   of it compiles and has no investigation.
 
 ## Render model
 

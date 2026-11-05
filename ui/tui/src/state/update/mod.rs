@@ -8,7 +8,7 @@ mod pr;
 mod refresh;
 mod signals;
 
-pub(crate) use signals::compute_investigate_action;
+pub(crate) use signals::selected_launch;
 
 impl App {
     pub(crate) fn update(&mut self, action: Action) -> Vec<Effect> {
@@ -281,11 +281,11 @@ mod tests {
 
     use rstest::rstest;
 
-    use super::{compute_investigate_action, handle_msg};
+    use super::{handle_msg, selected_launch};
     use crate::display::{flatten, Category, DisplayItem, Filter, GroupKey};
     use crate::state::{
-        Action, App, DataState, DetailMode, Effect, InvestigateAction, Launch, Msg, RefreshState,
-        Screen, SubmenuState, UiState,
+        Action, App, DataState, DetailMode, Effect, Launch, Msg, PrOwnership, RefreshState, Screen,
+        SubmenuState, UiState,
     };
     use domain::daemon_health::{DaemonHealth, DaemonRecord, LastActivity, Schedule};
     use domain::daemon_pass::PassStatus;
@@ -401,6 +401,21 @@ mod tests {
             urgency: domain::Urgency::High,
             url: "https://console.cloud.google.com/logs/query".to_string(),
             gcp_project: "web-app-prod-abc123".to_string(),
+        })
+    }
+
+    fn loki_item() -> StatusItem {
+        StatusItem::Loki(domain::LokiEntry {
+            title: "MemoryError".to_string(),
+            project: "project-x".to_string(),
+            repo: domain::RepoSlug::new("owner", "project-x"),
+            env: "prod".to_string(),
+            message: domain::UntrustedText::new("OOM killed"),
+            line: domain::UntrustedText::new(r#"{"message":"OOM killed"}"#),
+            lookback: "15m".to_string(),
+            age: chrono::Duration::zero(),
+            urgency: domain::Urgency::High,
+            url: "https://grafana.example.com/explore".to_string(),
         })
     }
 
@@ -527,20 +542,20 @@ mod tests {
     // --- Investigate ---
 
     #[test]
-    fn investigate_action_launches_ci_from_unified_list_selection() {
+    fn investigating_a_ci_failure_launches_a_ci_session() {
         let app = app_with_items(vec![DisplayItem::Single(ci_failure())]);
         assert_eq!(
-            compute_investigate_action(&app),
-            InvestigateAction::LaunchCi {
+            selected_launch(&app),
+            Some(Launch::Ci {
                 repo: "ooloth/hub".to_string(),
                 workflow: "CI".to_string(),
                 run_url: "https://github.com/ooloth/hub/actions/runs/123".to_string(),
-            }
+            })
         );
     }
 
     #[test]
-    fn investigate_action_launches_issue_from_unified_list_selection() {
+    fn investigating_an_issue_launches_an_issue_session() {
         let app = app_with_items(vec![DisplayItem::Single(StatusItem::Issue(
             domain::Issue {
                 number: 31,
@@ -555,12 +570,12 @@ mod tests {
             },
         ))]);
         assert_eq!(
-            compute_investigate_action(&app),
-            InvestigateAction::LaunchIssue {
+            selected_launch(&app),
+            Some(Launch::Issue {
                 repo: "ooloth/hub".to_string(),
                 number: 31,
                 author: "agent".to_string(),
-            }
+            })
         );
     }
 
@@ -572,21 +587,24 @@ mod tests {
         "alice",
         false,
         None,
-        domain::pr_activity::PrActivity::default()
+        domain::pr_activity::PrActivity::default(),
+        PrOwnership::Peer
     )]
     #[case::mine_approved(
         domain::PrKind::Mine,
         "ooloth",
         false,
         Some(domain::ReviewDecision::Approved),
-        crate::test_support::verdicts(1, 0)
+        crate::test_support::verdicts(1, 0),
+        PrOwnership::Mine
     )]
     #[case::my_draft_with_changes_requested(
         domain::PrKind::Mine,
         "ooloth",
         true,
         Some(domain::ReviewDecision::ChangesRequested),
-        crate::test_support::verdicts(0, 1)
+        crate::test_support::verdicts(0, 1),
+        PrOwnership::Mine
     )]
     fn investigating_a_pr_launches_a_session_on_it_whatever_its_review_state(
         #[case] kind: domain::PrKind,
@@ -594,6 +612,7 @@ mod tests {
         #[case] draft: bool,
         #[case] review_decision: Option<domain::ReviewDecision>,
         #[case] activity: domain::pr_activity::PrActivity,
+        #[case] ownership: PrOwnership,
     ) {
         let app = app_with_items(vec![DisplayItem::Single(StatusItem::Pr(
             domain::PullRequest {
@@ -606,28 +625,75 @@ mod tests {
             },
         ))]);
         assert_eq!(
-            compute_investigate_action(&app),
-            InvestigateAction::LaunchPr {
+            selected_launch(&app),
+            Some(Launch::Pr {
                 repo: "ooloth/hub".to_string(),
                 number: 7,
-                kind,
+                ownership,
                 author: author.to_string(),
                 head_branch: "feat/thing".to_string(),
-            }
+            })
         );
     }
 
     #[cfg(feature = "private")]
     #[test]
-    fn investigate_action_launches_media_from_unified_list_selection() {
+    fn investigating_blocked_media_launches_a_media_session() {
         let app = app_with_items(vec![DisplayItem::Single(media_blocked())]);
         assert_eq!(
-            compute_investigate_action(&app),
-            InvestigateAction::LaunchMediaBlocked {
+            selected_launch(&app),
+            Some(Launch::MediaBlocked {
                 title: domain::UntrustedText::new("Show — S01E01"),
                 error: domain::UntrustedText::new("Invalid video file"),
-            }
+            })
         );
+    }
+
+    #[test]
+    fn investigating_a_gcp_error_launches_a_gcp_session() {
+        let app = app_with_items(vec![DisplayItem::Single(gcp_item())]);
+        assert_eq!(
+            selected_launch(&app),
+            Some(Launch::Gcp {
+                project: "web-app".to_string(),
+                repo: domain::RepoSlug::new("owner", "web-app"),
+                env: "neuro".to_string(),
+                title: "errors".to_string(),
+                message: domain::UntrustedText::new("something broke"),
+                line: domain::UntrustedText::new(r#"[{"message":"something broke"}]"#),
+                url: "https://console.cloud.google.com/logs/query".to_string(),
+                lookback: "7d".to_string(),
+                gcp_project: "web-app-prod-abc123".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn investigating_a_loki_alert_launches_a_loki_session() {
+        let app = app_with_items(vec![DisplayItem::Single(loki_item())]);
+        assert_eq!(
+            selected_launch(&app),
+            Some(Launch::Loki {
+                project: "project-x".to_string(),
+                repo: domain::RepoSlug::new("owner", "project-x"),
+                env: "prod".to_string(),
+                title: "MemoryError".to_string(),
+                message: domain::UntrustedText::new("OOM killed"),
+                line: domain::UntrustedText::new(r#"[{"message":"OOM killed"}]"#),
+                url: "https://grafana.example.com/explore".to_string(),
+                lookback: "15m".to_string(),
+            })
+        );
+    }
+
+    /// `i` has nothing to launch on a media signal no investigation covers.
+    #[cfg(feature = "private")]
+    #[rstest]
+    #[case::missing_media(crate::test_support::media_missing())]
+    #[case::media_health(crate::test_support::media_health())]
+    fn a_media_signal_without_an_investigation_offers_no_launch(#[case] item: StatusItem) {
+        let app = app_with_items(vec![DisplayItem::Single(item)]);
+        assert_eq!(selected_launch(&app), None);
     }
 
     // --- Help, flash, quit ---
@@ -1460,19 +1526,28 @@ mod tests {
 
     // --- OpenInOcto / OpenInLazygit from split view ---
 
+    /// A PR by `alice`, who is not the repository's owner, so a login taken from the repository
+    /// or the user instead of the PR's author fails.
+    fn pr_by_alice() -> StatusItem {
+        StatusItem::Pr(domain::PullRequest {
+            author: "alice".to_string(),
+            ..crate::test_support::pull_request()
+        })
+    }
+
     fn opens_the_pr_in_octo(effect: &Effect) -> bool {
         matches!(effect, Effect::OpenInOcto { repo, number: 7, author, head_branch }
-            if repo == "ooloth/hub" && author == "ooloth" && head_branch == "feat/thing")
+            if repo == "ooloth/hub" && author == "alice" && head_branch == "feat/thing")
     }
 
     fn opens_the_pr_in_lazygit(effect: &Effect) -> bool {
         matches!(effect, Effect::OpenInLazygit { repo, number: 7, author, head_branch }
-            if repo == "ooloth/hub" && author == "ooloth" && head_branch == "feat/thing")
+            if repo == "ooloth/hub" && author == "alice" && head_branch == "feat/thing")
     }
 
     fn opens_the_pr_diff(effect: &Effect) -> bool {
         matches!(effect, Effect::OpenPrDiffInDelta { repo, number: 7, author }
-            if repo == "ooloth/hub" && author == "ooloth")
+            if repo == "ooloth/hub" && author == "alice")
     }
 
     #[rstest]
@@ -1483,7 +1558,7 @@ mod tests {
         #[case] action: Action,
         #[case] expected: fn(&Effect) -> bool,
     ) {
-        let mut app = split_view_of(stub_pr());
+        let mut app = split_view_of(pr_by_alice());
         let _ = app.update(Action::PrActionSubmenu);
         let effects = app.update(action);
         assert!(
@@ -1514,15 +1589,6 @@ mod tests {
         assert!(matches!(app.current_screen(), Screen::UnifiedList { .. }));
     }
 
-    /// A PR by `alice`, who is not the repository's owner, so a login taken from the repository
-    /// or the user instead of the PR's author fails.
-    fn pr_by_alice() -> StatusItem {
-        StatusItem::Pr(domain::PullRequest {
-            author: "alice".to_string(),
-            ..crate::test_support::pull_request()
-        })
-    }
-
     #[test]
     fn the_review_picker_carries_the_prs_author_login() {
         let mut app = split_view_of(pr_by_alice());
@@ -1534,7 +1600,7 @@ mod tests {
         let mut app = app_with_items(vec![DisplayItem::Single(pr_by_alice())]);
         let effects = app.update(Action::Investigate);
         let [Effect::Launch(Launch::Pr { author, .. })] = effects.as_slice() else {
-            panic!("expected one LaunchPr");
+            panic!("expected one Launch::Pr");
         };
         assert_eq!(author, "alice");
     }
@@ -1544,7 +1610,7 @@ mod tests {
         let mut app = app_with_items(vec![DisplayItem::Single(stub_issue())]);
         let effects = app.update(Action::Investigate);
         let [Effect::Launch(Launch::Issue { author, .. })] = effects.as_slice() else {
-            panic!("expected one LaunchIssue");
+            panic!("expected one Launch::Issue");
         };
         assert_eq!(author, "agent");
     }
@@ -1573,7 +1639,7 @@ mod tests {
             review: launched_review,
         }) = effects.into_iter().next().unwrap()
         else {
-            panic!("expected ReviewPr");
+            panic!("expected Launch::Review");
         };
         assert_eq!(launched, target);
         assert_eq!(launched_review, review);
@@ -1594,7 +1660,7 @@ mod tests {
             target: launched, ..
         }) = effects.into_iter().next().unwrap()
         else {
-            panic!("expected ReviewPr");
+            panic!("expected Launch::Review");
         };
         assert_eq!(launched, target);
     }

@@ -1,7 +1,5 @@
 use crate::display::FlatRow;
-use crate::state::{
-    compute_investigate_action, App, DetailMode, InvestigateAction, RefreshState, Screen,
-};
+use crate::state::{selected_launch, App, DetailMode, Launch, RefreshState, Screen};
 use chrono::Utc;
 use domain::daemon_health::{DaemonRecord, DaemonStatus};
 use domain::profile::Profile;
@@ -22,11 +20,10 @@ pub(crate) fn position_label(screen: &Screen) -> String {
     }
 }
 
-pub(crate) const fn investigate_hint(investigate: &InvestigateAction) -> &'static str {
-    if matches!(investigate, InvestigateAction::None) {
-        ""
-    } else {
-        " · [i] investigate"
+pub(crate) const fn investigate_hint(launch: Option<&Launch>) -> &'static str {
+    match launch {
+        Some(_) => " · [i] investigate",
+        None => "",
     }
 }
 
@@ -60,10 +57,10 @@ pub(crate) fn status_bar_left(app: &App) -> String {
     } = &app.ui.screen
     {
         let pos = position_label(app.current_screen());
-        let inv = compute_investigate_action(app);
+        let launch = selected_launch(app);
         match detail_mode {
             DetailMode::Hidden => {
-                let inv_hint = investigate_hint(&inv);
+                let inv_hint = investigate_hint(launch.as_ref());
                 let group_hint = match flat_rows.get(*selected) {
                     Some(FlatRow::GroupHeader {
                         expanded: false, ..
@@ -87,7 +84,7 @@ pub(crate) fn status_bar_left(app: &App) -> String {
                         "{pos} · [o] open · [a] approve · [i] investigate · [Esc] back"
                     ),
                     crate::display::SelectedItemKind::Other => {
-                        let inv_hint = investigate_hint(&inv);
+                        let inv_hint = investigate_hint(launch.as_ref());
                         format!("{pos} · [o] open{inv_hint} · [Esc] back")
                     }
                 }

@@ -2,6 +2,8 @@ use rstest::rstest;
 use workflows::status::StatusItem;
 
 use super::*;
+#[cfg(feature = "private")]
+use crate::test_support::{media_health, media_missing};
 
 #[cfg(feature = "private")]
 fn media_blocked() -> StatusItem {
@@ -12,29 +14,6 @@ fn media_blocked() -> StatusItem {
         title: domain::UntrustedText::new("Show — S01E01"),
         error: domain::UntrustedText::new("Invalid video file"),
         url: "http://media-server/queue".to_string(),
-    })
-}
-
-#[cfg(feature = "private")]
-fn media_missing() -> StatusItem {
-    StatusItem::MediaMissing(workflows::private::status::MissingItem {
-        source: "Media".to_string(),
-        urgency: domain::Urgency::Medium,
-        age: chrono::Duration::zero(),
-        title: "Show — S01E02".to_string(),
-        air_date: "2024-01-01".to_string(),
-        url: "http://media-server/wanted".to_string(),
-    })
-}
-
-#[cfg(feature = "private")]
-fn media_health() -> StatusItem {
-    StatusItem::MediaHealth(workflows::private::status::HealthItem {
-        source: "Media".to_string(),
-        urgency: domain::Urgency::Low,
-        age: chrono::Duration::zero(),
-        message: "Indexer unavailable".to_string(),
-        url: "https://wiki.example.com/system#indexers".to_string(),
     })
 }
 
@@ -283,14 +262,6 @@ fn each_signal_is_listed_under_its_category(#[case] item: StatusItem, #[case] ca
 }
 
 #[test]
-fn a_gcp_error_opens_a_gcp_investigation() {
-    assert!(matches!(
-        item_investigation(&gcp()),
-        Some(InvestigationKind::Gcp { .. })
-    ));
-}
-
-#[test]
 fn group_key_gcp_returns_key() {
     assert_eq!(
         group_key(&gcp()),
@@ -433,51 +404,6 @@ fn each_signal_opens_its_own_url(#[case] item: StatusItem, #[case] url: &str) {
 #[case::media_health_opens_the_wiki(media_health(), "https://wiki.example.com/system#indexers")]
 fn each_media_signal_opens_its_own_url(#[case] item: StatusItem, #[case] url: &str) {
     assert_eq!(item_url(&item), Some(url));
-}
-
-#[test]
-fn a_ci_failure_opens_a_ci_investigation() {
-    assert!(matches!(
-        item_investigation(&ci()),
-        Some(InvestigationKind::Ci { .. })
-    ));
-}
-
-#[test]
-fn an_issue_opens_an_issue_investigation() {
-    assert!(matches!(
-        item_investigation(&issue()),
-        Some(InvestigationKind::Issue { .. })
-    ));
-}
-
-#[test]
-fn a_pr_opens_a_pr_investigation() {
-    assert!(matches!(
-        item_investigation(&pr()),
-        Some(InvestigationKind::Pr { .. })
-    ));
-}
-
-#[cfg(feature = "private")]
-#[test]
-fn a_blocked_media_download_opens_a_media_investigation() {
-    assert!(matches!(
-        item_investigation(&media_blocked()),
-        Some(InvestigationKind::MediaBlocked { .. })
-    ));
-}
-
-#[cfg(feature = "private")]
-#[test]
-fn missing_media_has_no_investigation() {
-    assert!(item_investigation(&media_missing()).is_none());
-}
-
-#[cfg(feature = "private")]
-#[test]
-fn a_media_health_warning_has_no_investigation() {
-    assert!(item_investigation(&media_health()).is_none());
 }
 
 #[test]
