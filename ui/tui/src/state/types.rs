@@ -339,7 +339,7 @@ pub(crate) enum InvestigateAction {
         repo: String,
         number: u64,
         kind: PrKind,
-        author: String,
+        login: String,
         head_branch: String,
         base_branch: String,
     },

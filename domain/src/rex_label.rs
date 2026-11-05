@@ -40,10 +40,7 @@ impl RexLabel {
 
     /// `CI <workflow>: investigate`.
     pub(crate) fn ci(workflow: &str) -> Self {
-        Self::new(format!(
-            "CI {}: investigate",
-            excerpt(workflow, workflow, false)
-        ))
+        Self::new(format!("CI {}: investigate", excerpt(workflow, workflow)))
     }
 
     /// `<source> <env> <excerpt>: investigate`.
@@ -55,16 +52,17 @@ impl RexLabel {
         shown_env.truncate(MAX_ENV);
         let shown_env = shown_env.trim_end_matches('-').to_string();
         let identity = format!("{env}\u{1}{message}");
-        let message = excerpt(message, &identity, shown_env != env);
+        let message = if shown_env == env {
+            excerpt(message, &identity)
+        } else {
+            hashed_excerpt(message, &identity)
+        };
         Self::new(format!("{source} {shown_env} {message}: investigate"))
     }
 
     /// `Media <title>: investigate`.
     pub(crate) fn media(title: &str) -> Self {
-        Self::new(format!(
-            "Media {}: investigate",
-            excerpt(title, title, false)
-        ))
+        Self::new(format!("Media {}: investigate", excerpt(title, title)))
     }
 
     fn new(label: String) -> Self {
@@ -117,17 +115,23 @@ fn clean(raw: &str) -> String {
     }
 }
 
-/// `raw` cleaned and cut to [`MAX_TEXT`] characters.
-///
-/// When the excerpt is not `raw` exactly, or `marked` says something beside it was not shown
-/// whole, it ends in `…` and a hash of `identity`, so two texts that clean or cut to the same
-/// excerpt still give different labels.
-fn excerpt(raw: &str, identity: &str, marked: bool) -> String {
-    let cleaned = clean(raw);
-    if !marked && cleaned == raw && cleaned.chars().count() <= MAX_TEXT {
-        return cleaned;
+/// `raw` as it is when it is clean and fits in [`MAX_TEXT`] characters, and otherwise its
+/// [`hashed_excerpt`].
+fn excerpt(raw: &str, identity: &str) -> String {
+    if clean(raw) == raw && raw.chars().count() <= MAX_TEXT {
+        raw.to_string()
+    } else {
+        hashed_excerpt(raw, identity)
     }
-    let keep: String = cleaned.chars().take(MAX_TEXT - HASH_LEN - 2).collect();
+}
+
+/// `raw` cleaned and cut, ending in `…` and a hash of `identity`, all within [`MAX_TEXT`]
+/// characters.
+///
+/// The hash keeps apart two texts that clean or cut to the same excerpt, and two alerts whose
+/// environments were not shown whole.
+fn hashed_excerpt(raw: &str, identity: &str) -> String {
+    let keep: String = clean(raw).chars().take(MAX_TEXT - HASH_LEN - 2).collect();
     format!("{}… {}", keep.trim_end(), short_hash(identity, HASH_LEN))
 }
 
@@ -275,7 +279,7 @@ mod tests {
         }
 
         /// Half the texts are long and plain, with no whitespace or control character, since
-        /// only those reach the cut without first being marked for cleaning.
+        /// only those are hashed for their length rather than for being cleaned.
         #[test]
         fn any_workflow_or_title_gives_a_well_formed_label(
             text in "([a-zA-Z0-9/()_-]{41,300}|(.|\n){0,300})",

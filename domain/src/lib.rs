@@ -50,6 +50,8 @@ pub mod profile;
 pub mod project_short_name;
 /// Why a pull request is waiting on me, as the card counts it.
 pub mod reason_kind;
+/// A review skill hub can start on a pull request.
+pub mod review_skill;
 /// The label a Rex tab hub opens carries.
 pub mod rex_label;
 /// A Rex session's id.
@@ -97,6 +99,7 @@ pub use pr::*;
 pub use pr_window_activity::*;
 pub use profile::*;
 pub use project_short_name::*;
+pub use review_skill::*;
 pub use rex_label::*;
 pub use rex_session_id::*;
 pub use session::*;

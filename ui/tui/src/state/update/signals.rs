@@ -311,14 +311,14 @@ impl App {
                 repo,
                 number,
                 kind,
-                author,
+                login,
                 head_branch,
                 ..
             } => vec![Effect::LaunchPr {
                 repo,
                 number,
                 author: PrAuthor::from_kind(kind),
-                login: author,
+                login,
                 head_branch,
             }],
             InvestigateAction::LaunchGcp {
@@ -421,7 +421,7 @@ pub(crate) fn compute_investigate_action(app: &App) -> InvestigateAction {
             repo,
             number,
             kind,
-            author,
+            login: author,
             head_branch,
             base_branch,
         },

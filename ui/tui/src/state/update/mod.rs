@@ -611,7 +611,7 @@ mod tests {
                 repo: "ooloth/hub".to_string(),
                 number: 7,
                 kind,
-                author: author.to_string(),
+                login: author.to_string(),
                 head_branch: "feat/thing".to_string(),
                 base_branch: "main".to_string(),
             }
