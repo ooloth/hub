@@ -1,12 +1,13 @@
 # prompts/
 
-System prompts for hub's agent sessions. Only investigations exist.
+System prompts for hub's agent sessions. Only investigation prompts exist, and `scheduled/` is
+empty.
 
 ## investigations/
 
 Loaded by `ui/tui/src/investigations/*.rs` via `include_str!` when a human
 presses `i` on a signal item. These sessions are interactive — the human is
-watching — and run with a restricted tool set (`--allowedTools`).
+watching — and pre-approve the tools each kind needs (`--allowedTools`).
 
 Each file covers one signal kind: `ci.md`, `gcp.md`, `issue.md`, `loki.md`,
 `media.md`.

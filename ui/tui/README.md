@@ -63,8 +63,9 @@ is mutated:
 1. Add a variant to `Action` in `state/types.rs`
 2. Map one or more keys to it in the appropriate per-view function in
    `input.rs` (`unified_list_keys`, `merge_confirm_key`, or a new function for a new view)
-3. Handle it in `App::update()` in `state/update/mod.rs` — mutate state and/or return
-   one or more `Effect` values
+3. Handle it from `App::update()` in `state/update/mod.rs`, which handles app-wide actions
+   itself and hands list actions to `signals.rs` and merge actions to `pr.rs`. The handler
+   mutates state and/or returns one or more `Effect` values
 4. If a new `Effect` variant is needed, add it to the enum in `state/types.rs`,
    handle it in `handle_effect()` in `main.rs`, and if it launches an investigation add a file
    in `investigations/` (see below). A launch is a `Launch` variant, carried as
@@ -172,9 +173,10 @@ just test-update
 
 Investigation types live in `investigations/`, one file per type. Each exposes
 a function that returns a `LaunchConfig` (`config()` for most; `ask_config()`
-and `review_config()` for pull requests) with a system prompt (loaded via
-`include_str!` from `prompts/`), a context-specific prompt string, and
-tool/model settings. `launch.rs` holds the shared launcher, and
+and `review_config()` for pull requests) with a system prompt, a context-specific
+prompt string, and tool/model settings. The system prompt is loaded via
+`include_str!` from `prompts/`, except a pull request's, which `pr.rs` writes
+itself. `launch.rs` holds the shared launcher, and
 `command.rs` builds the command it runs. `src/terminal/` opens the window in tmux or Rex,
 whichever encloses the TUI ([Decision 029](../../docs/decisions/029-hub-opens-windows-in-whichever-of-tmux-or-rex-encloses-it.md)). A Rex tab opens in the background, in the session for its repository ([Decision 032](../../docs/decisions/032-hubs-rex-tabs-open-in-their-repositorys-session.md)), labelled after its signal, which is how a later launch finds it again ([Decision 033](../../docs/decisions/033-hubs-rex-tabs-say-what-is-happening-in-them.md)).
 
@@ -223,7 +225,7 @@ to make `i` "smarter" as a change of direction rather than a fix.
 reviews it offers depends on who wrote the PR, because a session launched on
 someone else's branch must not edit it:
 
-| Key | Your PR (`Mine`, drafts too)   | Someone else's (`ToReview`, `External`) |
+| Key | Your PR (`Mine`, drafts too)   | Someone else's (`Peer`)                 |
 | --- | ------------------------------ | --------------------------------------- |
 | c   | `/review-code`                 | `/review-code`                          |
 | f   | `/review-converge`             | not offered                             |

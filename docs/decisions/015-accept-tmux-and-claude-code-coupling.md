@@ -1,6 +1,6 @@
 # 015 — Accept tmux and Claude Code as baked-in dispatch dependencies
 
-> **⚠ The tmux section is superseded by [Decision 029](029-hub-opens-windows-in-whichever-of-tmux-or-rex-encloses-it.md) (accepted).** The Claude Code section still stands.
+> **⚠ The tmux section is superseded by [Decision 029](029-hub-opens-windows-in-whichever-of-tmux-or-rex-encloses-it.md) (accepted).** The Claude Code section still stands. The coupling it accepts lives in `compose()` in `ui/tui/src/investigations/command.rs`, not in the `workflows/` files "Isolation without abstraction" names, which [Decision 019](019-drop-task-model-filesystem-sessions.md) deleted.
 
 ## Context
 

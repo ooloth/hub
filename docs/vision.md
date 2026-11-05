@@ -168,14 +168,15 @@ different tools, urgency thresholds, and audiences.
 
 ## Workflows
 
-Each workflow lives in `clients/<name>/` and `workflows/`. Adding one
-means adding files — no central registration.
+Each workflow has its client in `clients/` and its logic in `workflows/`.
+Adding one registers it in a few central places, which
+[the add-a-workflow playbook](playbooks/add-a-workflow.md) lists.
 
 Current:
 
 | Workflow          | What it tracks                                      |
 | ----------------- | --------------------------------------------------- |
-| GitHub PRs        | PRs awaiting my review                              |
+| GitHub PRs        | PRs awaiting my review, and my own open PRs         |
 | GitHub issues     | Open issues assigned to me or open in watched repos |
 | GitHub CI         | Failing workflow runs on watched repos              |
 | Linear            | Incomplete issues assigned to me                    |

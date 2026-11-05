@@ -143,7 +143,7 @@ into a decision record._
   `ui/tui/src/main.rs` still calls `upsert` as well, so the single row has two writers until Phase 5
   of [#327](https://github.com/ooloth/hub/issues/327). The table is still one row keyed `id = 1`.
 - *Measured* (2026-10-05, read from the source): a pass where some sources fail still replaces the
-  whole row, without the failed sources' items. `classify` in `daemon/src/freshness.rs` returns
+  whole row, without the failed sources' items. `classify` in `workflows/src/freshness.rs` returns
   `Refreshed` whenever any item came back, and `write` in `daemon/src/cache.rs` upserts that report
   as the payload. If `github prs awaiting review` times out while other sources answer, those PRs
   leave the cached list until a later pass reaches that source. The TUI's partial banner names the
