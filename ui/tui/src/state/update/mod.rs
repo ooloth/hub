@@ -700,6 +700,7 @@ mod tests {
     #[rstest]
     #[case::missing_media(crate::test_support::media_missing())]
     #[case::media_health(crate::test_support::media_health())]
+    #[case::media_backlog(crate::test_support::media_backlog())]
     fn a_media_signal_without_an_investigation_offers_no_launch(#[case] item: StatusItem) {
         let app = app_with_items(vec![DisplayItem::Single(item)]);
         assert_eq!(selected_launch(&app), None);
