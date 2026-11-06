@@ -3,19 +3,7 @@ use workflows::status::StatusItem;
 
 use super::*;
 #[cfg(feature = "private")]
-use crate::test_support::{media_health, media_missing};
-
-#[cfg(feature = "private")]
-fn media_blocked() -> StatusItem {
-    StatusItem::MediaBlocked(workflows::private::status::BlockedItem {
-        source: "Media".to_string(),
-        urgency: domain::Urgency::High,
-        age: chrono::Duration::zero(),
-        title: domain::UntrustedText::new("Show — S01E01"),
-        error: domain::UntrustedText::new("Invalid video file"),
-        url: "http://media-server/queue".to_string(),
-    })
-}
+use crate::test_support::{media_blocked, media_health, media_missing};
 
 fn pr() -> StatusItem {
     StatusItem::Pr(review_request())
@@ -391,9 +379,9 @@ fn each_signal_opens_its_own_url(#[case] item: StatusItem, #[case] url: &str) {
 
 #[cfg(feature = "private")]
 #[rstest]
-#[case::media_blocked_opens_the_queue(media_blocked(), "http://media-server/queue")]
-#[case::media_missing_opens_wanted(media_missing(), "http://media-server/wanted")]
-#[case::media_health_opens_the_wiki(media_health(), "https://wiki.example.com/system#indexers")]
+#[case::media_blocked_opens_the_queue(media_blocked(), "http://media-server/a")]
+#[case::media_missing_opens_wanted(media_missing(), "http://media-server/b")]
+#[case::media_health_opens_the_wiki(media_health(), "https://wiki.example.com/status")]
 fn each_media_signal_opens_its_own_url(#[case] item: StatusItem, #[case] url: &str) {
     assert_eq!(item_url(&item), Some(url));
 }

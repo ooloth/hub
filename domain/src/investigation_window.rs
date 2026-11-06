@@ -557,8 +557,8 @@ mod tests {
     #[test]
     fn two_blocked_media_items_get_different_windows() {
         assert_ne!(
-            InvestigationWindow::media("Some Show - S01E01"),
-            InvestigationWindow::media("Some Show - S01E02"),
+            InvestigationWindow::media("Item A"),
+            InvestigationWindow::media("Item B"),
         );
     }
 
@@ -589,9 +589,7 @@ mod tests {
     #[test]
     fn a_media_window_opens_in_plain_workers() {
         assert_eq!(
-            InvestigationWindow::media("Some Show - S01E01")
-                .session()
-                .label(),
+            InvestigationWindow::media("Item A").session().label(),
             "Workers"
         );
     }

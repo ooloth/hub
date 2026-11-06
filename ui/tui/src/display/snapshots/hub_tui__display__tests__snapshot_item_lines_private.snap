@@ -1,8 +1,7 @@
 ---
 source: ui/tui/src/display/tests.rs
-assertion_line: 289
 expression: lines
 ---
-media_blocked:  Import blocked · Invalid video file
-media_missing:  Not found · Show — S01E02 · aired 2024-01-01
-media_health:   Indexer unavailable
+media_blocked:  Import blocked · Import failed
+media_missing:  Not found · Item B · aired 2024-01-01
+media_health:   Source unavailable

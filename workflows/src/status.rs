@@ -50,7 +50,7 @@ pub enum StatusItem {
     /// A blocked media download (private).
     #[cfg(feature = "private")]
     MediaBlocked(crate::private::status::BlockedItem),
-    /// A missing media episode (private).
+    /// A missing media item (private).
     #[cfg(feature = "private")]
     MediaMissing(crate::private::status::MissingItem),
     /// A media server health issue (private).

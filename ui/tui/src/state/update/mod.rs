@@ -437,18 +437,6 @@ mod tests {
         StatusItem::Pr(crate::test_support::pull_request())
     }
 
-    #[cfg(feature = "private")]
-    fn media_blocked() -> StatusItem {
-        StatusItem::MediaBlocked(workflows::private::status::BlockedItem {
-            source: "Media".to_string(),
-            urgency: domain::Urgency::High,
-            age: chrono::Duration::zero(),
-            title: domain::UntrustedText::new("Show — S01E01"),
-            error: domain::UntrustedText::new("Invalid video file"),
-            url: "http://media-server/queue".to_string(),
-        })
-    }
-
     // --- Refreshes and reads ---
 
     fn failure(source: &str) -> SourceFailure {
@@ -647,12 +635,14 @@ mod tests {
     #[cfg(feature = "private")]
     #[test]
     fn investigating_blocked_media_launches_a_media_session() {
-        let app = app_with_items(vec![DisplayItem::Single(media_blocked())]);
+        let app = app_with_items(vec![DisplayItem::Single(
+            crate::test_support::media_blocked(),
+        )]);
         assert_eq!(
             selected_launch(&app),
             Some(Launch::MediaBlocked {
-                title: domain::UntrustedText::new("Show — S01E01"),
-                error: domain::UntrustedText::new("Invalid video file"),
+                title: domain::UntrustedText::new("Item A"),
+                error: domain::UntrustedText::new("Import failed"),
             })
         );
     }

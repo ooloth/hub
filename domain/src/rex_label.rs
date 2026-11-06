@@ -164,10 +164,7 @@ mod tests {
         RexLabel::alert("Loki", "prod", "connection refused"),
         "Loki prod connection refused: investigate"
     )]
-    #[case(
-        RexLabel::media("Some Show - S01E01"),
-        "Media Some Show - S01E01: investigate"
-    )]
+    #[case(RexLabel::media("Item A"), "Media Item A: investigate")]
     fn text_shown_whole_is_left_as_it_is(#[case] label: RexLabel, #[case] expected: &str) {
         assert_eq!(label.as_str(), expected);
     }

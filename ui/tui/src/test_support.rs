@@ -58,16 +58,29 @@ pub(crate) fn linear_issue() -> workflows::status::StatusItem {
     })
 }
 
-/// A wanted episode that has not been downloaded yet.
+/// A media item whose import is blocked.
+#[cfg(feature = "private")]
+pub(crate) fn media_blocked() -> workflows::status::StatusItem {
+    workflows::status::StatusItem::MediaBlocked(workflows::private::status::BlockedItem {
+        source: "Media".to_string(),
+        urgency: domain::Urgency::High,
+        age: chrono::Duration::zero(),
+        title: domain::UntrustedText::new("Item A"),
+        error: domain::UntrustedText::new("Import failed"),
+        url: "http://media-server/a".to_string(),
+    })
+}
+
+/// A wanted media item that is missing.
 #[cfg(feature = "private")]
 pub(crate) fn media_missing() -> workflows::status::StatusItem {
     workflows::status::StatusItem::MediaMissing(workflows::private::status::MissingItem {
         source: "Media".to_string(),
         urgency: domain::Urgency::Medium,
         age: chrono::Duration::zero(),
-        title: "Show — S01E02".to_string(),
+        title: "Item B".to_string(),
         air_date: "2024-01-01".to_string(),
-        url: "http://media-server/wanted".to_string(),
+        url: "http://media-server/b".to_string(),
     })
 }
 
@@ -78,7 +91,7 @@ pub(crate) fn media_health() -> workflows::status::StatusItem {
         source: "Media".to_string(),
         urgency: domain::Urgency::Low,
         age: chrono::Duration::zero(),
-        message: "Indexer unavailable".to_string(),
-        url: "https://wiki.example.com/system#indexers".to_string(),
+        message: "Source unavailable".to_string(),
+        url: "https://wiki.example.com/status".to_string(),
     })
 }

@@ -283,7 +283,7 @@ pub(crate) fn item_line(item: &StatusItem) -> LineParts {
         #[cfg(feature = "private")]
         StatusItem::MediaBacklog { source, count } => LineParts {
             separator: RowSeparator::Bullet,
-            primary: vec![format!("{count} episodes in backlog")],
+            primary: vec![format!("{count} items in backlog")],
             dim_inline: vec![],
             source: Some(source.clone()),
             search_only: vec![],
