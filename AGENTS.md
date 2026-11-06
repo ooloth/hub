@@ -250,15 +250,17 @@ find /tmp/ -maxdepth 1 -name 'hub-supporting-data-*.json'           # before i, 
 tmux send-keys -t qa:tui "i"
 sleep 12
 tmux list-panes -s -t qa -F '#{window_name} :: #{pane_start_command}'
+tmux capture-pane -t qa:tui -p | tail -3          # the status bar: nothing new after a launch that worked, the error after one that failed
 ```
 
-Then clean up every time: `tmux kill-session -t qa`, then run the two `find` commands again. Remove
-a worktree or data file only when exactly one appeared since the listings before `i`. Remove a
-worktree with `git -C ~/.hub/repos/<repo> worktree remove --force <path>`, not `rm -rf`, which
-leaves it registered in the bare repo. When none or more than one appeared, remove nothing and
-report what the listings showed: the others belong to investigations still running, which another
-hub or another agent may have started during the run. Only a Loki or GCP launch writes a data file,
-so most runs leave none.
+Then clean up every time: `tmux kill-session -t qa`, then run the two `find` commands again. Killing
+`qa` ends the investigation before its own cleanup runs, so a launch that opened a CI, issue, Loki
+or GCP window always leaves its worktree behind. Remove a worktree or data file only when exactly
+one appeared since the listings before `i`. Remove a worktree with `git -C ~/.hub/repos/<repo>
+worktree remove --force <path>`, not `rm -rf`, which leaves it registered in the bare repo. When
+none or more than one appeared, remove nothing and report what the listings showed: the others
+belong to investigations still running, which another hub or another agent may have started during
+the run. Only a Loki or GCP launch writes a data file, so most runs leave none.
 
 **The loop in Rex.** The TUI gets its own tab, created with a fixed size so the
 status bar is not cut off:
