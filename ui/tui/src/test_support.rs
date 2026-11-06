@@ -46,6 +46,18 @@ pub(crate) fn verdicts(approvals: u32, changes_requested: u32) -> PrActivity {
     }
 }
 
+/// Linear issue ENG-99, in progress, opened just now.
+pub(crate) fn linear_issue() -> workflows::status::StatusItem {
+    workflows::status::StatusItem::Linear(domain::LinearIssue {
+        identifier: "ENG-99".to_string(),
+        title: "Do the thing".to_string(),
+        url: "https://linear.app/eng/issue/ENG-99".to_string(),
+        state: "In Progress".to_string(),
+        age: chrono::Duration::zero(),
+        urgency: domain::Urgency::Medium,
+    })
+}
+
 /// A wanted episode that has not been downloaded yet.
 #[cfg(feature = "private")]
 pub(crate) fn media_missing() -> workflows::status::StatusItem {

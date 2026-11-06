@@ -488,7 +488,8 @@ mod tests {
     /// Each `.expose()` in the file at `path` with no `// expose:` line in the comment block
     /// above it, as `<path under root>:<line>`.
     fn unjustified_exposures(root: &Path, path: &Path) -> Vec<String> {
-        let source = std::fs::read_to_string(path).expect("read source");
+        let source = std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         let name = path
             .strip_prefix(root)
             .unwrap_or(path)

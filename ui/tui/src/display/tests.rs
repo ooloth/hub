@@ -104,17 +104,6 @@ fn ci_failure() -> domain::CiFailure {
     }
 }
 
-fn linear() -> StatusItem {
-    StatusItem::Linear(domain::LinearIssue {
-        identifier: "ENG-99".to_string(),
-        title: "Do the thing".to_string(),
-        url: "https://linear.app/eng/issue/ENG-99".to_string(),
-        state: "In Progress".to_string(),
-        age: chrono::Duration::zero(),
-        urgency: domain::Urgency::Medium,
-    })
-}
-
 fn loki() -> StatusItem {
     StatusItem::Loki(domain::LokiEntry {
         title: "MemoryError".to_string(),
@@ -220,7 +209,10 @@ fn snapshot_item_lines() {
         format!("ci_bare:     {}", item_line(&ci()).flat()),
         format!("ci_job_step: {}", item_line(&ci_job_step()).flat()),
         format!("ci_full:     {}", item_line(&ci_full()).flat()),
-        format!("linear:      {}", item_line(&linear()).flat()),
+        format!(
+            "linear:      {}",
+            item_line(&crate::test_support::linear_issue()).flat()
+        ),
         format!("loki:        {}", item_line(&loki()).flat()),
         format!("gcp:         {}", item_line(&gcp()).flat()),
         format!(
@@ -255,7 +247,7 @@ fn snapshot_item_lines_private() {
 #[case::ci(ci(), Category::Errors)]
 #[case::pr(pr(), Category::Prs)]
 #[case::issue(issue(), Category::Issues)]
-#[case::linear(linear(), Category::Issues)]
+#[case::linear(crate::test_support::linear_issue(), Category::Issues)]
 #[case::gcp(gcp(), Category::Errors)]
 fn each_signal_is_listed_under_its_category(#[case] item: StatusItem, #[case] category: Category) {
     assert_eq!(item_category(&item), category);

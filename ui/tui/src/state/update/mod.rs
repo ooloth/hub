@@ -579,11 +579,19 @@ mod tests {
         );
     }
 
-    /// `i` on a PR opens a session on that PR whatever state its review is in; the
+    /// `i` on a PR opens a session on that PR whatever its kind or the state of its review; the
     /// review picker is the only place a skill is chosen.
     #[rstest]
     #[case::someone_elses_asking_for_my_review(
         domain::PrKind::ToReview,
+        "alice",
+        false,
+        None,
+        domain::pr_activity::PrActivity::default(),
+        PrOwnership::Peer
+    )]
+    #[case::someone_elses_from_outside(
+        domain::PrKind::External,
         "alice",
         false,
         None,
@@ -606,7 +614,7 @@ mod tests {
         crate::test_support::verdicts(0, 1),
         PrOwnership::Mine
     )]
-    fn investigating_a_pr_launches_a_session_on_it_whatever_its_review_state(
+    fn investigating_a_pr_launches_a_session_on_it_whatever_its_kind_or_review_state(
         #[case] kind: domain::PrKind,
         #[case] author: &str,
         #[case] draft: bool,
@@ -684,6 +692,17 @@ mod tests {
                 lookback: "15m".to_string(),
             })
         );
+    }
+
+    /// `i` on a signal no investigation covers launches nothing and says so.
+    #[test]
+    fn investigating_a_signal_with_no_investigation_flashes_and_launches_nothing() {
+        let mut app = app_with_items(vec![DisplayItem::Single(
+            crate::test_support::linear_issue(),
+        )]);
+        let effects = app.update(Action::Investigate);
+        assert!(effects.is_empty());
+        assert_eq!(app.ui.flash.as_deref(), Some("No investigation mapped"));
     }
 
     /// `i` has nothing to launch on a media signal no investigation covers.
