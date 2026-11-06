@@ -18,8 +18,10 @@ Types and pure business logic. The shared vocabulary of the system.
   `InvestigationWindow`
 - `ProjectShortName`, what a project is called in tmux window names (`project_short_name.rs`)
 - the window and tab types: `GitHubLogin`, `RexLabel`, `WorkersSession`, `RexSessionId`,
-  `WindowProject`, `PrWindowActivity` and `ReviewSkill`, one file each
+  `WindowProject`, `PrWindowActivity` and `ReviewSkill`, one file each, and
+  `window_segment.rs`, which turns external text into the segments of a window name
 
-`lib.rs` names every module with a line on what it holds.
+`lib.rs` names every module with a line on what it holds, including those this list leaves out,
+such as the daemon's health records, credential failures and whose turn a pull request is.
 
 Config structs are in `config/`, not here.

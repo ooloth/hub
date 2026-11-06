@@ -115,7 +115,8 @@ pub enum WorkflowConfig {
 /// Monitor configuration from the `[monitor]` section of `hub.toml`.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct Monitor {
-    /// Workflows the monitor daemon should run on its polling cycle.
+    /// Private workflows every refresh runs, by name. The daemon and the TUI both pass them to
+    /// hub-private's status orchestrator.
     #[serde(default)]
     pub workflow: Vec<MonitorWorkflowConfig>,
 }
@@ -123,7 +124,7 @@ pub struct Monitor {
 /// A single workflow entry under `[[monitor.workflow]]`.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct MonitorWorkflowConfig {
-    /// Workflow name, matched against registered monitor handlers.
+    /// Workflow name, as hub-private's status orchestrator matches it.
     pub name: String,
 }
 
