@@ -18,7 +18,8 @@ Each file covers one signal kind: `ci.md`, `gcp.md`, `issue.md`, `loki.md`,
 ## These prompts are the tuning surface
 
 Improving these prompts is how agent quality compounds — they are the lever the
-flywheel turns (see [../docs/vision.md](../docs/vision.md)). The planned mining
-loop ([Decision 018](../docs/decisions/018-meta-loop-output-as-labeled-issues.md))
-reads agent session logs and the delta between agent output and what shipped,
-then proposes edits to these files.
+flywheel turns (see [../docs/vision.md](../docs/vision.md)). A loop that reads
+agent session files and the delta between agent output and what shipped, then
+proposes edits to these files, is kept as an idea with no design yet:
+[Decision 018](../docs/decisions/018-meta-loop-output-as-labeled-issues.md) is
+superseded by [Decision 019](../docs/decisions/019-drop-task-model-filesystem-sessions.md).

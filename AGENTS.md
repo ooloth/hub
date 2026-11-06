@@ -474,5 +474,5 @@ Every `lib.rs` and `mod.rs` is navigation only — module declarations and re-ex
 `.agents/` holds the Amp orb scripts: `setup` prepares a fresh orb to build,
 test and lint hub, and `resume` updates `../hub-private` each time an orb wakes.
 Its `skills/` directory, which `.claude/skills/` links to, is empty. It is not a
-Rust crate. The `agents/` Rust crate
-for background automation is described in Decision 005 but has not been built yet.
+Rust crate. The `agents/` Rust crate that Decision 005 describes was cancelled by Decision 009
+and does not exist.

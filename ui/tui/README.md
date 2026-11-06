@@ -4,7 +4,7 @@ The `hub-tui` binary — the **human-facing surface for hub**. This is where you
 read urgency-ranked signals, open them in the browser, and launch agent investigation sessions
 in their own tmux windows or Rex tabs.
 
-Agents do not interact with the TUI. [Decision 010](../../docs/decisions/010-hub-cli-as-agent-toolkit.md)
+Agents have no interface into a running TUI. [Decision 010](../../docs/decisions/010-hub-cli-as-agent-toolkit.md)
 makes the `hub` CLI their toolkit, and it has no subcommands.
 
 A Ratatui terminal dashboard that renders status items in one list ranked by urgency,
@@ -194,7 +194,7 @@ is PR-specific.
 | `EphemeralFresh`| Needs latest trunk state; session may exceed 30-min refresh    | CI, Issue      |
 | `PullRequest`   | PR-specific branch; persistent across re-opens                 | All PR types   |
 | `Ephemeral`     | Read-only, stateless; recent background fetch is fresh enough  | GCP, Loki      |
-| `CurrentDir`    | Non-git context; no worktree setup needed                      | MediaBlocked   |
+| `CurrentDir`    | No repository needed; runs in the TUI's working directory      | MediaBlocked   |
 
 **Do not route investigations to the default-branch worktree directly.**
 
