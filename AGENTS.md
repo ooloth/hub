@@ -223,13 +223,15 @@ they were, and the status bar names the sources that failed.
 encloses the TUI, so the terminal the loop runs the TUI in decides which path
 is exercised, whatever terminal the agent itself is in. A change to code that
 decides where a Rex tab goes, what it is labelled or what a launch does when it
-fails is driven live in both tmux and Rex. That code is everything under
-`ui/tui/src/terminal/`, `domain/src/github_login.rs`,
-`domain/src/project_short_name.rs` and `domain/src/window_segment.rs`, and every
-file this search lists:
+fails is driven live in both tmux and Rex. What the change does decides it, not
+which file it is in. That code lives under `ui/tui/src/terminal/`, in
+`domain/src/github_login.rs` and `domain/src/window_segment.rs`, and in every
+file this search lists. An edit to one of those files that cannot change a tab's
+session, label or launch outcome, such as a derive or a deleted type, is driven
+in tmux only:
 
 ```bash
-rg -l -w 'InvestigationWindow|RexLabel|RexSessionId|WorkersSession|WindowProject|PrWindowActivity|ReviewSkill|window_project_for|graphql_login|author_login|report_launch' --type rust
+rg -l -w 'InvestigationWindow|RexLabel|RexSessionId|WorkersSession|WindowProject|PrWindowActivity|ReviewSkill|window_project_for|graphql_login|author_login|report_launch|launch_for' --type rust .
 ```
 
 Every other change is driven in tmux, which exists wherever an agent runs and
@@ -243,17 +245,20 @@ tmux new-session -d -s qa -n tui -x 200 -y 50 -c "$PWD"
 tmux send-keys -t qa:tui "just tui" Enter
 sleep 12                                          # wait for the first render
 tmux capture-pane -t qa:tui -p
-ls -d ~/.hub/repos/*/investigation-*               # before i, to tell the run's worktree apart
-ls /tmp/hub-supporting-data-*.json 2>/dev/null     # before i, to tell the run's data file apart
+find ~/.hub/repos -mindepth 2 -maxdepth 2 -name 'investigation-*'   # before i, to tell the run's worktree apart
+find /tmp/ -maxdepth 1 -name 'hub-supporting-data-*.json'           # before i, to tell the run's data file apart (/tmp/ keeps its slash: on macOS /tmp is a symlink)
 tmux send-keys -t qa:tui "i"
 sleep 12
 tmux list-panes -s -t qa -F '#{window_name} :: #{pane_start_command}'
 ```
 
-Then clean up every time: `tmux kill-session -t qa`, and remove the `investigation-*` worktree
-and the `/tmp/hub-supporting-data-*.json` file the run created. The listings taken before `i`
-tell them apart from the user's own, which belong to investigations still running. Only a Loki or
-GCP launch writes a data file, so most runs leave none.
+Then clean up every time: `tmux kill-session -t qa`, then run the two `find` commands again. Remove
+a worktree or data file only when exactly one appeared since the listings before `i`. Remove a
+worktree with `git -C ~/.hub/repos/<repo> worktree remove --force <path>`, not `rm -rf`, which
+leaves it registered in the bare repo. When none or more than one appeared, remove nothing and
+report what the listings showed: the others belong to investigations still running, which another
+hub or another agent may have started during the run. Only a Loki or GCP launch writes a data file,
+so most runs leave none.
 
 **The loop in Rex.** The TUI gets its own tab, created with a fixed size so the
 status bar is not cut off:
@@ -267,25 +272,24 @@ B=$(rex api call -s "$S" session.new_window \
 rex send -s "$S" -b "$B" 'just tui' && rex send-key -s "$S" -b "$B" enter
 sleep 12                                          # wait for the first render
 rex capture -s "$S" -b "$B" --trim
-ls -d ~/.hub/repos/*/investigation-*               # before i, to tell the run's worktree apart
-ls /tmp/hub-supporting-data-*.json 2>/dev/null     # before i, to tell the run's data file apart
+find ~/.hub/repos -mindepth 2 -maxdepth 2 -name 'investigation-*'   # before i, to tell the run's worktree apart
+find /tmp/ -maxdepth 1 -name 'hub-supporting-data-*.json'           # before i, to tell the run's data file apart (/tmp/ keeps its slash: on macOS /tmp is a symlink)
 T=$(mktemp); F=0                                  # before i, to tell the run's tab apart
 SL=$(rex session list --json) || F=1
 for s in $(printf '%s\n' "$SL" | jq -r '.sessions[].session_id'); do
   WL=$(rex window ls -s "$s" --json) || F=1
   printf '%s\n' "$WL" | jq -r '.windows[].window_id' >> "$T" || F=1
 done
-[ "$F" = 0 ] && grep -q . "$T" && echo 'tab snapshot ok' || echo 'TAB SNAPSHOT FAILED'
-rex send -s "$S" -b "$B" i
+if [ "$F" = 0 ] && grep -q . "$T"; then echo 'tab snapshot ok'; rex send -s "$S" -b "$B" i; else echo 'TAB SNAPSHOT FAILED'; fi
 sleep 12
 rex capture -s "$S" -b "$B" --trim | grep -E 'Opened in|Already open in'
 ```
 
 The status bar names the session the tab went to, which is the selected signal's repository's:
-`Opened in Workers (<repo>)`, with `, a new session` when the run created it, or
-`Already open in Workers (<repo>)` when the tab was there before the run. It names the session,
-not the tab. The tab is labelled as decision 033 says, such as `Issue 66 (ooloth): investigate`.
-Put the session's label in `L` and list its tabs:
+`Opened in Workers (<repo>)`, or `Opened in Workers` for a media signal, which has no repository,
+with `, a new session` when the run created it, or `Already open in Workers (<repo>)` when the tab
+was there before the run. It names the session, not the tab. The tab is labelled as decision 033
+says, such as `Issue 66 (ooloth): investigate`. Put the session's label in `L` and list its tabs:
 
 ```bash
 L='Workers (hub)'                                 # the label the status bar printed
@@ -299,10 +303,10 @@ not run. Either `L` does not match the status bar, or the launch opened no tab a
 shows its error. Run nothing below that uses `W` until the listing works.
 
 When the snapshot printed `tab snapshot ok`, the listing shows the tabs opened since it was taken.
-That is the run's tab, plus any tab another process, such as `monitor-prs`, opened in the
-meantime. When it printed `TAB SNAPSHOT FAILED`, `T` misses some or all of the user's tabs, and
-the listing can show tabs the run never opened. An empty listing after `Already open in` is
-expected, because the tab was there before the run.
+That is the run's tab, plus any tab another process, such as `monitor-prs`, opened in the meantime.
+When it printed `TAB SNAPSHOT FAILED`, the loop did not press `i`, so there is no tab to find. Run
+`rm "$T"`, then take the snapshot again from `T=$(mktemp)`, or clean up from step 3. An empty
+listing after `Already open in` is expected, because the tab was there before the run.
 
 Clean up in this order, every time:
 
@@ -313,10 +317,14 @@ Clean up in this order, every time:
    including one that was already open.
 2. If the status bar said `a new session` and the session now has no tabs, `rex session kill "$W"`.
 3. `rex session kill "$S"`.
-4. Remove the `investigation-*` worktree and the `/tmp/hub-supporting-data-*.json` file the run
-   created. The listings taken before `i` tell them apart from the user's own. Closing a tab ends
-   its investigation before its own cleanup runs, so that worktree is left behind. A PR tab works
-   in the shared `pr-<N>` worktree, which stays.
+4. If step 1 closed the run's tab, run the two `find` commands again. Remove a worktree or data
+   file only when exactly one appeared since the listings before `i`. Remove a worktree with
+   `git -C ~/.hub/repos/<repo> worktree remove --force <path>`, not `rm -rf`, which leaves it
+   registered in the bare repo. When none or more than one appeared, remove nothing and report
+   what the listings showed. Closing a tab ends its investigation before its own cleanup runs,
+   so that worktree is left behind. If step 1 closed nothing, remove nothing: the tab's agent is
+   still working in that worktree. Report the worktree's path, because closing the tab later
+   leaves it behind. A PR tab works in the shared `pr-<N>` worktree, which stays.
 5. `rm "$T"`.
 
 **Gotchas that cost time**
