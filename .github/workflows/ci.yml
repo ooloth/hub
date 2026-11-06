@@ -37,7 +37,7 @@ jobs:
       # version the manifest lacks. Dependabot does not read `tool`, so these versions are bumped
       # by hand. This runs after rust-cache, so binaries the cache restores into ~/.cargo/bin are
       # replaced rather than used.
-      - uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+      - uses: taiki-e/install-action@68a389c788b2cd04016ce8c80ee23b80d2ab3d68 # v2.88.1
         with:
           tool: cargo-audit@0.22.2,cargo-deny@0.20.2,cargo-nextest@0.9.149,taplo@0.10.0
           fallback: none
