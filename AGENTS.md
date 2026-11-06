@@ -291,7 +291,9 @@ The status bar names the session the tab went to, which is the selected signal's
 `Opened in Workers (<repo>)`, or `Opened in Workers` for a media signal, which has no repository,
 with `, a new session` when the run created it, or `Already open in Workers (<repo>)` when the tab
 was there before the run. It names the session, not the tab. The tab is labelled as decision 033
-says, such as `Issue 66 (ooloth): investigate`. Put the session's label in `L` and list its tabs:
+says: `PR 12 (alice): investigate`, `Issue 66 (ooloth): investigate`, `CI test-suite: investigate`,
+`Loki prod <excerpt>: investigate`, `GCP prod <excerpt>: investigate` or
+`Media <title>: investigate`. Put the session's label in `L` and list its tabs:
 
 ```bash
 L='Workers (hub)'                                 # the label the status bar printed
