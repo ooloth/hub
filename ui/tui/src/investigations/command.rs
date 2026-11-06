@@ -507,8 +507,8 @@ mod tests {
             .collect()
     }
 
-    /// Each `.expose()` in the file at `path` with no `// expose:` line in the comment block
-    /// above it, as `<path under root>:<line>`.
+    /// Each `.expose()` or `UntrustedText::expose` in the file at `path` with no `// expose:` line
+    /// in the comment block above it, as `<path under root>:<line>`.
     fn unjustified_exposures(root: &Path, path: &Path) -> Vec<String> {
         let source = std::fs::read_to_string(path)
             .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
@@ -521,7 +521,9 @@ mod tests {
         lines
             .iter()
             .enumerate()
-            .filter(|(_, line)| line.contains(".expose()"))
+            .filter(|(_, line)| {
+                line.contains(".expose()") || line.contains("UntrustedText::expose")
+            })
             .filter(|(index, _)| {
                 // Scan up through the contiguous comment block above the call,
                 // so a justification may run to more than one line.
