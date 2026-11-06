@@ -125,7 +125,7 @@ mod tests {
     use domain::{InvestigationMcpServers, InvestigationPrompt, McpServer, UntrustedText};
     use rstest::rstest;
     use std::collections::BTreeMap;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     const CWD: &str = "/tmp/hub-test-worktree";
 
@@ -455,24 +455,19 @@ mod tests {
     /// appearance says why: the failure mode becomes a deliberate opt-out
     /// visible in review rather than an omission nobody sees.
     ///
-    /// It reads every file in `src/investigations/`, `src/main.rs`, which turns alert and media text
-    /// into tmux window names and Rex labels, and `src/state/update/signals.rs`, which turns an
-    /// alert's log line into the text its launch carries. `launch.rs` and this file are exempt. Writing the supporting-data
-    /// file and rendering the prompt are the I/O and assembly edges where exposure is the point.
+    /// It reads every Rust file under `src/`, so an exposure added anywhere in the TUI is caught.
+    /// Three places are exempt. `investigations/launch.rs` writes the supporting-data file and this
+    /// file renders the prompt: those are the I/O and assembly edges where exposure is the point.
+    /// `display/` renders signals to the terminal and never to an agent.
     #[test]
     fn every_exposure_of_untrusted_text_says_why() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-        let investigations = std::fs::read_dir(root.join("investigations"))
-            .expect("read investigations dir")
-            .map(|entry| entry.expect("dir entry").path())
-            .filter(|path| path.extension().is_some_and(|ext| ext == "rs"))
-            .filter(|path| {
-                path.file_name()
-                    .is_some_and(|name| name != "launch.rs" && name != "command.rs")
-            });
-        let files: Vec<_> = investigations
-            .chain([root.join("main.rs"), root.join("state/update/signals.rs")])
-            .collect();
+        let exempt = [
+            root.join("investigations/launch.rs"),
+            root.join("investigations/command.rs"),
+            root.join("display"),
+        ];
+        let files = rust_files_under(&root, &exempt);
         let offenders: Vec<String> = files
             .iter()
             .flat_map(|path| unjustified_exposures(&root, path))
@@ -483,6 +478,33 @@ mod tests {
             "unexplained exposure of untrusted text; add a `// expose: <why>` line above each, \
              or fence the text with InvestigationPrompt::untrusted instead: {offenders:?}"
         );
+    }
+
+    /// Every `.rs` file under `dir`, following symlinks, except the files and folders in `exempt`.
+    /// A symlink whose target is missing is skipped, because there is no source to read.
+    fn rust_files_under(dir: &Path, exempt: &[PathBuf]) -> Vec<PathBuf> {
+        let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)
+            .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
+            .map(|entry| {
+                entry
+                    .unwrap_or_else(|e| panic!("read an entry of {}: {e}", dir.display()))
+                    .path()
+            })
+            .filter(|path| !exempt.contains(path))
+            .collect();
+        entries.sort();
+        entries
+            .into_iter()
+            .flat_map(|path| {
+                if path.is_dir() {
+                    rust_files_under(&path, exempt)
+                } else if path.is_file() && path.extension().is_some_and(|ext| ext == "rs") {
+                    vec![path]
+                } else {
+                    vec![]
+                }
+            })
+            .collect()
     }
 
     /// Each `.expose()` in the file at `path` with no `// expose:` line in the comment block

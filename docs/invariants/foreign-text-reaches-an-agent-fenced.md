@@ -62,18 +62,15 @@ prompt path and the file path call the same function, so there is one definition
 variant.
 
 **The escape hatch is governed by a test, not a type.** `every_exposure_of_untrusted_text_says_why`
-in `ui/tui/src/investigations/command.rs` walks the prompt-building modules, `ui/tui/src/main.rs`,
-which turns alert and media text into tmux window names and Rex labels, and
-`ui/tui/src/state/update/signals.rs`, which turns an alert's log line into the text its launch
-carries. It fails on any `.expose()` without a `// expose:` justification in the comment block
-above it.
+in `ui/tui/src/investigations/command.rs` walks every file under `ui/tui/src/`, so an exposure added
+anywhere in the TUI is caught. It fails on any `.expose()` without a `// expose:` justification in
+the comment block above it.
 
 What that test misses: it reads source text, not meaning. It cannot tell a truthful justification
 from a careless one, and a justification comment satisfies it whatever it says. It also exempts
-`launch.rs` and `command.rs`, where exposure is the point, so a prompt assembled inside either of
-those would not be caught. It reads only those files, so an exposure in any other TUI file is
-checked by nothing but review. It is a tripwire against the reflexive `.expose()` rather than a
-proof.
+`launch.rs` and `command.rs`, where exposure is the point, and `display/`, which renders signals to
+the terminal and never to an agent, so a prompt or label assembled inside any of those would not be
+caught. It is a tripwire against the reflexive `.expose()` rather than a proof.
 
 What nothing checks: that a value arriving from a new external source is wrapped in `UntrustedText`
 at its boundary in the first place. A field left as `String` in a client or workflow is invisible to
