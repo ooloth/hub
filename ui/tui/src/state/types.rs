@@ -255,7 +255,7 @@ pub(crate) enum Screen {
     },
 }
 
-/// The screen the merge picker restores on commit or cancel.
+/// The screen the merge confirmation restores on commit or cancel.
 #[derive(Clone, Debug)]
 pub(crate) enum PrPrevScreen {
     UnifiedList { snapshot: ListSnapshot },

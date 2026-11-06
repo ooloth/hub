@@ -72,8 +72,8 @@ is mutated:
    `Effect::Launch` and handled in `handle_launch()`, and an effect that opens a PR tool, such
    as the diff, lazygit or Octo, is an `Effect` variant of its own. Both matches list every
    variant, so an effect nobody handles fails the build. Which signal `i` launches what for is
-   decided by `launch_for` in `state/update/signals.rs`, whose `_` arm means a signal left out
-   of it compiles and has no investigation.
+   decided by `launch_for` in `state/update/signals.rs`, which names every variant, so a new
+   signal fails the build there until it gets an arm, `None` when `i` has nothing to launch.
 
 ## Render model
 
@@ -287,7 +287,7 @@ The list (`UnifiedList`), with an optional split detail pane, and the merge conf
 | Ctrl-u     | page up                                         |
 | Enter      | open split detail pane (or no-op if already open) |
 | Esc        | close split detail pane (if open), otherwise clear filter |
-| i          | investigate (auto-routes by item type)          |
+| i          | investigate (auto-routes by item type; flashes "No investigation mapped" for a signal with none) |
 | o          | open URL in browser                             |
 | p          | filter to PRs                                   |
 | O          | filter to issues                                |
@@ -329,6 +329,7 @@ sequence runs unconditionally before propagating any error.
 
 | Doc                                                          | Covers                              |
 | ------------------------------------------------------------ | ----------------------------------- |
+| `docs/playbooks/add-a-workflow.md`                           | Adding a workflow end to end        |
 | `docs/playbooks/add-a-private-workflow.md`                   | Adding a private workflow end to end |
 | `docs/architecture/private-workflows.md`                     | Device-specific module cfg pattern  |
 

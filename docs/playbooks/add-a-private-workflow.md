@@ -21,7 +21,7 @@ clients) and add `pub mod <service>;` to `hub-private/clients/src/mod.rs`.
 ## 2. Add the workflow
 
 Create `hub-private/workflows/src/<workflow-name>.rs` and add
-`pub mod <workflow-name>;` to `hub-private/workflows/src/mod.rs`.
+`pub mod <workflow_name>;`, with the name in snake_case, to `hub-private/workflows/src/mod.rs`.
 
 ## 3. Wire into the status orchestrator
 
@@ -48,9 +48,11 @@ required for the new items to be sorted into the unified ranked list.
 
 ## 5. Add TUI display
 
-Add the new variants to the matches on `StatusItem` in `ui/tui/src/display/` (see step 4 of
-[Add a Workflow](add-a-workflow.md)). Put any display logic specific to the private items in
-`hub-private/ui/tui/src/`. The TUI is the only surface that renders items.
+Add the new variants to the matches on `StatusItem` in `ui/tui/src/display/`, each arm under
+`#[cfg(feature = "private")]`, and to `launch_for` in `ui/tui/src/state/update/signals.rs` when `i`
+should open an investigation for them (see step 4 of [Add a Workflow](add-a-workflow.md)).
+`hub-private/ui/tui/src/` holds only private investigations, such as the media one. The TUI is the
+only surface that renders items.
 
 ## 6. Add credentials to hub.toml
 

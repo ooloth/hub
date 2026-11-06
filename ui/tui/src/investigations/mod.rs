@@ -1,7 +1,8 @@
 //! Investigation sessions: the `i`-key human-triggered workflow in the TUI.
 //!
 //! This module handles **investigation sessions** — short-lived, interactive Claude Code
-//! sessions launched from TUI signal items (PRs, CI failures, Loki alerts, GitHub issues).
+//! sessions launched from TUI signal items (PRs, issues, CI failures, Loki and GCP alerts, and
+//! blocked media).
 //! The human presses `i` on a signal item and a tmux window or Rex tab opens, named after that
 //! signal by `domain::InvestigationWindow`. The TUI keeps its own window, and several
 //! investigations run side by side. In tmux each one joins the TUI's window list, and in Rex

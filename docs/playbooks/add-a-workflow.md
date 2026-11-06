@@ -38,7 +38,7 @@ unified sort order (`urgency` ascending, then `age` descending within a tier).
 ## 3. Implement the workflow
 
 1. Create `workflows/src/<workflow-name>.rs`
-2. Add `pub mod <workflow-name>;` to `workflows/src/lib.rs`
+2. Add `pub mod <workflow_name>;` to `workflows/src/lib.rs`, with the name in snake_case
 
 Expose a `pub async fn run(...)` that calls client functions and returns a
 typed result. Credentials and config are passed as parameters; the caller
@@ -73,8 +73,8 @@ Workflows that surface items plug into the unified status pipeline in
    investigation for it, also add an arm to `launch_for` in `ui/tui/src/state/update/signals.rs`
 
 The compiler reports the matches that lack an arm, except where a `_` arm hides them.
-`SelectedItemKind::from_item` in `display/types.rs` is one, and `launch_for` is another, so a
-signal left out of it compiles and `i` on it says "No investigation mapped".
+`SelectedItemKind::from_item` in `display/types.rs` is one. `launch_for` names every variant, so a
+new signal fails the build there until it gets an arm, `None` when `i` has nothing to launch.
 
 ## 5. Register in the Rust config
 

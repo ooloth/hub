@@ -54,8 +54,7 @@ pub(crate) struct LaunchConfig {
 /// **Never route an investigation to the default-branch worktree directly.**
 /// That worktree (`~/.hub/repos/<repo name>/<branch>/`) is reset unconditionally
 /// to `origin/<branch>` by every refresh. Any agent working there longer than the refresh
-/// interval — or running concurrently with another launch — will have its working
-/// tree silently wiped mid-session.
+/// interval will have its working tree silently wiped mid-session.
 ///
 /// | Scenario                                   | Variant to use   |
 /// |--------------------------------------------|------------------|

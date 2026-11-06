@@ -362,6 +362,10 @@ fn launch_for(item: &StatusItem) -> Option<Launch> {
             title: b.title.clone(),
             error: b.error.clone(),
         }),
-        _ => None,
+        StatusItem::Linear(_) => None,
+        #[cfg(feature = "private")]
+        StatusItem::MediaMissing(_)
+        | StatusItem::MediaHealth(_)
+        | StatusItem::MediaBacklog { .. } => None,
     }
 }

@@ -35,7 +35,7 @@ open tab by that label in the tab's session.
 | lazygit, Octo, the diff | `PR 12 (alice): lazygit`, `octo` or `diff` |
 | An issue | `Issue 412 (bob): investigate` |
 | CI | `CI test-suite: investigate` |
-| A Loki or GCP alert | `Loki prod <excerpt>: investigate` |
+| A Loki or GCP alert | `Loki prod <excerpt>: investigate` or `GCP prod <excerpt>: investigate` |
 | A media item | `Media <title>: investigate` |
 
 The author is the GitHub login of whoever opened the PR or issue, as GraphQL spells it, and a
