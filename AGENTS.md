@@ -250,7 +250,7 @@ find /tmp/ -maxdepth 1 -name 'hub-supporting-data-*.json'           # before i, 
 tmux send-keys -t qa:tui "i"
 sleep 12
 tmux list-panes -s -t qa -F '#{window_name} :: #{pane_start_command}'
-tmux capture-pane -t qa:tui -p | tail -3          # the status bar: nothing new after a launch that worked, the error after one that failed
+tmux capture-pane -t qa:tui -p | tail -1          # the status bar: nothing new after a launch that worked, the error after one that failed
 ```
 
 Then clean up every time: `tmux kill-session -t qa`, then run the two `find` commands again. Killing
