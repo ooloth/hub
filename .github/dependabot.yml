@@ -6,8 +6,10 @@
 # rest, and the PR limit leaves room for them beside the group. For a 0.x crate Dependabot counts
 # a minor bump (0.28 to 0.29) as a major, as Cargo does. The TUI crates that must move together are
 # the exception, in a group of their own. Security updates ignore the version-update groups and
-# would open one PR per package, so they get their own group of minor and patch updates, and a
-# security major opens on its own.
+# would open one PR per package, so they get their own group, which takes every update type,
+# because Dependabot judges a security update by the crate's newest release rather than its fix.
+# GitHub raises no security alerts for actions pinned to a SHA, so there is no security-update group
+# for them, and fixes to actions arrive as version updates.
 #
 # rust-toolchain.toml sets `channel = "stable"` rather than a version, so it has nothing for
 # Dependabot to bump and has no entry here.
@@ -40,7 +42,6 @@ updates:
       cargo-security:
         applies-to: security-updates
         patterns: ['*']
-        update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -51,9 +52,5 @@ updates:
     groups:
       actions:
         applies-to: version-updates
-        patterns: ['*']
-        update-types: [minor, patch]
-      actions-security:
-        applies-to: security-updates
         patterns: ['*']
         update-types: [minor, patch]
