@@ -1,4 +1,4 @@
-use ratatui::style::{Color, Style, Stylize};
+use ratatui::style::{Color, Style};
 
 pub(crate) trait StyleSheet: Clone + Send + Sync + 'static {
     fn heading(&self, level: u8) -> Style;
