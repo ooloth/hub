@@ -17,22 +17,22 @@
 
 [dependencies]
   # Pinned in sync with ratatui below — see that comment before upgrading either.
-  ansi-to-tui = "7"
+  ansi-to-tui = "8"
   anyhow = "1"
   chrono = "0.4"
   clients = { path = "../../clients" }
   config = { path = "../../config" }
-  # The crossterm version ratatui depends on (0.28 for ratatui 0.29). deny.toml rejects a second
+  # The crossterm version ratatui depends on (0.29 for ratatui 0.30). deny.toml rejects a second
   # copy, so this moves with ratatui.
-  crossterm = { version = "0.28", features = ["event-stream"] }
+  crossterm = { version = "0.29", features = ["event-stream"] }
   domain = { path = "../../domain" }
   futures = "0.3"
   open = "5"
   pulldown-cmark = { version = "0.13", default-features = false }
-  # ansi-to-tui must depend on this ratatui version: v7 uses ratatui 0.29, and v8 moved to
-  # ratatui-core with ratatui 0.30. ratatui, crossterm and ansi-to-tui move together, and
+  # ansi-to-tui must depend on this ratatui version: v8 builds on the ratatui-core that ratatui
+  # 0.30 uses. ratatui, crossterm and ansi-to-tui move together, and
   # Dependabot proposes them as one PR (the `tui` group in .github/dependabot.yml).
-  ratatui = "0.29"
+  ratatui = "0.30"
   rusqlite = { version = "0.31", features = ["bundled"] }
   secrecy = "0.8"
   serde_json = "1"

@@ -91,9 +91,10 @@ into a decision record._
   `render/` and `markdown/`, plus `main.rs`; `render/status_bar.rs` imports none of it.
 - *Measured* (2026-09-16): Textual's latest release is v8.2.8, 30 June 2026, from
   https://github.com/Textualize/textual/releases.
-- *Sourced*: `ui/tui/Cargo.toml` keeps ratatui at 0.29 because `ansi-to-tui` 7 depends on it, and
-  `ansi-to-tui` 8 moved to `ratatui-core` with ratatui 0.30. `crossterm` follows ratatui's copy to
-  satisfy `cargo-deny`'s duplicate-version ban. The manifest comments carry both reasons.
+- *Sourced*: `ui/tui/Cargo.toml` keeps ratatui, `crossterm` and `ansi-to-tui` on matching
+  versions. `ansi-to-tui` 8 builds on the `ratatui-core` that ratatui 0.30 uses, and `crossterm`
+  follows ratatui's copy to satisfy `cargo-deny`'s duplicate-version ban. The manifest comments
+  carry both reasons.
 - *Sourced*: there is no release pipeline. `.github/workflows/ci.yml` runs checks and produces no
   artifacts; installation is `cargo install --path ui/tui` on the machine that will run it. Neither
   language has a distribution advantage here until that changes.
