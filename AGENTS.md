@@ -250,15 +250,17 @@ find /tmp/ -maxdepth 1 -name 'hub-supporting-data-*.json'           # before i, 
 tmux send-keys -t qa:tui "i"
 sleep 12
 tmux list-panes -s -t qa -F '#{window_name} :: #{pane_start_command}'
+tmux capture-pane -t qa:tui -p | tail -1          # the status bar: nothing new after a launch that worked, the error after one that failed
 ```
 
-Then clean up every time: `tmux kill-session -t qa`, then run the two `find` commands again. Remove
-a worktree or data file only when exactly one appeared since the listings before `i`. Remove a
-worktree with `git -C ~/.hub/repos/<repo> worktree remove --force <path>`, not `rm -rf`, which
-leaves it registered in the bare repo. When none or more than one appeared, remove nothing and
-report what the listings showed: the others belong to investigations still running, which another
-hub or another agent may have started during the run. Only a Loki or GCP launch writes a data file,
-so most runs leave none.
+Then clean up every time: `tmux kill-session -t qa`, then run the two `find` commands again. Killing
+`qa` ends the investigation before its own cleanup runs, so a launch that opened a CI, issue, Loki
+or GCP window always leaves its worktree behind. Remove a worktree or data file only when exactly
+one appeared since the listings before `i`. Remove a worktree with `git -C ~/.hub/repos/<repo>
+worktree remove --force <path>`, not `rm -rf`, which leaves it registered in the bare repo. When
+none or more than one appeared, remove nothing and report what the listings showed: the others
+belong to investigations still running, which another hub or another agent may have started during
+the run. Only a Loki or GCP launch writes a data file, so most runs leave none.
 
 **The loop in Rex.** The TUI gets its own tab, created with a fixed size so the
 status bar is not cut off:
@@ -289,7 +291,9 @@ The status bar names the session the tab went to, which is the selected signal's
 `Opened in Workers (<repo>)`, or `Opened in Workers` for a media signal, which has no repository,
 with `, a new session` when the run created it, or `Already open in Workers (<repo>)` when the tab
 was there before the run. It names the session, not the tab. The tab is labelled as decision 033
-says, such as `Issue 66 (ooloth): investigate`. Put the session's label in `L` and list its tabs:
+says: `PR 12 (alice): investigate`, `Issue 66 (ooloth): investigate`, `CI test-suite: investigate`,
+`Loki prod <excerpt>: investigate`, `GCP prod <excerpt>: investigate` or
+`Media <title>: investigate`. Put the session's label in `L` and list its tabs:
 
 ```bash
 L='Workers (hub)'                                 # the label the status bar printed
@@ -474,5 +478,5 @@ Every `lib.rs` and `mod.rs` is navigation only — module declarations and re-ex
 `.agents/` holds the Amp orb scripts: `setup` prepares a fresh orb to build,
 test and lint hub, and `resume` updates `../hub-private` each time an orb wakes.
 Its `skills/` directory, which `.claude/skills/` links to, is empty. It is not a
-Rust crate. The `agents/` Rust crate
-for background automation is described in Decision 005 but has not been built yet.
+Rust crate. The `agents/` Rust crate that Decision 005 describes was cancelled by Decision 009
+and does not exist.

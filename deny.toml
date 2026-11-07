@@ -8,6 +8,9 @@
     { name = "core-foundation" },
     { name = "getrandom" },
     { name = "hashbrown" },
+    # serde_derive, clap_derive and futures-macro use syn 3; darling, thiserror-impl,
+    # tokio-macros and other proc-macro crates still use syn 2.
+    { name = "syn" },
     { name = "thiserror" },
     { name = "thiserror-impl" },
     { name = "windows-sys" },

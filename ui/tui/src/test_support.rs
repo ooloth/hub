@@ -84,6 +84,15 @@ pub(crate) fn media_missing() -> workflows::status::StatusItem {
     })
 }
 
+/// A media source with items waiting in its backlog.
+#[cfg(feature = "private")]
+pub(crate) fn media_backlog() -> workflows::status::StatusItem {
+    workflows::status::StatusItem::MediaBacklog {
+        source: "Media".to_string(),
+        count: 3,
+    }
+}
+
 /// A media server's health warning.
 #[cfg(feature = "private")]
 pub(crate) fn media_health() -> workflows::status::StatusItem {

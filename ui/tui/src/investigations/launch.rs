@@ -53,7 +53,7 @@ pub(crate) struct LaunchConfig {
 ///
 /// **Never route an investigation to the default-branch worktree directly.**
 /// That worktree (`~/.hub/repos/<repo name>/<branch>/`) is reset unconditionally
-/// to `origin/<branch>` by every refresh. Any agent working there longer than the refresh
+/// to `origin/<branch>` by every TUI refresh. Any agent working there longer than the refresh
 /// interval will have its working tree silently wiped mid-session.
 ///
 /// | Scenario                                   | Variant to use   |
@@ -61,7 +61,7 @@ pub(crate) struct LaunchConfig {
 /// | Read trunk state, may run >30 min (CI, Issue) | `EphemeralFresh` |
 /// | PR-specific code (review, fix, ask)        | `PullRequest`    |
 /// | Read-only log/infra investigation (GCP, Loki) | `Ephemeral`   |
-/// | Non-git local process (media blocked)      | `CurrentDir`     |
+/// | No repository needed (media blocked)       | `CurrentDir`     |
 pub(crate) enum WorktreeSpec {
     /// Fetch latest refs, then create a fresh detached-HEAD worktree from trunk.
     /// Cleaned up when the session exits. Use for investigations that need current
@@ -77,7 +77,8 @@ pub(crate) enum WorktreeSpec {
     /// state, cleaned up when the session exits. Use for read-only log/infra
     /// investigations where a fresh fetch is not critical (GCP, Loki).
     Ephemeral { project: config::Project },
-    /// Use the process's current directory (`MediaBlocked`, last-resort fallback).
+    /// Use the TUI's own working directory, for an investigation that needs no repository
+    /// (`MediaBlocked`).
     #[cfg(feature = "private")]
     CurrentDir,
 }

@@ -46,6 +46,10 @@ MyNewItem(crate::private::status::MyNewItem),
 Also add match arms for `urgency()` and `age()` on the new variants. This is
 required for the new items to be sorted into the unified ranked list.
 
+A new variant changes the cached payload, so bump `SCHEMA_VERSION` too, as `ui/tui/README.md` says
+under "Cache and schema version". The test that pins the payload format cannot see private
+signals, so nothing fails when the bump is missed.
+
 ## 5. Add TUI display
 
 Add the new variants to the matches on `StatusItem` in `ui/tui/src/display/`, each arm under

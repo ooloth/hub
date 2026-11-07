@@ -87,8 +87,9 @@ MyWorkflow {
 },
 ```
 
-Add a corresponding case to the `all_workflow_types_parse_with_name_only`
-rstest. Unknown workflow names are a hard parse error — this step is
+When the workflow parses from its name alone, add a case to the
+`all_workflow_types_parse_with_name_only` rstest; one with required fields, such as `loki-logs`,
+needs a parse test of its own. Unknown workflow names are a hard parse error — this step is
 required before any hub command will accept the new name in hub.toml.
 
 ## 6. Register in the config schema

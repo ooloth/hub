@@ -209,7 +209,7 @@ pub async fn ensure_pr_worktree(bare: &Path, number: u64, head_branch: &str) -> 
 /// Use this at investigation launch time (CI, Issue) where the agent needs a
 /// stable, isolated worktree starting from the latest trunk state. Prefer this over
 /// opening the default-branch worktree directly — that worktree is reset
-/// unconditionally by every refresh, so it is not safe for any agent that runs
+/// unconditionally by every TUI refresh, so it is not safe for any agent that runs
 /// longer than the refresh interval.
 ///
 /// # Errors
