@@ -4,22 +4,6 @@ use chrono::Utc;
 use domain::daemon_health::{DaemonRecord, DaemonStatus};
 use domain::profile::Profile;
 
-pub(crate) fn position_label(screen: &Screen) -> String {
-    match screen {
-        Screen::UnifiedList {
-            items, selected, ..
-        } => {
-            let n = items.len();
-            if n == 0 {
-                String::new()
-            } else {
-                format!("{}/{n}", selected + 1)
-            }
-        }
-        Screen::MergingPr { .. } => String::new(),
-    }
-}
-
 pub(crate) const fn investigate_hint(launch: Option<&Launch>) -> &'static str {
     match launch {
         Some(_) => " · [i] investigate",
@@ -56,7 +40,6 @@ pub(crate) fn status_bar_left(app: &App) -> String {
         ..
     } = &app.ui.screen
     {
-        let pos = position_label(app.current_screen());
         let launch = selected_launch(app);
         match detail_mode {
             DetailMode::Hidden => {
@@ -71,21 +54,22 @@ pub(crate) fn status_bar_left(app: &App) -> String {
                     _ => "",
                 };
                 format!(
-                    "{pos} · [↩] details · [p] prs · [O] issues · [e] errors · [/] search{inv_hint}{group_hint}"
+                    "[↩] details · [p] prs · [O] issues · [e] errors · [/] search{inv_hint}{group_hint}"
                 )
             }
             DetailMode::Visible { .. } => {
                 let item_kind = app.current_screen().selected_item_kind();
                 match item_kind {
-                    crate::display::SelectedItemKind::Pr => format!(
-                        "{pos} · [o] open · [d] diff · [v] review · [m] merge · [i] ask · [Esc] back"
-                    ),
-                    crate::display::SelectedItemKind::Issue => format!(
-                        "{pos} · [o] open · [a] approve · [i] investigate · [Esc] back"
-                    ),
+                    crate::display::SelectedItemKind::Pr => {
+                        "[o] open · [d] diff · [v] review · [m] merge · [i] ask · [Esc] back"
+                            .to_string()
+                    }
+                    crate::display::SelectedItemKind::Issue => {
+                        "[o] open · [a] approve · [i] investigate · [Esc] back".to_string()
+                    }
                     crate::display::SelectedItemKind::Other => {
                         let inv_hint = investigate_hint(launch.as_ref());
-                        format!("{pos} · [o] open{inv_hint} · [Esc] back")
+                        format!("[o] open{inv_hint} · [Esc] back")
                     }
                 }
             }

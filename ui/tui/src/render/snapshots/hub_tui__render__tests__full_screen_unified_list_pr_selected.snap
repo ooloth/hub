@@ -1,9 +1,8 @@
 ---
 source: ui/tui/src/render/mod.rs
-assertion_line: 1205
 expression: screen_text(&buf)
 ---
-╭ All ─────────────────────────────────────────────────────────────────────────╮
+╭ All ──────────────────────────────────────────────────────────────────── 2/2 ╮
 │CI · check / fmt · failed                                            hub · now│
 ├──────────────────────────────────────────────────────────────────────────────┤
 │PR · review requested · Fix #1 · alice · no reviews                 repo · now│
@@ -17,4 +16,4 @@ expression: screen_text(&buf)
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- 2/2 · [↩] details · [p] prs · [O] issues · [e] errors · [/] search · [i] inves
+ [↩] details · [p] prs · [O] issues · [e] errors · [/] search · [i] investigate

@@ -77,11 +77,15 @@ is mutated:
 
 ## Render model
 
-Render functions take `&mut Frame` and cannot be unit tested in isolation.
+Render functions take `&mut Frame`, so testing one means drawing it into a `TestBackend`.
 Decision logic is extracted into pure helper functions that unit tests call directly:
 
 - `status_bar_left(app)` (`render/status_bar.rs`): computes the left status bar
   string from the current view state and selected item
+- `list_position_title(selected, row_count)` (`render/unified.rs`): the selected row's
+  number out of every row in the filtered list, at the top right of the list's border
+- `position_title_fits(left, right, block_width)` (`render/unified.rs`): whether that
+  position fits beside the filter title, which it is left out rather than overwrite
 - `right_status_text(profile, state, last_updated, now)` (`render/status_bar.rs`): the
   profile and the refresh state on the right of the status bar
 - `daemon_warning(daemon, database_error, now)` (`render/status_bar.rs`): the warning that
@@ -111,9 +115,8 @@ Visual constants live in `render/theme.rs` (`urgency_color` and `urgency_style` 
 
 ## Snapshot tests
 
-Render functions take `&mut Frame` and cannot be called from unit tests
-directly. Tests use ratatui's `TestBackend` to render into a real buffer
-and inspect the result as plain text.
+Render functions take `&mut Frame`, so tests use ratatui's `TestBackend` to
+render into a real buffer and inspect the result as plain text.
 
 Two helpers in `render/mod.rs` extract buffer content:
 
@@ -127,15 +130,15 @@ The test suite keeps one full-screen snapshot per major screen state:
 
 | Snapshot | What it locks in |
 | --- | --- |
-| `full_screen_unified_list_empty` | bare border, no items, empty status bar |
+| `full_screen_unified_list_empty` | border showing ` 0 `, no items, hints only in the status bar |
 | `full_screen_unified_list_mixed_urgency` | urgency divider between tiers |
-| `full_screen_unified_list_group_selected` | group row with "↩ to expand" hint |
-| `full_screen_unified_list_pr_selected` | PR item selected with open + investigate hints, "2/2" position |
+| `full_screen_unified_list_group_selected` | collapsed group row, with `[l] expand` in the status bar |
+| `full_screen_unified_list_pr_selected` | PR item selected with the investigate hint, "2/2" on the list border |
 | `full_screen_unified_list_empty_filter_result` | category filter with no matching items, empty body |
 | `full_screen_unified_list_category_filter` | focus-colour border + category label in title |
 | `full_screen_unified_list_committed_query` | focus-colour border + query text in title |
 | `full_screen_unified_list_query_input` | yellow border while query is being typed |
-| `full_screen_unified_list_narrow_terminal` | 40-col terminal, text wrapping |
+| `full_screen_unified_list_narrow_terminal` | 40-col terminal, rows truncated to width |
 | `full_screen_unified_list_scrolled` | 15 items, last selected, scroll offset visible |
 | `full_screen_unified_list_help_popup` | keybind popup overlaid on list |
 | `full_screen_unified_list_dev_profile` | `dev` profile label at the right of the status bar |

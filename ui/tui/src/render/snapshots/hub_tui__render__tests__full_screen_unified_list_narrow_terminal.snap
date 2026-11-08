@@ -1,9 +1,8 @@
 ---
 source: ui/tui/src/render/mod.rs
-assertion_line: 1025
 expression: screen_text(&buf)
 ---
-╭ All ─────────────────────────────────╮
+╭ All ──────────────────────────── 1/1 ╮
 │CI · check / fmt · failed    hub · now│
 │                                      │
 │                                      │
@@ -12,4 +11,4 @@ expression: screen_text(&buf)
 │                                      │
 │                                      │
 ╰──────────────────────────────────────╯
- 1/1 · [↩] details · [p] prs · [O] issu
+ [↩] details · [p] prs · [O] issues · [

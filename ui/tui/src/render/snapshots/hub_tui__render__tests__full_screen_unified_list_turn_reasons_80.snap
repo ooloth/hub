@@ -1,9 +1,8 @@
 ---
 source: ui/tui/src/render/mod.rs
-assertion_line: 1145
 expression: screen_text(&buf)
 ---
-╭ All ─────────────────────────────────────────────────────────────────────────╮
+╭ All ──────────────────────────────────────────────────────────────────── 1/7 ╮
 │PR · review requested · Notify when a pull request is my turn, with…  hub · 3h│
 │PR · no reviewer · The status bar shows when signals were last upda…  hub · 3h│
 │PR · ready to merge · Investigation worktrees are removed however t…  hub · 3h│
@@ -13,4 +12,4 @@ expression: screen_text(&buf)
 │PR · conflicts · An investigation tells the agent why it waits on m…  hub · 3h│
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- 1/7 · [↩] details · [p] prs · [O] issues · [e] errors · [/] search · [i] inves
+ [↩] details · [p] prs · [O] issues · [e] errors · [/] search · [i] investigate

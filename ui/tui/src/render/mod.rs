@@ -375,8 +375,8 @@ mod tests {
 
     #[test]
     fn status_bar_left_group_then_single_item() {
-        // Frame 1: group selected → "1/2 · Press ↩ to expand 1 items"
-        // Frame 2: single CI item selected → longer left text with ↩ URL and i hint.
+        // Frame 1: group selected → hints ending in "[l] expand"
+        // Frame 2: single CI item selected → longer left text ending in the i hint.
         // Catches stale characters if the longer left text isn't fully overwritten.
         let group = DisplayItem::Group {
             label: GroupKey::new("errors".to_string()),
@@ -393,7 +393,7 @@ mod tests {
     #[test]
     fn status_bar_left_single_item_then_empty() {
         // Frame 1: CI item selected → long left text with ↩ in it.
-        // Frame 2: empty list → left and right are both empty.
+        // Frame 2: empty list → left shows the list hints; right is empty.
         // Isolates whether ↩ causes misalignment that persists into the next frame.
         let mut app1 = unified_list_app(vec![DisplayItem::Single(ci_item())]);
         let mut app2 = unified_list_app(vec![]);
@@ -408,7 +408,7 @@ mod tests {
 
     #[test]
     fn status_bar_single_frame_ci_selected() {
-        // CI item selected: left shows position + ↩ URL + i hints; right is empty.
+        // CI item selected: left shows the list hints and the i hint; right is empty.
         let mut app = unified_list_app(vec![DisplayItem::Single(ci_item())]);
         let buf = draw(&mut app, 120, 5);
         insta::assert_snapshot!(status_row(&buf));
@@ -416,7 +416,7 @@ mod tests {
 
     #[test]
     fn status_bar_single_frame_partial_state() {
-        // Partial refresh: left is empty (no items); right shows the warning.
+        // Partial refresh: left shows the list hints (no items); right shows the warning.
         let mut app = partial_app();
         let buf = draw(&mut app, 80, 5);
         insta::assert_snapshot!(status_row(&buf));
@@ -520,14 +520,12 @@ mod tests {
     }
 
     #[test]
-    fn position_label_unified_list_shows_index_of_n() {
-        let items = vec![
-            DisplayItem::Single(pr()),
-            DisplayItem::Single(pr()),
-            DisplayItem::Single(pr()),
-        ];
-        let screen = make_screen(items, 1, Filter::default());
-        assert_eq!(status_bar::position_label(&screen), "2/3");
+    fn an_expanded_groups_last_child_is_the_last_row_of_the_total() {
+        // The header and its two children are three rows, so the last child is 3/3.
+        let mut app = expanded_group_app(vec![ci_item(), ci_item()], 2);
+        let buf = draw(&mut app, 80, 15);
+        let top = screen_text(&buf).lines().next().unwrap().to_string();
+        assert!(top.contains(" 3/3 "), "{top}");
     }
 
     #[test]
@@ -790,7 +788,7 @@ mod tests {
 
     #[test]
     fn full_screen_unified_list_empty() {
-        // U1: No items — just the "All" border with an empty body and status bar.
+        // U1: No items — the "All" border showing ` 0 `, an empty body, and the list hints.
         let mut app = unified_list_app(vec![]);
         let buf = draw(&mut app, 80, 15);
         insta::assert_snapshot!(screen_text(&buf));
@@ -869,7 +867,7 @@ mod tests {
 
     #[test]
     fn full_screen_unified_list_group_selected() {
-        // U3: A group item is selected — shows "↩ to expand" hint in the row.
+        // U3: A collapsed group is selected — the status bar offers `[l] expand`.
         let mut app = unified_list_app(vec![DisplayItem::Group {
             label: GroupKey::new("hub errors".to_string()),
             items: vec![ci_item()],
@@ -880,7 +878,7 @@ mod tests {
 
     #[test]
     fn full_screen_unified_list_category_filter() {
-        // U4: Category filter active — green border + category label in the title.
+        // U4: Category filter active — focus-colour border + category label in the title.
         let mut app = app_on(make_screen(
             vec![DisplayItem::Single(ci_item())],
             0,
@@ -910,7 +908,7 @@ mod tests {
 
     #[test]
     fn full_screen_unified_list_narrow_terminal() {
-        // U6: 40-column terminal — long item text must wrap onto a second line.
+        // U6: 40-column terminal — long item text is truncated to the width.
         let mut app = unified_list_app(vec![DisplayItem::Single(ci_item())]);
         let buf = draw(&mut app, 40, 10);
         insta::assert_snapshot!(screen_text(&buf));
@@ -1065,7 +1063,7 @@ mod tests {
     fn full_screen_unified_list_pr_selected() {
         // U8: PR item (Low urgency) selected as item 2/2.
         // Tests that: (a) the status bar offers `[i] investigate`, since every PR has a launch;
-        // (b) the CI item above it shows no hint; (c) position label is "2/2".
+        // (b) the list border shows "2/2".
         let mut app = app_on(make_screen(
             vec![DisplayItem::Single(ci_item()), DisplayItem::Single(pr())],
             1,
@@ -1088,7 +1086,7 @@ mod tests {
 
     #[test]
     fn full_screen_unified_list_empty_filter_result() {
-        // U10: Category filter active but no items match — green border with
+        // U10: Category filter active but no items match — focus-colour border with
         // filter title, empty body.  Different from U1 (no filter) and U4 (items match).
         let mut app = app_on(make_screen(
             vec![],
@@ -1104,7 +1102,7 @@ mod tests {
 
     #[test]
     fn full_screen_unified_list_committed_query() {
-        // U11: Query committed (filter.query set, query_input None) — green
+        // U11: Query committed (filter.query set, query_input None) — focus-colour
         // border + query in title. Distinct from U5 (query_input set → yellow border).
         let mut app = app_on(make_screen(
             vec![DisplayItem::Single(ci_item())],
@@ -1211,7 +1209,7 @@ mod tests {
 
     #[test]
     fn status_bar_single_frame_expanded_group_child_selected() {
-        // S2: Group expanded inline, child selected — enter hint shows "open" (item has URL).
+        // S2: Group expanded inline, child selected — the status bar offers `[h] collapse`.
         let mut app = expanded_group_app(vec![ci_item(), ci_item()], 1);
         let buf = draw(&mut app, 120, 5);
         insta::assert_snapshot!(status_row(&buf));

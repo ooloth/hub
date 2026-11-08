@@ -2,7 +2,7 @@
 source: ui/tui/src/render/mod.rs
 expression: screen_text(&buf)
 ---
-╭ All ─────────────────────────────────────────────────────────────────────────╮
+╭ All ──────────────────────────────────────────────────────────────────── 1/1 ╮
 │CI · check / fmt · failed                                            hub · now│
 │             ┌ Keybinds ────────────────────────────────────────┐             │
 │             │  ?                 toggle help                   │             │
@@ -21,4 +21,4 @@ expression: screen_text(&buf)
 │             └──────────────────────────────────────────────────┘             │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
- 1/1 · [↩] details · [p] prs · [O] issues · [e] errors · [/] search · [i] inves
+ [↩] details · [p] prs · [O] issues · [e] errors · [/] search · [i] investigate

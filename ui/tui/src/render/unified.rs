@@ -158,6 +158,31 @@ pub(crate) fn unified_title(filter: &Filter, query_input: Option<&str>) -> Strin
     }
 }
 
+/// The list's position for the top-right of its border: the selected row's number out of every
+/// row in the filtered list, or ` 0 ` for an empty list.
+///
+/// Both numbers count `flat_rows`, so rows scrolled out of view count, urgency dividers do not,
+/// and an expanded group's children count as rows, so the total grows when a group is expanded.
+pub(crate) fn list_position_title(selected: usize, row_count: usize) -> String {
+    if row_count == 0 {
+        return " 0 ".to_string();
+    }
+    assert!(
+        selected < row_count,
+        "selected row {selected} is past the last of {row_count} rows"
+    );
+    format!(" {}/{row_count} ", selected + 1)
+}
+
+/// Whether the position fits on the top border beside the filter title, with a column between
+/// them. ratatui draws right-aligned titles after left ones, so a position that does not fit
+/// would be printed over the end of the filter title.
+pub(crate) fn position_title_fits(left: &Line, right: &Line, block_width: u16) -> bool {
+    let corners = 2;
+    let gap = 1;
+    left.width() + gap + right.width() + corners <= usize::from(block_width)
+}
+
 /// Returns the style for filter-related chrome (border, dividers).
 /// Yellow while a query is being typed; mauve once any filter is committed; dim otherwise.
 pub(crate) fn filter_chrome_style(filter: &Filter, query_input: Option<&str>) -> Style {
@@ -187,12 +212,24 @@ pub(crate) fn render_unified(
     let title_style = chrome
         .add_modifier(Modifier::BOLD)
         .remove_modifier(Modifier::DIM);
-    let title = Span::styled(unified_title(filter, query_input), title_style);
-    let block = Block::new()
+    let title = Line::from(Span::styled(
+        unified_title(filter, query_input),
+        title_style,
+    ));
+    let position = Line::from(Span::styled(
+        list_position_title(selected, flat_rows.len()),
+        chrome,
+    ))
+    .right_aligned();
+    let show_position = position_title_fits(&title, &position, area.width);
+    let mut block = Block::new()
         .title(title)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(chrome);
+    if show_position {
+        block = block.title(position);
+    }
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -248,5 +285,96 @@ pub(crate) fn render_unified(
         let buf = frame.buffer_mut();
         buf.set_string(area.x, screen_y, "├", chrome);
         buf.set_string(area.x + area.width - 1, screen_y, "┤", chrome);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{list_position_title, position_title_fits, render_unified};
+    use crate::display::{Filter, FlatRow};
+    use crate::test_support::pull_request;
+    use proptest::{prelude::Strategy, proptest};
+    use ratatui::{backend::TestBackend, text::Line, Terminal};
+    use workflows::status::StatusItem;
+
+    fn pr() -> StatusItem {
+        StatusItem::Pr(pull_request())
+    }
+
+    /// The top border of the list block drawn `width` columns wide.
+    fn top_border(rows: &[FlatRow], filter: &Filter, width: u16) -> String {
+        let mut terminal = Terminal::new(TestBackend::new(width, 4)).unwrap();
+        let _ = terminal
+            .draw(|frame| render_unified(frame, rows, 0, filter, None, frame.area()))
+            .unwrap();
+        let buf = terminal.backend().buffer();
+        (0..width)
+            .map(|x| buf[(x, 0)].symbol().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn an_empty_list_shows_zero() {
+        assert_eq!(list_position_title(0, 0), " 0 ");
+    }
+
+    #[test]
+    fn the_last_row_shows_the_total() {
+        assert_eq!(list_position_title(2, 3), " 3/3 ");
+    }
+
+    #[test]
+    #[should_panic(expected = "selected row 3 is past the last of 3 rows")]
+    fn a_selection_past_the_last_row_halts() {
+        let _ = list_position_title(3, 3);
+    }
+
+    #[test]
+    fn the_position_shows_at_the_narrowest_width_that_fits_it() {
+        // " All " (5) + a gap (1) + " 1/1 " (5) + two corners (2) = 13.
+        let rows = vec![FlatRow::Single(pr())];
+        assert!(top_border(&rows, &Filter::default(), 13).contains(" 1/1 "));
+    }
+
+    #[test]
+    fn the_position_is_left_out_one_column_narrower() {
+        let rows = vec![FlatRow::Single(pr())];
+        let border = top_border(&rows, &Filter::default(), 12);
+        assert!(border.contains(" All "), "{border}");
+        assert!(!border.contains('/'), "{border}");
+    }
+
+    proptest! {
+        #[test]
+        fn the_position_is_a_row_number_out_of_the_row_count(
+            (row_count, selected) in (1usize..=100).prop_flat_map(|n| (proptest::strategy::Just(n), 0..n)),
+        ) {
+            let title = list_position_title(selected, row_count);
+            let (number, total) = title.trim().split_once('/').expect("a position has a slash");
+            let number: usize = number.parse().unwrap();
+            let total: usize = total.parse().unwrap();
+            assert_eq!(total, row_count);
+            assert!((1..=total).contains(&number));
+            assert_eq!(number == total, selected == row_count - 1);
+        }
+
+        #[test]
+        fn the_position_never_overwrites_the_filter_title(
+            width in 4u16..=120,
+            query in "[a-z]{0,60}",
+            row_count in 1usize..=12,
+        ) {
+            let rows: Vec<FlatRow> = (0..row_count).map(|_| FlatRow::Single(pr())).collect();
+            let filter = Filter { query: Some(query.clone()), ..Filter::default() };
+            let left = format!(" \"{query}\" ");
+            let right = list_position_title(0, row_count);
+            let border = top_border(&rows, &filter, width);
+            let fits = position_title_fits(&Line::from(left.as_str()), &Line::from(right.as_str()), width);
+            if usize::from(width) >= left.chars().count() + 2 {
+                assert!(border.contains(&left), "{border}");
+            }
+            assert_eq!(border.contains(&right), fits, "{border}");
+            assert_eq!(fits, left.chars().count() + 1 + right.chars().count() + 2 <= usize::from(width));
+        }
     }
 }

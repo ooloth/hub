@@ -1,9 +1,8 @@
 ---
 source: ui/tui/src/render/mod.rs
-assertion_line: 1145
 expression: screen_text(&buf)
 ---
-╭ All ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭ All ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── 1/7 ╮
 │PR · review requested · Notify when a pull request is my turn, with a card for each one #344 · alice · no reviews                                                                             hub · 3h│
 │PR · no reviewer · The status bar shows when signals were last updated, however #370 · alice · no reviews                                                                                     hub · 3h│
 │PR · ready to merge · Investigation worktrees are removed however their session ends #371 · alice · 1 approval                                                                                hub · 3h│
@@ -13,4 +12,4 @@ expression: screen_text(&buf)
 │PR · conflicts · An investigation tells the agent why it waits on me #375 · alice · 1 approval · conflict                                                                                     hub · 3h│
 │                                                                                                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- 1/7 · [↩] details · [p] prs · [O] issues · [e] errors · [/] search · [i] investigate
+ [↩] details · [p] prs · [O] issues · [e] errors · [/] search · [i] investigate
