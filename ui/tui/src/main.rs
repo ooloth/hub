@@ -2,6 +2,7 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
 use crossterm::{
+    cursor::Show,
     event::{Event, EventStream},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -66,6 +67,7 @@ impl TerminalSession {
             }
         };
 
+        install_panic_hook();
         Ok(Self { terminal })
     }
 
@@ -76,10 +78,34 @@ impl TerminalSession {
 
 impl Drop for TerminalSession {
     fn drop(&mut self) {
-        let _ = disable_raw_mode();
-        let _ = execute!(self.terminal.backend_mut(), LeaveAlternateScreen);
-        let _ = self.terminal.show_cursor();
+        // The panic hook has already restored the terminal. Leaving the alternate screen a second
+        // time would wipe the panic message it printed.
+        if std::thread::panicking() {
+            return;
+        }
+        restore_terminal();
     }
+}
+
+fn restore_terminal() {
+    let _ = disable_raw_mode();
+    let _ = execute!(io::stdout(), LeaveAlternateScreen, Show);
+}
+
+/// Restores the terminal before a panic on the session's thread prints its message, so the
+/// message is left on screen. A panic on another thread, such as a fetch task, is left to the
+/// default hook: the TUI keeps running, so its terminal must stay as it is. This relies on the
+/// multi-thread runtime `#[tokio::main]` starts by default, where spawned tasks run on worker
+/// threads; on a current-thread runtime they would share the session's thread.
+fn install_panic_hook() {
+    let session_thread = std::thread::current().id();
+    let original = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if std::thread::current().id() == session_thread {
+            restore_terminal();
+        }
+        original(info);
+    }));
 }
 
 #[tokio::main]

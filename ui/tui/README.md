@@ -327,9 +327,16 @@ The list (`UnifiedList`), with an optional split detail pane, and the merge conf
 
 ## Terminal cleanup
 
-The TUI enters raw mode and the alternate screen on launch, and restores both
-on exit — even if an error is returned from the event loop. The restore
-sequence runs unconditionally before propagating any error.
+The TUI enters raw mode and the alternate screen on launch. On exit, including when the event loop
+returns an error, `TerminalSession`'s `Drop` turns raw mode off, leaves the alternate screen and
+shows the cursor.
+
+A panic on the TUI's own thread is handled by a panic hook instead, which restores the terminal
+before the panic message prints, so the message stays on screen. `Drop` skips its restore while
+panicking, because leaving the alternate screen a second time wipes that message. A panic on
+another thread, such as a fetch task, leaves the terminal alone, because the TUI keeps running.
+Telling the two apart relies on `#[tokio::main]`'s multi-thread runtime, which polls `main` on its
+own thread and runs spawned tasks on worker threads.
 
 ## Playbooks
 
