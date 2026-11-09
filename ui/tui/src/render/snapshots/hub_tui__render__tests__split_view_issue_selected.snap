@@ -31,4 +31,4 @@ expression: screen_text(&buf)
 │                                                                                                                      │
 │                                                                                                                      │
 ╰ status:needs-human-review ───────────────────────────────────────────────────────────────────────────── @agent · now ╯
- [o] open · [a] approve · [i] investigate · [Esc] back
+ o open · a approve · i investigate · Esc back

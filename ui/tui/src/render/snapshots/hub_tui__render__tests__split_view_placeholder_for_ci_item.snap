@@ -31,4 +31,4 @@ expression: screen_text(&buf)
 │                                                                                                                      │
 │                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
- [o] open · [i] investigate · [Esc] back
+ o open · i investigate · Esc back

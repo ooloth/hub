@@ -12,6 +12,7 @@ pub(crate) mod unified;
 pub(crate) use theme::{dim, list_highlight, FOCUS_COLOR, LAVENDER, YELLOW};
 
 use crate::render::shared::{KEYBINDS_LIST, KEYBINDS_MERGE_CONFIRM};
+use crate::render::status_bar::StatusLeft;
 
 use chrono::Utc;
 use ratatui::{
@@ -22,7 +23,7 @@ use ratatui::{
 };
 
 use crate::display::{flat_row_urgency, FlatRow};
-use crate::state::{App, DetailMode, Screen, SubmenuState};
+use crate::state::{App, DetailMode, Screen};
 
 pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     let [content_area, bar_area] =
@@ -108,8 +109,8 @@ fn render_status_bar(frame: &mut ratatui::Frame, app: &App, bar_area: ratatui::l
 
     // The left side takes whatever space is left, so a narrow terminal truncates
     // it mid-word right up against this block. A blank column keeps the two from
-    // reading as one word — `[i] investigate` cut to `[i] in` beside `dev` says
-    // `indev`, and `[O] issues` cut to `[O` beside a warning says `[O!`. Any
+    // reading as one word — `i investigate` cut to `i in` beside `dev` says
+    // `indev`, and `O issues` cut to `O` beside a warning says `O!`. Any
     // right-hand text claims the column.
     let gap = usize::from(!right_status.is_empty());
     let right_width =
@@ -127,57 +128,33 @@ fn render_status_bar(frame: &mut ratatui::Frame, app: &App, bar_area: ratatui::l
 }
 
 fn render_status_bar_left(frame: &mut ratatui::Frame, app: &App, bar_left: ratatui::layout::Rect) {
-    if app.ui.submenu == SubmenuState::PrActions {
-        let pr_label = app
-            .current_screen()
-            .selected_status_item()
-            .and_then(|item| {
-                if let workflows::status::StatusItem::Pr(pr) = item {
-                    Some(format!(" PR #{} · diff", pr.number))
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(|| " diff".to_string());
+    let line = match status_bar::status_bar_left(app) {
+        StatusLeft::Flash(text) => Line::from(Span::styled(format!(" {text}"), dim())),
+        StatusLeft::Hints { prompt, hints } => {
+            let lead = match prompt {
+                Some(prompt) => vec![
+                    Span::raw(" "),
+                    Span::styled(prompt, Style::default().fg(YELLOW)),
+                    Span::raw("  "),
+                ],
+                None => vec![Span::raw(" ")],
+            };
+            let spans = shared::hint_spans(&hints, status_bar_key_style(app));
+            Line::from(lead.into_iter().chain(spans).collect::<Vec<_>>())
+        }
+    };
+    frame.render_widget(Paragraph::new(line), bar_left);
+}
 
-        let line = Line::from(vec![
-            Span::styled(pr_label, Style::default().fg(YELLOW)),
-            Span::styled("  [d] delta · [l] lazygit · [o] octo · [Esc] cancel", dim()),
-        ]);
-
-        frame.render_widget(Paragraph::new(line), bar_left);
-    } else if let SubmenuState::ReviewPicker(target) = &app.ui.submenu {
-        // Options come from the same table the key handler resolves against, so
-        // the bar cannot advertise a key that does nothing.
-        let offered: Vec<String> = target
-            .ownership
-            .review_options()
-            .iter()
-            .map(|option| format!("[{}] {}", option.key, option.label))
-            .collect();
-
-        let line = Line::from(vec![
-            Span::styled(
-                format!(" Review #{}", target.number),
-                Style::default().fg(YELLOW),
-            ),
-            Span::styled(format!("  {} · [Esc] cancel", offered.join(" · ")), dim()),
-        ]);
-
-        frame.render_widget(Paragraph::new(line), bar_left);
-    } else if let Screen::MergingPr { pr, .. } = &app.ui.screen {
-        let question = format!(" Squash and merge #{} into {}?", pr.number, pr.base_branch);
-
-        let line = Line::from(vec![
-            Span::styled(question, Style::default().fg(YELLOW)),
-            Span::styled("  [↩] confirm · [Esc] cancel", dim()),
-        ]);
-
-        frame.render_widget(Paragraph::new(line), bar_left);
-    } else {
-        let left = status_bar::status_bar_left(app);
-        frame.render_widget(Paragraph::new(format!(" {left}")).style(dim()), bar_left);
-    }
+/// The style the status bar draws its keys in: the list title's, so the keys
+/// change colour with the border when a filter or a query is active. The merge
+/// screen has no filter, so its keys take the unfiltered title's style.
+fn status_bar_key_style(app: &App) -> Style {
+    let filter = match &app.ui.screen {
+        Screen::UnifiedList { filter, .. } => filter.clone(),
+        Screen::MergingPr { .. } => crate::display::Filter::default(),
+    };
+    unified::title_style(&filter, app.ui.query_input.as_deref())
 }
 
 fn render_help_popup(frame: &mut ratatui::Frame, app: &App) {
@@ -203,11 +180,14 @@ mod tests {
     use super::{
         render,
         shared::{urgency_color, urgency_style},
-        split_list_height, status_bar, unified,
+        split_list_height,
+        status_bar::{self, StatusLeft},
+        unified, FOCUS_COLOR, YELLOW,
     };
     use crate::display::{flatten, Category, DisplayItem, Filter, FlatRow, GroupKey, ListSnapshot};
     use crate::state::{
-        App, DataState, DetailMode, Launch, RefreshState, Screen, SubmenuState, UiState,
+        App, DataState, DetailMode, PrOwnership, PrReviewTarget, RefreshState, Screen,
+        SubmenuState, UiState,
     };
     use chrono::Utc;
     use domain::daemon_health::{DaemonHealth, DaemonRecord, LastActivity, Schedule};
@@ -215,7 +195,7 @@ mod tests {
     use domain::profile::Profile;
     use proptest::proptest;
     use ratatui::backend::TestBackend;
-    use ratatui::style::Color;
+    use ratatui::style::{Color, Modifier};
     use ratatui::Terminal;
     use rstest::rstest;
     use std::collections::HashSet;
@@ -375,7 +355,7 @@ mod tests {
 
     #[test]
     fn status_bar_left_group_then_single_item() {
-        // Frame 1: group selected → hints ending in "[l] expand"
+        // Frame 1: group selected → hints ending in "l expand"
         // Frame 2: single CI item selected → longer left text ending in the i hint.
         // Catches stale characters if the longer left text isn't fully overwritten.
         let group = DisplayItem::Group {
@@ -516,7 +496,10 @@ mod tests {
             },
             ..app_with_a_current_daemon()
         };
-        assert_eq!(status_bar::status_bar_left(&app), "something went wrong");
+        assert_eq!(
+            status_bar::status_bar_left(&app),
+            StatusLeft::Flash("something went wrong".to_string())
+        );
     }
 
     #[test]
@@ -528,22 +511,129 @@ mod tests {
         assert!(top.contains(" 3/3 "), "{top}");
     }
 
-    #[test]
-    fn investigate_hint_returns_empty_when_none() {
-        assert_eq!(status_bar::investigate_hint(None), "");
+    // ── Key hint styling ──────────────────────────────────────────────────────
+
+    /// The status-row cell where `needle` starts, offset by `offset` columns.
+    /// Every character the status bar draws is one column wide, so a character
+    /// index in the row text is its column.
+    fn status_cell(
+        buf: &ratatui::buffer::Buffer,
+        needle: &str,
+        offset: u16,
+    ) -> ratatui::buffer::Cell {
+        let row = status_row(buf);
+        let byte = row
+            .find(needle)
+            .unwrap_or_else(|| panic!("{needle:?} not in status bar: {row:?}"));
+        let column = u16::try_from(row[..byte].chars().count()).unwrap() + offset;
+        buf[(column, buf.area.height - 1)].clone()
+    }
+
+    fn assert_title_styled(cell: &ratatui::buffer::Cell, fg: Color) {
+        assert_eq!(cell.fg, fg, "key colour: {cell:?}");
+        assert!(
+            cell.modifier.contains(Modifier::BOLD),
+            "key must be bold: {cell:?}"
+        );
+        assert!(
+            !cell.modifier.contains(Modifier::DIM),
+            "key must not be dim: {cell:?}"
+        );
+    }
+
+    fn assert_dim_label(cell: &ratatui::buffer::Cell) {
+        assert!(
+            cell.modifier.contains(Modifier::DIM),
+            "label must be dim: {cell:?}"
+        );
+        assert!(
+            !cell.modifier.contains(Modifier::BOLD),
+            "label must not be bold: {cell:?}"
+        );
+    }
+
+    #[rstest]
+    #[case::no_filter(Filter::default(), None, Color::Reset)]
+    #[case::category_filter(
+        Filter { category: Some(Category::Errors), query: None },
+        None,
+        FOCUS_COLOR
+    )]
+    #[case::typing_a_query(Filter::default(), Some("hub"), Color::Yellow)]
+    fn list_hint_keys_take_the_list_titles_style(
+        #[case] filter: Filter,
+        #[case] query_input: Option<&str>,
+        #[case] key_colour: Color,
+    ) {
+        let mut app = App {
+            ui: UiState {
+                screen: make_screen(vec![DisplayItem::Single(ci_item())], 0, filter),
+                query_input: query_input.map(str::to_string),
+                ..UiState::default()
+            },
+            ..app_with_a_current_daemon()
+        };
+        let buf = draw(&mut app, 120, 5);
+
+        assert_title_styled(&status_cell(&buf, "p prs", 0), key_colour);
+        assert_dim_label(&status_cell(&buf, "p prs", 2));
+        assert_dim_label(&status_cell(&buf, " · ", 1));
+    }
+
+    fn review_picker_app() -> App {
+        App {
+            ui: UiState {
+                submenu: SubmenuState::ReviewPicker(PrReviewTarget {
+                    repo: "owner/repo".to_string(),
+                    number: 1,
+                    head_branch: "feature".to_string(),
+                    ownership: PrOwnership::Mine,
+                    author: "alice".to_string(),
+                }),
+                ..unified_list_app(vec![DisplayItem::Single(pr())]).ui
+            },
+            ..unified_list_app(vec![DisplayItem::Single(pr())])
+        }
+    }
+
+    fn pr_actions_app() -> App {
+        App {
+            ui: UiState {
+                submenu: SubmenuState::PrActions,
+                ..unified_list_app(vec![DisplayItem::Single(pr())]).ui
+            },
+            ..unified_list_app(vec![DisplayItem::Single(pr())])
+        }
+    }
+
+    #[rstest]
+    #[case::pr_actions(pr_actions_app(), "d delta")]
+    #[case::review_picker(review_picker_app(), "c code")]
+    #[case::merge_confirm(merging_pr_app(stub_pr_with_body()), "↩ confirm")]
+    fn submenu_hint_keys_are_bold_beside_a_yellow_prompt(#[case] mut app: App, #[case] hint: &str) {
+        let buf = draw(&mut app, 120, 5);
+
+        assert_title_styled(&status_cell(&buf, hint, 0), Color::Reset);
+        assert_dim_label(&status_cell(&buf, hint, 2));
+        assert_title_styled(&status_cell(&buf, "Esc", 0), Color::Reset);
+        assert_eq!(
+            buf[(1, buf.area.height - 1)].fg,
+            YELLOW,
+            "the prompt keeps its colour"
+        );
     }
 
     #[test]
-    fn investigate_hint_returns_hint_when_actionable() {
-        let launch = Launch::Ci {
-            repo: "owner/repo".to_string(),
-            workflow: "CI".to_string(),
-            run_url: "https://example.com".to_string(),
+    fn a_flash_message_renders_dim_without_key_styling() {
+        let mut app = App {
+            ui: UiState {
+                flash: Some("o something went wrong".to_string()),
+                ..unified_list_app(vec![]).ui
+            },
+            ..unified_list_app(vec![])
         };
-        assert_eq!(
-            status_bar::investigate_hint(Some(&launch)),
-            " · [i] investigate"
-        );
+        let buf = draw(&mut app, 120, 5);
+        assert_dim_label(&status_cell(&buf, "o something", 0));
     }
 
     #[rstest]
@@ -820,7 +910,7 @@ mod tests {
 
     /// A narrow terminal truncates the keybinding hints against the right-hand
     /// block. Without a blank column between them the two read as one word:
-    /// `[i] investigate` cut to `[i] in` beside `dev` says `indev`.
+    /// `i investigate` cut to `i in` beside `dev` says `indev`.
     #[test]
     fn status_bar_keeps_a_gap_before_the_profile_when_hints_truncate() {
         let mut app = App {
@@ -867,7 +957,7 @@ mod tests {
 
     #[test]
     fn full_screen_unified_list_group_selected() {
-        // U3: A collapsed group is selected — the status bar offers `[l] expand`.
+        // U3: A collapsed group is selected — the status bar offers `l expand`.
         let mut app = unified_list_app(vec![DisplayItem::Group {
             label: GroupKey::new("hub errors".to_string()),
             items: vec![ci_item()],
@@ -1062,7 +1152,7 @@ mod tests {
     #[test]
     fn full_screen_unified_list_pr_selected() {
         // U8: PR item (Low urgency) selected as item 2/2.
-        // Tests that: (a) the status bar offers `[i] investigate`, since every PR has a launch;
+        // Tests that: (a) the status bar offers `i investigate`, since every PR has a launch;
         // (b) the list border shows "2/2".
         let mut app = app_on(make_screen(
             vec![DisplayItem::Single(ci_item()), DisplayItem::Single(pr())],
@@ -1166,7 +1256,7 @@ mod tests {
 
     #[test]
     fn status_bar_in_merging_pr() {
-        // M2: Status bar shows "[↩] confirm · [Esc] cancel".
+        // M2: Status bar shows "↩ confirm · Esc cancel".
         let mut app = merging_pr_app(stub_pr_with_body());
         let buf = draw(&mut app, 120, 5);
         insta::assert_snapshot!(status_row(&buf));
@@ -1208,7 +1298,7 @@ mod tests {
 
     #[test]
     fn status_bar_single_frame_expanded_group_child_selected() {
-        // S2: Group expanded inline, child selected — the status bar offers `[h] collapse`.
+        // S2: Group expanded inline, child selected — the status bar offers `h collapse`.
         let mut app = expanded_group_app(vec![ci_item(), ci_item()], 1);
         let buf = draw(&mut app, 120, 5);
         insta::assert_snapshot!(status_row(&buf));

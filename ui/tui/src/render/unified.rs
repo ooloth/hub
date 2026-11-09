@@ -195,6 +195,14 @@ pub(crate) fn filter_chrome_style(filter: &Filter, query_input: Option<&str>) ->
     }
 }
 
+/// The list border's title style: the border's colour, bold and never dim.
+/// The status bar draws its keys in it too, so the two always match.
+pub(crate) fn title_style(filter: &Filter, query_input: Option<&str>) -> Style {
+    filter_chrome_style(filter, query_input)
+        .add_modifier(Modifier::BOLD)
+        .remove_modifier(Modifier::DIM)
+}
+
 pub(crate) fn urgency_divider(width: usize, chrome: Style) -> ListItem<'static> {
     let line = "─".repeat(width);
     ListItem::new(Line::from(Span::styled(line, chrome)))
@@ -209,9 +217,7 @@ pub(crate) fn render_unified(
     area: Rect,
 ) {
     let chrome = filter_chrome_style(filter, query_input);
-    let title_style = chrome
-        .add_modifier(Modifier::BOLD)
-        .remove_modifier(Modifier::DIM);
+    let title_style = title_style(filter, query_input);
     let title = Line::from(Span::styled(
         unified_title(filter, query_input),
         title_style,

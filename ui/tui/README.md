@@ -80,8 +80,11 @@ is mutated:
 Render functions take `&mut Frame`, so testing one means drawing it into a `TestBackend`.
 Decision logic is extracted into pure helper functions that unit tests call directly:
 
-- `status_bar_left(app)` (`render/status_bar.rs`): computes the left status bar
-  string from the current view state and selected item
+- `status_bar_left(app)` (`render/status_bar.rs`): what the left of the status bar shows:
+  an open submenu's or the merge question's prompt and keys, else the flash message while
+  one is set, else the keys the current view and selected item offer.
+  `hint_spans` (`render/shared.rs`) draws the keys, each in the list title's style with its
+  label dim
 - `list_position_title(selected, row_count)` (`render/unified.rs`): the selected row's
   number out of every row in the filtered list, at the top right of the list's border
 - `position_title_fits(left, right, block_width)` (`render/unified.rs`): whether that
@@ -132,7 +135,7 @@ The test suite keeps one full-screen snapshot per major screen state:
 | --- | --- |
 | `full_screen_unified_list_empty` | bare border with no position, no items, hints only in the status bar |
 | `full_screen_unified_list_mixed_urgency` | urgency divider between tiers |
-| `full_screen_unified_list_group_selected` | collapsed group row, with `[l] expand` in the status bar |
+| `full_screen_unified_list_group_selected` | collapsed group row, with `l expand` in the status bar |
 | `full_screen_unified_list_pr_selected` | PR item selected with the investigate hint, "2/2" on the list border |
 | `full_screen_unified_list_empty_filter_result` | category filter with no matching items, empty body |
 | `full_screen_unified_list_category_filter` | focus-colour border + category label in title |

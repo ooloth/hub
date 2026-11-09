@@ -21,6 +21,25 @@ pub(crate) fn bullet_span(color: Color) -> Span<'static> {
     Span::styled(" · ", Style::default().fg(color))
 }
 
+/// Draws hints as `key label · key label`, each key in `key_style` and
+/// everything else dim.
+pub(crate) fn hint_spans(
+    hints: &[super::status_bar::KeyHint],
+    key_style: Style,
+) -> Vec<Span<'static>> {
+    hints
+        .iter()
+        .enumerate()
+        .flat_map(|(index, hint)| {
+            let separator = (index > 0).then(|| Span::styled(" · ", super::dim()));
+            separator.into_iter().chain([
+                Span::styled(hint.key.clone(), key_style),
+                Span::styled(format!(" {}", hint.label), super::dim()),
+            ])
+        })
+        .collect()
+}
+
 pub(crate) fn segment_chars(segments: &[String]) -> usize {
     segments.iter().map(|s| s.chars().count()).sum::<usize>() + segments.len().saturating_sub(1) * 3
 }
