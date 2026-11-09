@@ -71,7 +71,7 @@ pub(crate) const KEYBINDS_LIST: &[(&str, &str)] = &[
     ("gg / G", "go to top / bottom"),
     ("Ctrl-u / Ctrl-d", "page up / down"),
     ("h / l", "collapse / expand group"),
-    ("Enter", "open"),
+    ("Enter", "details"),
     ("i", "investigate"),
     ("p / e / O", "filter PRs / Errors / Issues"),
     ("o", "open in browser"),

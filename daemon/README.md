@@ -286,8 +286,9 @@ print('errors:', r['errors'])
 "
 ```
 
-**The TUI renders what the daemon wrote.** Note `refreshed_at`, open the TUI, quit, check again.
-Unchanged means the TUI fetched nothing of its own.
+**The TUI renders what the daemon wrote.** Within 30 minutes of the daemon's pass, note
+`refreshed_at`, open the TUI, quit, and check again. Unchanged means the TUI fetched nothing of its
+own. On an older cache the TUI fetches for itself and rewrites the row (see "Gotchas that cost time").
 
 ```bash
 sqlite3 ~/.hub/dev/hub.db "SELECT refreshed_at FROM status_cache WHERE id=1;"

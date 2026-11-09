@@ -206,9 +206,11 @@ sharpening them is _how_ agent quality compounds. See
 
 **TUI (`hub-tui`)** — the human-facing surface. A Ratatui dashboard with
 keyboard navigation: read signals, watch investigation sessions, review
-results. It renders what the daemon writes and never fetches for itself,
+results. It is to render what the daemon writes and never fetch for itself,
 so a dead daemon shows as a dead daemon rather than a fresh-looking
-screen. See [Decision 022](decisions/022-tui-reads-cache-never-fetches.md).
+screen. See [Decision 022](decisions/022-tui-reads-cache-never-fetches.md),
+which is not built yet: today the TUI still fetches when the cache is more
+than 30 minutes old.
 This is the primary place to interact with hub.
 
 **Daemon (`hub-daemon`)** — the unattended surface. It polls on an interval

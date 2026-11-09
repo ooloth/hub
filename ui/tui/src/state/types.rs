@@ -243,6 +243,8 @@ pub(crate) enum Screen {
     UnifiedList {
         items: Vec<DisplayItem>,
         flat_rows: Vec<FlatRow>,
+        /// The selected row's index in `flat_rows`, where an expanded group's children are rows,
+        /// not in `items`, where a group is one.
         selected: usize,
         filter: Filter,
         expanded_groups: HashSet<GroupKey>,
