@@ -5,8 +5,7 @@ use crate::display::{
     build_unified, flatten, item_url, lines_to_compact_json, Filter, FlatRow, ListSnapshot, LogLine,
 };
 use crate::state::{
-    Action, App, DetailMode, Effect, Launch, PrOwnership, PrPrevScreen, PrReviewTarget, Screen,
-    SubmenuState,
+    Action, App, DetailMode, Effect, Launch, PrOwnership, PrReviewTarget, Screen, SubmenuState,
 };
 
 impl App {
@@ -262,9 +261,8 @@ impl App {
                     detail_mode: detail_mode.clone(),
                 };
                 self.ui.screen = Screen::MergingPr {
-                    parent: snapshot.clone(),
+                    parent: snapshot,
                     pr,
-                    prev: PrPrevScreen::UnifiedList { snapshot },
                 };
                 vec![]
             }

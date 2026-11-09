@@ -1526,6 +1526,49 @@ mod tests {
         assert_eq!(pr.repo.to_string(), "ooloth/hub");
     }
 
+    /// An app at the merge prompt for the PR among `signals`, opened from the bottom row.
+    fn merging_from_the_bottom_of(signals: Vec<StatusItem>) -> App {
+        let mut app = App::default();
+        let _ = handle_msg(&mut app, refresh_of(signals)).unwrap();
+        apply(&mut app, &[Action::MoveToBottom]);
+        assert!(matches!(
+            app.current_screen().selected_status_item(),
+            Some(StatusItem::Pr(_))
+        ));
+        let _ = app.update(Action::MergePr);
+        assert!(matches!(app.current_screen(), Screen::MergingPr { .. }));
+        app
+    }
+
+    #[test]
+    fn cancelling_the_merge_prompt_shows_signals_refreshed_while_it_was_open() {
+        let mut app = merging_from_the_bottom_of(vec![stub_pr()]);
+        let _ = handle_msg(&mut app, refresh_of(vec![stub_pr(), stub_issue()])).unwrap();
+        let _ = app.update(Action::CancelMerge);
+        assert_eq!(app.active_list_len(), 2);
+    }
+
+    #[test]
+    fn committing_the_merge_prompt_shows_refreshed_signals_and_merges_the_prompted_pr() {
+        let mut app = merging_from_the_bottom_of(vec![stub_pr()]);
+        let _ = handle_msg(&mut app, refresh_of(vec![stub_pr(), stub_issue()])).unwrap();
+        let effects = app.update(Action::CommitMerge);
+        assert_eq!(app.active_list_len(), 2);
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::MergePullRequest { number: 7, .. }]
+        ));
+    }
+
+    #[test]
+    fn cancelling_after_a_refresh_shrank_the_list_selects_a_row_that_exists() {
+        let mut app = merging_from_the_bottom_of(vec![stub_issue(), stub_issue(), stub_pr()]);
+        let _ = handle_msg(&mut app, refresh_of(vec![stub_issue()])).unwrap();
+        let _ = app.update(Action::CancelMerge);
+        assert_eq!(app.active_list_len(), 1);
+        assert_eq!(selected(&app), 0);
+    }
+
     #[test]
     fn cancel_merge_returns_to_unified_list() {
         let mut app = app_in_merging();

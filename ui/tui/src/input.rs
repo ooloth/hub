@@ -185,8 +185,8 @@ mod tests {
     use super::key_to_action;
     use crate::display::{flatten, Category, DisplayItem, Filter, ListSnapshot};
     use crate::state::{
-        Action, App, DetailMode, PrOwnership, PrPrevScreen, PrReview, PrReviewTarget, Screen,
-        SubmenuState, UiState,
+        Action, App, DetailMode, PrOwnership, PrReview, PrReviewTarget, Screen, SubmenuState,
+        UiState,
     };
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use rstest::rstest;
@@ -343,13 +343,11 @@ mod tests {
             expanded_groups: std::collections::HashSet::new(),
             detail_mode: DetailMode::Hidden,
         };
-        let snapshot = parent.clone();
         App {
             ui: UiState {
                 screen: Screen::MergingPr {
                     parent,
                     pr: crate::test_support::pull_request(),
-                    prev: PrPrevScreen::UnifiedList { snapshot },
                 },
                 ..UiState::default()
             },

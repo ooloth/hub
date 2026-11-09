@@ -5,7 +5,7 @@ use domain::{PrKind, PullRequest, UntrustedText};
 use workflows::status::{Refresh, StatusItem};
 
 use crate::display::{
-    Category, DisplayItem, Filter, FlatRow, GroupKey, ListSnapshot, SelectedItemKind,
+    flatten, Category, DisplayItem, Filter, FlatRow, GroupKey, ListSnapshot, SelectedItemKind,
 };
 
 /// Which two-key submenu is currently intercepting keypresses. At most one can
@@ -251,16 +251,11 @@ pub(crate) enum Screen {
         detail_mode: DetailMode,
     },
     MergingPr {
+        /// The list under the prompt. Refreshes update it, and cancelling or committing
+        /// restores it.
         parent: ListSnapshot,
         pr: PullRequest,
-        prev: PrPrevScreen,
     },
-}
-
-/// The screen the merge confirmation restores on commit or cancel.
-#[derive(Clone, Debug)]
-pub(crate) enum PrPrevScreen {
-    UnifiedList { snapshot: ListSnapshot },
 }
 
 impl Default for Screen {
@@ -277,6 +272,19 @@ impl Default for Screen {
 }
 
 impl Screen {
+    /// The unified list a snapshot was taken from, with its rows flattened from the snapshot's
+    /// own items and expanded groups.
+    pub(crate) fn from_snapshot(snapshot: ListSnapshot) -> Self {
+        Self::UnifiedList {
+            flat_rows: flatten(&snapshot.items, &snapshot.expanded_groups),
+            items: snapshot.items,
+            selected: snapshot.selected,
+            filter: snapshot.filter,
+            expanded_groups: snapshot.expanded_groups,
+            detail_mode: snapshot.detail_mode,
+        }
+    }
+
     pub(crate) fn selected_status_item(&self) -> Option<StatusItem> {
         match self {
             Self::UnifiedList {

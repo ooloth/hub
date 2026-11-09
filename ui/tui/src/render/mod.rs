@@ -1147,9 +1147,8 @@ mod tests {
         App {
             ui: UiState {
                 screen: Screen::MergingPr {
-                    parent: snapshot.clone(),
+                    parent: snapshot,
                     pr,
-                    prev: crate::state::PrPrevScreen::UnifiedList { snapshot },
                 },
                 ..UiState::default()
             },
