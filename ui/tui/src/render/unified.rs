@@ -159,19 +159,19 @@ pub(crate) fn unified_title(filter: &Filter, query_input: Option<&str>) -> Strin
 }
 
 /// The list's position for the top-right of its border: the selected row's number out of every
-/// row in the filtered list, or ` 0 ` for an empty list.
+/// row in the filtered list, or nothing for an empty list.
 ///
 /// Both numbers count `flat_rows`, so rows scrolled out of view count, urgency dividers do not,
 /// and an expanded group's children count as rows, so the total grows when a group is expanded.
-pub(crate) fn list_position_title(selected: usize, row_count: usize) -> String {
+pub(crate) fn list_position_title(selected: usize, row_count: usize) -> Option<String> {
     if row_count == 0 {
-        return " 0 ".to_string();
+        return None;
     }
     assert!(
         selected < row_count,
         "selected row {selected} is past the last of {row_count} rows"
     );
-    format!(" {}/{row_count} ", selected + 1)
+    Some(format!(" {}/{row_count} ", selected + 1))
 }
 
 /// Whether the position fits on the top border beside the filter title, with a column between
@@ -216,18 +216,15 @@ pub(crate) fn render_unified(
         unified_title(filter, query_input),
         title_style,
     ));
-    let position = Line::from(Span::styled(
-        list_position_title(selected, flat_rows.len()),
-        chrome,
-    ))
-    .right_aligned();
-    let show_position = position_title_fits(&title, &position, area.width);
+    let position = list_position_title(selected, flat_rows.len())
+        .map(|text| Line::from(Span::styled(text, title_style)).right_aligned())
+        .filter(|position| position_title_fits(&title, position, area.width));
     let mut block = Block::new()
         .title(title)
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(chrome);
-    if show_position {
+    if let Some(position) = position {
         block = block.title(position);
     }
     let inner = block.inner(area);
@@ -294,33 +291,63 @@ mod tests {
     use crate::display::{Filter, FlatRow};
     use crate::test_support::pull_request;
     use proptest::{prelude::Strategy, proptest};
-    use ratatui::{backend::TestBackend, text::Line, Terminal};
+    use ratatui::{backend::TestBackend, buffer::Buffer, text::Line, Terminal};
+    use rstest::rstest;
     use workflows::status::StatusItem;
 
     fn pr() -> StatusItem {
         StatusItem::Pr(pull_request())
     }
 
-    /// The top border of the list block drawn `width` columns wide.
-    fn top_border(rows: &[FlatRow], filter: &Filter, width: u16) -> String {
+    /// The list block drawn `width` columns wide, with `query_input` as the query being typed.
+    fn draw_list(
+        rows: &[FlatRow],
+        filter: &Filter,
+        query_input: Option<&str>,
+        width: u16,
+    ) -> Buffer {
         let mut terminal = Terminal::new(TestBackend::new(width, 4)).unwrap();
         let _ = terminal
-            .draw(|frame| render_unified(frame, rows, 0, filter, None, frame.area()))
+            .draw(|frame| render_unified(frame, rows, 0, filter, query_input, frame.area()))
             .unwrap();
-        let buf = terminal.backend().buffer();
+        terminal.backend().buffer().clone()
+    }
+
+    /// The top border of the list block drawn `width` columns wide.
+    fn top_border(rows: &[FlatRow], filter: &Filter, width: u16) -> String {
+        let buf = draw_list(rows, filter, None, width);
         (0..width)
             .map(|x| buf[(x, 0)].symbol().to_string())
             .collect()
     }
 
     #[test]
-    fn an_empty_list_shows_zero() {
-        assert_eq!(list_position_title(0, 0), " 0 ");
+    fn an_empty_list_has_no_position() {
+        assert_eq!(list_position_title(0, 0), None);
     }
 
     #[test]
     fn the_last_row_shows_the_total() {
-        assert_eq!(list_position_title(2, 3), " 3/3 ");
+        assert_eq!(list_position_title(2, 3).as_deref(), Some(" 3/3 "));
+    }
+
+    #[rstest]
+    #[case::no_filter(Filter::default(), None)]
+    #[case::committed_filter(Filter { query: Some("hub".to_string()), ..Filter::default() }, None)]
+    #[case::typing_a_query(Filter::default(), Some("hub"))]
+    fn the_position_has_the_filter_titles_style(
+        #[case] filter: Filter,
+        #[case] query_input: Option<&str>,
+    ) {
+        let rows = vec![FlatRow::Single(pr())];
+        let width = 40;
+        let buf = draw_list(&rows, &filter, query_input, width);
+        // The title's first letter follows the corner and a space. The count ` 1/1 ` ends a space
+        // and a corner from the right edge, so its last digit is three columns in.
+        let title_cell = &buf[(2, 0)];
+        let position_cell = &buf[(width - 3, 0)];
+        assert_eq!(position_cell.symbol(), "1");
+        assert_eq!(position_cell.style(), title_cell.style());
     }
 
     #[test]
@@ -349,7 +376,7 @@ mod tests {
         fn the_position_is_a_row_number_out_of_the_row_count(
             (row_count, selected) in (1usize..=100).prop_flat_map(|n| (proptest::strategy::Just(n), 0..n)),
         ) {
-            let title = list_position_title(selected, row_count);
+            let title = list_position_title(selected, row_count).expect("a non-empty list has a position");
             let (number, total) = title.trim().split_once('/').expect("a position has a slash");
             let number: usize = number.parse().unwrap();
             let total: usize = total.parse().unwrap();
@@ -367,7 +394,7 @@ mod tests {
             let rows: Vec<FlatRow> = (0..row_count).map(|_| FlatRow::Single(pr())).collect();
             let filter = Filter { query: Some(query.clone()), ..Filter::default() };
             let left = format!(" \"{query}\" ");
-            let right = list_position_title(0, row_count);
+            let right = list_position_title(0, row_count).expect("a non-empty list has a position");
             let border = top_border(&rows, &filter, width);
             let fits = position_title_fits(&Line::from(left.as_str()), &Line::from(right.as_str()), width);
             if usize::from(width) >= left.chars().count() + 2 {

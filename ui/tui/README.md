@@ -130,7 +130,7 @@ The test suite keeps one full-screen snapshot per major screen state:
 
 | Snapshot | What it locks in |
 | --- | --- |
-| `full_screen_unified_list_empty` | border showing ` 0 `, no items, hints only in the status bar |
+| `full_screen_unified_list_empty` | bare border with no position, no items, hints only in the status bar |
 | `full_screen_unified_list_mixed_urgency` | urgency divider between tiers |
 | `full_screen_unified_list_group_selected` | collapsed group row, with `[l] expand` in the status bar |
 | `full_screen_unified_list_pr_selected` | PR item selected with the investigate hint, "2/2" on the list border |
