@@ -16,14 +16,16 @@ pub(super) fn refresh_screen_in_place(screen: &mut Screen, raw: &[workflows::sta
             expanded_groups,
             ..
         } => {
+            // `selected` indexes the flattened rows, so it is capped by them, not by the items.
             let new_items = build_unified(raw.to_vec(), filter);
-            *selected = (*selected).min(new_items.len().saturating_sub(1));
             *flat_rows = flatten(&new_items, expanded_groups);
+            *selected = (*selected).min(flat_rows.len().saturating_sub(1));
             *items = new_items;
         }
         Screen::MergingPr { parent, .. } => {
             let new_items = build_unified(raw.to_vec(), &parent.filter);
-            parent.selected = parent.selected.min(new_items.len().saturating_sub(1));
+            let row_count = flatten(&new_items, &parent.expanded_groups).len();
+            parent.selected = parent.selected.min(row_count.saturating_sub(1));
             parent.items = new_items;
         }
     }

@@ -1002,6 +1002,51 @@ mod tests {
         assert_eq!(selected(&app), 1);
     }
 
+    /// A refresh that brings `items`, with nothing failing.
+    fn refresh_of(items: Vec<StatusItem>) -> Msg {
+        Msg::FetchResult(Ok(fetched(StatusReport {
+            items,
+            errors: vec![],
+        })))
+    }
+
+    #[test]
+    fn a_refresh_keeps_an_expanded_groups_last_child_selected() {
+        // Two matching Loki signals group, so the list is one item but three rows.
+        let mut app = App::default();
+        let _ = handle_msg(&mut app, refresh_of(vec![loki_item(), loki_item()])).unwrap();
+        apply(&mut app, &[Action::ExpandGroup, Action::MoveToBottom]);
+        assert_eq!(selected(&app), 2);
+        let _ = handle_msg(&mut app, refresh_of(vec![loki_item(), loki_item()])).unwrap();
+        assert_eq!(selected(&app), 2);
+    }
+
+    #[test]
+    fn a_refresh_that_shrinks_an_expanded_group_selects_the_last_row() {
+        let mut app = App::default();
+        let _ = handle_msg(&mut app, refresh_of(vec![loki_item(); 4])).unwrap();
+        apply(&mut app, &[Action::ExpandGroup, Action::MoveToBottom]);
+        assert_eq!(selected(&app), 4);
+        let _ = handle_msg(&mut app, refresh_of(vec![loki_item(), loki_item()])).unwrap();
+        assert_eq!(selected(&app), 2);
+    }
+
+    #[test]
+    fn a_refresh_during_the_merge_prompt_keeps_the_pr_row_below_an_expanded_group() {
+        // The PR sits below a group of three, so it is row 4 of 4 but item 2 of 2.
+        let signals = || vec![loki_item(), loki_item(), loki_item(), stub_pr()];
+        let mut app = App::default();
+        let _ = handle_msg(&mut app, refresh_of(signals())).unwrap();
+        apply(&mut app, &[Action::ExpandGroup, Action::MoveToBottom]);
+        assert_eq!(selected(&app), 4);
+        let _ = app.update(Action::MergePr);
+        let _ = handle_msg(&mut app, refresh_of(signals())).unwrap();
+        let Screen::MergingPr { parent, .. } = app.current_screen() else {
+            panic!("expected MergingPr");
+        };
+        assert_eq!(parent.selected, 4);
+    }
+
     #[test]
     fn refresh_in_unified_list_applies_current_filter() {
         let mut app = app_on_list(
