@@ -22,7 +22,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
 };
 
-use crate::display::{flat_row_urgency, FlatRow};
+use crate::display::{flat_row_urgency, Filter, FlatRow};
 use crate::state::{App, DetailMode, Screen};
 
 pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
@@ -37,14 +37,20 @@ pub(crate) fn render(frame: &mut ratatui::Frame, app: &mut App) {
     }
 }
 
+/// The list pane's height with the detail pane open: a row per list row and urgency divider, a
+/// row for "Nothing matches." when the list says it, and two borders, capped at 20% of the
+/// viewport. On a small viewport the cap can leave no body row at all.
 #[allow(clippy::indexing_slicing)] // windows(2) guarantees exactly 2 elements
-fn split_list_height(rows: &[FlatRow], viewport_height: u16) -> u16 {
+fn split_list_height(rows: &[FlatRow], filter: &Filter, viewport_height: u16) -> u16 {
     let cap = viewport_height * 20 / 100;
     let dividers = rows
         .windows(2)
         .filter(|w| flat_row_urgency(&w[0]) != flat_row_urgency(&w[1]))
         .count();
-    let needed = (rows.len() + dividers + 2).try_into().unwrap_or(u16::MAX);
+    let empty_line = usize::from(unified::says_nothing_matches(rows, filter));
+    let needed = (rows.len() + dividers + empty_line + 2)
+        .try_into()
+        .unwrap_or(u16::MAX);
     needed.min(cap)
 }
 
@@ -70,7 +76,7 @@ fn render_content(frame: &mut ratatui::Frame, app: &mut App, content_area: ratat
             }
             DetailMode::Visible { detail_scroll } => {
                 let [list_area, detail_area] = Layout::vertical([
-                    Constraint::Length(split_list_height(flat_rows, content_area.height)),
+                    Constraint::Length(split_list_height(flat_rows, filter, content_area.height)),
                     Constraint::Min(0),
                 ])
                 .areas(content_area);
@@ -1373,6 +1379,24 @@ mod tests {
         insta::assert_snapshot!(screen_text(&buf));
     }
 
+    // SV3b: Split view on a category filter that matches nothing: the list pane keeps one body
+    // row for "Nothing matches." above the detail placeholder.
+    #[test]
+    fn split_view_empty_filter_result() {
+        let mut app = app_on(list_screen(
+            vec![],
+            0,
+            Filter {
+                category: Some(Category::Errors),
+                query: None,
+            },
+            HashSet::new(),
+            DetailMode::Visible { detail_scroll: 0 },
+        ));
+        let buf = draw(&mut app, 120, 30);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
     // SV4: Split view with detail_scroll > 0.
     #[test]
     fn split_view_pr_scrolled() {
@@ -1467,7 +1491,20 @@ mod tests {
         #[case] expected: u16,
     ) {
         let rows: Vec<FlatRow> = (0..item_count).map(|_| FlatRow::Single(pr())).collect();
-        assert_eq!(split_list_height(&rows, viewport_height), expected);
+        assert_eq!(
+            split_list_height(&rows, &Filter::default(), viewport_height),
+            expected
+        );
+    }
+
+    #[test]
+    fn split_list_height_keeps_a_body_row_for_an_empty_filtered_list() {
+        let filter = Filter {
+            category: Some(Category::Errors),
+            query: None,
+        };
+        // 0 items + 1 row for "Nothing matches." + 2 borders = 3; cap(150) = 30
+        assert_eq!(split_list_height(&[], &filter, 150), 3);
     }
 
     #[test]
@@ -1477,7 +1514,7 @@ mod tests {
             FlatRow::Single(pr()),
         ];
         // 2 items + 1 divider (High → Low) + 2 borders = 5; cap(150) = 30
-        assert_eq!(split_list_height(&rows, 150), 5);
+        assert_eq!(split_list_height(&rows, &Filter::default(), 150), 5);
     }
 
     #[test]
@@ -1488,7 +1525,7 @@ mod tests {
             FlatRow::Single(pr()),
         ];
         // 3 items + 2 dividers (Critical→High, High→Low) + 2 borders = 7; cap(150) = 30
-        assert_eq!(split_list_height(&rows, 150), 7);
+        assert_eq!(split_list_height(&rows, &Filter::default(), 150), 7);
     }
 
     proptest! {
@@ -1498,7 +1535,7 @@ mod tests {
             viewport_height in 0u16..=200,
         ) {
             let rows: Vec<FlatRow> = (0..item_count).map(|_| FlatRow::Single(pr())).collect();
-            let result = split_list_height(&rows, viewport_height);
+            let result = split_list_height(&rows, &Filter::default(), viewport_height);
             assert!(result <= viewport_height * 20 / 100);
         }
     }

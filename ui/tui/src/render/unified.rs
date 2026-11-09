@@ -174,6 +174,15 @@ pub(crate) fn list_position_title(selected: usize, row_count: usize) -> Option<S
     Some(format!(" {}/{row_count} ", selected + 1))
 }
 
+/// Whether the list's body says "Nothing matches.": no row is left and a filter is set.
+///
+/// Only a filter can hide rows, so an unfiltered empty list stays blank. It is empty because there
+/// are no signals, because the first load is still running, or because it reached no source. A
+/// query being typed is synced into `filter`, and an empty one leaves it unset.
+pub(crate) const fn says_nothing_matches(flat_rows: &[FlatRow], filter: &Filter) -> bool {
+    flat_rows.is_empty() && !filter.is_empty()
+}
+
 /// Whether the position fits on the top border beside the filter title, with a column between
 /// them. ratatui draws right-aligned titles after left ones, so a position that does not fit
 /// would be printed over the end of the filter title.
@@ -236,10 +245,7 @@ pub(crate) fn render_unified(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Only a filter can hide rows, so an unfiltered empty list stays blank. It is empty because
-    // there are no signals, because the first load is still running, or because it reached no
-    // source. A query being typed is synced into `filter`, and an empty one leaves it unset.
-    if flat_rows.is_empty() && !filter.is_empty() {
+    if says_nothing_matches(flat_rows, filter) {
         frame.render_widget(Paragraph::new("Nothing matches.").style(dim()), inner);
         return;
     }
