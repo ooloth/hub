@@ -88,7 +88,7 @@ Decision logic is extracted into pure helper functions that unit tests call dire
 - `list_position_title(selected, row_count)` (`render/unified.rs`): the selected row's
   number out of every row in the filtered list, at the top right of the list's border
 - `position_title_fits(left, right, block_width)` (`render/unified.rs`): whether that
-  position fits beside the filter title, which it is left out rather than overwrite
+  position fits beside the filter title; when it does not, it is left out
 - `right_status_text(profile, state, last_updated, now)` (`render/status_bar.rs`): the
   profile and the refresh state on the right of the status bar
 - `daemon_warning(daemon, database_error, now)` (`render/status_bar.rs`): the warning that
@@ -100,6 +100,8 @@ Visual constants live in `render/theme.rs` (`urgency_color` and `urgency_style` 
 | Constant/function  | Value                        | Used for                        |
 | ------------------ | ---------------------------- | ------------------------------- |
 | `FOCUS_COLOR`      | `Color::Rgb(203, 166, 247)`  | focused borders and titles      |
+| `LAVENDER`         | `Color::Rgb(180, 190, 254)`  | file and section labels in the PR pane |
+| `YELLOW`           | `Color::Rgb(249, 226, 175)`  | review comments in the PR pane, the status bar prompt |
 | `SELECTION_BG`     | `Color::Rgb(41, 45, 62)`     | list selection background       |
 | `dim()`            | `Modifier::DIM`              | secondary and unfocused text    |
 | `list_highlight()` | `SELECTION_BG` + `BOLD`      | stateful list widget highlight  |
@@ -277,7 +279,7 @@ Rules of thumb:
 
 ## Navigation
 
-The list (`UnifiedList`), with an optional split detail pane, and the merge confirmation (`MergingPr`) shown over it. `Enter` opens the pane; `Esc` closes it.
+The list (`UnifiedList`), with an optional split detail pane, and the merge confirmation (`MergingPr`), which shows the PR body in place of the list. `Enter` opens the pane; `Esc` closes it.
 
 **UnifiedList** — urgency-ranked flat list of all signals
 

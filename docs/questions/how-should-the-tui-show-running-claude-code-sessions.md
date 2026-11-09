@@ -50,7 +50,7 @@ tmux session, with hub on a third screen.
   │Claude · busy · dotfiles:@2 · dotfiles-91                                                   1m│
   │PR · Document the staging deploy #531 · no reviews · blocked            acme/api-service · 16h│
   ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
-   ↩ details · a attach · c claude · p prs · / search                         updated 1m ago
+   ↩ details · a attach · c claude · p prs · / search                               updated 1m ago
   ```
 
 - **B. A separate sessions panel above the list.** Strongest case: every session is always in the

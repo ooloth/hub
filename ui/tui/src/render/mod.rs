@@ -878,7 +878,7 @@ mod tests {
 
     #[test]
     fn full_screen_unified_list_empty() {
-        // U1: No items — the "All" border showing ` 0 `, an empty body, and the list hints.
+        // U1: No items — the "All" border with no position, an empty body, and the list hints.
         let mut app = unified_list_app(vec![]);
         let buf = draw(&mut app, 80, 15);
         insta::assert_snapshot!(screen_text(&buf));
