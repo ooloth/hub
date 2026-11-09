@@ -99,6 +99,8 @@ pub(crate) enum DisplayItem {
 #[derive(Clone, Debug)]
 pub(crate) struct ListSnapshot {
     pub(crate) items: Vec<DisplayItem>,
+    /// The selected row's index in the rows flattened from `items` and `expanded_groups`, where
+    /// an expanded group's children are rows, not in `items`, where a group is one.
     pub(crate) selected: usize,
     pub(crate) filter: Filter,
     pub(crate) expanded_groups: HashSet<GroupKey>,

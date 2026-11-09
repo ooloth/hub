@@ -251,8 +251,9 @@ pub(crate) enum Screen {
         detail_mode: DetailMode,
     },
     MergingPr {
-        /// The list under the prompt. Refreshes update it, and cancelling or committing
-        /// restores it.
+        /// The list the prompt was opened from, which the prompt does not draw. Refreshes update
+        /// it, and cancelling or committing restores it. The selection keeps its row number, so
+        /// a refresh that adds or removes rows above the PR restores it on a different signal.
         parent: ListSnapshot,
         pr: PullRequest,
     },

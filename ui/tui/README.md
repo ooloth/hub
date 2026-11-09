@@ -149,7 +149,7 @@ The test suite keeps one full-screen snapshot per major screen state:
 | `full_screen_unified_list_dev_profile` | `dev` profile label at the right of the status bar |
 | `full_screen_unified_list_refreshes_overdue` | the daemon warning crowding the key hints at 80 columns |
 | `full_screen_unified_list_turn_reasons_{80,200}` | a turn's reason after `PR`, in one column, never truncated |
-| `full_screen_merging_pr` | merge confirmation prompt over the PR body |
+| `full_screen_merging_pr` | merge confirmation prompt in the status bar, under the PR body |
 | `full_screen_expanded_group_first_child_selected` | group expanded, first item selected |
 | `full_screen_expanded_group_last_child_selected` | group expanded, last item selected |
 | `split_view_pr_selected` | detail pane open on a PR |
