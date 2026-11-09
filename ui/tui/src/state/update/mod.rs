@@ -282,7 +282,7 @@ mod tests {
     use rstest::rstest;
 
     use super::{handle_msg, selected_launch};
-    use crate::display::{flatten, Category, DisplayItem, Filter, GroupKey};
+    use crate::display::{flatten, Category, DisplayItem, Filter, GroupKey, ListSnapshot};
     use crate::state::{
         Action, App, DataState, DetailMode, Effect, Launch, Msg, PrOwnership, RefreshState, Screen,
         SubmenuState, UiState,
@@ -1561,12 +1561,43 @@ mod tests {
     }
 
     #[test]
-    fn cancelling_after_a_refresh_shrank_the_list_selects_a_row_that_exists() {
+    fn cancelling_the_merge_prompt_after_a_refresh_shrank_the_list_selects_a_row_that_exists() {
         let mut app = merging_from_the_bottom_of(vec![stub_issue(), stub_issue(), stub_pr()]);
         let _ = handle_msg(&mut app, refresh_of(vec![stub_issue()])).unwrap();
         let _ = app.update(Action::CancelMerge);
         assert_eq!(app.active_list_len(), 1);
         assert_eq!(selected(&app), 0);
+    }
+
+    #[test]
+    fn cancelling_the_merge_prompt_below_an_expanded_group_restores_the_groups_rows() {
+        let signals = || vec![loki_item(), loki_item(), loki_item(), stub_pr()];
+        let mut app = App::default();
+        let _ = handle_msg(&mut app, refresh_of(signals())).unwrap();
+        apply(&mut app, &[Action::ExpandGroup, Action::MoveToBottom]);
+        let rows_before = app.active_list_len();
+        let selected_before = selected(&app);
+        let _ = app.update(Action::MergePr);
+        let _ = handle_msg(&mut app, refresh_of(signals())).unwrap();
+        let _ = app.update(Action::CancelMerge);
+        assert_eq!(app.active_list_len(), rows_before);
+        assert_eq!(selected(&app), selected_before);
+        assert!(matches!(
+            app.current_screen().selected_status_item(),
+            Some(StatusItem::Pr(_))
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "restored selection 1 is past the last of 0 rows")]
+    fn restoring_a_list_whose_selection_is_past_its_rows_halts() {
+        let _ = Screen::from_snapshot(ListSnapshot {
+            items: vec![],
+            selected: 1,
+            filter: Filter::default(),
+            expanded_groups: HashSet::new(),
+            detail_mode: DetailMode::Hidden,
+        });
     }
 
     #[test]

@@ -139,7 +139,7 @@ The test suite keeps one full-screen snapshot per major screen state:
 | `full_screen_unified_list_mixed_urgency` | urgency divider between tiers |
 | `full_screen_unified_list_group_selected` | collapsed group row, with `l expand` in the status bar |
 | `full_screen_unified_list_pr_selected` | PR item selected with the investigate hint, "2/2" on the list border |
-| `full_screen_unified_list_empty_filter_result` | category filter with no matching items, empty body |
+| `full_screen_unified_list_empty_filter_result` | category filter with no matching items, "Nothing matches." in the body |
 | `full_screen_unified_list_category_filter` | focus-colour border + category label in title |
 | `full_screen_unified_list_committed_query` | focus-colour border + query text in title |
 | `full_screen_unified_list_query_input` | yellow border while query is being typed |

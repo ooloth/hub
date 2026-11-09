@@ -7,7 +7,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem, ListState},
+    widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph},
 };
 
 #[allow(clippy::indexing_slicing)] // bright_end/dim_inline_end are bounded by display_len == display_chars.len()
@@ -236,6 +236,14 @@ pub(crate) fn render_unified(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    // Only a filter can hide rows, so an unfiltered empty list stays blank. It is empty because
+    // there are no signals, because the first load is still running, or because it reached no
+    // source. A query being typed is synced into `filter`, and an empty one leaves it unset.
+    if flat_rows.is_empty() && !filter.is_empty() {
+        frame.render_widget(Paragraph::new("Nothing matches.").style(dim()), inner);
+        return;
+    }
+
     let width = inner.width as usize;
 
     // Build display rows: inject urgency dividers at tier boundaries.
@@ -330,6 +338,39 @@ mod tests {
     #[test]
     fn an_empty_list_has_no_position() {
         assert_eq!(list_position_title(0, 0), None);
+    }
+
+    /// Row `y` of the list block drawn `width` columns wide, as text.
+    fn row_text(buf: &Buffer, y: u16, width: u16) -> String {
+        (0..width)
+            .map(|x| buf[(x, y)].symbol().to_string())
+            .collect()
+    }
+
+    #[rstest]
+    #[case::category_filter(Filter { category: Some(crate::display::Category::Errors), ..Filter::default() }, None)]
+    #[case::committed_query(Filter { query: Some("hub".to_string()), ..Filter::default() }, None)]
+    // While a query is typed, the update syncs it into `filter`, so the filter holds it too.
+    #[case::typing_a_query(Filter { query: Some("hub".to_string()), ..Filter::default() }, Some("hub"))]
+    fn an_empty_filtered_list_says_nothing_matches(
+        #[case] filter: Filter,
+        #[case] query_input: Option<&str>,
+    ) {
+        let width = 40;
+        let buf = draw_list(&[], &filter, query_input, width);
+        assert_eq!(
+            row_text(&buf, 1, width).trim_matches(['│', ' ']),
+            "Nothing matches."
+        );
+    }
+
+    #[rstest]
+    #[case::no_filter(None)]
+    #[case::query_opened_with_nothing_typed(Some(""))]
+    fn an_empty_unfiltered_list_has_a_blank_body(#[case] query_input: Option<&str>) {
+        let width = 40;
+        let buf = draw_list(&[], &Filter::default(), query_input, width);
+        assert_eq!(row_text(&buf, 1, width).trim_matches(['│', ' ']), "");
     }
 
     #[test]

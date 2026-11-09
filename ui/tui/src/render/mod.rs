@@ -1177,7 +1177,8 @@ mod tests {
     #[test]
     fn full_screen_unified_list_empty_filter_result() {
         // U10: Category filter active but no items match — focus-colour border with
-        // filter title, empty body.  Different from U1 (no filter) and U4 (items match).
+        // filter title, "Nothing matches." in the body.  Different from U1 (no filter) and U4
+        // (items match).
         let mut app = app_on(make_screen(
             vec![],
             0,

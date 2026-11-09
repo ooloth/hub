@@ -276,8 +276,15 @@ impl Screen {
     /// The unified list a snapshot was taken from, with its rows flattened from the snapshot's
     /// own items and expanded groups.
     pub(crate) fn from_snapshot(snapshot: ListSnapshot) -> Self {
+        let flat_rows = flatten(&snapshot.items, &snapshot.expanded_groups);
+        assert!(
+            snapshot.selected < flat_rows.len().max(1),
+            "restored selection {} is past the last of {} rows",
+            snapshot.selected,
+            flat_rows.len()
+        );
         Self::UnifiedList {
-            flat_rows: flatten(&snapshot.items, &snapshot.expanded_groups),
+            flat_rows,
             items: snapshot.items,
             selected: snapshot.selected,
             filter: snapshot.filter,
