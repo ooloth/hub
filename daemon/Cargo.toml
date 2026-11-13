@@ -17,7 +17,7 @@
   config = { path = "../config" }
   domain = { path = "../domain" }
   humantime = "2"
-  rusqlite = { version = "0.31", features = ["bundled"] }
+  rusqlite = { version = "0.41", features = ["bundled"] }
   serde_json = "1"
   store = { path = "../store" }
   tokio = { version = "1", features = ["full"] }
