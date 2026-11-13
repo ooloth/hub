@@ -33,7 +33,7 @@
   # 0.30 uses. ratatui, crossterm and ansi-to-tui move together, and
   # Dependabot proposes them as one PR (the `tui` group in .github/dependabot.yml).
   ratatui = "0.30"
-  rusqlite = { version = "0.31", features = ["bundled"] }
+  rusqlite = { version = "0.41", features = ["bundled"] }
   secrecy = "0.8"
   serde_json = "1"
   store = { path = "../../store" }
