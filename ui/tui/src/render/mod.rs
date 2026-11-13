@@ -1363,6 +1363,26 @@ mod tests {
         insta::assert_snapshot!(screen_text(&buf));
     }
 
+    // SV1b: Split view on a PR whose body has a loose task list: one item holds a code block, so
+    // blank lines surround it.
+    #[test]
+    fn split_view_pr_with_loose_task_list() {
+        let pr = domain::PullRequest {
+            body: Some(
+                "# How to validate\n\n\
+                 - [ ] Check out the branch\n\
+                 - [ ] Run this and expect `same-code` on every line:\n\n  \
+                 ```sh\n  ./compare.sh\n  ```\n\n\
+                 - [x] Open the plan and expect `No changes`\n"
+                    .to_string(),
+            ),
+            ..review_request()
+        };
+        let mut app = split_view_app(vec![DisplayItem::Single(StatusItem::Pr(pr))], 0, 0);
+        let buf = draw(&mut app, 120, 30);
+        insta::assert_snapshot!(screen_text(&buf));
+    }
+
     // SV2: Split view with an issue selected.
     #[test]
     fn split_view_issue_selected() {

@@ -3,6 +3,8 @@
 //   - Theme uses two-face's built-in CatppuccinMocha instead of base16-ocean.dark
 //   - tracing instrumentation removed
 //   - multi-line text split with enumerate() instead of itertools' with_position()
+//   - a loose list item's first paragraph continues its bullet's line
+//   - unlanguaged code fences carry the code style, and highlight_json is added
 //   - pub(crate) visibility throughout
 
 use std::sync::LazyLock;
@@ -114,6 +116,9 @@ struct TextWriter<'a, I, S: StyleSheet> {
     heading_meta: Option<HeadingMeta<'a>>,
     in_metadata_block: bool,
     needs_newline: bool,
+    /// The last line holds only a list item's bullet, so the item's first paragraph continues
+    /// it instead of starting a line of its own.
+    bullet_line_awaits_content: bool,
 }
 
 impl<'a, I, S> TextWriter<'a, I, S>
@@ -135,6 +140,7 @@ where
             styles,
             heading_meta: None,
             in_metadata_block: false,
+            bullet_line_awaits_content: false,
         }
     }
 
@@ -225,6 +231,10 @@ where
     }
 
     fn start_paragraph(&mut self) {
+        if self.bullet_line_awaits_content {
+            self.bullet_line_awaits_content = false;
+            return;
+        }
         if self.needs_newline {
             self.push_line(Line::default());
         }
@@ -369,6 +379,7 @@ where
             self.push_span(span);
         }
         self.needs_newline = false;
+        self.bullet_line_awaits_content = true;
     }
 
     fn task_list_marker(&mut self, checked: bool) {
@@ -386,7 +397,8 @@ where
                     return;
                 }
             }
-            line.spans.insert(1, marker_span);
+            let after_bullet = line.spans.len().min(1);
+            line.spans.insert(after_bullet, marker_span);
         } else {
             self.push_span(marker_span);
         }
@@ -446,6 +458,7 @@ where
     }
 
     fn push_line(&mut self, line: Line<'a>) {
+        self.bullet_line_awaits_content = false;
         let style = self.line_styles.last().copied().unwrap_or_default();
         let mut line = line.patch_style(style);
         let prefixes: Vec<Span<'a>> = self.line_prefixes.clone();
@@ -459,6 +472,7 @@ where
     }
 
     fn push_span(&mut self, span: Span<'a>) {
+        self.bullet_line_awaits_content = false;
         if let Some(line) = self.text.lines.last_mut() {
             line.push_span(span);
         } else {
@@ -481,6 +495,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use proptest::strategy::Strategy;
     use rstest::rstest;
 
     use super::*;
@@ -546,6 +561,58 @@ mod tests {
             styles.iter().all(|style| *style == Style::default()),
             "expected fence lines to have no style, got {styles:?}"
         );
+    }
+
+    #[rstest]
+    #[case::unchecked("- [ ] a\n\n- [ ] b\n", &["- [ ] a", "- [ ] b"])]
+    #[case::checked("- [x] a\n\n- [x] b\n", &["- [x] a", "- [x] b"])]
+    fn loose_task_list_keeps_each_marker_and_text_on_its_bullet_line(
+        #[case] markdown: &str,
+        #[case] expected: &[&str],
+    ) {
+        assert_eq!(line_texts(&from_str(markdown).lines), expected);
+    }
+
+    #[rstest]
+    #[case::bullet("- a\n\n- b\n", &["- a", "- b"])]
+    #[case::ordered("1. a\n\n2. b\n", &["1. a", "2. b"])]
+    fn loose_list_keeps_each_item_text_on_its_bullet_line(
+        #[case] markdown: &str,
+        #[case] expected: &[&str],
+    ) {
+        assert_eq!(line_texts(&from_str(markdown).lines), expected);
+    }
+
+    #[test]
+    fn loose_task_item_with_a_code_block_renders_the_block_after_its_task_line() {
+        let markdown = "- [ ] a\n- [ ] b:\n\n  ```sh\n  x\n  ```\n\n- [ ] c\n";
+        assert_eq!(
+            line_texts(&from_str(markdown).lines),
+            ["- [ ] a", "- [ ] b:", "", "```sh", "x", "```", "- [ ] c"]
+        );
+    }
+
+    #[rstest]
+    #[case::bullet("- a\n- b\n", &["- a", "- b"])]
+    #[case::task("- [ ] a\n- [x] b\n", &["- [ ] a", "- [x] b"])]
+    #[case::nested("- a\n    - b\n", &["- a", "    - b"])]
+    fn tight_list_renders_one_line_per_item(#[case] markdown: &str, #[case] expected: &[&str]) {
+        assert_eq!(line_texts(&from_str(markdown).lines), expected);
+    }
+
+    fn list_markdown() -> impl Strategy<Value = String> {
+        let fragment = proptest::sample::select(vec![
+            "- ", "1. ", "[ ] ", "[x] ", "> ", "  ", "    ", "\n", "\n\n", "```", "```sh\n",
+            "text", "**b**", "`c`", "---\n",
+        ]);
+        proptest::collection::vec(fragment, 0..40).prop_map(|parts| parts.concat())
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn any_list_shaped_markdown_renders_without_panicking(markdown in list_markdown()) {
+            let _ = from_str(&markdown);
+        }
     }
 
     fn distinct_foregrounds(lines: &[Line]) -> std::collections::HashSet<ratatui::style::Color> {

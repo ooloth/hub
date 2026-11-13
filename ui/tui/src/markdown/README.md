@@ -15,14 +15,25 @@ These changes in `render.rs` differ from upstream:
    instead of `base16-ocean.dark`.
 
 3. **`text`** — splits multi-line text with `enumerate()` where upstream uses
-   `itertools::with_position()`, so hub does not depend on `itertools`.
+   `itertools::with_position()`, so hub-tui does not depend on `itertools` directly.
+
+4. **Loose lists** — a list item's first paragraph continues the bullet's line, which
+   `start_item` marks with `bullet_line_awaits_content`. Upstream starts the paragraph on a new
+   line, so a loose list renders each bullet alone above its text, and a loose task list panics
+   in `task_list_marker` because the marker arrives on an empty line. `task_list_marker` also
+   clamps its fallback insert to the line's span count.
+
+5. **Unlanguaged code fences** — a fence with no language, or one syntect does not know, carries
+   the stylesheet's `code()` style on its content lines, and the fences themselves stay unstyled.
+
+6. **`highlight_json`** — added for the log detail screen (`render/log.rs`). It is not in
+   upstream, so a re-sync keeps it.
 
 `style_sheet.rs` adds `CatppuccinStyleSheet`, which the module's `from_str` uses
-as its default. It styles headings and inline code in Mocha mauve to match
-`FOCUS_COLOR` in `render/mod.rs`.
+as its default. It styles headings in Mocha teal and inline code in Mocha lavender.
 
-`tracing` instrumentation (`#[instrument]`, `debug!`, `warn!`) is stripped to
-avoid the `tracing` dependency.
+`tracing` instrumentation (`#[instrument]`, `debug!`, `warn!`) is stripped, so the
+module does not depend on `tracing` directly.
 
 ## Staying in sync with upstream
 

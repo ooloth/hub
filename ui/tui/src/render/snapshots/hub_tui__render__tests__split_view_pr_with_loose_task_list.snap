@@ -1,0 +1,34 @@
+---
+source: ui/tui/src/render/mod.rs
+expression: screen_text(&buf)
+---
+╭ All ──────────────────────────────────────────────────────────────────────────────────────────────────────────── 1/1 ╮
+│PR · review requested · Fix #1 · alice · no reviews                                                         repo · now│
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭───────────────────────────────────────────────────────────────────────┬──────────────────────────────────────────────╮
+│# How to validate                                                      │ checks     (none)                            │
+│                                                                       │ status     0 reviews                         │
+│- [ ] Check out the branch                                             │ comments   0 comments                        │
+│- [ ] Run this and expect same-code on every line:                     │ diff       +0 −0 in 0 files                  │
+│                                                                       │ author     @alice                            │
+│```sh                                                                  │ updated    now ago                           │
+│./compare.sh                                                           │ repo       owner/repo                        │
+│```                                                                    │ branch     feat/fix                          │
+│- [x] Open the plan and expect No changes                              │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+│                                                                       │                                              │
+╰───────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────╯
+ o open · d diff · v review · m merge · i ask · Esc back

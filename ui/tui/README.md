@@ -157,6 +157,7 @@ The test suite keeps one full-screen snapshot per major screen state:
 | `split_view_placeholder_for_ci_item` | placeholder in the detail pane for an item with no detail view |
 | `split_view_empty_filter_result` | a filter that matches nothing keeps one list row for "Nothing matches." above the detail pane |
 | `split_view_pr_scrolled` | detail pane scrolled down |
+| `split_view_pr_with_loose_task_list` | a loose task list in a PR body, each checkbox on its bullet's line |
 | `split_view_narrow_terminal` | detail pane on an 80-col terminal |
 | `split_view_multi_urgency_tiers` | list height includes the urgency divider |
 | `split_view_list_capped_at_20_percent_of_viewport_height` | list capped at a fifth of the screen |

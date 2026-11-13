@@ -3,6 +3,8 @@
 //   - Theme uses two-face's built-in CatppuccinMocha instead of base16-ocean.dark
 //   - tracing instrumentation removed
 //   - multi-line text split with enumerate() instead of itertools' with_position()
+//   - a loose list item's first paragraph continues its bullet's line
+//   - unlanguaged code fences carry the code style, and highlight_json is added
 //   - pub(crate) visibility throughout
 pub(crate) mod options;
 pub(crate) mod render;
