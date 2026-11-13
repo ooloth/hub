@@ -452,6 +452,7 @@ builds it.
 | `store/README.md`                        | rusqlite pattern, db path, Connection threading notes                                                             |
 | `ui/cli/README.md`                       | clap derive API for CLI commands                                                                                  |
 | `ui/tui/README.md`                       | TUI architecture, cache/schema version, keybindings                                                               |
+| `ui/tui/src/markdown/README.md`          | Vendored tui-markdown fork: how it differs from upstream and how to re-sync                                       |
 | `daemon/README.md`                       | The unattended refresh surface: what lives in `daemon/` and its rules                                             |
 | `scripts/README.md`                      | The `scripts` crate: repository checks, Claude Code hooks, local setup                                            |
 

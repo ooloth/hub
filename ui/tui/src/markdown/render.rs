@@ -1,11 +1,5 @@
-// Vendored from tui-markdown 0.3.7 (MIT/Apache-2.0), modified:
-//   - SYNTAX_SET uses two-face's extended syntax set (adds TypeScript, TOML, etc.)
-//   - Theme uses two-face's built-in CatppuccinMocha instead of base16-ocean.dark
-//   - tracing instrumentation removed
-//   - multi-line text split with enumerate() instead of itertools' with_position()
-//   - a loose list item's first paragraph continues its bullet's line
-//   - unlanguaged code fences carry the code style, and highlight_json is added
-//   - pub(crate) visibility throughout
+// Vendored from tui-markdown 0.3.7 (MIT/Apache-2.0) and patched. README.md in this directory
+// lists its patches and how to re-sync with upstream.
 
 use std::sync::LazyLock;
 
@@ -116,8 +110,9 @@ struct TextWriter<'a, I, S: StyleSheet> {
     heading_meta: Option<HeadingMeta<'a>>,
     in_metadata_block: bool,
     needs_newline: bool,
-    /// The last line holds only a list item's bullet, so the item's first paragraph continues
-    /// it instead of starting a line of its own.
+    /// The previous event started a list item, so a paragraph starting now continues the bullet's
+    /// line instead of starting one of its own. `handle_event` clears it before every event, so
+    /// it never outlives the event right after the bullet.
     bullet_line_awaits_content: bool,
 }
 
@@ -151,7 +146,9 @@ where
     }
 
     fn handle_event(&mut self, event: Event<'a>) {
+        let bullet_line_open = std::mem::take(&mut self.bullet_line_awaits_content);
         match event {
+            Event::Start(Tag::Paragraph) if bullet_line_open => {}
             Event::Start(tag) => self.start_tag(tag),
             Event::End(tag) => self.end_tag(tag),
             Event::Text(text) => self.text(&text),
@@ -231,10 +228,6 @@ where
     }
 
     fn start_paragraph(&mut self) {
-        if self.bullet_line_awaits_content {
-            self.bullet_line_awaits_content = false;
-            return;
-        }
         if self.needs_newline {
             self.push_line(Line::default());
         }
@@ -397,6 +390,8 @@ where
                     return;
                 }
             }
+            // Markdown comes from outside hub, so an empty line here is a reachable input, not a
+            // bug: clamping keeps the insert in bounds instead of panicking on it.
             let after_bullet = line.spans.len().min(1);
             line.spans.insert(after_bullet, marker_span);
         } else {
@@ -458,7 +453,6 @@ where
     }
 
     fn push_line(&mut self, line: Line<'a>) {
-        self.bullet_line_awaits_content = false;
         let style = self.line_styles.last().copied().unwrap_or_default();
         let mut line = line.patch_style(style);
         let prefixes: Vec<Span<'a>> = self.line_prefixes.clone();
@@ -472,7 +466,6 @@ where
     }
 
     fn push_span(&mut self, span: Span<'a>) {
-        self.bullet_line_awaits_content = false;
         if let Some(line) = self.text.lines.last_mut() {
             line.push_span(span);
         } else {
@@ -600,18 +593,60 @@ mod tests {
         assert_eq!(line_texts(&from_str(markdown).lines), expected);
     }
 
+    // Only the paragraph straight after a bullet joins its line. Everything else an item can start
+    // with, or a paragraph after the list, renders on lines of its own.
+    #[rstest]
+    #[case::blockquote("- > q\n", &["- ", "> q"])]
+    #[case::paragraph_after_empty_item("-\n\ntext\n", &["- ", "", "text"])]
+    #[case::code_after_empty_task_item("- [ ]\n\n`code` after\n", &["- [ ] ", "", "code after"])]
+    #[case::paragraph_after_html_item("- <!-- c -->\n\nAfter\n", &["- ", "", "After"])]
+    #[case::paragraph_after_list("- a\n\nb\n", &["- a", "", "b"])]
+    fn only_an_items_first_paragraph_joins_its_bullet_line(
+        #[case] markdown: &str,
+        #[case] expected: &[&str],
+    ) {
+        assert_eq!(line_texts(&from_str(markdown).lines), expected);
+    }
+
+    // The item's text is a lone `-`, and the indented `-` below it is a nested empty item.
+    #[test]
+    fn task_item_whose_text_is_a_dash_keeps_its_nested_empty_item() {
+        assert_eq!(
+            line_texts(&from_str("- [ ] - \n\n  - ").lines),
+            ["- [ ] -", "    - "]
+        );
+    }
+
+    /// A list of items, each a bullet or number, an optional checkbox, and content that may be a
+    /// paragraph, nothing, a quote, a fence, an HTML comment or inline code.
     fn list_markdown() -> impl Strategy<Value = String> {
-        let fragment = proptest::sample::select(vec![
-            "- ", "1. ", "[ ] ", "[x] ", "> ", "  ", "    ", "\n", "\n\n", "```", "```sh\n",
-            "text", "**b**", "`c`", "---\n",
+        let marker = proptest::sample::select(vec!["- ", "1. "]);
+        let checkbox = proptest::sample::select(vec!["", "[ ] ", "[x] "]);
+        let content = proptest::sample::select(vec![
+            "text",
+            "",
+            "> q",
+            "```\n   x\n   ```",
+            "<!-- c -->",
+            "**b**",
+            "`c` after",
         ]);
-        proptest::collection::vec(fragment, 0..40).prop_map(|parts| parts.concat())
+        let separator = proptest::sample::select(vec!["\n", "\n\n"]);
+        let item = (marker, checkbox, content, separator)
+            .prop_map(|(m, c, body, sep)| format!("{m}{c}{body}{sep}"));
+        proptest::collection::vec(item, 1..8).prop_map(|items| items.concat())
     }
 
     proptest::proptest! {
         #[test]
-        fn any_list_shaped_markdown_renders_without_panicking(markdown in list_markdown()) {
+        fn any_list_renders_without_panicking(markdown in list_markdown()) {
             let _ = from_str(&markdown);
+        }
+
+        #[test]
+        fn a_paragraph_after_any_list_renders_on_its_own_line(markdown in list_markdown()) {
+            let lines = line_texts(&from_str(&format!("{markdown}\ntail\n")).lines);
+            proptest::prop_assert_eq!(&lines[lines.len() - 2..], ["", "tail"]);
         }
     }
 

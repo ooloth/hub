@@ -77,6 +77,9 @@ is mutated:
 
 ## Render model
 
+PR and issue bodies render through `src/markdown/`, a vendored and patched fork of tui-markdown.
+Its [README](src/markdown/README.md) lists how it differs from upstream and how to re-sync it.
+
 Render functions take `&mut Frame`, so testing one means drawing it into a `TestBackend`.
 Decision logic is extracted into pure helper functions that unit tests call directly:
 

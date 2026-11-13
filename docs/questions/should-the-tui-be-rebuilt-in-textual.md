@@ -63,7 +63,8 @@ same discussion and holds regardless of what the spike shows.
   is not distorting the design. 16 widget draw calls across 6 files are the entire imperative
   surface, and nothing in `state/`, `display/`, `input.rs` or `investigations/` imports Ratatui at
   all. Cost: the browser surface Decision 007 deferred stays expensive to reach, and the hand-drawn
-  chrome plus the 545-line markdown renderer stay hub's to maintain.
+  chrome plus the vendored markdown renderer (770 lines in `ui/tui/src/markdown/` on 2026-11-13)
+  stay hub's to maintain.
 - **B. Rebuild in Textual.** Strongest case: `textual serve` keeps Decision 007's one reopening
   condition cheap; Textual ships the `Markdown` widget and CSS borders that four dependencies
   currently provide (`pulldown-cmark`, `syntect`, `two-face`, `ansi-to-tui`); and Python is where
