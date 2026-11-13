@@ -56,24 +56,23 @@ pub(crate) fn resolve_hub_private(root: &Path, hub_private: &Path) -> Result<Pat
 
 /// The devices hub-private has configs for, sorted, for error messages.
 fn available_devices(hub_private: &Path) -> String {
-    let mut names: Vec<String> = std::fs::read_dir(hub_private.join("devices"))
-        .map(|entries| {
-            entries
-                .filter_map(Result::ok)
-                .filter_map(|entry| {
-                    let path = entry.path();
-                    (path
-                        .extension()
-                        .is_some_and(|extension| extension == "toml"))
-                    .then(|| {
-                        path.file_stem()
-                            .map(|stem| stem.to_string_lossy().into_owned())
-                    })
-                    .flatten()
+    let mut names: Vec<String> = match std::fs::read_dir(hub_private.join("devices")) {
+        Ok(entries) => entries
+            .filter_map(Result::ok)
+            .filter_map(|entry| {
+                let path = entry.path();
+                (path
+                    .extension()
+                    .is_some_and(|extension| extension == "toml"))
+                .then(|| {
+                    path.file_stem()
+                        .map(|stem| stem.to_string_lossy().into_owned())
                 })
-                .collect()
-        })
-        .unwrap_or_default();
+                .flatten()
+            })
+            .collect(),
+        Err(_) => Vec::new(),
+    };
     names.sort();
     if names.is_empty() {
         "  (none yet)".to_string()

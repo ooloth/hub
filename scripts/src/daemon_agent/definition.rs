@@ -143,12 +143,14 @@ mod tests {
         let rendered = AgentDefinition::render(&fixed_agent()).unwrap();
         let value: plist::Value = plist::from_bytes(rendered.bytes()).unwrap();
 
-        let keys: Vec<&String> = value
+        let keys: Vec<&String> = match value
             .as_dictionary()
             .and_then(|job| job.get("EnvironmentVariables"))
             .and_then(plist::Value::as_dictionary)
-            .map(|environment| environment.keys().collect())
-            .unwrap_or_default();
+        {
+            Some(environment) => environment.keys().collect(),
+            None => Vec::new(),
+        };
 
         assert_eq!(keys, ["PATH"]);
     }

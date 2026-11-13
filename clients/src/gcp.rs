@@ -92,16 +92,17 @@ fn parse_entries(json: &str) -> Result<Vec<LogEntry>> {
 
             let http_request = v.get("httpRequest").cloned();
 
-            let resource_labels = v
+            let resource_labels = match v
                 .get("resource")
                 .and_then(|r| r.get("labels"))
                 .and_then(|l| l.as_object())
-                .map(|obj| {
-                    obj.iter()
-                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-                        .collect()
-                })
-                .unwrap_or_default();
+            {
+                Some(obj) => obj
+                    .iter()
+                    .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                    .collect(),
+                None => HashMap::new(),
+            };
 
             LogEntry {
                 timestamp,
