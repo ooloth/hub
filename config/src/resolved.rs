@@ -34,18 +34,24 @@ pub struct Config {
     pub monitor: Option<toml::Monitor>,
     /// The MCP servers investigations on this device get, from `[investigation.mcp_servers]`.
     pub investigation_mcp_servers: domain::InvestigationMcpServers,
+    /// What investigations on this device run in place of `claude`, from `[investigation] launcher`.
+    pub investigation_launcher: domain::InvestigationLauncher,
 }
 
 impl Config {
     /// Reads `hub.toml` and resolves every credential in it, through an `op` that answers to
     /// whatever is responsible for hub, as a terminal is for the TUI.
     ///
+    /// Checks the investigation launcher can run before resolving credentials, which can wait on
+    /// a locked 1Password, so a bad path refuses at once.
+    ///
     /// # Errors
-    /// Returns an error if `hub.toml` is missing or malformed, or if any credential
-    /// reference (e.g. an `op://` URI) cannot be resolved.
+    /// Returns an error if `hub.toml` is missing or malformed, if its investigation launcher can't
+    /// run, or if any credential reference (e.g. an `op://` URI) cannot be resolved.
     pub async fn load() -> Result<Self> {
-        ConfigFile::read()?
-            .resolve(OpResponsibility::Inherited)
+        let file = ConfigFile::read()?;
+        crate::investigation::ensure_launcher_runs(file.investigation_launcher())?;
+        file.resolve(OpResponsibility::Inherited)
             .await
             .map(|resolved| resolved.config)
             .map_err(|failure| anyhow!("{}", failure.reason()))
@@ -307,6 +313,7 @@ mod tests {
             projects: crate::Projects::resolve(projects).unwrap(),
             monitor: None,
             investigation_mcp_servers: domain::InvestigationMcpServers::default(),
+            investigation_launcher: domain::InvestigationLauncher::Claude,
         }
     }
 

@@ -19,6 +19,7 @@ pub struct ConfigFile {
     projects: crate::Projects,
     monitor: Option<toml::Monitor>,
     investigation_mcp_servers: domain::InvestigationMcpServers,
+    investigation_launcher: domain::InvestigationLauncher,
 }
 
 impl ConfigFile {
@@ -31,6 +32,7 @@ impl ConfigFile {
         let hub_toml = toml::parse_file("hub.toml")?;
         validate_required(&hub_toml.credentials)?;
         let investigation_mcp_servers = hub_toml.investigation.mcp_servers()?;
+        let investigation_launcher = hub_toml.investigation.launcher()?;
         let projects = crate::Projects::resolve(hub_toml.project)
             .context("hub.toml has a [[project]] hub cannot use")?;
         Ok(Self {
@@ -38,7 +40,14 @@ impl ConfigFile {
             projects,
             monitor: hub_toml.monitor,
             investigation_mcp_servers,
+            investigation_launcher,
         })
+    }
+
+    /// What investigations run in place of `claude`, from `[investigation] launcher`.
+    #[must_use]
+    pub const fn investigation_launcher(&self) -> &domain::InvestigationLauncher {
+        &self.investigation_launcher
     }
 
     /// Resolves every credential, asking 1Password for each `op://` reference through an `op`
@@ -75,6 +84,7 @@ impl ConfigFile {
             projects: self.projects.clone(),
             monitor: self.monitor.clone(),
             investigation_mcp_servers: self.investigation_mcp_servers.clone(),
+            investigation_launcher: self.investigation_launcher.clone(),
         };
         Ok(Resolved {
             config,
@@ -121,6 +131,7 @@ mod tests {
             projects: crate::Projects::default(),
             monitor: None,
             investigation_mcp_servers: domain::InvestigationMcpServers::default(),
+            investigation_launcher: domain::InvestigationLauncher::Claude,
         };
 
         // A plain value never reaches a spawn, so either responsibility will do.

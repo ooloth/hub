@@ -16,6 +16,8 @@ pub mod daemon_pass;
 pub mod gcp;
 /// The GitHub login of whoever wrote a pull request or issue.
 pub mod github_login;
+/// The program every investigation starts in place of `claude`, chosen per device.
+pub mod investigation_launcher;
 /// The MCP servers an investigation may use, chosen per device.
 pub mod investigation_mcp_servers;
 /// Investigation prompts, assembled from parts that say where each came from.
@@ -88,6 +90,7 @@ pub use serde_helpers::duration_secs;
 pub use ci::*;
 pub use gcp::*;
 pub use github_login::*;
+pub use investigation_launcher::*;
 pub use investigation_mcp_servers::*;
 pub use investigation_prompt::*;
 pub use investigation_window::*;

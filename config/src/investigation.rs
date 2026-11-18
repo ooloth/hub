@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context, Result};
-use domain::{InvestigationMcpServers, McpServer, McpServerName};
+use domain::{InvestigationLauncher, InvestigationMcpServers, McpServer, McpServerName};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -12,6 +12,10 @@ pub struct InvestigationToml {
     /// Code lists the server under. Absent means no MCP servers.
     #[serde(default)]
     pub mcp_servers: BTreeMap<String, McpServerToml>,
+    /// The absolute path of an executable every investigation runs in place
+    /// of `claude`. Absent means `claude`.
+    #[serde(default)]
+    pub launcher: Option<String>,
 }
 
 /// One `[investigation.mcp_servers.<name>]` table.
@@ -45,6 +49,46 @@ impl InvestigationToml {
         }
         Ok(InvestigationMcpServers::new(servers))
     }
+
+    /// # Errors
+    /// Returns an error naming the setting if `launcher` is not an absolute path.
+    pub fn launcher(&self) -> Result<InvestigationLauncher> {
+        match &self.launcher {
+            None => Ok(InvestigationLauncher::Claude),
+            Some(path) => InvestigationLauncher::executable(path)
+                .map_err(|e| anyhow!("{e}"))
+                .context("invalid [investigation] launcher in hub.toml"),
+        }
+    }
+}
+
+/// Checks the launcher can run, so hub refuses to start rather than open
+/// windows that fail. `claude` is looked up on each window's `PATH` when it
+/// opens, so it has nothing to check here.
+///
+/// # Errors
+/// Returns an error naming the setting and the path if the path is missing,
+/// is not a file, or has no execute bit.
+pub fn ensure_launcher_runs(launcher: &InvestigationLauncher) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+
+    let Some(path) = launcher.path() else {
+        return Ok(());
+    };
+    let context = || {
+        format!(
+            "[investigation] launcher \"{}\" in hub.toml can't run",
+            path.display()
+        )
+    };
+    let metadata = std::fs::metadata(path).with_context(context)?;
+    if !metadata.is_file() {
+        return Err(anyhow!("it is not a file")).with_context(context);
+    }
+    if metadata.permissions().mode() & 0o111 == 0 {
+        return Err(anyhow!("it has no execute bit")).with_context(context);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -108,6 +152,98 @@ mod tests {
             "{message}"
         );
         assert!(message.contains("\"not a url\""), "{message}");
+    }
+
+    #[test]
+    fn no_launcher_means_claude() {
+        assert_eq!(
+            parse("").unwrap().launcher().unwrap(),
+            InvestigationLauncher::Claude
+        );
+    }
+
+    #[test]
+    fn an_absolute_launcher_path_is_the_launcher() {
+        let launcher = parse("launcher = \"/opt/tools/cc.bash\"")
+            .unwrap()
+            .launcher()
+            .unwrap();
+        assert_eq!(launcher.program(), "/opt/tools/cc.bash");
+    }
+
+    #[rstest]
+    #[case::empty("")]
+    #[case::relative("tools/cc.bash")]
+    fn a_launcher_that_is_not_absolute_is_rejected_naming_the_setting(#[case] value: &str) {
+        let err = parse(&format!("launcher = {value:?}"))
+            .unwrap()
+            .launcher()
+            .unwrap_err();
+        let message = format!("{err:#}");
+        assert!(message.contains("[investigation] launcher"), "{message}");
+        assert!(message.contains(&format!("{value:?}")), "{message}");
+    }
+
+    /// A folder of its own under the system's temporary directory, removed
+    /// when dropped.
+    struct Scratch(std::path::PathBuf);
+
+    impl Scratch {
+        fn new(name: &str) -> Self {
+            let dir =
+                std::env::temp_dir().join(format!("hub-launcher-{}-{name}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            Self(dir)
+        }
+
+        fn file(&self, name: &str, mode: u32) -> std::path::PathBuf {
+            use std::os::unix::fs::PermissionsExt as _;
+
+            let path = self.0.join(name);
+            std::fs::write(&path, "#!/bin/sh\n").unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).unwrap();
+            path
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn launcher_at(path: &std::path::Path) -> InvestigationLauncher {
+        InvestigationLauncher::executable(path.to_str().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn claude_and_an_executable_file_can_run() {
+        let scratch = Scratch::new("runs");
+        assert!(ensure_launcher_runs(&InvestigationLauncher::Claude).is_ok());
+        assert!(ensure_launcher_runs(&launcher_at(&scratch.file("cc.bash", 0o755))).is_ok());
+    }
+
+    #[rstest]
+    #[case::missing("missing")]
+    #[case::a_folder("folder")]
+    #[case::not_executable("not-executable")]
+    fn a_launcher_that_cant_run_is_refused_naming_the_setting_and_path(#[case] kind: &str) {
+        let scratch = Scratch::new(kind);
+        let path = match kind {
+            "missing" => scratch.0.join("cc.bash"),
+            "folder" => scratch.0.clone(),
+            _ => scratch.file("cc.bash", 0o644),
+        };
+
+        let err = ensure_launcher_runs(&launcher_at(&path)).unwrap_err();
+
+        let message = format!("{err:#}");
+        assert!(message.contains("[investigation] launcher"), "{message}");
+        assert!(
+            message.contains(&format!("\"{}\"", path.display())),
+            "{message}"
+        );
     }
 
     #[test]

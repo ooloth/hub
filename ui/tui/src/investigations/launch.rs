@@ -122,6 +122,7 @@ pub(crate) async fn launch(
         config,
         &cwd,
         &hub_config.investigation_mcp_servers,
+        &hub_config.investigation_launcher,
         cleanup.as_deref(),
         supporting_data_path.as_deref(),
     );

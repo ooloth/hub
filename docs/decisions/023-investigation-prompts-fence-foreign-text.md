@@ -18,8 +18,10 @@ routinely contain imperatives: run this migration, clear that cache, try this fl
 cannot tell those from its own instructions may act on them, and acting on them is usually wrong
 even when nobody is attacking anything.
 
-Investigations run `claude --permission-mode auto` (`ui/tui/src/investigations/command.rs`), so
-the only gate behind the prompt is auto mode's classifier, which judges intent and can be
+Investigations run `claude --permission-mode auto` (`ui/tui/src/investigations/command.rs`), or
+the launcher `hub.toml` names with the same arguments
+([034](034-investigations-start-through-the-launcher-hub-toml-names.md)), so the only gate behind
+the prompt is auto mode's classifier, which judges intent and can be
 persuaded like the agent can.
 
 ## Decision
