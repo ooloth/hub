@@ -14,7 +14,6 @@ pub struct InvestigationToml {
     pub mcp_servers: BTreeMap<String, McpServerToml>,
     /// The absolute path of an executable every investigation runs in place
     /// of `claude`. Absent means `claude`.
-    #[serde(default)]
     pub launcher: Option<String>,
 }
 
@@ -62,7 +61,9 @@ impl InvestigationToml {
     }
 }
 
-/// Checks the launcher can run, so hub refuses to start rather than open
+/// Checks the launcher is a file with an execute bit.
+///
+/// The TUI checks at start and at each launch, so it refuses rather than open
 /// windows that fail. `claude` is looked up on each window's `PATH` when it
 /// opens, so it has nothing to check here.
 ///
@@ -233,7 +234,8 @@ mod tests {
         let path = match kind {
             "missing" => scratch.0.join("cc.bash"),
             "folder" => scratch.0.clone(),
-            _ => scratch.file("cc.bash", 0o644),
+            "not-executable" => scratch.file("cc.bash", 0o644),
+            other => unreachable!("no such case: {other}"),
         };
 
         let err = ensure_launcher_runs(&launcher_at(&path)).unwrap_err();

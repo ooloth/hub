@@ -49,7 +49,12 @@ impl Config {
     /// Returns an error if `hub.toml` is missing or malformed, if its investigation launcher can't
     /// run, or if any credential reference (e.g. an `op://` URI) cannot be resolved.
     pub async fn load() -> Result<Self> {
-        let file = ConfigFile::read()?;
+        Self::load_from("hub.toml").await
+    }
+
+    /// Loads the `hub.toml` at `path`, as [`Config::load`] does.
+    async fn load_from(path: &str) -> Result<Self> {
+        let file = ConfigFile::read_from(path)?;
         crate::investigation::ensure_launcher_runs(file.investigation_launcher())?;
         file.resolve(OpResponsibility::Inherited)
             .await
@@ -225,6 +230,23 @@ impl Config {
 mod tests {
     use super::*;
     use rstest::rstest;
+
+    /// The check runs before credentials resolve, and these credentials are plain values that
+    /// would resolve, so only the launcher check can refuse this file.
+    #[tokio::test]
+    async fn loading_refuses_a_launcher_that_cant_run_naming_the_setting_and_path() {
+        let (dir, path) = crate::config_file::tests::hub_toml_with(
+            "load-missing-launcher",
+            "[investigation]\nlauncher = \"/nonexistent/cc.bash\"\n",
+        );
+
+        let result = Config::load_from(&path).await;
+
+        std::fs::remove_dir_all(&dir).unwrap();
+        let message = format!("{:#}", result.unwrap_err());
+        assert!(message.contains("[investigation] launcher"), "{message}");
+        assert!(message.contains("\"/nonexistent/cc.bash\""), "{message}");
+    }
 
     fn project(name: &str, repo: &str, workflows: Vec<toml::WorkflowConfig>) -> toml::Project {
         toml::Project {

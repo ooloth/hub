@@ -7,7 +7,8 @@
 use std::path::Path;
 
 /// What an investigation's window runs, given the arguments hub would pass
-/// `claude`. A launcher passes them on to `claude`.
+/// `claude`. A launcher is expected to pass them on to `claude`, and hub does
+/// not check that it does (decision 034).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum InvestigationLauncher {
     /// `claude`, found on the window's `PATH`.
@@ -16,7 +17,7 @@ pub enum InvestigationLauncher {
     /// An executable named by absolute path, such as a launcher that sets up
     /// the device's logins and Vertex AI project before starting `claude`.
     /// Nothing here checks the file exists or can run: the TUI checks that
-    /// when it starts.
+    /// when it starts and at each launch.
     Executable(LauncherPath),
 }
 
@@ -27,7 +28,8 @@ pub struct LauncherPath(String);
 impl InvestigationLauncher {
     /// # Errors
     /// Returns an error naming `path` if it is empty or not absolute, since a
-    /// relative path would be looked up from each investigation's worktree.
+    /// path with a slash would resolve against each investigation's worktree,
+    /// and a bare name against the window's `PATH`.
     pub fn executable(path: &str) -> Result<Self, String> {
         if Path::new(path).is_absolute() {
             Ok(Self::Executable(LauncherPath(path.to_string())))

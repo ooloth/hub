@@ -296,6 +296,8 @@ mod tests {
             InvestigationLauncher::executable(path.to_str().unwrap()).unwrap()
         };
         let run = |launcher: &InvestigationLauncher| {
+            // Removed first, so a run that never reaches the recorder can't pass on the last log
+            let _ = std::fs::remove_file(&log);
             let command = compose_with_launcher(launcher);
             let status = std::process::Command::new("/bin/sh")
                 .arg("-c")

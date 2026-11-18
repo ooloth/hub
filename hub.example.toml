@@ -91,8 +91,8 @@ name = "github-ci"
 # ── Investigations ────────────────────────────────────────────────────────────
 # The program every investigation runs in place of `claude`, by absolute path,
 # such as a launcher that sets up this device's logins first. It gets the
-# arguments hub would pass `claude` and passes them on. hub refuses to start
-# when it can't run. Optional; absent means `claude` from PATH. See
+# arguments hub would pass `claude` and passes them on. The TUI refuses to
+# start when it can't run. Optional; absent means `claude` from PATH. See
 # docs/decisions/034-investigations-start-through-the-launcher-hub-toml-names.md
 
 # [investigation]
