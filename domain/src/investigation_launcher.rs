@@ -15,6 +15,8 @@ pub enum InvestigationLauncher {
     Claude,
     /// An executable named by absolute path, such as a launcher that sets up
     /// the device's logins and Vertex AI project before starting `claude`.
+    /// Nothing here checks the file exists or can run: the TUI checks that
+    /// when it starts.
     Executable(LauncherPath),
 }
 
@@ -36,7 +38,8 @@ impl InvestigationLauncher {
         }
     }
 
-    /// The program a window runs, as a shell would be given it.
+    /// The program a window runs, which reaches the window as the value of
+    /// `HUB_LAUNCHER` rather than as text in its command.
     #[must_use]
     pub fn program(&self) -> &str {
         match self {

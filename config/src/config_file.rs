@@ -26,8 +26,9 @@ impl ConfigFile {
     /// Reads `hub.toml` from the working directory.
     ///
     /// # Errors
-    /// Returns an error if `hub.toml` is missing or malformed, lacks a required credential, or
-    /// gives a project a label hub refuses.
+    /// Returns an error if `hub.toml` is missing or malformed, lacks a required credential, names
+    /// an investigation launcher that is not an absolute path, or gives a project a label hub
+    /// refuses.
     pub fn read() -> Result<Self> {
         let hub_toml = toml::parse_file("hub.toml")?;
         validate_required(&hub_toml.credentials)?;

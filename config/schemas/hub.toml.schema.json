@@ -48,6 +48,11 @@
       "description": "What every investigation launched on this device receives.",
       "additionalProperties": false,
       "properties": {
+        "launcher": {
+          "type": "string",
+          "pattern": "^/",
+          "description": "The absolute path of an executable every investigation runs in place of claude, with the arguments hub would pass claude, which it passes on. The TUI refuses to start when it can't run. Absent means claude from PATH. See docs/decisions/034-investigations-start-through-the-launcher-hub-toml-names.md."
+        },
         "mcp_servers": {
           "type": "object",
           "description": "MCP servers investigations may use, keyed by the name Claude Code lists each under. Investigations ignore every other MCP config, including the investigated repository's .mcp.json. Absent means none.",

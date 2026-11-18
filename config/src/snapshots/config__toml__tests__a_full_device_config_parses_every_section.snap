@@ -96,6 +96,8 @@ HubToml {
                 url: "https://mcp.atlassian.com/v1/mcp",
             },
         },
-        launcher: None,
+        launcher: Some(
+            "/opt/tools/cc.bash",
+        ),
     },
 }

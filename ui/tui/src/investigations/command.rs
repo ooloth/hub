@@ -284,27 +284,43 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let log = dir.join("argv");
-        let launcher_path = dir.join("it's a \"launcher\" $HOME;.sh");
-        std::fs::write(
-            &launcher_path,
-            format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > '{}'\n", log.display()),
-        )
-        .unwrap();
-        std::fs::set_permissions(&launcher_path, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let launcher = InvestigationLauncher::executable(launcher_path.to_str().unwrap()).unwrap();
-        let command = compose_with_launcher(&launcher);
-
-        let status = std::process::Command::new("/bin/sh")
-            .arg("-c")
-            .arg(&command.shell)
-            .envs(command.env.iter().map(|(k, v)| (k, v)))
-            .status()
+        // Records each argument, NUL-separated so a newline inside one stays inside it
+        let argv_recorder = |name: &str| {
+            let path = dir.join(name);
+            std::fs::write(
+                &path,
+                format!("#!/bin/sh\nprintf '%s\\0' \"$@\" > '{}'\n", log.display()),
+            )
             .unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            InvestigationLauncher::executable(path.to_str().unwrap()).unwrap()
+        };
+        let run = |launcher: &InvestigationLauncher| {
+            let command = compose_with_launcher(launcher);
+            let status = std::process::Command::new("/bin/sh")
+                .arg("-c")
+                .arg(&command.shell)
+                .envs(command.env.iter().map(|(k, v)| (k, v)))
+                .status()
+                .unwrap();
+            assert!(status.success());
+            let recorded = std::fs::read_to_string(&log).unwrap();
+            (command, recorded)
+        };
 
-        let recorded = std::fs::read_to_string(&log).unwrap();
+        let (plain_command, through_plain_path) = run(&argv_recorder("plain.sh"));
+        let (_, through_awkward_path) = run(&argv_recorder("it's a \"launcher\" $HOME;.sh"));
         let _ = std::fs::remove_dir_all(&dir);
-        assert!(status.success());
-        let received: Vec<&str> = recorded.lines().collect();
+
+        assert_eq!(through_awkward_path, through_plain_path);
+        assert!(
+            through_plain_path.contains(&env_value(&plain_command, "HUB_SYSTEM_PROMPT")),
+            "the system prompt did not arrive whole"
+        );
+        let received: Vec<&str> = through_plain_path
+            .trim_end_matches('\0')
+            .split('\0')
+            .collect();
         assert_eq!(
             received[..3],
             ["--permission-mode", "auto", "--strict-mcp-config"]

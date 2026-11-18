@@ -563,6 +563,9 @@ mod tests {
             [[monitor.workflow]]
             name = "github-prs"
 
+            [investigation]
+            launcher = "/opt/tools/cc.bash"
+
             [investigation.mcp_servers.atlassian-rovo]
             type = "http"
             url = "https://mcp.atlassian.com/v1/mcp"
