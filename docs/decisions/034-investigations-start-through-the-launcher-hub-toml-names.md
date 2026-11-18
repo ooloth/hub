@@ -24,8 +24,10 @@ date: 2026-11-18
 `launcher` under `[investigation]` in `hub.toml` names, by absolute path, an executable hub runs in
 place of `claude` for every investigation and review. Absent, hub runs `claude` from `PATH`. hub
 passes the launcher the arguments it would pass `claude`, its `--permission-mode` and
-`--append-system-prompt` included, through the window's environment, and a launcher passes them on
-to `claude`. hub refuses to start when the path is not an executable file.
+`--append-system-prompt` included, and a launcher passes them on to `claude`. The launcher's path
+reaches the window through its environment, as the prompts do. The TUI refuses to start when the
+path is not an executable file. The daemon, which launches nothing, checks only that the path is
+absolute.
 
 ## Rejected
 
@@ -43,12 +45,14 @@ to `claude`. hub refuses to start when the path is not an executable file.
 A launcher that drops or overrides hub's arguments can undo auto mode or the untrusted-input
 guidance. The dotfiles launcher keeps a caller's `--permission-mode` and sends its own hints with
 `--append-system-prompt-file` for that reason. hub checks neither: it trusts the launcher its own
-`hub.toml` names.
+`hub.toml` names. The dotfiles launcher also runs the work logins before `claude` starts, so on the
+work laptop a tab hub opened in the background
+([032](032-hubs-rex-tabs-open-in-their-repositorys-session.md)) can wait on a browser login.
 
 ## Revisit when
 
-- An investigation needs to run through something that doesn't end in the `claude` CLI, which
-  [015](015-accept-tmux-and-claude-code-coupling.md) also rules out today.
+- An investigation needs to run through something that doesn't end in the `claude` CLI, which is
+  also [015](015-accept-tmux-and-claude-code-coupling.md)'s trigger for revisiting the coupling.
 
 ## Also update
 

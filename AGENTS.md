@@ -363,7 +363,8 @@ Clean up in this order, every time:
   `ps -p $(tmux display-message -p -t <window id> '#{pane_pid}') -wwE -o command=`, with the
   investigation's `@` id from `tmux list-windows -t qa -F '#{window_id} #{window_name}'`.
 - **`#{pane_start_command}` is the exact command tmux was handed**, which is what
-  to assert against when the change affects how an investigation is launched.
+  to assert against when the change affects how an investigation is launched. It starts with
+  `"$HUB_LAUNCHER"`; the launcher it names is in the window's environment.
 - **An investigation can open at Claude Code's "trust this folder" prompt
   instead of a session.** Each investigation runs in a new worktree, and Claude
   Code checks the trust recorded for the worktree's repository, here the bare
@@ -394,7 +395,7 @@ Clean up in this order, every time:
   step follows `claude`, `/bin/sh` stays as its parent and holds hub's command:
 
   ```bash
-  ps -p $(ps -o ppid= -p $(pgrep -n -f "claude --permission-mode auto")) -ww -o command=
+  ps -p $(ps -o ppid= -p $(pgrep -n -f "claude .*--strict-mcp-config")) -ww -o command=
   ```
 
   When `claude` is the whole command, as in every PR investigation, `/bin/sh`
@@ -402,7 +403,7 @@ Clean up in this order, every time:
   itself, whose environment carries the prompts:
 
   ```bash
-  ps -p $(pgrep -n -f "claude --permission-mode auto") -wwE -o command=
+  ps -p $(pgrep -n -f "claude .*--strict-mcp-config") -wwE -o command=
   ```
 
 **tmux send-keys pitfalls**

@@ -45,8 +45,12 @@ investigation type. `config/src/investigation.rs` rejects a server entry hub can
 
 What the checks miss:
 
-- **Another launcher.** The tests cover `compose()`. Nothing fails if new code builds a `claude`
-  command some other way. Today `compose()` is the only place in hub's Rust code that does.
+- **Another place that builds the command.** The tests cover `compose()`. Nothing fails if new code
+  builds a `claude` command some other way. Today `compose()` is the only place in hub's Rust code
+  that does.
+- **A configured launcher.** The checks read the command hub hands its launcher. A launcher
+  `hub.toml` names that drops `--strict-mcp-config` or adds its own `--mcp-config` would break this,
+  and hub doesn't check what a launcher does (decision 034).
 - **Claude Code's own behaviour.** The tests prove hub passes the flag, not that Claude Code honours
   it. A live run with Claude Code 2.1.296 showed it does: a worktree containing a `.mcp.json` with
   two servers opened with no MCP prompt, and `/mcp` listed only the configured server.
