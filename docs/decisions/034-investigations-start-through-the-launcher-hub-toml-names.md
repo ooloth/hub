@@ -11,9 +11,8 @@ date: 2026-11-18
 - On the work laptop, a Claude session needs the Vertex AI project, the work logins and the
   related-repo hints that the dotfiles launcher, `cc.bash`, provides. hub started bare `claude`, so
   its sessions failed with "No projectId was given" whenever sessions moved to Vertex AI.
-  [#434](https://github.com/ooloth/hub/issues/434). The hints still don't reach hub's sessions:
-  `cc.bash` matches them by folder name, and hub names its worktrees after the PR (`pr-391`), so
-  matching on the repository instead is a separate change to `cc.bash`.
+  [#434](https://github.com/ooloth/hub/issues/434). The hints don't reach hub's sessions yet
+  ([ooloth/dotfiles#300](https://github.com/ooloth/dotfiles/issues/300)).
 - hub is public and runs on machines without dotfiles
   ([002](002-public-repo-private-integrations.md)), and per-machine settings live in `hub.toml`
   ([003](003-config-model.md)).
@@ -70,5 +69,6 @@ and removes the setting before going back to an older build.
 
 ## Also update
 
-- `hub.example.toml`, and the line in [023](023-investigation-prompts-fence-foreign-text.md) that
-  says investigations run `claude --permission-mode auto`.
+- [x] `hub.example.toml` — documents `launcher` under `[investigation]`.
+- [x] [023](023-investigation-prompts-fence-foreign-text.md) — its line saying investigations run
+  `claude --permission-mode auto` now names the launcher too.

@@ -370,7 +370,7 @@ Clean up in this order, every time:
 - **A configured launcher can make a launch wait.** On a device whose `hub.toml` sets
   `[investigation] launcher`, the launcher runs before `claude` starts, and `cc.bash` can stop at
   a browser login there. The launch worked: leave the login for the user and report it. Until
-  `claude` starts, no process for this window matches the `pgrep` commands below, and
+  `claude` starts, no process for this window matches the `pgrep` commands in Rex pitfalls, and
   `pgrep -n` answers with an older investigation's `claude`.
 - **An investigation can open at Claude Code's "trust this folder" prompt
   instead of a session.** Each investigation runs in a new worktree, and Claude
