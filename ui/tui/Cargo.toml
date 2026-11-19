@@ -34,7 +34,7 @@
   # Dependabot proposes them as one PR (the `tui` group in .github/dependabot.yml).
   ratatui = "0.30"
   rusqlite = { version = "0.41", features = ["bundled"] }
-  secrecy = "0.8"
+  secrecy = "0.10"
   serde_json = "1"
   store = { path = "../../store" }
   # Only parsing and the pure-Rust regex engine. Syntaxes and the theme come from two-face's
