@@ -363,7 +363,15 @@ Clean up in this order, every time:
   `ps -p $(tmux display-message -p -t <window id> '#{pane_pid}') -wwE -o command=`, with the
   investigation's `@` id from `tmux list-windows -t qa -F '#{window_id} #{window_name}'`.
 - **`#{pane_start_command}` is the exact command tmux was handed**, which is what
-  to assert against when the change affects how an investigation is launched.
+  to assert against when the change affects how an investigation is launched. tmux prints it
+  quoted and escaped, starting `"\"\$HUB_LAUNCHER\" --permission-mode auto --strict-mcp-config`.
+  The launcher it names is in the pane process's environment, which the `ps … -wwE` command above
+  reads; `tmux show-environment` does not show it.
+- **A configured launcher can make a launch wait.** On a device whose `hub.toml` sets
+  `[investigation] launcher`, the launcher runs before `claude` starts, and `cc.bash` can stop at
+  a browser login there. The launch worked: leave the login for the user and report it. Until
+  `claude` starts, no process for this window matches the `pgrep` commands in Rex pitfalls, and
+  `pgrep -n` answers with an older investigation's `claude`.
 - **An investigation can open at Claude Code's "trust this folder" prompt
   instead of a session.** Each investigation runs in a new worktree, and Claude
   Code checks the trust recorded for the worktree's repository, here the bare
@@ -390,19 +398,22 @@ Clean up in this order, every time:
   Clear the line with `rex send-key -s "$S" -b "$B" ctrl+c`; Rex refuses `ctrl-c`.
 - **There is no `#{pane_start_command}`.** Read an investigation's launch
   command off its process. `pgrep -n` takes the newest, so an investigation
-  left open from earlier answers if this one did not start. When a cleanup
-  step follows `claude`, `/bin/sh` stays as its parent and holds hub's command:
+  left open from earlier answers if this one did not start, or has not started yet
+  because a configured launcher is still running. These notes assume the launcher
+  is `claude` or `exec`s it, as `cc.bash` does; a launcher that runs `claude` as a
+  child is its parent instead. When a cleanup step follows the launcher, `/bin/sh`
+  stays as `claude`'s parent and holds hub's command:
 
   ```bash
-  ps -p $(ps -o ppid= -p $(pgrep -n -f "claude --permission-mode auto")) -ww -o command=
+  ps -p $(ps -o ppid= -p $(pgrep -n -f "claude .*--strict-mcp-config")) -ww -o command=
   ```
 
-  When `claude` is the whole command, as in every PR investigation, `/bin/sh`
-  hands itself to `claude`, so the parent is Rex's own process. Read `claude`
+  When the launcher is the whole command, as in every PR investigation, `/bin/sh`
+  hands itself to it, so `claude`'s parent is Rex's own process. Read `claude`
   itself, whose environment carries the prompts:
 
   ```bash
-  ps -p $(pgrep -n -f "claude --permission-mode auto") -wwE -o command=
+  ps -p $(pgrep -n -f "claude .*--strict-mcp-config") -wwE -o command=
   ```
 
 **tmux send-keys pitfalls**

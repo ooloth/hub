@@ -89,6 +89,15 @@ name = "github-ci"
 # name = "home-server-health"
 
 # ── Investigations ────────────────────────────────────────────────────────────
+# The program every investigation runs in place of `claude`, by absolute path,
+# such as a launcher that sets up this device's logins first. It gets the
+# arguments hub would pass `claude` and passes them on. The TUI refuses to
+# start when it can't run. Optional; absent means `claude` from PATH. See
+# docs/decisions/034-investigations-start-through-the-launcher-hub-toml-names.md
+
+# [investigation]
+# launcher = "/Users/you/Repos/ooloth/dotfiles/tools/claude/cc.bash"
+
 # MCP servers every investigation on this device may use. Investigations ignore
 # every other MCP config, including the investigated repository's .mcp.json.
 # Optional; absent means investigations get no MCP servers.

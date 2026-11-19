@@ -34,18 +34,29 @@ pub struct Config {
     pub monitor: Option<toml::Monitor>,
     /// The MCP servers investigations on this device get, from `[investigation.mcp_servers]`.
     pub investigation_mcp_servers: domain::InvestigationMcpServers,
+    /// What investigations on this device run in place of `claude`, from `[investigation] launcher`.
+    pub investigation_launcher: domain::InvestigationLauncher,
 }
 
 impl Config {
     /// Reads `hub.toml` and resolves every credential in it, through an `op` that answers to
     /// whatever is responsible for hub, as a terminal is for the TUI.
     ///
+    /// Checks the investigation launcher can run before resolving credentials, which can wait on
+    /// a locked 1Password, so a bad path refuses at once.
+    ///
     /// # Errors
-    /// Returns an error if `hub.toml` is missing or malformed, or if any credential
-    /// reference (e.g. an `op://` URI) cannot be resolved.
+    /// Returns an error if `hub.toml` is missing or malformed, if its investigation launcher can't
+    /// run, or if any credential reference (e.g. an `op://` URI) cannot be resolved.
     pub async fn load() -> Result<Self> {
-        ConfigFile::read()?
-            .resolve(OpResponsibility::Inherited)
+        Self::load_from("hub.toml").await
+    }
+
+    /// Loads the `hub.toml` at `path`, as [`Config::load`] does.
+    async fn load_from(path: &str) -> Result<Self> {
+        let file = ConfigFile::read_from(path)?;
+        crate::investigation::ensure_launcher_runs(file.investigation_launcher())?;
+        file.resolve(OpResponsibility::Inherited)
             .await
             .map(|resolved| resolved.config)
             .map_err(|failure| anyhow!("{}", failure.reason()))
@@ -220,6 +231,23 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
+    /// The check runs before credentials resolve, and these credentials are plain values that
+    /// would resolve, so only the launcher check can refuse this file.
+    #[tokio::test]
+    async fn loading_refuses_a_launcher_that_cant_run_naming_the_setting_and_path() {
+        let (dir, path) = crate::config_file::tests::hub_toml_with(
+            "load-missing-launcher",
+            "[investigation]\nlauncher = \"/nonexistent/cc.bash\"\n",
+        );
+
+        let result = Config::load_from(&path).await;
+
+        std::fs::remove_dir_all(&dir).unwrap();
+        let message = format!("{:#}", result.unwrap_err());
+        assert!(message.contains("[investigation] launcher"), "{message}");
+        assert!(message.contains("\"/nonexistent/cc.bash\""), "{message}");
+    }
+
     fn project(name: &str, repo: &str, workflows: Vec<toml::WorkflowConfig>) -> toml::Project {
         toml::Project {
             name: Some(name.into()),
@@ -307,6 +335,7 @@ mod tests {
             projects: crate::Projects::resolve(projects).unwrap(),
             monitor: None,
             investigation_mcp_servers: domain::InvestigationMcpServers::default(),
+            investigation_launcher: domain::InvestigationLauncher::Claude,
         }
     }
 

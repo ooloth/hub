@@ -96,12 +96,22 @@ pub(crate) enum WorktreeSpec {
 /// that then finds an open window instead would have nothing to remove it. A window
 /// that fails to open never runs that command, so its worktree is removed here, along
 /// with its supporting-data file.
+///
+/// The launcher is checked first, as the TUI checked it at startup, because it
+/// can be removed while the TUI runs, and a tmux window whose command fails at
+/// once closes with the error in it, since tmux's `remain-on-exit` is off by
+/// default. Checked here, the status bar names it, and no window or worktree is
+/// made for it. Checking before the claim also means that while the launcher is
+/// broken, a signal whose window is already open gets the error, not that window.
 pub(crate) async fn launch(
     config: LaunchConfig,
     window: &domain::InvestigationWindow,
     spec: WorktreeSpec,
     hub_config: &config::Config,
 ) -> Result<WindowPlace> {
+    let launcher = &hub_config.investigation_launcher;
+    config::investigation::ensure_launcher_runs(launcher)?;
+
     let vacant = match claim(window, "investigation")? {
         WindowClaim::Reused(place) => return Ok(place),
         WindowClaim::Vacant(vacant) => vacant,
@@ -122,6 +132,7 @@ pub(crate) async fn launch(
         config,
         &cwd,
         &hub_config.investigation_mcp_servers,
+        launcher,
         cleanup.as_deref(),
         supporting_data_path.as_deref(),
     );
@@ -307,6 +318,68 @@ fn synced_clone(project: &config::Project) -> Result<PathBuf> {
 mod tests {
     use super::*;
     use domain::RepoSlug;
+
+    /// A project hub tracks but has never cloned, so a launch that gets past the launcher check
+    /// fails at the claim (outside tmux and Rex) or at the worktree, naming either one instead of
+    /// the launcher.
+    fn unfetched_project() -> config::Project {
+        let repo: RepoSlug = "hub-tests/no-such-clone".parse().unwrap();
+        config::Project {
+            name: "no-such-clone".to_string(),
+            short_name: domain::ProjectShortName::from_repo(&repo),
+            repo,
+            workflow: vec![],
+            environment: vec![],
+        }
+    }
+
+    fn hub_config_with(launcher: domain::InvestigationLauncher) -> config::Config {
+        config::Config {
+            github_token: secrecy::Secret::new("tok".to_string()),
+            github_username: "user".to_string(),
+            linear_token: None,
+            loki_token: None,
+            extra_credentials: std::collections::HashMap::new(),
+            projects: config::Projects::default(),
+            monitor: None,
+            investigation_mcp_servers: domain::InvestigationMcpServers::default(),
+            investigation_launcher: launcher,
+        }
+    }
+
+    /// A launcher removed after the TUI started is refused when `i` is pressed, so the status
+    /// bar names it, instead of a window opening and closing on the launcher's error.
+    #[tokio::test]
+    async fn a_launch_whose_launcher_no_longer_runs_is_refused_naming_the_setting_and_path() {
+        let launcher =
+            domain::InvestigationLauncher::executable("/nonexistent/hub-tests/cc.bash").unwrap();
+        let config = LaunchConfig {
+            system_prompt: "system".to_string(),
+            prompt: InvestigationPrompt::new().instruction("Investigate"),
+            supporting_data: None,
+            model: "sonnet".to_string(),
+            allowed_tools: "Read".to_string(),
+            env: vec![],
+        };
+
+        let err = launch(
+            config,
+            &domain::InvestigationWindow::media("hub launcher test"),
+            WorktreeSpec::Ephemeral {
+                project: unfetched_project(),
+            },
+            &hub_config_with(launcher),
+        )
+        .await
+        .unwrap_err();
+
+        let message = format!("{err:#}");
+        assert!(message.contains("[investigation] launcher"), "{message}");
+        assert!(
+            message.contains("\"/nonexistent/hub-tests/cc.bash\""),
+            "{message}"
+        );
+    }
 
     /// A launch whose window never opened removes the supporting-data file it wrote, and the
     /// status bar still says why the window didn't open.

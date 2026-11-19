@@ -19,18 +19,26 @@ pub struct ConfigFile {
     projects: crate::Projects,
     monitor: Option<toml::Monitor>,
     investigation_mcp_servers: domain::InvestigationMcpServers,
+    investigation_launcher: domain::InvestigationLauncher,
 }
 
 impl ConfigFile {
     /// Reads `hub.toml` from the working directory.
     ///
     /// # Errors
-    /// Returns an error if `hub.toml` is missing or malformed, lacks a required credential, or
-    /// gives a project a label hub refuses.
+    /// Returns an error if `hub.toml` is missing or malformed, lacks a required credential, names
+    /// an investigation launcher that is not an absolute path, or gives a project a label hub
+    /// refuses.
     pub fn read() -> Result<Self> {
-        let hub_toml = toml::parse_file("hub.toml")?;
+        Self::read_from("hub.toml")
+    }
+
+    /// Reads the `hub.toml` at `path`, as [`ConfigFile::read`] does.
+    pub(crate) fn read_from(path: &str) -> Result<Self> {
+        let hub_toml = toml::parse_file(path)?;
         validate_required(&hub_toml.credentials)?;
         let investigation_mcp_servers = hub_toml.investigation.mcp_servers()?;
+        let investigation_launcher = hub_toml.investigation.launcher()?;
         let projects = crate::Projects::resolve(hub_toml.project)
             .context("hub.toml has a [[project]] hub cannot use")?;
         Ok(Self {
@@ -38,7 +46,14 @@ impl ConfigFile {
             projects,
             monitor: hub_toml.monitor,
             investigation_mcp_servers,
+            investigation_launcher,
         })
+    }
+
+    /// What investigations run in place of `claude`, from `[investigation] launcher`.
+    #[must_use]
+    pub(crate) const fn investigation_launcher(&self) -> &domain::InvestigationLauncher {
+        &self.investigation_launcher
     }
 
     /// Resolves every credential, asking 1Password for each `op://` reference through an `op`
@@ -75,6 +90,7 @@ impl ConfigFile {
             projects: self.projects.clone(),
             monitor: self.monitor.clone(),
             investigation_mcp_servers: self.investigation_mcp_servers.clone(),
+            investigation_launcher: self.investigation_launcher.clone(),
         };
         Ok(Resolved {
             config,
@@ -94,7 +110,7 @@ fn validate_required(creds: &toml::CredentialsToml) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use rstest::rstest;
     use secrecy::ExposeSecret;
 
@@ -121,6 +137,7 @@ mod tests {
             projects: crate::Projects::default(),
             monitor: None,
             investigation_mcp_servers: domain::InvestigationMcpServers::default(),
+            investigation_launcher: domain::InvestigationLauncher::Claude,
         };
 
         // A plain value never reaches a spawn, so either responsibility will do.
@@ -138,6 +155,54 @@ mod tests {
             Some(&"lin".to_string())
         );
         assert_eq!(config.extra_credentials["media"].expose_secret(), "key");
+    }
+
+    /// A `hub.toml` holding `body` under plain credentials, in a folder of its own under the
+    /// system's temporary directory. Returns the folder, for the caller to remove, and the file.
+    pub(crate) fn hub_toml_with(name: &str, body: &str) -> (std::path::PathBuf, String) {
+        let dir = std::env::temp_dir().join(format!("hub-config-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("hub.toml");
+        std::fs::write(
+            &path,
+            format!("[credentials]\ngithub_token = \"tok\"\ngithub_username = \"user\"\n\n{body}"),
+        )
+        .unwrap();
+        (dir, path.to_str().unwrap().to_string())
+    }
+
+    #[test]
+    fn reading_refuses_a_launcher_that_is_not_absolute_naming_the_setting() {
+        let (dir, path) = hub_toml_with(
+            "relative-launcher",
+            "[investigation]\nlauncher = \"tools/cc.bash\"\n",
+        );
+
+        let result = ConfigFile::read_from(&path);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+        let message = format!("{:#}", result.unwrap_err());
+        assert!(message.contains("[investigation] launcher"), "{message}");
+        assert!(message.contains("\"tools/cc.bash\""), "{message}");
+    }
+
+    /// The daemon reads `hub.toml` this way and launches no investigation, so a launcher that
+    /// is absolute but missing must not stop it.
+    #[test]
+    fn reading_accepts_an_absolute_launcher_that_does_not_exist() {
+        let (dir, path) = hub_toml_with(
+            "missing-launcher",
+            "[investigation]\nlauncher = \"/nonexistent/cc.bash\"\n",
+        );
+
+        let result = ConfigFile::read_from(&path);
+
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(
+            result.unwrap().investigation_launcher().program(),
+            "/nonexistent/cc.bash"
+        );
     }
 
     #[test]

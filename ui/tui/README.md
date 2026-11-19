@@ -189,7 +189,7 @@ a function that returns a `LaunchConfig` (`config()` for most; `ask_config()`
 and `review_config()` for pull requests) with a system prompt, a context-specific
 prompt string, and tool/model settings. The system prompt is loaded via
 `include_str!` from `prompts/`, except a pull request's, which `pr.rs` writes
-itself. `launch.rs` holds the shared launcher, and
+itself. `launch.rs` holds the shared launch function, and
 `command.rs` builds the command it runs. `src/terminal/` opens the window in tmux or Rex,
 whichever encloses the TUI ([Decision 029](../../docs/decisions/029-hub-opens-windows-in-whichever-of-tmux-or-rex-encloses-it.md)). A Rex tab opens in the background, in the session for its repository ([Decision 032](../../docs/decisions/032-hubs-rex-tabs-open-in-their-repositorys-session.md)), labelled after its signal, which is how a later launch finds it again ([Decision 033](../../docs/decisions/033-hubs-rex-tabs-say-what-is-happening-in-them.md)).
 

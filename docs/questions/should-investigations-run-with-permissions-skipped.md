@@ -1,8 +1,11 @@
 # Should investigations run with permissions skipped?
 
 Every investigation hub launches runs `claude --permission-mode auto`, built in
-`ui/tui/src/investigations/command.rs`. The only scoping beyond auto mode's classifier is the
-per-type `--allowedTools` string, and the narrowest of those is `Bash`, which is not a restriction.
+`ui/tui/src/investigations/command.rs`. A device's `hub.toml` can name a launcher to run in its
+place, which is handed the same arguments and passes them on to `claude`
+([decision 034](../decisions/034-investigations-start-through-the-launcher-hub-toml-names.md)).
+The only scoping beyond auto mode's classifier is the per-type `--allowedTools` string, and the
+narrowest of those is `Bash`, which is not a restriction.
 
 ## Why it matters
 

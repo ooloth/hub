@@ -4,7 +4,7 @@
 //! arguments rather than being computed, which is what lets a test pin the
 //! whole invocation without spawning a process.
 
-use domain::InvestigationMcpServers;
+use domain::{InvestigationLauncher, InvestigationMcpServers};
 use std::path::{Path, PathBuf};
 
 use super::LaunchConfig;
@@ -35,10 +35,11 @@ pub(crate) struct InvestigationCommand {
 
 /// Builds the invocation for an investigation, running nothing.
 ///
-/// Prompts travel in the environment rather than in `shell`. The command
-/// references them as `"$HUB_SYSTEM_PROMPT"` and `"$HUB_TASK_PROMPT"`, and tmux
-/// or Rex receives each value as its own argv element, so nothing in a prompt is
-/// re-evaluated as shell syntax. Keeping that true is the reason this function
+/// Prompts and the launcher travel in the environment rather than in `shell`.
+/// The command references them as `"$HUB_LAUNCHER"`, `"$HUB_SYSTEM_PROMPT"` and
+/// `"$HUB_TASK_PROMPT"`, and tmux or Rex receives each value as its own argv
+/// element, so nothing in a prompt or a launcher's path is re-evaluated as
+/// shell syntax. Keeping that true is the reason this function
 /// exists as a value-returning one.
 ///
 /// # Panics
@@ -48,6 +49,7 @@ pub(crate) fn compose(
     config: LaunchConfig,
     cwd: &Path,
     mcp_servers: &InvestigationMcpServers,
+    launcher: &InvestigationLauncher,
     cleanup: Option<&str>,
     supporting_data_path: Option<&Path>,
 ) -> InvestigationCommand {
@@ -69,6 +71,7 @@ pub(crate) fn compose(
     let system_prompt = format!("{}\n\n{UNTRUSTED_INPUT_GUIDANCE}", config.system_prompt);
 
     let mut env = vec![
+        ("HUB_LAUNCHER".to_string(), launcher.program().to_string()),
         ("HUB_SYSTEM_PROMPT".to_string(), system_prompt),
         ("HUB_TASK_PROMPT".to_string(), prompt.clone()),
     ];
@@ -106,7 +109,7 @@ pub(crate) fn compose(
         None => String::new(),
     };
     let shell = format!(
-        "claude --permission-mode auto --strict-mcp-config{mcp_config_arg} --model {} --allowedTools '{}' --append-system-prompt \"$HUB_SYSTEM_PROMPT\"{task_arg}{cleanup_suffix}",
+        "\"$HUB_LAUNCHER\" --permission-mode auto --strict-mcp-config{mcp_config_arg} --model {} --allowedTools '{}' --append-system-prompt \"$HUB_SYSTEM_PROMPT\"{task_arg}{cleanup_suffix}",
         config.model, config.allowed_tools,
     );
 
@@ -122,7 +125,10 @@ mod tests {
     use super::{compose, InvestigationCommand, UNTRUSTED_INPUT_GUIDANCE};
     use crate::investigations::{ci, gcp, issue, loki, pr, LaunchConfig};
     use crate::state::{PrOwnership, PrReview, PrReviewTarget};
-    use domain::{InvestigationMcpServers, InvestigationPrompt, McpServer, UntrustedText};
+    use domain::{
+        InvestigationLauncher, InvestigationMcpServers, InvestigationPrompt, McpServer,
+        UntrustedText,
+    };
     use rstest::rstest;
     use std::collections::BTreeMap;
     use std::path::{Path, PathBuf};
@@ -168,7 +174,14 @@ mod tests {
 
     /// `config` composed with no MCP servers, no cleanup and no supporting data.
     fn compose_bare(config: LaunchConfig) -> InvestigationCommand {
-        compose(config, Path::new(CWD), &no_mcp_servers(), None, None)
+        compose(
+            config,
+            Path::new(CWD),
+            &no_mcp_servers(),
+            &InvestigationLauncher::Claude,
+            None,
+            None,
+        )
     }
 
     /// `config` composed the way every investigation type's snapshot is.
@@ -181,6 +194,7 @@ mod tests {
             config,
             Path::new(CWD),
             &no_mcp_servers(),
+            &InvestigationLauncher::Claude,
             cleanup,
             supporting_data.map(Path::new),
         ))
@@ -216,6 +230,105 @@ mod tests {
         }
         writeln!(out, "shell: {}", command.shell).unwrap();
         out
+    }
+
+    fn compose_with_launcher(launcher: &InvestigationLauncher) -> InvestigationCommand {
+        compose(
+            plain(InvestigationPrompt::new().instruction("Investigate")),
+            Path::new(CWD),
+            &no_mcp_servers(),
+            launcher,
+            None,
+            None,
+        )
+    }
+
+    /// The launcher runs in place of `claude` and gets the arguments `claude`
+    /// would have, hub's permission mode and MCP lockdown first.
+    #[rstest]
+    #[case::claude(InvestigationLauncher::Claude, "claude")]
+    #[case::an_executable(
+        InvestigationLauncher::executable("/opt/my tools/cc.bash").unwrap(),
+        "/opt/my tools/cc.bash"
+    )]
+    fn the_launcher_starts_the_command_with_hubs_arguments(
+        #[case] launcher: InvestigationLauncher,
+        #[case] program: &str,
+    ) {
+        let command = compose_with_launcher(&launcher);
+
+        assert_eq!(env_value(&command, "HUB_LAUNCHER"), program);
+        assert!(
+            command
+                .shell
+                .starts_with("\"$HUB_LAUNCHER\" --permission-mode auto --strict-mcp-config "),
+            "{}",
+            command.shell
+        );
+        assert!(
+            command
+                .shell
+                .contains(" --append-system-prompt \"$HUB_SYSTEM_PROMPT\""),
+            "{}",
+            command.shell
+        );
+    }
+
+    /// A launcher's path reaches `/bin/sh` only through the environment, so
+    /// spaces and quotes in it never become shell syntax.
+    #[test]
+    fn a_launcher_path_with_spaces_and_quotes_runs_with_hubs_arguments_unchanged() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let dir = std::env::temp_dir().join(format!("hub-launcher-sh-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("argv");
+        // Records each argument, NUL-separated so a newline inside one stays inside it
+        let argv_recorder = |name: &str| {
+            let path = dir.join(name);
+            std::fs::write(
+                &path,
+                format!("#!/bin/sh\nprintf '%s\\0' \"$@\" > '{}'\n", log.display()),
+            )
+            .unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+            InvestigationLauncher::executable(path.to_str().unwrap()).unwrap()
+        };
+        let run = |launcher: &InvestigationLauncher| {
+            // Removed first, so a run that never reaches the recorder can't pass on the last log
+            let _ = std::fs::remove_file(&log);
+            let command = compose_with_launcher(launcher);
+            let status = std::process::Command::new("/bin/sh")
+                .arg("-c")
+                .arg(&command.shell)
+                .envs(command.env.iter().map(|(k, v)| (k, v)))
+                .status()
+                .unwrap();
+            assert!(status.success());
+            let recorded = std::fs::read_to_string(&log).unwrap();
+            (command, recorded)
+        };
+
+        let (plain_command, through_plain_path) = run(&argv_recorder("plain.sh"));
+        let (_, through_awkward_path) = run(&argv_recorder("it's a \"launcher\" $HOME;.sh"));
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert_eq!(through_awkward_path, through_plain_path);
+        assert!(
+            through_plain_path.contains(&env_value(&plain_command, "HUB_SYSTEM_PROMPT")),
+            "the system prompt did not arrive whole"
+        );
+        let received: Vec<&str> = through_plain_path
+            .trim_end_matches('\0')
+            .split('\0')
+            .collect();
+        assert_eq!(
+            received[..3],
+            ["--permission-mode", "auto", "--strict-mcp-config"]
+        );
+        assert!(received.contains(&"--append-system-prompt"), "{received:?}");
+        assert_eq!(received.last(), Some(&"Investigate"), "{received:?}");
     }
 
     #[test]
@@ -265,6 +378,7 @@ mod tests {
             plain(InvestigationPrompt::new()),
             Path::new(CWD),
             &servers,
+            &InvestigationLauncher::Claude,
             None,
             None,
         );
@@ -294,6 +408,7 @@ mod tests {
             plain(InvestigationPrompt::new().instruction("Investigate this")),
             Path::new(CWD),
             &atlassian(),
+            &InvestigationLauncher::Claude,
             None,
             None,
         );
@@ -358,6 +473,7 @@ mod tests {
             ),
             Path::new(CWD),
             &no_mcp_servers(),
+            &InvestigationLauncher::Claude,
             None,
             Some(Path::new(DATA_PATH)),
         );
@@ -404,6 +520,7 @@ mod tests {
             plain(InvestigationPrompt::new().instruction("Investigate")),
             Path::new(CWD),
             &no_mcp_servers(),
+            &InvestigationLauncher::Claude,
             Some(CLEANUP),
             None,
         );
@@ -423,6 +540,7 @@ mod tests {
             plain(InvestigationPrompt::new().instruction("Investigate")),
             Path::new(CWD),
             &no_mcp_servers(),
+            &InvestigationLauncher::Claude,
             None,
             Some(Path::new(DATA_PATH)),
         );
@@ -630,6 +748,7 @@ mod tests {
             config,
             Path::new(CWD),
             &atlassian(),
+            &InvestigationLauncher::Claude,
             None,
             None
         )));

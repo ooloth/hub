@@ -43,8 +43,8 @@ and `StatusParams`. `.expose_secret()` is called only at client call sites —
 every access point is explicit and grep-able. `Debug` output prints `[REDACTED]`,
 preventing accidental logging.
 
-The TUI calls `config::Config::load()`, which reads the file and
-resolves it in one step, once in `main()`, and pass the struct down as an
+The TUI calls `config::Config::load()`, which reads the file, checks the
+investigation launcher can run, and resolves it in one step, once in `main()`, and pass the struct down as an
 argument. The daemon is the only other caller, below.
 
 Every caller of `resolve` says which process macOS may hold responsible for the
